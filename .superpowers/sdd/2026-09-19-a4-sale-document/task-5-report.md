@@ -30,3 +30,25 @@ PASS. Task 5 completed on `main`.
 
 - Maven tests emit the existing Mockito/Byte Buddy dynamic-agent warning on this JDK; it does not fail the build.
 - Build and smoke commands leave generated `backend/target` and frontend cache changes in the worktree; no generated target artifact is included in the Task 5 commit.
+
+## Review Fixes
+
+The follow-up review findings were addressed:
+
+- Corrected the stale README statement so A4 on-demand documents are documented as available while tickets and WhatsApp remain pending.
+- Marked A4 generation, API download, and A4 printing as complete in Fase 6; tickets, WhatsApp, email, and outbox remain pending.
+- Replaced the interaction-only regression with an isolated H2 persistence test. It generates a real PDF through `SaleDocumentService` and `OpenPdfA4Renderer`, then compares order/sale status, inventory quantity and movement count, payment count/total, ledger count/total, and customer balance before and after.
+- Extended the PostgreSQL smoke snapshot to compare the same inventory, payment, and ledger state in addition to order/sale status and customer balance.
+
+## Review-Fix Verification
+
+- Focused regression: `mvn -q -Dtest=DocumentReadOnlyRegressionTest test` passed.
+- Backend suite: `mvn test` passed, 117 tests, 0 failures/errors/skips.
+- Backend package: `mvn package -DskipTests` passed.
+- Frontend build: `npm run build` passed.
+- Compose validation and smoke syntax parse passed.
+- PostgreSQL Compose smoke passed with expanded inventory/payment/ledger invariants and persistent-volume safety.
+
+## Review-Fix Commit
+
+- `fix: address Task 5 review findings`

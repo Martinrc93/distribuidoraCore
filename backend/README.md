@@ -381,9 +381,10 @@ Detalle de pedido (`200`):
 }
 ```
 
-Todavía no se implementan historial de precios, vigencias futuras, descuentos
-ni documentos. Los snapshots de precio y descuento ya se persisten al confirmar
-pedidos.
+Todavía no se implementan historial de precios ni vigencias futuras. Los
+documentos A4 de venta se generan bajo demanda; tickets y envíos por WhatsApp
+continúan pendientes. Los snapshots de precio y descuento ya se persisten al
+confirmar pedidos.
 
 El plan incremental de aplicación de los ADR está en
 `docs/development/backend-implementation-roadmap.md`.

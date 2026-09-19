@@ -396,7 +396,7 @@ Assert-Equal $cancelConfirmation.orderId $persistedLifecycle.order.id "Cancelled
 Assert-Equal "CANCELLED" $persistedLifecycle.order.status "Persisted lifecycle record changed after restart"
 Assert-Equal "CANCELLED" $persistedLifecycle.sale.status "Persisted sale lifecycle record changed after restart"
 
-$documentBefore = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || c.balance FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id JOIN customer.customers c ON c.id = o.customer_id WHERE o.id = '$($cancelConfirmation.orderId)'"
+$documentBefore = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || c.balance || '|' || (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId') || '|' || (SELECT count(*) FROM inventory.stock_movements) || '|' || (SELECT count(*) FROM payment.payments) || '|' || (SELECT coalesce(sum(amount), 0) FROM payment.payments) || '|' || (SELECT count(*) FROM customer.account_ledger) || '|' || (SELECT coalesce(sum(amount), 0) FROM customer.account_ledger) FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id JOIN customer.customers c ON c.id = o.customer_id WHERE o.id = '$($cancelConfirmation.orderId)'"
 $documentResponse = Invoke-WebRequest -Uri "$BaseUrl/api/orders/$($cancelConfirmation.orderId)/documents/a4" -Method Get -Headers $restartHeaders -UseBasicParsing
 Assert-Equal 200 ([int]$documentResponse.StatusCode) "A4 document request did not return 200"
 if (-not $documentResponse.Headers["Content-Type"].StartsWith("application/pdf")) {
@@ -409,7 +409,7 @@ if ($documentBytes.Length -le 0 -or $documentBytes.Length -lt 4 -or [System.Text
 if ($documentResponse.Headers["Content-Disposition"] -notlike 'attachment; filename="venta-*.pdf"') {
     throw "A4 document disposition did not contain a venta-*.pdf filename."
 }
-$documentAfter = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || c.balance FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id JOIN customer.customers c ON c.id = o.customer_id WHERE o.id = '$($cancelConfirmation.orderId)'"
-Assert-Equal $documentBefore $documentAfter "A4 document generation changed order status or customer balance"
+$documentAfter = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || c.balance || '|' || (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId') || '|' || (SELECT count(*) FROM inventory.stock_movements) || '|' || (SELECT count(*) FROM payment.payments) || '|' || (SELECT coalesce(sum(amount), 0) FROM payment.payments) || '|' || (SELECT count(*) FROM customer.account_ledger) || '|' || (SELECT coalesce(sum(amount), 0) FROM customer.account_ledger) FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id JOIN customer.customers c ON c.id = o.customer_id WHERE o.id = '$($cancelConfirmation.orderId)'"
+Assert-Equal $documentBefore $documentAfter "A4 document generation changed order, inventory, payment, ledger, or balance state"
 
 Write-Host "SMOKE PASS: confirmation rollback/idempotency, retryable FAILED attempts, DELIVERED invariants, cancellation stock/ledger reversal, terminal retries, restart persistence, and persistent-volume safety verified."

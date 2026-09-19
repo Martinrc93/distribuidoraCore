@@ -244,9 +244,10 @@ Criterios V7:
 
 ## Fase 6: Documents y Notifications
 
-Aplicado parcialmente:
+Aplicado:
 
-- Generación y descarga de documentos A4 bajo demanda desde una venta existente.
+- Generación de documentos A4 bajo demanda desde una venta existente.
+- Descarga e impresión A4 desde la API.
 - La generación usa snapshots persistidos, es de solo lectura y no almacena
   archivos PDF.
 - El endpoint requiere `ORDER_CREATE` o `ADMIN_ALL` y admite ventas
@@ -255,8 +256,8 @@ Aplicado parcialmente:
 Pendiente explícitamente:
 
 - Tickets y otros formatos de comprobante.
-- Descarga e impresión desde la interfaz de usuario.
 - Envío explícito por WhatsApp mediante link o proveedor configurable.
+- Envío por email.
 - Outbox para efectos secundarios sin ocultar invariantes transaccionales.
 
 Criterios:
