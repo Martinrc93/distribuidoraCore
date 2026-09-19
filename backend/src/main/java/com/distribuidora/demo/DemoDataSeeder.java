@@ -58,9 +58,9 @@ public class DemoDataSeeder implements ApplicationRunner {
         }
 
         String hash = passwordEncoder.encode(password);
-        List<SeedUser> admins = insertUsers(hash, "admin", 2);
+        insertUsers(hash, "admin", 2);
         List<SeedUser> sellers = insertUsers(hash, "vendedor", 3);
-        seedRoles(admins, sellers);
+        repairSeedRoles();
         List<UUID> sellerProfiles = insertSellerProfiles(sellers);
         List<UUID> products = insertProducts();
         ensureProductPrices();
@@ -102,34 +102,17 @@ public class DemoDataSeeder implements ApplicationRunner {
         return users;
     }
 
-    private void seedRoles(List<SeedUser> admins, List<SeedUser> sellers) {
-        UUID adminRole = UUID.randomUUID();
-        UUID sellerRole = UUID.randomUUID();
-        jdbc.update("insert into identity.roles(id, code, description) values (?, 'ADMIN', 'Administrador')", adminRole);
-        jdbc.update("insert into identity.roles(id, code, description) values (?, 'SELLER', 'Vendedor')", sellerRole);
-        UUID all = UUID.randomUUID();
-        UUID orders = UUID.randomUUID();
-        UUID stock = UUID.randomUUID();
-        jdbc.update("insert into identity.permissions(id, code, description) values (?, 'ADMIN_ALL', 'Acceso administrativo completo')", all);
-        jdbc.update("insert into identity.permissions(id, code, description) values (?, 'ORDER_CREATE', 'Crear pedidos')", orders);
-        jdbc.update("insert into identity.permissions(id, code, description) values (?, 'STOCK_ADJUST', 'Ajustar stock')", stock);
-        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?)", adminRole, all);
-        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?)", adminRole, orders);
-        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?)", adminRole, stock);
-        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?)", sellerRole, orders);
-        admins.forEach(user -> jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", user.id(), adminRole));
-        sellers.forEach(user -> jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", user.id(), sellerRole));
-    }
-
     private void repairSeedRoles() {
         UUID adminRole = jdbc.queryForObject("select id from identity.roles where code = 'ADMIN'", UUID.class);
         UUID sellerRole = jdbc.queryForObject("select id from identity.roles where code = 'SELLER'", UUID.class);
+        UUID adminAll = jdbc.queryForObject("select id from identity.permissions where code = 'ADMIN_ALL'", UUID.class);
+        UUID userManage = jdbc.queryForObject("select id from identity.permissions where code = 'USER_MANAGE'", UUID.class);
         UUID orderCreate = jdbc.queryForObject("select id from identity.permissions where code = 'ORDER_CREATE'", UUID.class);
-        jdbc.update("insert into identity.permissions(id, code, description) values (?, 'STOCK_ADJUST', 'Ajustar stock') on conflict (code) do nothing",
-            UUID.randomUUID());
-        UUID stockAdjust = jdbc.queryForObject("select id from identity.permissions where code = 'STOCK_ADJUST'", UUID.class);
-        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", adminRole, orderCreate);
-        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", adminRole, stockAdjust);
+        UUID saleDeliver = jdbc.queryForObject("select id from identity.permissions where code = 'SALE_DELIVER'", UUID.class);
+        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", adminRole, adminAll);
+        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", adminRole, userManage);
+        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", sellerRole, orderCreate);
+        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", sellerRole, saleDeliver);
         jdbc.update("insert into identity.user_roles(user_id, role_id) select id, ? from identity.users where email like 'admin%@distribuidora.local' on conflict do nothing", adminRole);
         jdbc.update("insert into identity.user_roles(user_id, role_id) select id, ? from identity.users where email like 'vendedor%@distribuidora.local' on conflict do nothing", sellerRole);
     }

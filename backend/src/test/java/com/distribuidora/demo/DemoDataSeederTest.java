@@ -39,6 +39,32 @@ class DemoDataSeederTest {
     }
 
     @Test
+    void repairsCanonicalRoleAssignmentsWithoutCreatingDefinitions() {
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(true);
+        when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        ArgumentCaptor<String> querySql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc, atLeastOnce()).queryForObject(querySql.capture(), eq(UUID.class));
+        assertThat(querySql.getAllValues())
+            .anyMatch(value -> value.contains("code = 'ADMIN'"))
+            .anyMatch(value -> value.contains("code = 'SELLER'"))
+            .anyMatch(value -> value.contains("code = 'ADMIN_ALL'"))
+            .anyMatch(value -> value.contains("code = 'USER_MANAGE'"))
+            .anyMatch(value -> value.contains("code = 'ORDER_CREATE'"))
+            .anyMatch(value -> value.contains("code = 'SALE_DELIVER'"));
+
+        ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc, atLeastOnce()).update(updateSql.capture(), any(Object[].class));
+        assertThat(updateSql.getAllValues())
+            .noneMatch(value -> value.contains("identity.roles") || value.contains("identity.permissions"))
+            .filteredOn(value -> value.contains("identity.role_permissions"))
+            .hasSize(4)
+            .allMatch(value -> value.contains("on conflict do nothing"));
+    }
+
+    @Test
     void repairsMissingSeedDebitAndReconcilesSeededCustomerBalance() {
         UUID saleId = UUID.randomUUID();
         UUID customerId = UUID.randomUUID();
