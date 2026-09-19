@@ -26,6 +26,12 @@ No incluye:
 - Nuevo pedido y confirmación comercial.
 - React Hook Form, Zod o una reescritura general del shell.
 
+La asignación de vendedor requiere una proyección de lectura administrativa
+`GET /api/sellers?page=0&size=100`, porque el backend actual no expone todavía
+un listado de perfiles seller. La asignación de lista usa el endpoint existente
+`GET /api/pricing/lists` y se persiste con el endpoint separado
+`PATCH /api/customers/{id}/price-list`.
+
 ## Arquitectura
 
 Se mantienen las rutas y el `AppShell` existentes. `CustomersPage` y
@@ -45,8 +51,10 @@ El frontend decodificará únicamente los claims no sensibles del JWT para
 obtener sus authorities. No se usará ese valor para autorizar requests: cada
 acción seguirá dependiendo del backend y manejará `403` como error visible.
 
-- `ADMIN_ALL`: puede editar, desactivar y reactivar clientes/productos.
-- `CUSTOMER_WRITE`: puede crear clientes cuando el backend lo permita.
+- `ADMIN_ALL`: puede crear, editar, asignar, desactivar y reactivar
+  clientes/productos.
+- El backend actual no permite commands de clientes/productos a vendedores;
+  el frontend no mostrará esas acciones para un vendedor.
 - Un vendedor no verá acciones administrativas que no tenga permitidas.
 
 Si no existe un claim legible o el token es inválido, se ocultan acciones
