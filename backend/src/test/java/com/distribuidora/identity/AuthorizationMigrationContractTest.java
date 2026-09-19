@@ -28,8 +28,9 @@ class AuthorizationMigrationContractTest {
                 .contains("'USER_MANAGE'")
                 .contains("'ORDER_CREATE'")
                 .contains("'SALE_DELIVER'")
+                .contains("'STOCK_ADJUST'")
                 .contains("INSERT INTO IDENTITY.ROLE_PERMISSIONS (ROLE_ID, PERMISSION_ID)")
-                .contains("WHERE R.CODE = 'ADMIN' AND P.CODE IN ('ADMIN_ALL', 'USER_MANAGE')")
+                .contains("WHERE R.CODE = 'ADMIN' AND P.CODE IN ('ADMIN_ALL', 'USER_MANAGE', 'STOCK_ADJUST')")
                 .contains("WHERE R.CODE = 'SELLER' AND P.CODE IN ('ORDER_CREATE', 'SALE_DELIVER')")
                 .contains("ON CONFLICT (ROLE_ID, PERMISSION_ID) DO NOTHING");
     }

@@ -107,10 +107,12 @@ public class DemoDataSeeder implements ApplicationRunner {
         UUID sellerRole = jdbc.queryForObject("select id from identity.roles where code = 'SELLER'", UUID.class);
         UUID adminAll = jdbc.queryForObject("select id from identity.permissions where code = 'ADMIN_ALL'", UUID.class);
         UUID userManage = jdbc.queryForObject("select id from identity.permissions where code = 'USER_MANAGE'", UUID.class);
+        UUID stockAdjust = jdbc.queryForObject("select id from identity.permissions where code = 'STOCK_ADJUST'", UUID.class);
         UUID orderCreate = jdbc.queryForObject("select id from identity.permissions where code = 'ORDER_CREATE'", UUID.class);
         UUID saleDeliver = jdbc.queryForObject("select id from identity.permissions where code = 'SALE_DELIVER'", UUID.class);
         jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", adminRole, adminAll);
         jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", adminRole, userManage);
+        jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", adminRole, stockAdjust);
         jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", sellerRole, orderCreate);
         jdbc.update("insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing", sellerRole, saleDeliver);
         jdbc.update("insert into identity.user_roles(user_id, role_id) select id, ? from identity.users where email like 'admin%@distribuidora.local' on conflict do nothing", adminRole);

@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.atLeastOnce;
@@ -40,8 +41,25 @@ class DemoDataSeederTest {
 
     @Test
     void repairsCanonicalRoleAssignmentsWithoutCreatingDefinitions() {
+        UUID adminRole = UUID.randomUUID();
+        UUID sellerRole = UUID.randomUUID();
+        UUID adminAll = UUID.randomUUID();
+        UUID userManage = UUID.randomUUID();
+        UUID stockAdjust = UUID.randomUUID();
+        UUID orderCreate = UUID.randomUUID();
+        UUID saleDeliver = UUID.randomUUID();
         when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(true);
-        when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
+        when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0);
+            if (sql.contains("code = 'ADMIN'")) return adminRole;
+            if (sql.contains("code = 'SELLER'")) return sellerRole;
+            if (sql.contains("code = 'ADMIN_ALL'")) return adminAll;
+            if (sql.contains("code = 'USER_MANAGE'")) return userManage;
+            if (sql.contains("code = 'STOCK_ADJUST'")) return stockAdjust;
+            if (sql.contains("code = 'ORDER_CREATE'")) return orderCreate;
+            if (sql.contains("code = 'SALE_DELIVER'")) return saleDeliver;
+            throw new AssertionError("Unexpected UUID query: " + sql);
+        });
 
         seeder.run(mock(ApplicationArguments.class));
 
@@ -52,6 +70,7 @@ class DemoDataSeederTest {
             .anyMatch(value -> value.contains("code = 'SELLER'"))
             .anyMatch(value -> value.contains("code = 'ADMIN_ALL'"))
             .anyMatch(value -> value.contains("code = 'USER_MANAGE'"))
+            .anyMatch(value -> value.contains("code = 'STOCK_ADJUST'"))
             .anyMatch(value -> value.contains("code = 'ORDER_CREATE'"))
             .anyMatch(value -> value.contains("code = 'SALE_DELIVER'"));
 
@@ -60,8 +79,15 @@ class DemoDataSeederTest {
         assertThat(updateSql.getAllValues())
             .noneMatch(value -> value.contains("identity.roles") || value.contains("identity.permissions"))
             .filteredOn(value -> value.contains("identity.role_permissions"))
-            .hasSize(4)
+            .hasSize(5)
             .allMatch(value -> value.contains("on conflict do nothing"));
+        String rolePermissionSql = "insert into identity.role_permissions(role_id, permission_id) values (?, ?) on conflict do nothing";
+        verify(jdbc).update(rolePermissionSql, adminRole, adminAll);
+        verify(jdbc).update(rolePermissionSql, adminRole, userManage);
+        verify(jdbc).update(rolePermissionSql, adminRole, stockAdjust);
+        verify(jdbc).update(rolePermissionSql, sellerRole, orderCreate);
+        verify(jdbc).update(rolePermissionSql, sellerRole, saleDeliver);
+        verify(jdbc, never()).update(rolePermissionSql, sellerRole, stockAdjust);
     }
 
     @Test
