@@ -13,6 +13,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.distribuidora.order.application.IdempotencyConflictException;
+import com.distribuidora.document.application.SaleDocumentConflictException;
+import com.distribuidora.document.application.SaleDocumentNotFoundException;
 
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -33,6 +35,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(IdempotencyConflictException.class)
     ResponseEntity<ProblemDetail> handleIdempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request) {
         return problem(HttpStatus.CONFLICT, "Conflict", "IDEMPOTENCY_CONFLICT", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(SaleDocumentNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleSaleDocumentNotFound(SaleDocumentNotFoundException exception, HttpServletRequest request) {
+        return problem(HttpStatus.NOT_FOUND, "Not found", "NOT_FOUND", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(SaleDocumentConflictException.class)
+    ResponseEntity<ProblemDetail> handleSaleDocumentConflict(SaleDocumentConflictException exception, HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, "Conflict", "CONFLICT", exception.getMessage(), request);
     }
 
     @ExceptionHandler(EmptyResultDataAccessException.class)
