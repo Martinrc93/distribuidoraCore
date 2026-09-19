@@ -19,6 +19,7 @@ services:
     build:
       context: ./backend
     environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-distribuidora}
       DB_USERNAME: ${POSTGRES_USER:-distribuidora}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-distribuidora}
