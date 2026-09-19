@@ -1,0 +1,10 @@
+# Created at 2026-09-18T23:40:16.823
+Boot Manifest-JAR contains absolute paths in classpath 'P:\dev\distribuidora\backend\target\test-classes'
+Hint: <argLine>-Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
+'other' has different root
+
+# Created at 2026-09-18T23:40:16.825
+Boot Manifest-JAR contains absolute paths in classpath 'P:\dev\distribuidora\backend\target\test-classes'
+Hint: <argLine>-Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
+'other' has different root
+
