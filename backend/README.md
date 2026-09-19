@@ -324,6 +324,26 @@ Errores V7:
 - `409 CONFLICT`: estado no modificable, venta pagada o reintento de una
   operación terminal.
 
+## Documentos A4 de venta
+
+El comprobante A4 se genera bajo demanda a partir de los snapshots persistidos
+de la venta. La generación es estrictamente de lectura: no crea movimientos de
+inventario, pagos ni asientos de cuenta corriente, y no modifica saldos,
+estados ni otros datos. No se almacenan archivos PDF.
+
+El endpoint requiere un JWT con `ORDER_CREATE` o `ADMIN_ALL`:
+
+```text
+GET /api/orders/{orderId}/documents/a4
+```
+
+La respuesta exitosa es `200 OK` con `Content-Type: application/pdf`,
+`Content-Length` y `Content-Disposition: attachment; filename="venta-<number>.pdf"`.
+Se admiten ventas en estado `CONFIRMED`, `DELIVERED` o `CANCELLED`. La ausencia
+del pedido responde `404 NOT_FOUND`; un pedido sin venta responde `409 CONFLICT`.
+Las solicitudes sin autenticación responden `401` y sin uno de los permisos
+requeridos, `403 FORBIDDEN`.
+
 ### Smoke reproducible con PostgreSQL de Compose
 
 Con Docker disponible, ejecutar desde la raíz sin borrar el volumen persistente:
