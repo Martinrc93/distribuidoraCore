@@ -7,9 +7,8 @@ import org.openpdf.text.pdf.PdfPTable;
 import org.openpdf.text.pdf.PdfWriter;
 
 import java.io.ByteArrayOutputStream;
-import java.text.NumberFormat;
+import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
-import java.util.Locale;
 
 public class OpenPdfA4Renderer {
 
@@ -17,8 +16,10 @@ public class OpenPdfA4Renderer {
 
     public byte[] render(SaleDocumentModel model) {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        Document document = new Document(PageSize.A4);
+        Document document = null;
+        RuntimeException failure = null;
         try {
+            document = createDocument();
             PdfWriter.getInstance(document, output);
             document.open();
 
@@ -27,10 +28,6 @@ public class OpenPdfA4Renderer {
             document.add(new Paragraph("Date: " + DATE_FORMAT.format(model.saleDate())));
             document.add(new Paragraph("Customer: " + model.customerName()));
             document.add(new Paragraph("Seller: " + model.sellerName()));
-
-            NumberFormat money = NumberFormat.getNumberInstance(Locale.ROOT);
-            money.setMinimumFractionDigits(2);
-            money.setMaximumFractionDigits(2);
 
             PdfPTable lines = new PdfPTable(5);
             lines.setWidthPercentage(100);
@@ -42,20 +39,41 @@ public class OpenPdfA4Renderer {
             for (SaleDocumentModel.Line line : model.lines()) {
                 lines.addCell(line.description());
                 lines.addCell(line.quantity().toPlainString());
-                lines.addCell(money.format(line.unitPrice()));
-                lines.addCell(money.format(line.discount()));
-                lines.addCell(money.format(line.subtotal()));
+                lines.addCell(decimal(line.unitPrice()));
+                lines.addCell(decimal(line.discount()));
+                lines.addCell(decimal(line.subtotal()));
             }
             document.add(lines);
 
-            document.add(new Paragraph("Total: " + money.format(model.total())));
-            document.add(new Paragraph("Paid: " + money.format(model.paid())));
-            document.add(new Paragraph("Pending: " + money.format(model.pendingBalance())));
+            document.add(new Paragraph("Total: " + decimal(model.total())));
+            document.add(new Paragraph("Paid: " + decimal(model.paid())));
+            document.add(new Paragraph("Pending: " + decimal(model.pendingBalance())));
         } catch (RuntimeException exception) {
-            throw new IllegalStateException("Unable to render sale document", exception);
+            failure = exception;
         } finally {
-            document.close();
+            if (document != null) {
+                try {
+                    document.close();
+                } catch (RuntimeException closeFailure) {
+                    if (failure == null) {
+                        failure = closeFailure;
+                    } else {
+                        failure.addSuppressed(closeFailure);
+                    }
+                }
+            }
+        }
+        if (failure != null) {
+            throw new IllegalStateException("Unable to render sale document", failure);
         }
         return output.toByteArray();
+    }
+
+    protected Document createDocument() {
+        return new Document(PageSize.A4);
+    }
+
+    private String decimal(BigDecimal value) {
+        return value.toPlainString();
     }
 }
