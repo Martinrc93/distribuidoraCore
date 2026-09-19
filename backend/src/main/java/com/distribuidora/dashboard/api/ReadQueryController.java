@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.Map;
 import java.util.UUID;
@@ -21,6 +22,7 @@ public class ReadQueryController {
     }
 
     @GetMapping("/dashboard")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public Map<String, Object> dashboard() { return queries.dashboard(); }
 
     @GetMapping("/customers")
@@ -30,9 +32,11 @@ public class ReadQueryController {
     public PageResponse<Map<String, Object>> products(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.products(page, size, search); }
 
     @GetMapping("/inventory")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public PageResponse<Map<String, Object>> inventory(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.inventory(page, size, search); }
 
     @GetMapping("/inventory/{productId}/movements")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public PageResponse<Map<String, Object>> movements(@PathVariable UUID productId, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) { return queries.movements(productId, page, size); }
 
     @GetMapping("/orders")
@@ -51,5 +55,6 @@ public class ReadQueryController {
     public PageResponse<Map<String, Object>> payments(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.payments(page, size, search); }
 
     @GetMapping("/users")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public PageResponse<Map<String, Object>> users(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.users(page, size, search); }
 }

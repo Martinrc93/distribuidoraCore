@@ -44,13 +44,13 @@ management:
 
 app:
   security:
-    jwt-secret: ${JWT_SECRET:local-development-secret-change-me-please-32chars}
+    jwt-secret: ${JWT_SECRET:}
     jwt-issuer: ${JWT_ISSUER:distribuidora-local}
     access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:15}
     bootstrap-admin-email: ${ADMIN_EMAIL:}
     bootstrap-admin-password: ${ADMIN_PASSWORD:}
   seed-demo: ${SEED_DEMO:false}
-  demo-password: ${DEMO_PASSWORD:ChangeMe123!}
+  demo-password: ${DEMO_PASSWORD:}
 
 info:
   app:

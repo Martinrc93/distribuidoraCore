@@ -19,7 +19,7 @@ public class OrderConfirmationController {
     }
 
     @PostMapping("/confirm")
-    @PreAuthorize("hasAuthority('ORDER_CREATE')")
+    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
     public ResponseEntity<OrderConfirmationDtos.ConfirmationResponse> confirm(
         @Valid @RequestBody OrderConfirmationDtos.ConfirmationRequest request) {
         return ResponseEntity.status(201).body(service.confirm(request));

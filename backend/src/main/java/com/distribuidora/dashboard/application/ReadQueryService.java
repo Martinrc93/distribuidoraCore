@@ -1,8 +1,10 @@
 package com.distribuidora.dashboard.application;
 
 import com.distribuidora.shared.web.PageResponse;
+import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.Map;
@@ -11,9 +13,16 @@ import java.util.UUID;
 @Service
 public class ReadQueryService {
     private final JdbcTemplate jdbc;
+    private final CurrentUserAccess currentUser;
 
     public ReadQueryService(JdbcTemplate jdbc) {
+        this(jdbc, null);
+    }
+
+    @Autowired
+    public ReadQueryService(JdbcTemplate jdbc, CurrentUserAccess currentUser) {
         this.jdbc = jdbc;
+        this.currentUser = currentUser;
     }
 
     public Map<String, Object> dashboard() {
@@ -36,6 +45,17 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> customers(int page, int size, String search) {
         String term = like(search);
+        if (sellerScoped()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            return page("""
+                select c.id, c.business_name as name, c.tax_id as "taxId",
+                       coalesce(sp.display_name, 'Sin asignar') as seller, c.balance, c.status
+                from customer.customers c left join seller.seller_profiles sp on sp.id = c.seller_id
+                where c.seller_id = ? and (lower(c.business_name) like ? or lower(c.tax_id) like ?)
+                order by c.business_name
+                """, "select count(*) from customer.customers where seller_id = ? and (lower(business_name) like ? or lower(tax_id) like ?)",
+                page, size, sellerId, term, term);
+        }
         return page("""
             select c.id, c.business_name as name, c.tax_id as "taxId",
                    coalesce(sp.display_name, 'Sin asignar') as seller,
@@ -50,6 +70,15 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search) {
         String term = like(search);
+        if (sellerScoped()) {
+            return page("""
+                select p.id, p.name, p.category, p.presentation, p.price,
+                       coalesce(ib.quantity, 0) as stock, p.status
+                from catalog.products p left join inventory.inventory_balances ib on ib.product_id = p.id
+                where lower(p.name) like ? or lower(p.sku) like ? order by p.name
+                """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
+                page, size, term, term);
+        }
         return page("""
             select p.id, p.name, p.category, p.presentation, p.cost, p.price,
                    coalesce(ib.quantity, 0) as stock, p.status
@@ -91,6 +120,22 @@ public class ReadQueryService {
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status) {
         String term = like(search);
         String state = status == null || status.isBlank() ? "%" : status;
+        if (sellerScoped()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            return page("""
+                select o.id, o.order_number as number, c.business_name as customer,
+                       coalesce(sp.display_name, 'Sin asignar') as seller, o.total, o.status, o.created_at as date
+                from orders.orders o join customer.customers c on c.id = o.customer_id
+                left join seller.seller_profiles sp on sp.id = o.seller_id
+                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
+                  and (lower(c.business_name) like ? or lower(o.order_number) like ?) and o.status like ?
+                order by o.created_at desc
+                """, """
+                select count(*) from orders.orders o join customer.customers c on c.id = o.customer_id
+                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
+                  and (lower(c.business_name) like ? or lower(o.order_number) like ?) and o.status like ?
+                """, page, size, sellerId, sellerId, term, term, state);
+        }
         return page("""
             select o.id, o.order_number as number, c.business_name as customer,
                    coalesce(sp.display_name, 'Sin asignar') as seller,
@@ -108,6 +153,7 @@ public class ReadQueryService {
     }
 
     public Map<String, Object> orderDetail(UUID orderId) {
+        if (sellerScoped()) currentUser.requireOrderAccess(orderId);
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
                    c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
@@ -126,8 +172,9 @@ public class ReadQueryService {
                    c.balance as "customerBalance", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
-            where o.order_number = ?
-            """, orderNumber);
+             where o.order_number = ?
+             """, orderNumber);
+        if (sellerScoped()) currentUser.requireOrderAccess((UUID) order.get("id"));
         return detail(order, (UUID) order.get("id"));
     }
 
@@ -166,6 +213,22 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> sales(int page, int size, String search) {
         String term = like(search);
+        if (sellerScoped()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            return page("""
+                select s.id, s.sale_number as number, c.business_name as customer, s.total, s.paid,
+                       (s.total - s.paid) as balance, s.status, s.created_at as date
+                from sale.sales s join orders.orders o on o.id = s.order_id
+                join customer.customers c on c.id = s.customer_id
+                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
+                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?) order by s.created_at desc
+                """, """
+                select count(*) from sale.sales s join orders.orders o on o.id = s.order_id
+                join customer.customers c on c.id = s.customer_id
+                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
+                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?)
+                """, page, size, sellerId, sellerId, term, term);
+        }
         return page("""
             select s.id, s.sale_number as number, c.business_name as customer,
                    s.total, s.paid, (s.total - s.paid) as balance,
@@ -179,6 +242,21 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> payments(int page, int size, String search) {
         String term = like(search);
+        if (sellerScoped()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            return page("""
+                select p.id, c.business_name as customer, s.sale_number as sale, p.amount, p.method, p.created_at as date
+                from payment.payments p join customer.customers c on c.id = p.customer_id
+                join sale.sales s on s.id = p.sale_id join orders.orders o on o.id = s.order_id
+                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
+                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?) order by p.created_at desc
+                """, """
+                select count(*) from payment.payments p join customer.customers c on c.id = p.customer_id
+                join sale.sales s on s.id = p.sale_id join orders.orders o on o.id = s.order_id
+                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
+                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?)
+                """, page, size, sellerId, sellerId, term, term);
+        }
         return page("""
             select p.id, c.business_name as customer, s.sale_number as sale,
                    p.amount, p.method, p.created_at as date
@@ -221,5 +299,9 @@ public class ReadQueryService {
     private Number number(String sql) {
         Number value = jdbc.queryForObject(sql, Number.class);
         return value == null ? 0 : value;
+    }
+
+    private boolean sellerScoped() {
+        return currentUser != null && !currentUser.isAdmin();
     }
 }

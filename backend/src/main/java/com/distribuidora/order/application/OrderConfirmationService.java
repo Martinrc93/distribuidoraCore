@@ -4,7 +4,9 @@ import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.order.api.OrderConfirmationDtos;
 import com.distribuidora.pricing.application.PricingQueryService;
+import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -35,15 +37,25 @@ public class OrderConfirmationService {
     private final OrderCalculationService calculation;
     private final InventoryMovementService inventory;
     private final AuditService audit;
+    private final CurrentUserAccess currentUser;
 
+    @Autowired
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
                                     OrderCalculationService calculation,
                                     InventoryMovementService inventory, AuditService audit) {
+        this(jdbc, pricing, calculation, inventory, audit, null);
+    }
+
+    public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
+                                    OrderCalculationService calculation,
+                                    InventoryMovementService inventory, AuditService audit,
+                                    CurrentUserAccess currentUser) {
         this.jdbc = jdbc;
         this.pricing = pricing;
         this.calculation = calculation;
         this.inventory = inventory;
         this.audit = audit;
+        this.currentUser = currentUser;
     }
 
     @Transactional
@@ -58,8 +70,11 @@ public class OrderConfirmationService {
         }
 
         UUID customerId = request.customerId();
+        if (currentUser != null) currentUser.requireCustomerAccess(customerId);
         Map<String, Object> customer = jdbc.queryForMap(
-            "select id, status from customer.customers where id = ?", customerId);
+            currentUser == null
+                ? "select id, status from customer.customers where id = ?"
+                : "select id, status, seller_id from customer.customers where id = ?", customerId);
         if (!"ACTIVE".equals(customer.get("status"))) {
             throw new IllegalStateException("El cliente no está activo");
         }
@@ -72,6 +87,7 @@ public class OrderConfirmationService {
 
         UUID orderId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
+            UUID sellerId = resolveSellerId(customer);
             resolved.stream().map(ResolvedLine::productId).distinct().sorted(Comparator.comparing(UUID::toString))
                 .forEach(productId -> {
                     BigDecimal quantity = resolved.stream().filter(line -> line.productId().equals(productId))
@@ -82,10 +98,17 @@ public class OrderConfirmationService {
             Timestamp now = Timestamp.from(Instant.now());
             String orderNumber = number("ORD");
             String saleNumber = number("SAL");
-            jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint) values (?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?)",
-                orderId, orderNumber, customerId, calculated.subtotal(),
-                calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
-                request.idempotencyKey(), fingerprint);
+            if (currentUser == null) {
+                jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint) values (?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?)",
+                    orderId, orderNumber, customerId, calculated.subtotal(),
+                    calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
+                    request.idempotencyKey(), fingerprint);
+            } else {
+                jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?)",
+                    orderId, orderNumber, customerId, sellerId, calculated.subtotal(),
+                    calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
+                    request.idempotencyKey(), fingerprint);
+            }
             insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
             BigDecimal monetaryPaid = monetaryPaid(request.payments());
@@ -112,6 +135,15 @@ public class OrderConfirmationService {
                 Map.of("saleId", saleId.toString(), "total", calculated.total(), "paid", responsePaid,
                     "balance", response.balance()));
         return response;
+    }
+
+    private UUID resolveSellerId(Map<String, Object> customer) {
+        if (currentUser == null || currentUser.isAdmin()) return uuidOrNull(customer.get("seller_id"));
+        return currentUser.requireSellerProfile();
+    }
+
+    private UUID uuidOrNull(Object value) {
+        return value == null ? null : value instanceof UUID uuid ? uuid : UUID.fromString(String.valueOf(value));
     }
 
     private List<ResolvedLine> resolveLines(OrderConfirmationDtos.ConfirmationRequest request) {

@@ -3,11 +3,13 @@ package com.distribuidora.order.application;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.order.api.DeliveryLifecycleDtos;
+import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -25,16 +27,25 @@ public class DeliveryLifecycleService {
     private final JdbcTemplate jdbc;
     private final InventoryMovementService inventory;
     private final AuditService audit;
+    private final CurrentUserAccess currentUser;
 
     public DeliveryLifecycleService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit) {
+        this(jdbc, inventory, audit, null);
+    }
+
+    @Autowired
+    public DeliveryLifecycleService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit,
+                                    CurrentUserAccess currentUser) {
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.audit = audit;
+        this.currentUser = currentUser;
     }
 
     @Transactional
     public void recordAttempt(UUID orderId, DeliveryLifecycleDtos.DeliveryAttemptRequest request) {
         validateAttempt(orderId, request);
+        if (currentUser != null) currentUser.requireOrderAccess(orderId);
         Map<String, Object> lifecycle = lockOrderAndSale(orderId);
         requireConfirmed(lifecycle);
 
@@ -60,6 +71,9 @@ public class DeliveryLifecycleService {
 
     @Transactional
     public void cancel(UUID orderId) {
+        if (currentUser != null && !currentUser.isAdmin()) {
+            throw new org.springframework.security.access.AccessDeniedException("Solo ADMIN_ALL puede cancelar ventas");
+        }
         Map<String, Object> lifecycle = lockOrderAndSale(orderId);
         requireConfirmed(lifecycle);
         BigDecimal paid = decimal(lifecycle.get("paid"));

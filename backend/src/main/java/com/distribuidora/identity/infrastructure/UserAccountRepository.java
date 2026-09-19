@@ -20,4 +20,11 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
         order by p.code
         """, nativeQuery = true)
     List<String> findAuthorityCodes(UUID userId);
+
+    @Query(value = "select id from identity.roles where code = ?1", nativeQuery = true)
+    UUID findRoleId(String code);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(value = "insert into identity.user_roles(user_id, role_id) values (?1, ?2) on conflict do nothing", nativeQuery = true)
+    void assignRole(UUID userId, UUID roleId);
 }

@@ -6,6 +6,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.distribuidora.shared.security.CurrentUserAccess;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -17,13 +19,21 @@ import java.util.UUID;
 @Service
 public class SaleDocumentService {
     private final JdbcTemplate jdbc;
+    private final CurrentUserAccess currentUser;
 
     public SaleDocumentService(JdbcTemplate jdbc) {
+        this(jdbc, null);
+    }
+
+    @Autowired
+    public SaleDocumentService(JdbcTemplate jdbc, CurrentUserAccess currentUser) {
         this.jdbc = jdbc;
+        this.currentUser = currentUser;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SaleDocumentModel load(UUID orderId) {
+        if (currentUser != null) currentUser.requireOrderAccess(orderId);
         Map<String, Object> header;
         try {
             header = jdbc.queryForMap("""

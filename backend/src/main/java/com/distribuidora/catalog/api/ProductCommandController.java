@@ -19,11 +19,13 @@ public class ProductCommandController {
     public ProductCommandController(ProductCommandService service) { this.service = service; }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<IdResponse> create(@Valid @RequestBody ProductPayload body) {
         return ResponseEntity.status(201).body(new IdResponse(service.create(body.input())));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<Void> update(@PathVariable UUID id, @Valid @RequestBody ProductPayload body) {
         service.update(id, body.input()); return ResponseEntity.noContent().build();
     }

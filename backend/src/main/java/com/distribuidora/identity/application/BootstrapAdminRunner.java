@@ -10,6 +10,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Component
 @Profile("!test")
 public class BootstrapAdminRunner implements ApplicationRunner {
@@ -33,9 +35,12 @@ public class BootstrapAdminRunner implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (email.isBlank() || password.isBlank() || users.findByEmailIgnoreCase(email).isPresent()) {
+        if (email.isBlank() || password.isBlank()) {
             return;
         }
-        users.save(new UserAccount(email, passwordEncoder.encode(password)));
+        UserAccount user = users.findByEmailIgnoreCase(email)
+            .orElseGet(() -> users.save(new UserAccount(email, passwordEncoder.encode(password))));
+        UUID roleId = users.findRoleId("ADMIN");
+        users.assignRole(user.getId(), roleId);
     }
 }
