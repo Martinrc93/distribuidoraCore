@@ -88,8 +88,9 @@ Estado actualizado: 2026-09-19
 
 - [ ] Crear outbox transaccional para eventos comerciales.
 - [ ] Worker de outbox con reintentos e idempotencia.
-- [ ] Generar PDF bajo demanda.
-- [ ] Descargar e imprimir A4 y tickets.
+- [x] Generar PDF bajo demanda para documentos A4.
+- [x] Descargar e imprimir documentos A4.
+- [ ] Descargar e imprimir tickets.
 - [ ] Link/proveedor configurable de WhatsApp.
 - [ ] Auditoría de solicitudes y reintentos de notificación.
 

@@ -9,20 +9,30 @@ import com.distribuidora.document.rendering.SaleDocumentModel;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import com.distribuidora.shared.security.JwtAuthenticationFilter;
 import com.distribuidora.shared.security.JwtService;
-import com.distribuidora.shared.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -32,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = DocumentController.class)
-@Import({DocumentController.class, SecurityConfig.class, ApiExceptionHandler.class, JwtAuthenticationFilter.class})
+@Import({DocumentController.class, DocumentControllerTest.TestSecurityConfiguration.class, ApiExceptionHandler.class, JwtAuthenticationFilter.class})
 class DocumentControllerTest {
     @Autowired
     private MockMvc mockMvc;
@@ -45,6 +55,24 @@ class DocumentControllerTest {
 
     @MockBean
     private JwtService jwtService;
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class TestSecurityConfiguration {
+        @Bean
+        SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter)
+            throws Exception {
+            http
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exception -> exception.authenticationEntryPoint(
+                    new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+            return http.build();
+        }
+    }
 
     @Test
     void sellerCanDownloadPdfWithExactHeadersAndSanitizedFilename() throws Exception {
@@ -87,6 +115,12 @@ class DocumentControllerTest {
     }
 
     @Test
+    void unauthenticatedUserIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", UUID.randomUUID()))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void missingOrderIsNotFound() throws Exception {
         UUID orderId = UUID.randomUUID();
         when(service.load(orderId)).thenThrow(new SaleDocumentNotFoundException(orderId));
@@ -104,6 +138,18 @@ class DocumentControllerTest {
         mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
                 .with(user("seller").authorities(() -> "ORDER_CREATE")))
             .andExpect(status().isConflict());
+    }
+
+    @Test
+    void rendererFailureIsInternalServerError() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        SaleDocumentModel model = model("V-3");
+        when(service.load(orderId)).thenReturn(model);
+        doThrow(new RuntimeException("renderer failed")).when(renderer).render(model);
+
+        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
+                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+            .andExpect(status().isInternalServerError());
     }
 
     @Test
