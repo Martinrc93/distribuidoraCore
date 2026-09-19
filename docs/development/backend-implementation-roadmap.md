@@ -173,8 +173,6 @@ Implementado:
 
 Pendiente explícitamente:
 
-- Estados `DELIVERED` y `CANCELLED`.
-- Cancelación, edición y reversión de stock.
 - Validaciones de permisos de vendedor específicas del pedido.
 
 Criterios:
@@ -182,6 +180,67 @@ Criterios:
 - No se persisten borradores.
 - Confirmar es atómico: si falla stock, precio o pago, no se guarda la venta.
 - Reintentar con la misma clave y payload no duplica filas y devuelve la respuesta original.
+
+### V7: Delivery lifecycle y cancelación
+
+Aplicado mediante `V7__add_delivery_cancellation_support.sql`:
+
+- Estados de pedido y venta `CONFIRMED`, `DELIVERED` y `CANCELLED`, con
+  `delivered_at` y `cancelled_at`.
+- `orders.delivery_attempts` append-only, con número consecutivo, resultado
+  `DELIVERED` o `FAILED` y observación obligatoria para fallos.
+- Un intento `FAILED` conserva pedido y venta en `CONFIRMED` y permite otro
+  intento.
+- Un intento `DELIVERED` cambia pedido y venta juntos a `DELIVERED`; ambos son
+  terminales.
+- La cancelación solo opera desde `CONFIRMED`, solo la puede ejecutar un
+  administrador y rechaza ventas con importe pagado.
+- La cancelación revierte cada movimiento `SALE` con un movimiento
+  `SALE_CANCELLATION`, crea un `CREDIT` por la deuda pendiente y disminuye el
+  saldo del cliente en la misma transacción. Pedido y venta pasan a
+  `CANCELLED`.
+
+Contrato HTTP:
+
+```text
+POST /api/orders/{orderId}/delivery-attempts
+{ "result": "FAILED", "observation": "Dirección cerrada" }
+-> 204 No Content
+
+POST /api/orders/{orderId}/delivery-attempts
+{ "result": "DELIVERED", "observation": null }
+-> 204 No Content
+
+POST /api/orders/{orderId}/cancel
+-> 204 No Content
+```
+
+`delivery-attempts` requiere `ORDER_CREATE` o `ADMIN_ALL`; `cancel` requiere
+`ADMIN_ALL`. El request de intento valida `result` no vacío, limitado a 20
+caracteres, `observation` opcional de hasta 2000 caracteres y observación no
+blanca cuando `result` es `FAILED`.
+
+Errores del contrato:
+
+- `400 INVALID_REQUEST` para resultado inválido, observación fallida ausente,
+  JSON inválido o UUID inválido.
+- `401` sin JWT o con JWT inválido.
+- `403 FORBIDDEN` cuando faltan `ORDER_CREATE`/`ADMIN_ALL` para intentos o
+  `ADMIN_ALL` para cancelar.
+- `404 NOT_FOUND` para un pedido inexistente.
+- `409 CONFLICT` cuando el pedido o venta no están en `CONFIRMED`, cuando se
+  cancela una venta pagada o cuando se reintenta una operación terminal.
+
+Criterios V7:
+
+- Un `FAILED` persiste el intento y conserva ambos estados en `CONFIRMED`.
+- Un `DELIVERED` actualiza pedido y venta sin modificar stock, pagos ni ledger.
+- Cancelar revierte movimientos `SALE`, agrega `SALE_CANCELLATION`, registra el
+  `CREDIT` de cuenta corriente y devuelve el balance del cliente al valor previo.
+- Reintentar después de `DELIVERED` o `CANCELLED` es rechazado y no agrega
+  movimientos, intentos, créditos ni cambios de balance.
+- El smoke reproducible de PostgreSQL verifica estos invariantes sobre el
+  volumen persistente de Compose.
 
 ## Fase 6: Documents y Notifications
 

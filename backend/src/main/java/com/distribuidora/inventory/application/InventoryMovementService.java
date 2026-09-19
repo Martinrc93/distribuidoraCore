@@ -25,7 +25,7 @@ public class InventoryMovementService {
     @Transactional
     public void apply(UUID productId, BigDecimal delta, String movementType, UUID referenceId, String reason) {
         validate(productId, delta, movementType, reason);
-        if (!"MANUAL_ADJUSTMENT".equals(movementType)) {
+        if (!"SALE_CANCELLATION".equals(movementType)) {
             String status = jdbc.queryForObject(
                 "select status from catalog.products where id = ?", String.class, productId);
             if (!"ACTIVE".equals(status)) {

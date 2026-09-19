@@ -56,7 +56,7 @@ class InventoryCommandServiceTest {
         service.adjust(productId, new BigDecimal("-1.5"), "Corrección");
         service.adjust(productId, new BigDecimal("2.0"), "Reposición");
 
-        verify(jdbc, org.mockito.Mockito.times(2)).queryForObject(anyString(), eq(String.class), eq(productId));
+        verify(jdbc, org.mockito.Mockito.times(4)).queryForObject(anyString(), eq(String.class), eq(productId));
     }
 
     @Test

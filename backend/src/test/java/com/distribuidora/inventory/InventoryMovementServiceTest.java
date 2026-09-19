@@ -55,6 +55,20 @@ class InventoryMovementServiceTest {
     }
 
     @Test
+    void permitsHistoricalSaleCancellationForInactiveProductButRejectsNewMovements() {
+        UUID productId = UUID.randomUUID();
+        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("INACTIVE");
+        when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("-2.0"));
+
+        service.apply(productId, new BigDecimal("0.5"), "SALE_CANCELLATION", UUID.randomUUID(), "Cancelación histórica");
+
+        assertThatThrownBy(() -> service.apply(productId, new BigDecimal("-0.5"), "SALE", UUID.randomUUID(), "Venta nueva"))
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.apply(productId, new BigDecimal("0.5"), "MANUAL_ADJUSTMENT", null, "Ajuste actual"))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void rejectsUnsupportedTypesAndInvalidDeltasBeforeDatabaseAccess() {
         UUID productId = UUID.randomUUID();
 

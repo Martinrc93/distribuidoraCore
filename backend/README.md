@@ -269,6 +269,61 @@ no crea filas adicionales. Reutilizarlo con otro payload devuelve `409` con
 para reglas de negocio o pagos inválidos. Un fallo de stock o persistencia
 revierte pedido, venta, pagos, cuenta corriente y movimiento de stock.
 
+### V7: entrega y cancelación
+
+El ciclo de vida de pedido y venta usa `CONFIRMED`, `DELIVERED` y `CANCELLED`.
+La migración `V7__add_delivery_cancellation_support.sql` agrega timestamps y
+la tabla append-only `orders.delivery_attempts`.
+
+Registrar un intento requiere `ORDER_CREATE` o `ADMIN_ALL`:
+
+```text
+POST /api/orders/{orderId}/delivery-attempts
+```
+
+```json
+{ "result": "FAILED", "observation": "Dirección cerrada" }
+```
+
+`result` solo admite `FAILED` o `DELIVERED`, tiene un máximo de 20 caracteres y
+`observation` tiene un máximo de 2000. Los intentos `FAILED` requieren una
+observación no vacía y dejan pedido y venta en `CONFIRMED`, por lo que se puede
+volver a intentar. Un intento `DELIVERED` persiste el intento y actualiza pedido
+y venta juntos a `DELIVERED`; no cambia stock, pagos ni ledger.
+
+La respuesta exitosa de ambos intentos es `204 No Content`. Cancelar requiere
+`ADMIN_ALL`:
+
+```text
+POST /api/orders/{orderId}/cancel
+-> 204 No Content
+```
+
+La cancelación solo acepta un pedido y venta `CONFIRMED` y rechaza una venta
+con pagos (`409 CONFLICT`). En una única transacción:
+
+- Cada movimiento `SALE` se revierte con un movimiento positivo
+  `SALE_CANCELLATION`, usando el pedido como referencia canónica.
+- La deuda pendiente (`sale.total - sale.paid`) genera un `CREDIT` en
+  `customer.account_ledger` y reduce `customer.customers.balance` por el mismo
+  importe.
+- Pedido y venta pasan a `CANCELLED` y se registra `cancelled_at`.
+
+`DELIVERED` y `CANCELLED` son terminales. Los intentos o cancelaciones sobre
+estados terminales devuelven `409 CONFLICT` sin agregar movimientos, ledger ni
+cambios de balance.
+
+Errores V7:
+
+- `400 INVALID_REQUEST`: resultado inválido, observación de fallo ausente,
+  JSON malformado o UUID inválido.
+- `401 Unauthorized`: falta el JWT o no es válido.
+- `403 FORBIDDEN`: falta `ORDER_CREATE`/`ADMIN_ALL` para intentos o
+  `ADMIN_ALL` para cancelación.
+- `404 NOT_FOUND`: no existe el pedido solicitado.
+- `409 CONFLICT`: estado no modificable, venta pagada o reintento de una
+  operación terminal.
+
 ### Smoke reproducible con PostgreSQL de Compose
 
 Con Docker disponible, ejecutar desde la raíz sin borrar el volumen persistente:
@@ -277,16 +332,18 @@ Con Docker disponible, ejecutar desde la raíz sin borrar el volumen persistente
 powershell -ExecutionPolicy Bypass -File .\scripts\order-confirmation-smoke.ps1
 ```
 
-El script ejecuta `docker compose up -d --build db backend` (no ejecuta `down` ni
-elimina `postgres-data`), espera el backend saludable, obtiene un JWT de
-`admin1@distribuidora.local`, selecciona un cliente/producto demo y envía dos
-confirmaciones concurrentes con el mismo payload e idempotency key. Exige
-respuestas equivalentes (`orderId`, `saleId`, números y totales) y verifica con
-SQL que solo aumenten en uno `orders.orders`, `sale.sales`, ambas tablas de
-items, `inventory.stock_movements`, `payment.payments` y
-`customer.account_ledger`, además del saldo del cliente por el débito. También
-mantiene una prueba de rollback posterior a escritura y no elimina el volumen
-persistente `postgres-data`.
+El script ejecuta `docker compose up -d --build db backend frontend` y luego
+reinicia `backend` y `frontend` (no ejecuta `down` ni elimina `postgres-data`),
+espera el backend saludable, obtiene un JWT de
+`admin1@distribuidora.local` y selecciona un cliente/producto demo. Verifica la
+confirmación concurrente/idempotente y el rollback posterior a escritura.
+También crea órdenes aisladas para probar que dos intentos `FAILED` conservan
+`CONFIRMED`, que `DELIVERED` actualiza pedido y venta sin cambiar stock, pagos ni
+ledger, y que cancelar revierte movimientos `SALE`, agrega
+`SALE_CANCELLATION`, registra el `CREDIT` y devuelve el balance. Comprueba que
+los reintentos sobre `DELIVERED` o `CANCELLED` responden `409` sin efectos
+adicionales, y vuelve a consultar la orden cancelada después del reinicio para
+probar la persistencia. El volumen persistente `postgres-data` nunca se elimina.
 
 Si se cambiaron las credenciales de Compose, usar variables de entorno antes del
 comando: `$env:ADMIN_EMAIL`, `$env:ADMIN_PASSWORD`, `$env:POSTGRES_DB` y

@@ -22,8 +22,24 @@ function Assert-Equal($Expected, $Actual, [string]$Message) {
     }
 }
 
-Write-Host "Starting Compose PostgreSQL and backend without removing the persistent volume..."
-docker compose up -d --build db backend
+function Assert-HttpStatus([string]$Uri, [string]$Method, $Headers, [string]$Body, [int]$ExpectedStatus, [string]$Message) {
+    try {
+        $request = @{ Uri = $Uri; Method = $Method; Headers = $Headers }
+        if ($null -ne $Body) {
+            $request.ContentType = "application/json"
+            $request.Body = $Body
+        }
+        $response = Invoke-WebRequest @request -UseBasicParsing
+        $status = [int]$response.StatusCode
+    } catch {
+        if ($_.Exception.Response -eq $null) { throw }
+        $status = [int]$_.Exception.Response.StatusCode
+    }
+    Assert-Equal $ExpectedStatus $status $Message
+}
+
+Write-Host "Starting Compose PostgreSQL, backend, and frontend without removing the persistent volume..."
+docker compose up -d --build db backend frontend
 if ($LASTEXITCODE -ne 0) { throw "docker compose up failed." }
 
 $health = $null
@@ -50,7 +66,7 @@ SELECT c.id || '|' || p.id
 FROM customer.customers c
 CROSS JOIN catalog.products p
 JOIN inventory.inventory_balances b ON b.product_id = p.id
-WHERE c.status = 'ACTIVE' AND p.status = 'ACTIVE' AND b.quantity >= 1
+WHERE c.status = 'ACTIVE' AND p.status = 'ACTIVE' AND b.quantity >= 3
 ORDER BY c.id, p.id
 LIMIT 1
 "@
@@ -215,4 +231,169 @@ Assert-Equal ([int]$beforeParts[5] + 1) ([int]$createdParts[5]) "Concurrent conf
 Assert-Equal ([int]$beforeParts[6] + 1) ([int]$createdParts[6]) "Concurrent confirmations changed ledger count more than once"
 Assert-Equal ([decimal]$beforeParts[7] + $account) ([decimal]$createdParts[7]) "Customer balance did not increase by account amount"
 
-Write-Host "SMOKE PASS: pricing resolve, rollback, concurrent idempotent order, sale, items, SALE movement, payment, ledger, balance, and persistent-volume safety verified."
+$lifecycleTotal = [decimal]$total
+$lifecycleQuantity = 1.0
+
+$failedPayload = @{
+    idempotencyKey = "failed-$key"
+    customerId = $customerId
+    priceListId = $null
+    lines = @(@{ productId = $productId; quantity = $lifecycleQuantity; lineDiscountPercent = 0.0; unitPriceOverride = $null })
+    orderDiscountPercent = 0.0
+    payments = @(@{ method = "CASH"; amount = $lifecycleTotal })
+} | ConvertTo-Json -Depth 6
+$failedConfirmation = Invoke-RestMethod -Uri "$BaseUrl/api/orders/confirm" -Method Post -Headers $headers -ContentType "application/json" -Body $failedPayload
+$failedUri = "$BaseUrl/api/orders/$($failedConfirmation.orderId)/delivery-attempts"
+$failedBody = @{ result = "FAILED"; observation = "Smoke delivery failure" } | ConvertTo-Json
+Assert-HttpStatus $failedUri "Post" $headers $failedBody 204 "Recording the first FAILED attempt did not return 204"
+$failedState = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || da.result FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id JOIN orders.delivery_attempts da ON da.order_id = o.id WHERE o.id = '$($failedConfirmation.orderId)'"
+Assert-Equal "CONFIRMED|CONFIRMED|FAILED" $failedState "FAILED changed the order lifecycle"
+Assert-HttpStatus $failedUri "Post" $headers (@{ result = "FAILED"; observation = "Smoke delivery retry" } | ConvertTo-Json) 204 "Recording a second FAILED attempt did not return 204"
+$failedRetryState = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || count(da.id) FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id LEFT JOIN orders.delivery_attempts da ON da.order_id = o.id WHERE o.id = '$($failedConfirmation.orderId)' GROUP BY o.status, s.status"
+Assert-Equal "CONFIRMED|CONFIRMED|2" $failedRetryState "A FAILED delivery was not retryable"
+
+$deliveredPayload = @{
+    idempotencyKey = "delivered-$key"
+    customerId = $customerId
+    priceListId = $null
+    lines = @(@{ productId = $productId; quantity = $lifecycleQuantity; lineDiscountPercent = 0.0; unitPriceOverride = $null })
+    orderDiscountPercent = 0.0
+    payments = @(@{ method = "CASH"; amount = $lifecycleTotal })
+} | ConvertTo-Json -Depth 6
+$deliveredConfirmation = Invoke-RestMethod -Uri "$BaseUrl/api/orders/confirm" -Method Post -Headers $headers -ContentType "application/json" -Body $deliveredPayload
+$deliveredUri = "$BaseUrl/api/orders/$($deliveredConfirmation.orderId)/delivery-attempts"
+$deliveredBefore = Invoke-DbQuery @"
+SELECT
+  (SELECT status FROM orders.orders WHERE id = '$($deliveredConfirmation.orderId)'),
+  (SELECT status FROM sale.sales WHERE order_id = '$($deliveredConfirmation.orderId)'),
+  (SELECT count(*) FROM orders.delivery_attempts WHERE order_id = '$($deliveredConfirmation.orderId)'),
+  (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId'),
+  (SELECT count(*) FROM inventory.stock_movements),
+  (SELECT count(*) FROM payment.payments),
+  (SELECT count(*) FROM customer.account_ledger),
+  (SELECT balance FROM customer.customers WHERE id = '$customerId')
+"@
+Assert-HttpStatus $deliveredUri "Post" $headers (@{ result = "DELIVERED" } | ConvertTo-Json) 204 "Recording DELIVERED did not return 204"
+$deliveredState = Invoke-DbQuery "SELECT o.status || '|' || s.status FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id WHERE o.id = '$($deliveredConfirmation.orderId)'"
+Assert-Equal "DELIVERED|DELIVERED" $deliveredState "DELIVERED did not update order and sale together"
+$deliveredAfter = Invoke-DbQuery @"
+SELECT
+  (SELECT status FROM orders.orders WHERE id = '$($deliveredConfirmation.orderId)'),
+  (SELECT status FROM sale.sales WHERE order_id = '$($deliveredConfirmation.orderId)'),
+  (SELECT count(*) FROM orders.delivery_attempts WHERE order_id = '$($deliveredConfirmation.orderId)'),
+  (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId'),
+  (SELECT count(*) FROM inventory.stock_movements),
+  (SELECT count(*) FROM payment.payments),
+  (SELECT count(*) FROM customer.account_ledger),
+  (SELECT balance FROM customer.customers WHERE id = '$customerId')
+"@
+$deliveredBeforeParts = $deliveredBefore.Split('|')
+$deliveredAfterParts = $deliveredAfter.Split('|')
+Assert-Equal "CONFIRMED" $deliveredBeforeParts[0] "DELIVERED precondition changed the order status"
+Assert-Equal "CONFIRMED" $deliveredBeforeParts[1] "DELIVERED precondition changed the sale status"
+Assert-Equal 0 ([int]$deliveredBeforeParts[2]) "DELIVERED precondition already had delivery attempts"
+Assert-Equal "DELIVERED" $deliveredAfterParts[0] "DELIVERED did not update the order"
+Assert-Equal "DELIVERED" $deliveredAfterParts[1] "DELIVERED did not update the sale"
+Assert-Equal 1 ([int]$deliveredAfterParts[2]) "DELIVERED did not persist one delivery attempt"
+for ($index = 3; $index -lt $deliveredBeforeParts.Count; $index++) {
+    Assert-Equal $deliveredBeforeParts[$index] $deliveredAfterParts[$index] "DELIVERED changed persisted value index $index"
+}
+Assert-HttpStatus $deliveredUri "Post" $headers (@{ result = "FAILED"; observation = "Terminal retry" } | ConvertTo-Json) 409 "Retrying a delivered order was not rejected"
+
+$cancelPayload = @{
+    idempotencyKey = "cancel-$key"
+    customerId = $customerId
+    priceListId = $null
+    lines = @(@{ productId = $productId; quantity = $lifecycleQuantity; lineDiscountPercent = 0.0; unitPriceOverride = $null })
+    orderDiscountPercent = 0.0
+    payments = @()
+} | ConvertTo-Json -Depth 6
+$cancelBefore = Invoke-DbQuery @"
+SELECT
+  (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId'),
+  (SELECT balance FROM customer.customers WHERE id = '$customerId'),
+  (SELECT count(*) FROM inventory.stock_movements),
+  (SELECT count(*) FROM customer.account_ledger)
+"@
+$cancelConfirmation = Invoke-RestMethod -Uri "$BaseUrl/api/orders/confirm" -Method Post -Headers $headers -ContentType "application/json" -Body $cancelPayload
+$cancelAfterConfirm = Invoke-DbQuery @"
+SELECT
+  (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId'),
+  (SELECT balance FROM customer.customers WHERE id = '$customerId'),
+  (SELECT count(*) FROM inventory.stock_movements),
+  (SELECT count(*) FROM customer.account_ledger)
+"@
+$cancelUri = "$BaseUrl/api/orders/$($cancelConfirmation.orderId)/cancel"
+Assert-HttpStatus $cancelUri "Post" $headers $null 204 "Cancelling a confirmed order did not return 204"
+$cancelAfter = Invoke-DbQuery @"
+SELECT
+  (SELECT o.status FROM orders.orders o WHERE o.id = '$($cancelConfirmation.orderId)'),
+  (SELECT s.status FROM sale.sales s WHERE s.order_id = '$($cancelConfirmation.orderId)'),
+  (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId'),
+  (SELECT balance FROM customer.customers WHERE id = '$customerId'),
+  (SELECT count(*) FROM inventory.stock_movements),
+  (SELECT count(*) FROM payment.payments),
+  (SELECT count(*) FROM customer.account_ledger),
+  (SELECT count(*) FROM inventory.stock_movements WHERE reference_id = '$($cancelConfirmation.orderId)' AND movement_type = 'SALE'),
+  (SELECT count(*) FROM inventory.stock_movements WHERE reference_id = '$($cancelConfirmation.orderId)' AND movement_type = 'SALE_CANCELLATION'),
+  (SELECT count(*) FROM customer.account_ledger WHERE sale_id = '$($cancelConfirmation.saleId)' AND entry_type = 'CREDIT')
+"@
+$cancelBeforeParts = $cancelBefore.Split('|')
+$cancelAfterConfirmParts = $cancelAfterConfirm.Split('|')
+$cancelAfterParts = $cancelAfter.Split('|')
+Assert-Equal ([decimal]$cancelBeforeParts[0] - $lifecycleQuantity) ([decimal]$cancelAfterConfirmParts[0]) "Cancellation confirmation did not reserve stock"
+Assert-Equal ([decimal]$cancelBeforeParts[1] + $lifecycleTotal) ([decimal]$cancelAfterConfirmParts[1]) "Cancellation confirmation did not create account debt"
+Assert-Equal "CANCELLED" $cancelAfterParts[0] "Cancellation did not update the order"
+Assert-Equal "CANCELLED" $cancelAfterParts[1] "Cancellation did not update the sale"
+Assert-Equal ([decimal]$cancelBeforeParts[0]) ([decimal]$cancelAfterParts[2]) "Cancellation did not restore stock"
+Assert-Equal ([decimal]$cancelBeforeParts[1]) ([decimal]$cancelAfterParts[3]) "Cancellation did not restore customer balance"
+Assert-Equal ([int]$cancelAfterConfirmParts[2] + 1) ([int]$cancelAfterParts[4]) "Cancellation did not add one stock reversal"
+Assert-Equal ([int]$cancelAfterConfirmParts[3] + 1) ([int]$cancelAfterParts[6]) "Cancellation did not add the credit ledger entry"
+Assert-Equal 1 ([int]$cancelAfterParts[7]) "Cancellation SALE movement count was unexpected"
+Assert-Equal 1 ([int]$cancelAfterParts[8]) "Cancellation SALE_CANCELLATION movement count was unexpected"
+Assert-Equal 1 ([int]$cancelAfterParts[9]) "Cancellation CREDIT ledger count was unexpected"
+$cancelRetryBefore = $cancelAfter
+Assert-HttpStatus $cancelUri "Post" $headers $null 409 "Retrying a cancelled order was not rejected"
+$cancelRetryAfter = Invoke-DbQuery @"
+SELECT
+  (SELECT status FROM orders.orders WHERE id = '$($cancelConfirmation.orderId)'),
+  (SELECT status FROM sale.sales WHERE order_id = '$($cancelConfirmation.orderId)'),
+  (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId'),
+  (SELECT balance FROM customer.customers WHERE id = '$customerId'),
+  (SELECT count(*) FROM inventory.stock_movements),
+  (SELECT count(*) FROM payment.payments),
+  (SELECT count(*) FROM customer.account_ledger),
+  (SELECT count(*) FROM inventory.stock_movements WHERE reference_id = '$($cancelConfirmation.orderId)' AND movement_type = 'SALE'),
+  (SELECT count(*) FROM inventory.stock_movements WHERE reference_id = '$($cancelConfirmation.orderId)' AND movement_type = 'SALE_CANCELLATION'),
+  (SELECT count(*) FROM customer.account_ledger WHERE sale_id = '$($cancelConfirmation.saleId)' AND entry_type = 'CREDIT')
+"@
+$cancelRetryBeforeParts = $cancelRetryBefore.Split('|')
+$cancelRetryAfterParts = $cancelRetryAfter.Split('|')
+for ($index = 0; $index -lt $cancelRetryBeforeParts.Count; $index++) {
+    Assert-Equal $cancelRetryBeforeParts[$index] $cancelRetryAfterParts[$index] "Cancelled retry changed persisted value index $index"
+}
+
+Write-Host "Restarting backend and frontend without removing the persistent volume..."
+docker compose restart backend frontend
+if ($LASTEXITCODE -ne 0) { throw "docker compose restart failed." }
+for ($attempt = 1; $attempt -le 30; $attempt++) {
+    try {
+        $health = Invoke-RestMethod -Uri "$BaseUrl/actuator/health" -Method Get
+        if ($health.status -eq "UP") { break }
+    } catch {
+        if ($attempt -eq 30) { throw "Backend health did not recover after restart: $($_.Exception.Message)" }
+    }
+    Start-Sleep -Seconds 2
+}
+Assert-Equal "UP" $health.status "Backend health is not UP after restart"
+$restartLogin = Invoke-RestMethod -Uri "$BaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body (@{
+    email = $AdminEmail
+    password = $AdminPassword
+} | ConvertTo-Json)
+$restartHeaders = @{ Authorization = "Bearer $($restartLogin.accessToken)" }
+$persistedLifecycle = Invoke-RestMethod -Uri "$BaseUrl/api/orders/$($cancelConfirmation.orderId)" -Method Get -Headers $restartHeaders
+Assert-Equal $cancelConfirmation.orderId $persistedLifecycle.order.id "Cancelled lifecycle record did not survive restart"
+Assert-Equal "CANCELLED" $persistedLifecycle.order.status "Persisted lifecycle record changed after restart"
+Assert-Equal "CANCELLED" $persistedLifecycle.sale.status "Persisted sale lifecycle record changed after restart"
+
+Write-Host "SMOKE PASS: confirmation rollback/idempotency, retryable FAILED attempts, DELIVERED invariants, cancellation stock/ledger reversal, terminal retries, restart persistence, and persistent-volume safety verified."
