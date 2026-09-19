@@ -1,7 +1,6 @@
 package com.distribuidora.document.rendering;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
@@ -29,7 +28,7 @@ public record SaleDocumentModel(
     }
 
     public BigDecimal pendingBalance() {
-        return total.subtract(paid).max(BigDecimal.ZERO.setScale(2));
+        return total.subtract(paid).max(BigDecimal.ZERO);
     }
 
     public record Line(
@@ -56,6 +55,6 @@ public record SaleDocumentModel(
     }
 
     private static BigDecimal money(BigDecimal value) {
-        return Objects.requireNonNull(value, "monetary value").setScale(2, RoundingMode.HALF_UP);
+        return Objects.requireNonNull(value, "monetary value");
     }
 }
