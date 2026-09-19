@@ -60,6 +60,6 @@ async function apiMutate<T>(path: string, method: string, body: unknown): Promis
   return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }
 
-export function apiPost<T>(path: string, body: unknown) { return apiMutate<T>(path, 'POST', body) }
-export function apiPut<T>(path: string, body: unknown) { return apiMutate<T>(path, 'PUT', body) }
-export function apiPatch<T>(path: string, body: unknown) { return apiMutate<T>(path, 'PATCH', body) }
+export function apiPost<T>(path: string, body: unknown): Promise<T> { return apiMutate<T>(path, 'POST', body) }
+export function apiPut<T>(path: string, body: unknown): Promise<T> { return apiMutate<T>(path, 'PUT', body) }
+export function apiPatch<T>(path: string, body: unknown): Promise<T> { return apiMutate<T>(path, 'PATCH', body) }
