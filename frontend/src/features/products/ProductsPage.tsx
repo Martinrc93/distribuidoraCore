@@ -54,7 +54,7 @@ function StatusBadge({ value }: { value: string }) {
   return <Badge tone={tone}>{value === 'ACTIVE' ? 'Activo' : value === 'INACTIVE' ? 'Inactivo' : value}</Badge>
 }
 
-function ProductForm({ initial, onDone, onSuccess }: { initial?: Product; onDone: () => void; onSuccess: (message: string) => void }) {
+function ProductForm({ initial, onDone, onSuccess, onBusyChange }: { initial?: Product; onDone: () => void; onSuccess: (message: string) => void; onBusyChange: (busy: boolean) => void }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<ProductFormValues>(() => initialFormValues(initial))
   const [error, setError] = useState('')
@@ -75,6 +75,7 @@ function ProductForm({ initial, onDone, onSuccess }: { initial?: Product; onDone
       return
     }
     setSaving(true)
+    onBusyChange(true)
     setError('')
     try {
       const body = { sku: form.sku, name: form.name, category: form.category, presentation: form.presentation, cost, price }
@@ -87,11 +88,12 @@ function ProductForm({ initial, onDone, onSuccess }: { initial?: Product; onDone
       setError(errorMessage(cause, 'No se pudo guardar el producto.'))
     } finally {
       setSaving(false)
+      onBusyChange(false)
     }
   }
 
   return <Panel title={initial ? 'Editar producto' : 'Nuevo producto'}><form className="form-grid" onSubmit={submit}>
-    {(['sku', 'name', 'category', 'presentation', 'cost', 'price'] as const).map((field) => <label className="field" key={field}><span>{field === 'sku' ? 'SKU' : field === 'name' ? 'Nombre' : field === 'category' ? 'Categoría' : field === 'presentation' ? 'Presentación' : field === 'cost' ? 'Costo' : 'Precio'}</span><input className="input" type={field === 'cost' || field === 'price' ? 'number' : 'text'} step={field === 'cost' || field === 'price' ? '0.01' : undefined} value={form[field]} onChange={(event) => change(field, event.target.value)} required={field !== 'cost' && field !== 'price'} disabled={saving} /></label>)}
+    {(['sku', 'name', 'category', 'presentation', 'cost', 'price'] as const).map((field) => { const numeric = field === 'cost' || field === 'price'; return <label className="field" key={field}><span>{field === 'sku' ? 'SKU' : field === 'name' ? 'Nombre' : field === 'category' ? 'Categoría' : field === 'presentation' ? 'Presentación' : field === 'cost' ? 'Costo' : 'Precio'}</span><input className="input" type="text" inputMode={numeric ? 'decimal' : undefined} value={form[field]} onChange={(event) => change(field, event.target.value)} required={!numeric} disabled={saving} /></label> })}
     {error && <p className="error-text" role="alert">{error}</p>}
     <div className="page-actions"><Button variant="secondary" type="button" onClick={onDone} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
   </form></Panel>
@@ -107,6 +109,7 @@ export default function ProductsPage() {
   const [actionError, setActionError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [mutating, setMutating] = useState(false)
+  const [formSaving, setFormSaving] = useState(false)
   const products = query.data?.content ?? []
 
   async function changeStatus() {
@@ -129,17 +132,17 @@ export default function ProductsPage() {
   const rows = products.map((product) => ({ id: product.id, name: product.name, sku: product.sku, category: product.category, presentation: product.presentation, cost: money(product.cost), price: money(product.price), stock: String(product.stock ?? 0), status: product.status ?? 'ACTIVE' }))
   const columns: TableColumn[] = [
     { key: 'name', label: 'Producto', emphasis: true }, { key: 'sku', label: 'SKU' }, { key: 'category', label: 'Categoría' }, { key: 'presentation', label: 'Presentación' }, { key: 'cost', label: 'Costo', align: 'right' }, { key: 'price', label: 'Lista general', align: 'right' }, { key: 'stock', label: 'Stock', align: 'right', render: (value) => <span className={Number(value) < 0 ? 'negative-number' : ''}>{value}</span> }, { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
-    ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Record<string, string>) => <div className="page-actions"><Button variant="link" onClick={() => { setFormProduct(products.find((product) => product.id === row.id)); setShowForm(false); setFeedback('') }}>Editar</Button><Button variant="link" onClick={() => { setStatusProduct(products.find((product) => product.id === row.id)); setFeedback('') }}>{row.status === 'ACTIVE' ? 'Desactivar producto' : 'Activar producto'}</Button></div> }] : []),
+     ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Record<string, string>) => <div className="page-actions"><Button variant="link" onClick={() => { setFormProduct(products.find((product) => product.id === row.id)); setShowForm(false); setFeedback('') }} disabled={formSaving || mutating}>Editar</Button><Button variant="link" onClick={() => { setStatusProduct(products.find((product) => product.id === row.id)); setFeedback('') }} disabled={formSaving || mutating}>{row.status === 'ACTIVE' ? 'Desactivar producto' : 'Activar producto'}</Button></div> }] : []),
   ]
 
   return <>
-    <PageHeader eyebrow="Catálogo" title="Productos" description="Productos, marcas, presentaciones, costos y precios." actions={isAdmin ? <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }}>+ Nuevo producto</Button> : undefined} />
+    <PageHeader eyebrow="Catálogo" title="Productos" description="Productos, marcas, presentaciones, costos y precios." actions={isAdmin ? <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
-    {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} />}
+    {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} />}
     <Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar productos..." aria-label="Buscar productos" /><select className="select" aria-label="Filtrar categoría"><option>Todas las categorías</option></select><Button variant="secondary">Filtrar</Button></div>
-      {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title="Todavía no hay productos" description="Creá el primer producto para comenzar a gestionar el catálogo." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo producto</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Mostrando hasta 20 de {query.data?.totalElements ?? 0} resultados</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled={(query.data?.totalElements ?? 0) <= 20}>Siguiente</Button></div></div></>}
+       {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title="Todavía no hay productos" description="Creá el primer producto para comenzar a gestionar el catálogo." action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Mostrando hasta 20 de {query.data?.totalElements ?? 0} resultados</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled={(query.data?.totalElements ?? 0) <= 20}>Siguiente</Button></div></div></>}
     </Panel>
-    {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)} disabled={mutating}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
+    {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)} disabled={mutating || formSaving}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating || formSaving}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
   </>
 }

@@ -165,3 +165,62 @@ Result: no whitespace errors reported. Git emitted only the existing LF-to-CRLF 
 
 - The build and tests regenerated ignored/generated files under `frontend/dist` and frontend caches, and the worktree still contains unrelated `backend/target` churn. None of those artifacts were staged or committed.
 - No new dependencies were added.
+
+## Re-review Fixes
+
+### Changes
+
+- Added page-level `formSaving` state propagated from `ProductForm` through `onBusyChange`; header create, row edit, row status, empty-state create, and open status-modal actions are disabled while a form save is pending.
+- Added an explicit edit mutation invalidation assertion for `['/api/products?page=0&size=20']` after `PUT`.
+- Restored direct negative-value coverage and changed cost/price controls to text inputs with `inputMode="decimal"`, allowing the controlled validator to receive genuine non-numeric text such as `abc` while retaining a sensible decimal-keyboard experience.
+- Extended the focused suite to 14 product tests.
+
+### Verification
+
+Focused product test from `P:\dev\distribuidora\frontend`:
+
+```text
+npm test -- --run src/features/products/ProductsPage.test.tsx
+```
+
+```text
+✓ src/features/products/ProductsPage.test.tsx (14 tests)
+Test Files  1 passed (1)
+Tests       14 passed (14)
+```
+
+Full frontend test suite from `P:\dev\distribuidora\frontend`:
+
+```text
+npm test
+```
+
+```text
+Test Files  6 passed (6)
+Tests       33 passed (33)
+```
+
+Frontend build from `P:\dev\distribuidora\frontend`:
+
+```text
+npm run build
+```
+
+```text
+✓ 97 modules transformed.
+✓ built in 926ms
+Process exited with code 0
+```
+
+Diff validation:
+
+```text
+git diff --check -- frontend/src/features/products/ProductsPage.tsx frontend/src/features/products/ProductsPage.test.tsx
+```
+
+Result: no whitespace errors reported. Git emitted only the existing LF-to-CRLF working-copy warnings.
+
+### Concerns
+
+- The build and tests regenerated ignored/generated files under `frontend/dist` and frontend caches, and unrelated `backend/target` churn remains in the shared worktree. None of those artifacts were staged or committed.
+- No new dependencies were added.

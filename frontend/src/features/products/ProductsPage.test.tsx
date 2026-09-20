@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,7 +68,8 @@ describe('ProductsPage', () => {
       if (String(input) === '/api/products?page=0&size=20' && !init?.method) return response(products)
       return response({}, init?.method === 'PUT' ? 204 : 200)
     })
-    renderPage()
+    const queryClient = renderPage()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     await user.click(await screen.findByRole('button', { name: /editar/i }))
     await user.clear(screen.getByLabelText('Precio'))
@@ -76,10 +77,11 @@ describe('ProductsPage', () => {
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ sku: 'SKU-1', name: 'Harina', category: 'Almacén', presentation: 'Bolsa', cost: 100.5, price: 175.25 }) })))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/products?page=0&size=20'] })
     expect(await screen.findByText('Producto actualizado correctamente.')).toBeInTheDocument()
   })
 
-  it('rejects blank and non-numeric prices locally without making mutation requests', async () => {
+  it('rejects blank, negative, and non-numeric prices locally without making mutation requests', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => String(input).includes('products?page=') ? response({ ...products, content: [] }) : response({}))
     renderPage()
@@ -94,8 +96,14 @@ describe('ProductsPage', () => {
     expect(await screen.findByText('El costo y el precio deben ser números no negativos.')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/products', expect.objectContaining({ method: 'POST' }))
 
-    await user.type(screen.getByLabelText('Precio'), '20')
-    fireEvent.change(screen.getByLabelText('Precio'), { target: { value: 'abc' } })
+    await user.type(screen.getByLabelText('Precio'), '-1')
+    await user.click(screen.getByRole('button', { name: /guardar producto/i }))
+
+    expect(await screen.findByText('El costo y el precio deben ser números no negativos.')).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/products', expect.objectContaining({ method: 'POST' }))
+
+    await user.clear(screen.getByLabelText('Precio'))
+    await user.type(screen.getByLabelText('Precio'), 'abc')
     await user.click(screen.getByRole('button', { name: /guardar producto/i }))
 
     expect(await screen.findByText('El costo y el precio deben ser números no negativos.')).toBeInTheDocument()
@@ -116,7 +124,7 @@ describe('ProductsPage', () => {
     expect(screen.getByLabelText('SKU')).toHaveValue('SKU-2')
     expect(screen.getByLabelText('Nombre')).toHaveValue('Aceite')
     expect(screen.getByLabelText('Presentación')).toHaveValue('Botella')
-    expect(screen.getByLabelText('Costo')).toHaveValue(200)
+    expect(screen.getByLabelText('Costo')).toHaveValue('200')
   })
 
   it('disables all product form controls while saving', async () => {
@@ -143,6 +151,31 @@ describe('ProductsPage', () => {
     expect(screen.getByLabelText('Costo')).toBeDisabled()
     expect(screen.getByRole('button', { name: /cancelar/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /guardando/i })).toBeDisabled()
+    resolveSave(await response({ id: 'new-product' }, 201))
+  })
+
+  it('disables page create, edit, and status actions while saving a product', async () => {
+    const user = userEvent.setup()
+    let resolveSave!: (value: Response) => void
+    const save = new Promise<Response>((resolve) => { resolveSave = resolve })
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/products?page=0&size=20' && !init?.method) return response(products)
+      if (String(input) === '/api/products' && init?.method === 'POST') return save
+      return response({})
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /nuevo producto/i }))
+    await user.type(screen.getByLabelText('SKU'), 'SKU-2')
+    await user.type(screen.getByLabelText('Nombre'), 'Arroz')
+    await user.type(screen.getByLabelText('Categoría'), 'Almacén')
+    await user.type(screen.getByLabelText('Costo'), '10')
+    await user.type(screen.getByLabelText('Precio'), '20')
+    await user.click(screen.getByRole('button', { name: /guardar producto/i }))
+
+    expect(screen.getByRole('button', { name: /nuevo producto/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /editar/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /desactivar producto/i })).toBeDisabled()
     resolveSave(await response({ id: 'new-product' }, 201))
   })
 
