@@ -1,6 +1,7 @@
 package com.distribuidora.dashboard;
 
 import com.distribuidora.dashboard.application.ReadQueryService;
+import com.distribuidora.shared.security.CurrentUserAccess;
 import com.distribuidora.shared.web.PageResponse;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -19,12 +20,29 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ReadQueryServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final ReadQueryService service = new ReadQueryService(jdbc);
+
+    @Test
+    void includesSkuInProductProjectionForAdminAndSellerQueries() {
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForObject(anyString(), eq(Number.class), any(Object[].class))).thenReturn(0);
+
+        service.products(0, 20, "");
+        CurrentUserAccess sellerAccess = mock(CurrentUserAccess.class);
+        when(sellerAccess.isAdmin()).thenReturn(false);
+        when(sellerAccess.requireSellerProfile()).thenReturn(UUID.randomUUID());
+        new ReadQueryService(jdbc, sellerAccess).products(0, 20, "");
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc, times(2)).queryForList(sql.capture(), any(Object[].class));
+        assertThat(sql.getAllValues()).allSatisfy(query -> assertThat(query).contains("p.sku"));
+    }
 
     @Test
     void returnsPagedMovementsForProductOrderedByNewest() {

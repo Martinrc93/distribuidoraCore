@@ -55,6 +55,7 @@ describe('CustomersPage', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Despensa Centro', taxId: '30-456', sellerId: 'seller-1' }) })))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/customers?page=0&size=20'] })
+    expect(await screen.findByText('Cliente creado correctamente.')).toBeInTheDocument()
   })
 
   it('edits a customer, assigns a price list, and confirms status changes', async () => {
@@ -83,6 +84,86 @@ describe('CustomersPage', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ businessName: 'Almacén Sur', taxId: '30-123', sellerId: undefined }) })))
     expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/price-list', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ priceListId: 'list-2' }) }))
     expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/status', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ status: 'INACTIVE' }) }))
+    expect(await screen.findByText('Cliente desactivado correctamente.')).toBeInTheDocument()
+  })
+
+  it('synchronizes the form when switching between customers', async () => {
+    const user = userEvent.setup()
+    const secondCustomer = { ...customers.content[0], id: 'customer-2', name: 'Almacén Sur', taxId: '30-456' }
+    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers?page=') ? response({ ...customers, content: [customers.content[0], secondCustomer] }) : response({ content: [] }))
+    renderPage()
+
+    const editButtons = await screen.findAllByRole('button', { name: /editar/i })
+    await user.click(editButtons[0])
+    await user.click(screen.getAllByRole('button', { name: /editar/i })[1])
+
+    expect(screen.getByLabelText(/razón social/i)).toHaveValue('Almacén Sur')
+    expect(screen.getByLabelText(/identificación fiscal/i)).toHaveValue('30-456')
+  })
+
+  it.each([
+    ['/api/customers/customer-1', 'PUT'],
+    ['/api/customers/customer-1/price-list', 'PATCH'],
+    ['/api/customers/customer-1/status', 'PATCH'],
+  ])('invalidates customers after a 404 from %s', async (path, method) => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const requestPath = String(input)
+      if (requestPath.startsWith('/api/customers?page=') && !init?.method) return response(customers)
+      if (requestPath.startsWith('/api/sellers')) return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
+      if (requestPath.startsWith('/api/pricing/lists')) return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
+      if (requestPath === path && init?.method === method) return response({ detail: 'gone' }, 404)
+      return response({}, 204)
+    })
+    const queryClient = renderPage()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    if (path.endsWith('/price-list')) {
+      await user.click(await screen.findByRole('button', { name: /editar/i }))
+      await user.click(await screen.findByRole('button', { name: /asignar lista/i }))
+    } else if (path.endsWith('/status')) {
+      await user.click(await screen.findByRole('button', { name: /desactivar cliente/i }))
+      await user.click(screen.getByRole('button', { name: /confirmar/i }))
+    } else {
+      await user.click(await screen.findByRole('button', { name: /editar/i }))
+      await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+    }
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(path, expect.objectContaining({ method })))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/customers?page=0&size=20'] })
+  })
+
+  it('shows customer mutation feedback for update and price-list assignment', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/customers?page=') && !init?.method) return response(customers)
+      if (path.startsWith('/api/sellers')) return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
+      if (path.startsWith('/api/pricing/lists')) return response({ content: [{ id: 'list-1', code: 'GENERAL', name: 'General', status: 'ACTIVE' }], page: 0, size: 100, totalElements: 1, totalPages: 1 })
+      return response({}, 204)
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /editar/i }))
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+    expect(await screen.findByText('Cliente actualizado correctamente.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /editar/i }))
+    await user.click(await screen.findByRole('button', { name: /asignar lista/i }))
+    expect(await screen.findByText('Lista de precios asignada correctamente.')).toBeInTheDocument()
+  })
+
+  it('shows actionable selector query errors', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const path = String(input)
+      if (path.startsWith('/api/customers?page=')) return response(customers)
+      if (path.startsWith('/api/sellers')) return response({}, 500)
+      if (path.startsWith('/api/pricing/lists')) return response({}, 500)
+      return response({})
+    })
+    renderPage()
+    await userEvent.setup().click(await screen.findByRole('button', { name: /editar/i }))
+    expect(await screen.findByText('No se pudieron cargar los vendedores.')).toBeInTheDocument()
+    expect(await screen.findByText('No se pudieron cargar las listas de precios.')).toBeInTheDocument()
   })
 
   it('hides admin-only seller and mutation actions for non-admins', async () => {

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiPatch, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
@@ -55,10 +55,12 @@ function CustomerForm({
   initial,
   sellers,
   onDone,
+  onSuccess,
 }: {
   initial?: Customer
   sellers: Seller[]
   onDone: () => void
+  onSuccess: (message: string) => void
 }) {
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
@@ -67,6 +69,12 @@ function CustomerForm({
   const [sellerId, setSellerId] = useState(initial?.sellerId ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    setBusinessName(initial?.name ?? '')
+    setTaxId(initial?.taxId ?? '')
+    setSellerId(initial?.sellerId ?? '')
+    setError('')
+  }, [initial])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -78,8 +86,10 @@ function CustomerForm({
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
       await queryClient.invalidateQueries({ queryKey: CUSTOMER_QUERY_KEY })
+      onSuccess(initial ? 'Cliente actualizado correctamente.' : 'Cliente creado correctamente.')
       onDone()
     } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ queryKey: CUSTOMER_QUERY_KEY })
       setError(errorMessage(cause, 'No se pudo guardar el cliente.'))
     } finally {
       setSaving(false)
@@ -107,6 +117,7 @@ export default function CustomersPage() {
   const [showForm, setShowForm] = useState(false)
   const [selectedLists, setSelectedLists] = useState<Record<string, string>>({})
   const [actionError, setActionError] = useState('')
+  const [feedback, setFeedback] = useState('')
   const [actionSaving, setActionSaving] = useState(false)
   const [statusCustomer, setStatusCustomer] = useState<Customer | undefined>()
 
@@ -121,7 +132,9 @@ export default function CustomersPage() {
     try {
       await apiPatch(`/api/customers/${customer.id}/price-list`, { priceListId: selectedLists[customer.id] || null })
       await invalidate()
+      setFeedback('Lista de precios asignada correctamente.')
     } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 404) await invalidate()
       setActionError(errorMessage(cause, 'No se pudo asignar la lista de precios.'))
     } finally {
       setActionSaving(false)
@@ -137,7 +150,9 @@ export default function CustomersPage() {
       await apiPatch(`/api/customers/${statusCustomer.id}/status`, { status })
       await invalidate()
       setStatusCustomer(undefined)
+      setFeedback(status === 'ACTIVE' ? 'Cliente activado correctamente.' : 'Cliente desactivado correctamente.')
     } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 404) await invalidate()
       setActionError(errorMessage(cause, 'No se pudo actualizar el estado del cliente.'))
     } finally {
       setActionSaving(false)
@@ -164,12 +179,14 @@ export default function CustomersPage() {
 
   return <>
     <PageHeader eyebrow="Operación" title="Clientes" description="Gestioná clientes, vendedor, lista de precios y cuenta corriente." actions={isAdmin ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
+    {feedback && <p className="success-text" role="status">{feedback}</p>}
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
-    {isAdmin && (showForm || formCustomer) && <CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} />}
-    {isAdmin && formCustomer && <Panel title="Lista de precios" description="La asignación se aplica al cliente seleccionado."><div className="form-grid"><label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" value={selectedLists[formCustomer.id] ?? formCustomer.priceListId ?? ''} onChange={(event) => setSelectedLists((current) => ({ ...current, [formCustomer.id]: event.target.value }))}><option value="">Sin lista asignada</option>{(listsQuery.data?.content ?? []).map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select></label><Button type="button" onClick={() => assignPriceList(formCustomer)} disabled={actionSaving}>{actionSaving ? 'Guardando...' : 'Asignar lista'}</Button></div></Panel>}
+    {isAdmin && (showForm || formCustomer) && <CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} />}
+    {isAdmin && formCustomer && <Panel title="Lista de precios" description="La asignación se aplica al cliente seleccionado."><div className="form-grid"><label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" value={selectedLists[formCustomer.id] ?? formCustomer.priceListId ?? ''} onChange={(event) => setSelectedLists((current) => ({ ...current, [formCustomer.id]: event.target.value }))} disabled={listsQuery.isError}><option value="">Sin lista asignada</option>{(listsQuery.data?.content ?? []).map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select></label>{listsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar las listas de precios. <Button variant="link" type="button" onClick={() => listsQuery.refetch()}>Reintentar</Button></p>}<Button type="button" onClick={() => assignPriceList(formCustomer)} disabled={actionSaving || listsQuery.isError}>{actionSaving ? 'Guardando...' : 'Asignar lista'}</Button></div></Panel>}
     <Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar por nombre o identificación..." aria-label="Buscar clientes" /><Button variant="secondary">Filtrar</Button></div>
       {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay clientes" description="Creá el primer cliente para comenzar a gestionar la operación." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo cliente</Button> : undefined} /> : <DataTable columns={columns} rows={rows} />}
     </Panel>
+    {isAdmin && sellersQuery.isError && (showForm || formCustomer) && <p className="error-text" role="alert">No se pudieron cargar los vendedores. <Button variant="link" type="button" onClick={() => sellersQuery.refetch()}>Reintentar</Button></p>}
     {statusCustomer && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusCustomer.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusCustomer.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusCustomer(undefined)}>Cancelar</Button><Button onClick={changeStatus} disabled={actionSaving}>{actionSaving ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
   </>
 }

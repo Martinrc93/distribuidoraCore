@@ -85,6 +85,7 @@ function ProductForm({ initial, onDone, onSuccess, onBusyChange }: { initial?: P
       onSuccess(initial ? 'Producto actualizado correctamente.' : 'Producto creado correctamente.')
       onDone()
     } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ queryKey: PRODUCT_QUERY_KEY })
       setError(errorMessage(cause, 'No se pudo guardar el producto.'))
     } finally {
       setSaving(false)
@@ -123,6 +124,7 @@ export default function ProductsPage() {
       setStatusProduct(undefined)
       setFeedback(status === 'ACTIVE' ? 'Producto activado correctamente.' : 'Producto desactivado correctamente.')
     } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ queryKey: PRODUCT_QUERY_KEY })
       setActionError(errorMessage(cause, 'No se pudo actualizar el estado del producto.'))
     } finally {
       setMutating(false)

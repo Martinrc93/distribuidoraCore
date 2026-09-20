@@ -276,4 +276,30 @@ describe('ProductsPage', () => {
     expect(await screen.findByText('El SKU ya existe')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /guardar producto/i })).toBeInTheDocument()
   })
+
+  it.each([
+    ['/api/products/product-1', 'PUT'],
+    ['/api/products/product-1/status', 'PATCH'],
+  ])('invalidates products after a 404 from %s', async (path, method) => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const requestPath = String(input)
+      if (requestPath === '/api/products?page=0&size=20' && !init?.method) return response(products)
+      if (requestPath === path && init?.method === method) return response({ detail: 'gone' }, 404)
+      return response({}, 204)
+    })
+    const queryClient = renderPage()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    if (path.endsWith('/status')) {
+      await user.click(await screen.findByRole('button', { name: /desactivar producto/i }))
+      await user.click(screen.getByRole('button', { name: /confirmar/i }))
+    } else {
+      await user.click(await screen.findByRole('button', { name: /editar/i }))
+      await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+    }
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(path, expect.objectContaining({ method })))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/products?page=0&size=20'] })
+  })
 })
