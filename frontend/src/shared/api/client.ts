@@ -12,6 +12,17 @@ export type LoginResponse = {
   expiresInSeconds: number
 }
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly detail?: string,
+    message = 'No se pudo guardar el registro',
+  ) {
+    super(detail ?? message)
+    this.name = 'ApiError'
+  }
+}
+
 const TOKEN_KEY = 'distribuidora.accessToken'
 
 export function getAccessToken() {
@@ -55,7 +66,7 @@ async function apiMutate<T>(path: string, method: string, body: unknown): Promis
   })
   if (!response.ok) {
     const detail = await response.json().catch(() => null) as { detail?: string } | null
-    throw new Error(detail?.detail ?? 'No se pudo guardar el registro')
+    throw new ApiError(response.status, detail?.detail)
   }
   return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { apiGet, apiPatch, apiPost, apiPut, type ApiPage } from '../../shared/api/client'
+import { apiGet, apiPatch, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge, type BadgeTone } from '../../shared/components/Badge'
@@ -30,7 +30,15 @@ function money(value: unknown) {
 }
 
 function errorMessage(cause: unknown, fallback: string) {
-  const message = cause instanceof Error ? cause.message : ''
+  const status = cause instanceof ApiError ? cause.status : undefined
+  const message = cause instanceof ApiError ? cause.detail ?? '' : cause instanceof Error ? cause.message : ''
+  if (status !== undefined) {
+    if (status === 403) return 'No tenés permisos para realizar esta operación.'
+    if (status === 404) return 'El cliente ya no existe o no está disponible.'
+    if (status === 409) return message || 'El cliente entra en conflicto con un registro existente.'
+    if (status === 400) return message || 'Revisá los datos ingresados.'
+    return message || fallback
+  }
   if (/403|forbidden|permiso/i.test(message)) return 'No tenés permisos para realizar esta operación.'
   if (/404|not found|no existe/i.test(message)) return 'El cliente ya no existe o no está disponible.'
   if (/409|conflict|ya existe|duplic/i.test(message)) return message || 'El cliente entra en conflicto con un registro existente.'
@@ -47,12 +55,10 @@ function CustomerForm({
   initial,
   sellers,
   onDone,
-  onSaved,
 }: {
   initial?: Customer
   sellers: Seller[]
   onDone: () => void
-  onSaved: () => Promise<void>
 }) {
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
@@ -72,7 +78,7 @@ function CustomerForm({
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
       await queryClient.invalidateQueries({ queryKey: CUSTOMER_QUERY_KEY })
-      await onSaved()
+      onDone()
     } catch (cause) {
       setError(errorMessage(cause, 'No se pudo guardar el cliente.'))
     } finally {
@@ -159,7 +165,7 @@ export default function CustomersPage() {
   return <>
     <PageHeader eyebrow="Operación" title="Clientes" description="Gestioná clientes, vendedor, lista de precios y cuenta corriente." actions={isAdmin ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
-    {isAdmin && (showForm || formCustomer) && <CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onSaved={async () => { if (!formCustomer) setShowForm(false) }} />}
+    {isAdmin && (showForm || formCustomer) && <CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} />}
     {isAdmin && formCustomer && <Panel title="Lista de precios" description="La asignación se aplica al cliente seleccionado."><div className="form-grid"><label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" value={selectedLists[formCustomer.id] ?? formCustomer.priceListId ?? ''} onChange={(event) => setSelectedLists((current) => ({ ...current, [formCustomer.id]: event.target.value }))}><option value="">Sin lista asignada</option>{(listsQuery.data?.content ?? []).map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select></label><Button type="button" onClick={() => assignPriceList(formCustomer)} disabled={actionSaving}>{actionSaving ? 'Guardando...' : 'Asignar lista'}</Button></div></Panel>}
     <Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar por nombre o identificación..." aria-label="Buscar clientes" /><Button variant="secondary">Filtrar</Button></div>
       {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay clientes" description="Creá el primer cliente para comenzar a gestionar la operación." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo cliente</Button> : undefined} /> : <DataTable columns={columns} rows={rows} />}

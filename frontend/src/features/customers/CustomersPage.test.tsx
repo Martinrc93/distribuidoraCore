@@ -72,9 +72,10 @@ describe('CustomersPage', () => {
     expect(screen.getByLabelText(/razón social/i)).toHaveValue('Almacén Norte')
     await user.clear(screen.getByLabelText(/razón social/i))
     await user.type(screen.getByLabelText(/razón social/i), 'Almacén Sur')
-    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
     await user.selectOptions(await screen.findByLabelText(/lista de precios/i), 'list-2')
     await user.click(screen.getByRole('button', { name: /asignar lista/i }))
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /guardar cambios/i })).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: /desactivar cliente/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar/i }))
@@ -110,5 +111,39 @@ describe('CustomersPage', () => {
 
     expect(await screen.findByText('El CUIT ya existe')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /guardar cliente/i })).toBeInTheDocument()
+  })
+
+  it('uses the mutation status before misleading error text for forbidden edits', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/customers') && !init?.method) return response(customers)
+      if (path === '/api/customers/customer-1' && init?.method === 'PUT') return response({ detail: 'conflict' }, 403)
+      return response({ content: [] })
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /editar/i }))
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+
+    expect(await screen.findByText('No tenés permisos para realizar esta operación.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar cambios/i })).toBeInTheDocument()
+  })
+
+  it('uses the mutation status before misleading error text for conflicts', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/customers') && !init?.method) return response(customers)
+      if (path === '/api/customers/customer-1' && init?.method === 'PUT') return response({ detail: 'forbidden' }, 409)
+      return response({ content: [] })
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /editar/i }))
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+
+    expect(await screen.findByText('forbidden')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar cambios/i })).toBeInTheDocument()
   })
 })
