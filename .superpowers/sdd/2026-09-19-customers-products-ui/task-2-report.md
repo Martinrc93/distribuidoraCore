@@ -104,3 +104,42 @@ Result: no whitespace errors reported.
 
 - Maven currently emits Mockito dynamic-agent/JDK warnings; this is existing test-runtime configuration and did not fail the focused test.
 - The worktree contains unrelated generated artifact changes under `backend/target`, `frontend/dist`, and frontend/Vite caches from prior commands. They were not staged, committed, or altered intentionally.
+
+## Review Fixes
+
+### Commit
+
+- `748d8cf fix(customers): address Task 2 review findings`
+
+### Changes
+
+- Successful customer edits now call the same completion callback as creation, clearing `formCustomer` and closing the form. The focused edit test verifies the form is gone after the update succeeds.
+- Added `ApiError` with `status` and optional `detail` to preserve mutation HTTP status. Customer error mapping now uses status first for 400, 403, 404, and 409, with text matching only for errors without a status.
+- Added focused status-precedence tests for 403 and 409 with deliberately misleading response text.
+
+### Verification
+
+Frontend focused test:
+
+```text
+cd P:\dev\distribuidora\frontend
+npm test -- --run src/features/customers/CustomersPage.test.tsx
+```
+
+```text
+Test Files  1 passed (1)
+Tests       6 passed (6)
+```
+
+Backend focused test:
+
+```text
+cd P:\dev\distribuidora\backend
+mvn -q "-Dtest=SellerReadQueryTest" test
+```
+
+```text
+Process exited with code 0
+```
+
+Maven emitted the existing Mockito/JDK dynamic-agent warnings; no test failures occurred. `git diff --check` passed for all changed source and test files during self-review.
