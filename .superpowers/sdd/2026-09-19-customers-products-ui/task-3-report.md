@@ -104,3 +104,64 @@ Result: no whitespace errors reported before commit.
 
 - The shared worktree contains pre-existing or command-generated changes under `backend/target`, `frontend/dist`, and frontend tooling caches. These were not staged, committed, or intentionally modified as source changes.
 - The build regenerated ignored/generated frontend output in the existing `dist` and cache areas; those artifacts are excluded from the implementation commit.
+
+## Review Fixes
+
+### Changes
+
+- Added an `initialFormValues` factory and synchronized `ProductForm` state with `initial` through `useEffect`, including create/edit transitions and error reset, so selecting another product cannot submit stale fields.
+- Disabled all product form inputs, numeric controls, and cancel while saving; the existing `saving` double-submit guard remains in place.
+- Disabled modal cancellation while status mutation is running; the existing `mutating` double-submit guard remains in place.
+- Made numeric blank/non-numeric validation explicit by leaving numeric fields to the controlled validator rather than native required validation.
+- Fixed the product test helper so `renderPage(authorities)` writes the requested JWT authorities.
+- Expanded focused coverage to 13 tests for form synchronization, blank/non-numeric rejection, disabled controls, status confirmation and locking, edit/status invalidation, product empty/read-error states, admin visibility, duplicate SKU handling, and status-aware 400/403/404/409 mutation errors.
+
+### Verification
+
+Focused product test from `P:\dev\distribuidora\frontend`:
+
+```text
+npm test -- --run src/features/products/ProductsPage.test.tsx
+```
+
+```text
+✓ src/features/products/ProductsPage.test.tsx (13 tests)
+Test Files  1 passed (1)
+Tests       13 passed (13)
+```
+
+Full frontend test suite from `P:\dev\distribuidora\frontend`:
+
+```text
+npm test
+```
+
+```text
+Test Files  6 passed (6)
+Tests       32 passed (32)
+```
+
+Frontend build from `P:\dev\distribuidora\frontend`:
+
+```text
+npm run build
+```
+
+```text
+✓ 97 modules transformed.
+✓ built in 963ms
+Process exited with code 0
+```
+
+Diff validation:
+
+```text
+git diff --check -- frontend/src/features/products/ProductsPage.tsx frontend/src/features/products/ProductsPage.test.tsx
+```
+
+Result: no whitespace errors reported. Git emitted only the existing LF-to-CRLF working-copy warnings.
+
+### Concerns
+
+- The build and tests regenerated ignored/generated files under `frontend/dist` and frontend caches, and the worktree still contains unrelated `backend/target` churn. None of those artifacts were staged or committed.
+- No new dependencies were added.

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiPatch, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
@@ -23,6 +23,10 @@ type Product = {
 
 type ProductFormValues = Omit<Product, 'cost' | 'price' | 'stock' | 'status'> & { cost: string; price: string }
 const PRODUCT_QUERY_KEY = ['/api/products?page=0&size=20']
+
+function initialFormValues(initial?: Product): ProductFormValues {
+  return { id: initial?.id ?? '', sku: initial?.sku ?? '', name: initial?.name ?? '', category: initial?.category ?? '', presentation: initial?.presentation ?? 'Unidad', cost: initial ? String(initial.cost) : '', price: initial ? String(initial.price) : '' }
+}
 
 function money(value: unknown) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value ?? 0))
@@ -52,9 +56,13 @@ function StatusBadge({ value }: { value: string }) {
 
 function ProductForm({ initial, onDone, onSuccess }: { initial?: Product; onDone: () => void; onSuccess: (message: string) => void }) {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<ProductFormValues>({ id: initial?.id ?? '', sku: initial?.sku ?? '', name: initial?.name ?? '', category: initial?.category ?? '', presentation: initial?.presentation ?? 'Unidad', cost: initial ? String(initial.cost) : '', price: initial ? String(initial.price) : '' })
+  const [form, setForm] = useState<ProductFormValues>(() => initialFormValues(initial))
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    setForm(initialFormValues(initial))
+    setError('')
+  }, [initial])
   function change(field: keyof ProductFormValues, value: string) { setForm((current) => ({ ...current, [field]: value })) }
 
   async function submit(event: FormEvent) {
@@ -83,9 +91,9 @@ function ProductForm({ initial, onDone, onSuccess }: { initial?: Product; onDone
   }
 
   return <Panel title={initial ? 'Editar producto' : 'Nuevo producto'}><form className="form-grid" onSubmit={submit}>
-    {(['sku', 'name', 'category', 'presentation', 'cost', 'price'] as const).map((field) => <label className="field" key={field}><span>{field === 'sku' ? 'SKU' : field === 'name' ? 'Nombre' : field === 'category' ? 'Categoría' : field === 'presentation' ? 'Presentación' : field === 'cost' ? 'Costo' : 'Precio'}</span><input className="input" type={field === 'cost' || field === 'price' ? 'number' : 'text'} step={field === 'cost' || field === 'price' ? '0.01' : undefined} value={form[field]} onChange={(event) => change(field, event.target.value)} required /></label>)}
+    {(['sku', 'name', 'category', 'presentation', 'cost', 'price'] as const).map((field) => <label className="field" key={field}><span>{field === 'sku' ? 'SKU' : field === 'name' ? 'Nombre' : field === 'category' ? 'Categoría' : field === 'presentation' ? 'Presentación' : field === 'cost' ? 'Costo' : 'Precio'}</span><input className="input" type={field === 'cost' || field === 'price' ? 'number' : 'text'} step={field === 'cost' || field === 'price' ? '0.01' : undefined} value={form[field]} onChange={(event) => change(field, event.target.value)} required={field !== 'cost' && field !== 'price'} disabled={saving} /></label>)}
     {error && <p className="error-text" role="alert">{error}</p>}
-    <div className="page-actions"><Button variant="secondary" type="button" onClick={onDone}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
+    <div className="page-actions"><Button variant="secondary" type="button" onClick={onDone} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
   </form></Panel>
 }
 
@@ -132,6 +140,6 @@ export default function ProductsPage() {
     <Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar productos..." aria-label="Buscar productos" /><select className="select" aria-label="Filtrar categoría"><option>Todas las categorías</option></select><Button variant="secondary">Filtrar</Button></div>
       {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title="Todavía no hay productos" description="Creá el primer producto para comenzar a gestionar el catálogo." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo producto</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Mostrando hasta 20 de {query.data?.totalElements ?? 0} resultados</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled={(query.data?.totalElements ?? 0) <= 20}>Siguiente</Button></div></div></>}
     </Panel>
-    {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
+    {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)} disabled={mutating}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
   </>
 }
