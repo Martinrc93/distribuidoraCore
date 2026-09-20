@@ -1,7 +1,7 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost, apiPut, clearAccessToken, getAccessToken, login, type ApiPage } from '../shared/api/client'
+import { apiGet, clearAccessToken, getAccessToken, login, type ApiPage } from '../shared/api/client'
 import { Button } from '../shared/components/Button'
 import { Badge, type BadgeTone } from '../shared/components/Badge'
 import { DataTable, type TableColumn } from '../shared/components/DataTable'
@@ -10,6 +10,7 @@ import { PageHeader } from '../shared/components/PageHeader'
 import { Panel } from '../shared/components/Panel'
 import { StatCard } from '../shared/components/StatCard'
 import CustomersPage from '../features/customers/CustomersPage'
+import ProductsPage from '../features/products/ProductsPage'
 
 type Row = Record<string, string>
 
@@ -259,32 +260,6 @@ function SalesPage() {
     { key: 'id', label: 'Venta', emphasis: true }, { key: 'customer', label: 'Cliente' }, { key: 'date', label: 'Fecha' }, { key: 'total', label: 'Total', align: 'right' }, { key: 'payment', label: 'Pago' }, { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
   ]
   return <><PageHeader eyebrow="Operación" title="Ventas" description="Consultá ventas, pagos y documentos." /><Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar ventas..." aria-label="Buscar ventas" /><Button variant="secondary">Filtrar</Button></div>{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
-}
-
-function ProductForm({ onDone }: { onDone: () => void }) {
-  const queryClient = useQueryClient()
-  const [form, setForm] = useState({ sku: '', name: '', category: '', presentation: 'Unidad', cost: '', price: '' })
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-  function change(field: keyof typeof form, value: string) { setForm((current) => ({ ...current, [field]: value })) }
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setSaving(true); setError('')
-    try {
-      await apiPost('/api/products', { ...form, cost: Number(form.cost), price: Number(form.price) })
-      await queryClient.invalidateQueries({ queryKey: ['/api/products?page=0&size=20'] })
-      onDone()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo guardar el producto') }
-    finally { setSaving(false) }
-  }
-  return <Panel title="Nuevo producto"><form className="form-grid" onSubmit={submit}>{(['sku', 'name', 'category', 'presentation', 'cost', 'price'] as const).map((field) => <label className="field" key={field}><span>{field === 'sku' ? 'SKU' : field === 'name' ? 'Nombre' : field === 'category' ? 'Categoría' : field === 'presentation' ? 'Presentación' : field === 'cost' ? 'Costo' : 'Precio'}</span><input className="input" type={field === 'cost' || field === 'price' ? 'number' : 'text'} min={field === 'cost' || field === 'price' ? '0' : undefined} step={field === 'cost' || field === 'price' ? '0.01' : undefined} value={form[field]} onChange={(event) => change(field, event.target.value)} required /></label>)}{error && <p className="error-text">{error}</p>}<div className="page-actions"><Button variant="secondary" type="button" onClick={onDone}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar producto'}</Button></div></form></Panel>
-}
-
-function ProductsPage() {
-  const query = useApiPage<Record<string, unknown>>('/api/products?page=0&size=20')
-  const [showForm, setShowForm] = useState(false)
-  const rows: Row[] = (query.data?.content ?? []).map((product) => ({ name: String(product.name), category: String(product.category), cost: money(product.cost), price: money(product.price), stock: String(product.stock) }))
-  const columns: TableColumn[] = [{ key: 'name', label: 'Producto', emphasis: true }, { key: 'category', label: 'Categoría' }, { key: 'cost', label: 'Costo', align: 'right' }, { key: 'price', label: 'Lista general', align: 'right' }, { key: 'stock', label: 'Stock', align: 'right', render: (value) => <span className={Number(value) < 0 ? 'negative-number' : ''}>{value}</span> }]
-  return <><PageHeader eyebrow="Catálogo" title="Productos" description="Productos, marcas, presentaciones, costos y precios." actions={<Button onClick={() => setShowForm((value) => !value)}>+ Nuevo producto</Button>} />{showForm && <ProductForm onDone={() => setShowForm(false)} />}<Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar productos..." aria-label="Buscar productos" /><select className="select" aria-label="Filtrar categoría"><option>Todas las categorías</option></select><Button variant="secondary">Filtrar</Button></div>{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
 }
 
 function InventoryPage() {
