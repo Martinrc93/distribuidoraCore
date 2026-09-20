@@ -9,6 +9,7 @@ import { EmptyState } from '../shared/components/EmptyState'
 import { PageHeader } from '../shared/components/PageHeader'
 import { Panel } from '../shared/components/Panel'
 import { StatCard } from '../shared/components/StatCard'
+import CustomersPage from '../features/customers/CustomersPage'
 
 type Row = Record<string, string>
 
@@ -258,35 +259,6 @@ function SalesPage() {
     { key: 'id', label: 'Venta', emphasis: true }, { key: 'customer', label: 'Cliente' }, { key: 'date', label: 'Fecha' }, { key: 'total', label: 'Total', align: 'right' }, { key: 'payment', label: 'Pago' }, { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
   ]
   return <><PageHeader eyebrow="Operación" title="Ventas" description="Consultá ventas, pagos y documentos." /><Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar ventas..." aria-label="Buscar ventas" /><Button variant="secondary">Filtrar</Button></div>{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
-}
-
-function CustomerForm({ onDone, initial }: { onDone: () => void; initial?: { id: string; name: string; taxId: string } }) {
-  const queryClient = useQueryClient()
-  const [businessName, setBusinessName] = useState(initial?.name ?? '')
-  const [taxId, setTaxId] = useState(initial?.taxId ?? '')
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setSaving(true); setError('')
-    try {
-      await (initial ? apiPut(`/api/customers/${initial.id}`, { businessName, taxId }) : apiPost('/api/customers', { businessName, taxId }))
-      await queryClient.invalidateQueries({ queryKey: ['/api/customers?page=0&size=20'] })
-      onDone()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo guardar el cliente') }
-    finally { setSaving(false) }
-  }
-
-  return <Panel title={initial ? 'Editar cliente' : 'Nuevo cliente'}><form className="form-grid" onSubmit={submit}><label className="field"><span>Razón social</span><input className="input" value={businessName} onChange={(event) => setBusinessName(event.target.value)} required /></label><label className="field"><span>Identificación fiscal</span><input className="input" value={taxId} onChange={(event) => setTaxId(event.target.value)} required /></label>{error && <p className="error-text">{error}</p>}<div className="page-actions"><Button variant="secondary" type="button" onClick={onDone}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></form></Panel>
-}
-
-function CustomersPage() {
-  const query = useApiPage<Record<string, unknown>>('/api/customers?page=0&size=20')
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing] = useState<{ id: string; name: string; taxId: string }>()
-  const rows: Row[] = (query.data?.content ?? []).map((customer) => ({ id: String(customer.id), name: String(customer.name), taxId: String(customer.taxId), seller: String(customer.seller), balance: money(customer.balance), status: String(customer.status) }))
-  const columns: TableColumn[] = [{ key: 'name', label: 'Cliente', emphasis: true }, { key: 'taxId', label: 'Identificación' }, { key: 'seller', label: 'Vendedor' }, { key: 'balance', label: 'Saldo', align: 'right' }, { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> }, { key: 'actions', label: '', render: (_, row) => <Button variant="link" onClick={() => { setEditing({ id: row.id, name: row.name, taxId: row.taxId }); setShowForm(false) }}>Editar</Button> }]
-  return <><PageHeader eyebrow="Operación" title="Clientes" description="Gestioná clientes, dirección, vendedor y cuenta corriente." actions={<Button onClick={() => { setEditing(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button>} />{(showForm || editing) && <CustomerForm initial={editing} onDone={() => { setShowForm(false); setEditing(undefined) }} />}<Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar por nombre o identificación..." aria-label="Buscar clientes" /><Button variant="secondary">Filtrar</Button></div>{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
 }
 
 function ProductForm({ onDone }: { onDone: () => void }) {

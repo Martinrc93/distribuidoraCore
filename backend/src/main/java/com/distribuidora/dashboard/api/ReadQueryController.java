@@ -57,4 +57,8 @@ public class ReadQueryController {
     @GetMapping("/users")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public PageResponse<Map<String, Object>> users(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.users(page, size, search); }
+
+    @GetMapping("/sellers")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public PageResponse<Map<String, Object>> sellers(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) { return queries.sellers(page, size); }
 }

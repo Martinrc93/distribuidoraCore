@@ -48,8 +48,8 @@ public class ReadQueryService {
         if (sellerScoped()) {
             UUID sellerId = currentUser.requireSellerProfile();
             return page("""
-                select c.id, c.business_name as name, c.tax_id as "taxId",
-                       coalesce(sp.display_name, 'Sin asignar') as seller, c.balance, c.status
+                select c.id, c.business_name as name, c.tax_id as "taxId", c.seller_id as "sellerId",
+                       c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller, c.balance, c.status
                 from customer.customers c left join seller.seller_profiles sp on sp.id = c.seller_id
                 where c.seller_id = ? and (lower(c.business_name) like ? or lower(c.tax_id) like ?)
                 order by c.business_name
@@ -57,8 +57,8 @@ public class ReadQueryService {
                 page, size, sellerId, term, term);
         }
         return page("""
-            select c.id, c.business_name as name, c.tax_id as "taxId",
-                   coalesce(sp.display_name, 'Sin asignar') as seller,
+            select c.id, c.business_name as name, c.tax_id as "taxId", c.seller_id as "sellerId",
+                   c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller,
                    c.balance, c.status
             from customer.customers c
             left join seller.seller_profiles sp on sp.id = c.seller_id
@@ -275,7 +275,17 @@ public class ReadQueryService {
             select id, email, email as name, status
             from identity.users where lower(email) like ? order by email
             """, "select count(*) from identity.users where lower(email) like ?",
-            page, size, term);
+             page, size, term);
+    }
+
+    public PageResponse<Map<String, Object>> sellers(int page, int size) {
+        return page("""
+            select sp.id, sp.display_name as "displayName", u.email
+            from seller.seller_profiles sp
+            join identity.users u on u.id = sp.user_id
+            order by sp.display_name
+            """, "select count(*) from seller.seller_profiles sp join identity.users u on u.id = sp.user_id",
+            page, size);
     }
 
     private PageResponse<Map<String, Object>> page(String sql, String countSql, int page, int size, Object... parameters) {
