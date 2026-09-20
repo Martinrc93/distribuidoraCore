@@ -40,22 +40,22 @@ Estado actualizado: 2026-09-19
 - [x] Alta de cliente con formulario controlado.
 - [x] Edición de cliente.
 - [x] Invalidación de query después de guardar.
-- [~] Asignación de vendedor: backend disponible, UI pendiente.
-- [~] Asignación de lista de precios: backend disponible, UI pendiente.
-- [ ] Baja lógica/reactivación desde la UI.
+- [x] Asignación de vendedor.
+- [x] Asignación de lista de precios.
+- [x] Baja lógica/reactivación desde la UI.
 - [ ] Vista de detalle de cliente con ventas, pagos y cuenta corriente.
 
 ## Catalog Y Pricing
 
 - [x] Listado real de productos desde `/api/products`.
 - [x] Alta básica de producto.
-- [~] Edición de producto: backend disponible, acción/formulario de UI pendiente.
-- [~] Baja/reactivación de producto: backend disponible, UI pendiente.
+- [x] Edición de producto.
+- [x] Baja/reactivación de producto.
 - [ ] Pantalla de listas de precios.
 - [ ] Crear/renombrar/activar/desactivar lista.
 - [ ] Editar precios por producto dentro de una lista.
 - [ ] Resolver y mostrar lista/precio seleccionado para un cliente.
-- [ ] Manejar `403`, `404` y `409` con mensajes accionables.
+- [x] Manejar `403`, `404` y `409` con mensajes accionables.
 
 ## Inventory
 
