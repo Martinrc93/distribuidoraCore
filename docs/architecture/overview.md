@@ -30,8 +30,8 @@ flowchart LR
     ORD --> SAL
     ORD --> PAY
     SAL --> DOC
-    DOC --> NOTIF[Notification]
-    NOTIF --> EXT[External providers]
+    DOC -.-> NOTIF[Notification - pendiente]
+    NOTIF -.-> EXT[External providers - pendiente]
 
     ID --> DB[(PostgreSQL)]
     SEL --> DB
@@ -68,7 +68,6 @@ sequenceDiagram
     participant S as Sale
     participant P as Payment
     participant A as Audit
-    participant X as Outbox
 
     U->>F: Carga cliente y líneas
     U->>F: Confirma pedido
@@ -77,7 +76,6 @@ sequenceDiagram
     O->>S: Crear venta
     O->>P: Registrar pagos o deuda
     O->>A: Registrar auditoría
-    O->>X: Persistir eventos
     O-->>F: Pedido CONFIRMED
 ```
 
