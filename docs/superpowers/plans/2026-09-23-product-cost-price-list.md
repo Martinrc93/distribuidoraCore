@@ -32,21 +32,21 @@
 - Preserves existing prices by ensuring every existing product has a `catalog.product_prices` row before dropping the column.
 - Changes demo product creation to insert cost first, then create list prices explicitly.
 
-- [ ] **Step 1: Write the failing migration contract test**
+- [x] **Step 1: Write the failing migration contract test**
 
 Assert the migration text contains the backfill from `products.price` into
 `product_prices`, drops the old column, and removes the old `price` check
 constraint. Assert the seed test expects prices to be stored in
 `catalog.product_prices`, not `products.price`.
 
-- [ ] **Step 2: Run the focused migration and seed tests**
+- [x] **Step 2: Run the focused migration and seed tests**
 
 Run: `mvn -q -Dtest=ProductPriceOwnershipMigrationContractTest,DemoDataSeederTest test`
 
 Expected: FAIL because `V11__move_product_prices_to_price_lists.sql` does not
 exist and the seed still references `products.price`.
 
-- [ ] **Step 3: Add the migration**
+- [x] **Step 3: Add the migration**
 
 Create `V11__move_product_prices_to_price_lists.sql` with this order:
 
@@ -67,7 +67,7 @@ ALTER TABLE catalog.products
     ADD CONSTRAINT ck_product_cost CHECK (cost >= 0);
 ```
 
-- [ ] **Step 4: Update the demo seed**
+- [x] **Step 4: Update the demo seed**
 
 Change `insertProducts()` to insert only `cost`, then insert each active list
 price using the generated product ID and a deterministic multiplier. Remove the
@@ -76,7 +76,7 @@ idempotent query that fills missing list prices from `products.cost` using the
 same seed rule or leave all rows created by `insertProducts()` present before
 calling the repair method.
 
-- [ ] **Step 5: Run the focused tests again**
+- [x] **Step 5: Run the focused tests again**
 
 Run: `mvn -q -Dtest=ProductPriceOwnershipMigrationContractTest,DemoDataSeederTest test`
 

@@ -40,8 +40,8 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Listas de precios con maximo de diez.
 - [x] Precios por producto y lista con `NUMERIC(19,4)`.
 - [x] Resolucion por lista explicita, lista del cliente y fallback documentado.
-- [ ] Eliminar el precio almacenado directamente en el producto.
-- [ ] Usar exclusivamente `catalog.product_prices` como fuente de precios.
+- [x] Eliminar el precio almacenado directamente en la tabla de productos (migración V11).
+- [~] Usar exclusivamente `catalog.product_prices` como fuente de precios (esquema y seed migrados; servicios en proceso).
 - [ ] Editar costo sin precio cuando no supera ninguna lista activa.
 - [ ] Exigir nuevos precios para todas las listas afectadas cuando el costo las supera.
 - [ ] Actualizar costo y precios afectados en una sola transaccion.

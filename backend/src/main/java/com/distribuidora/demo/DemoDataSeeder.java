@@ -78,7 +78,7 @@ public class DemoDataSeeder implements ApplicationRunner {
     private void ensureProductPrices() {
         jdbc.update("""
             INSERT INTO catalog.product_prices (price_list_id, product_id, price, created_at, updated_at)
-            SELECT price_lists.id, products.id, products.price, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            SELECT price_lists.id, products.id, round((products.cost * 1.35)::numeric, 4), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM catalog.price_lists
             CROSS JOIN catalog.products
             WHERE price_lists.status = 'ACTIVE'
@@ -136,12 +136,11 @@ public class DemoDataSeeder implements ApplicationRunner {
             UUID id = UUID.randomUUID();
             products.add(id);
             BigDecimal cost = BigDecimal.valueOf(500 + (index % 100) * 37L);
-            BigDecimal price = cost.multiply(BigDecimal.valueOf(1.35)).setScale(4);
             jdbc.update("""
-                insert into catalog.products(id, sku, name, category, presentation, cost, price, status, created_at)
-                values (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+                insert into catalog.products(id, sku, name, category, presentation, cost, status, created_at)
+                values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
                 """, id, "SKU-%04d".formatted(index), "Producto Demo %03d".formatted(index),
-                categories[index % categories.length], "Unidad", cost, price, timestamp(Instant.now()));
+                categories[index % categories.length], "Unidad", cost, timestamp(Instant.now()));
             BigDecimal stock = BigDecimal.valueOf(20 + (index % 80));
             jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, ?, ?)", id, stock, timestamp(Instant.now()));
             jdbc.update("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, created_at) values (?, ?, 'MANUAL_ENTRY', ?, ?, 'DEMO_SEED', ?)",
@@ -178,7 +177,12 @@ public class DemoDataSeeder implements ApplicationRunner {
             int lineCount = 2 + random.nextInt(4);
             for (int line = 0; line < lineCount; line++) {
                 UUID productId = products.get(random.nextInt(products.size()));
-                Map<String, Object> product = jdbc.queryForMap("select name, price from catalog.products where id = ?", productId);
+                Map<String, Object> product = jdbc.queryForMap("""
+                    select p.name, pp.price
+                    from catalog.products p
+                    join catalog.product_prices pp on pp.product_id = p.id
+                    where p.id = ? and pp.price_list_id = ?
+                    """, productId, generalPriceListId);
                 BigDecimal quantity = BigDecimal.valueOf(1 + random.nextInt(8));
                 BigDecimal price = (BigDecimal) product.get("price");
                 BigDecimal lineTotal = price.multiply(quantity).setScale(4);
