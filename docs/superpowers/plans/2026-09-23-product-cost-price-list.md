@@ -100,7 +100,7 @@ Expected: PASS.
 - `update(UUID id, ProductInput)` reads active prices and atomically updates the
   product and supplied affected prices.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Add tests for these exact cases:
 
@@ -116,20 +116,20 @@ void validatesInitialPricesAgainstCost()
 Mock JDBC queries for active list prices and verify that the update SQL writes
 `cost` and affected `product_prices` only after validation.
 
-- [ ] **Step 2: Run the focused service tests to verify failure**
+- [x] **Step 2: Run the focused service tests to verify failure**
 
 Run: `mvn -q -Dtest=ProductCommandServiceTest test`
 
 Expected: FAIL because `ProductInput` still requires a product-level price and
 the update path does not query list prices.
 
-- [ ] **Step 3: Implement the input and validation types**
+- [x] **Step 3: Implement the input and validation types**
 
 Use a list payload, reject duplicate `priceListId` values, reject null or
 negative prices, and reject a null/negative cost. Keep text and SKU validation
 unchanged.
 
-- [ ] **Step 4: Implement the update decision tree**
+- [x] **Step 4: Implement the update decision tree**
 
 Query active list prices with list ID and code. Compute affected lists where
 `newCost.compareTo(currentPrice) > 0`. If affected lists exist, require exactly
@@ -140,20 +140,20 @@ validation exception containing affected list codes when prices are missing. The
 HTTP error body must retain the existing error envelope and add an
 `affectedPriceLists` array with `{ priceListId, code, currentPrice }` objects.
 
-- [ ] **Step 5: Update the controller payload**
+- [x] **Step 5: Update the controller payload**
 
 Remove `price` from `ProductPayload` and expose `prices` as an optional list of
 `{ priceListId, price }`. Preserve `@Valid`, decimal constraints, and
 `ADMIN_ALL` authorization.
 
-- [ ] **Step 6: Expose affected-list metadata in the error envelope**
+- [x] **Step 6: Expose affected-list metadata in the error envelope**
 
 Add a dedicated `ProductPriceValidationException` carrying the affected list
 records. In `ApiExceptionHandler`, map it to `400` using `ProblemDetail` with
 `code = "INVALID_PRODUCT_PRICES"` and an `affectedPriceLists` property. Add a
 controller/error-handler test that verifies the property is serialized.
 
-- [ ] **Step 7: Run the focused backend tests**
+- [x] **Step 7: Run the focused backend tests**
 
 Run: `mvn -q -Dtest=ProductCommandServiceTest,ProductCommandControllerTest,ApiExceptionHandlerTest test`
 

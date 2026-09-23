@@ -17,10 +17,24 @@ import com.distribuidora.document.application.SaleDocumentConflictException;
 import com.distribuidora.document.application.SaleDocumentNotFoundException;
 
 import java.util.Map;
+import com.distribuidora.catalog.application.ProductPriceValidationException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(ProductPriceValidationException.class)
+    ResponseEntity<ProblemDetail> handleProductPriceValidation(ProductPriceValidationException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            exception.getMessage()
+        );
+        problem.setTitle("Invalid product prices");
+        problem.setProperty("code", "INVALID_PRODUCT_PRICES");
+        problem.setProperty("instance", request.getRequestURI());
+        problem.setProperty("affectedPriceLists", exception.getAffectedPriceLists());
+        return ResponseEntity.badRequest().body(problem);
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     ResponseEntity<ProblemDetail> handleBadRequest(IllegalArgumentException exception, HttpServletRequest request) {

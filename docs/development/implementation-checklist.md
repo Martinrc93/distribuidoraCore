@@ -42,11 +42,11 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Resolucion por lista explicita, lista del cliente y fallback documentado.
 - [x] Eliminar el precio almacenado directamente en la tabla de productos (migración V11).
 - [~] Usar exclusivamente `catalog.product_prices` como fuente de precios (esquema y seed migrados; servicios en proceso).
-- [ ] Editar costo sin precio cuando no supera ninguna lista activa.
-- [ ] Exigir nuevos precios para todas las listas afectadas cuando el costo las supera.
-- [ ] Actualizar costo y precios afectados en una sola transaccion.
-- [ ] Exponer las listas afectadas en el error de validacion.
-- [ ] Eliminar historial de costos del alcance funcional.
+- [x] Editar costo sin precio cuando no supera ninguna lista activa.
+- [x] Exigir nuevos precios para todas las listas afectadas cuando el costo las supera.
+- [x] Actualizar costo y precios afectados en una sola transaccion.
+- [x] Exponer las listas afectadas en el error de validacion.
+- [x] Eliminar historial de costos del alcance funcional.
 - [ ] CRUD completo de marcas y categorias.
 
 ### Inventario
