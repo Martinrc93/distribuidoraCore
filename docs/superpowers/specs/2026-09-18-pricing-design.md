@@ -54,7 +54,11 @@ Agregar `price_list_id UUID NULL REFERENCES catalog.price_lists`. La relación e
 
 ## Datos iniciales
 
-La migración crea `GENERAL`, `LISTA_2` y `LISTA_3`. Cada producto existente recibe inicialmente su valor actual de `catalog.products.price` en las tres listas. `GENERAL` queda activa y marcada como default; las otras dos quedan activas y no default.
+La migración crea diez listas con identificadores deterministas. Cada producto
+existente recibe inicialmente su valor actual de `catalog.products.price` en
+`GENERAL`, `LISTA_2` y `LISTA_3`. `GENERAL` queda activa y marcada como default;
+las otras dos quedan activas y no default; `LISTA_4` a `LISTA_10` quedan
+inactivas.
 
 ## Reglas de negocio
 
@@ -64,7 +68,8 @@ La migración crea `GENERAL`, `LISTA_2` y `LISTA_3`. Cada producto existente rec
 - No puede haber más de diez listas, contando activas e inactivas.
 - No puede haber más de una lista default.
 - La lista default debe ser `GENERAL` en esta fase.
-- Un precio ausente en una lista no hace fallback a otra lista; la resolución devuelve `404`.
+- Un precio ausente prueba las listas activas anteriores por identificador; si
+  no encuentra precio, la resolución devuelve `404`.
 - Los cambios de precio tienen efecto inmediato.
 
 ## API
@@ -97,7 +102,8 @@ La respuesta de resolución incluye `priceListId`, `priceListCode`, `productId` 
 - `400 INVALID_REQUEST`: nombre/código/precio inválido, estado inválido o payload incompleto.
 - `401 UNAUTHORIZED`: JWT ausente o inválido.
 - `403 FORBIDDEN`: mutación sin `ADMIN_ALL`.
-- `404 NOT_FOUND`: lista, producto, cliente o precio inexistente.
+- `404 NOT_FOUND`: lista, producto, cliente o precio inexistente en la lista
+  seleccionada y sus listas activas anteriores.
 - `409 CONFLICT`: límite de diez listas, código duplicado o desactivación de `GENERAL`.
 
 ## Auditoría
@@ -107,9 +113,11 @@ Las operaciones `PRICELIST_CREATE`, `PRICELIST_UPDATE`, `PRICELIST_STATUS`, `PRO
 ## Pruebas
 
 - Migración V5 sobre una base con productos y clientes existentes.
-- Seed inicial de tres listas y precios para cada producto.
+- Seed inicial de diez listas; las tres primeras activas reciben precios para
+  cada producto.
 - Unicidad y límite de diez listas.
 - Resolución por lista del cliente, fallback `GENERAL` y lista explícita.
-- Rechazo de lista inactiva y precio inexistente.
+- Rechazo de lista inactiva y fallback a listas activas anteriores cuando falta
+  un precio.
 - Permiso `ADMIN_ALL`, respuestas HTTP y auditoría.
 - Verificación de que cambiar un precio no modifica todavía pedidos históricos.

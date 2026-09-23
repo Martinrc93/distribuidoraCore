@@ -48,7 +48,7 @@ public class ReadQueryService {
         if (sellerScoped()) {
             UUID sellerId = currentUser.requireSellerProfile();
             return page("""
-                select c.id, c.business_name as name, c.tax_id as "taxId", c.seller_id as "sellerId",
+                select c.id, c.business_name as name, c.tax_id as "cuitId", c.seller_id as "sellerId",
                        c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller, c.balance, c.status
                 from customer.customers c left join seller.seller_profiles sp on sp.id = c.seller_id
                 where c.seller_id = ? and (lower(c.business_name) like ? or lower(c.tax_id) like ?)
@@ -57,7 +57,7 @@ public class ReadQueryService {
                 page, size, sellerId, term, term);
         }
         return page("""
-            select c.id, c.business_name as name, c.tax_id as "taxId", c.seller_id as "sellerId",
+            select c.id, c.business_name as name, c.tax_id as "cuitId", c.seller_id as "sellerId",
                    c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller,
                    c.balance, c.status
             from customer.customers c

@@ -103,9 +103,13 @@ nombre = marca + " " + presentación
 
 El producto es el artículo vendible y la unidad controlada por inventario.
 
+La edición del costo y la actualización obligatoria de precios afectados por
+lista quedan documentadas como implementación pendiente.
+
 #### Listas de precios
 
-- Se crean tres listas iniciales: `Lista 1`, `Lista 2` y `Lista 3`.
+- Se crean diez listas iniciales: `Lista 1` a `Lista 10`.
+- Las listas 1 a 3 quedan activas; las listas 4 a 10 quedan inactivas.
 - El administrador puede cambiar sus nombres.
 - El administrador puede agregar listas hasta un máximo total de diez.
 - El máximo incluye listas activas e inactivas.
@@ -115,10 +119,11 @@ El producto es el artículo vendible y la unidad controlada por inventario.
 - Una lista dada de baja no se usa en nuevos pedidos.
 - Los pedidos históricos conservan el precio aplicado.
 - Un cliente puede tener una lista asignada, pero no es obligatorio.
-- Una de las listas existentes se configura como lista general por defecto.
-- Si no hay lista asignada al cliente, se utiliza esa lista general; no se crea
-  una cuarta lista automática.
+- `LISTA_1` es la lista predeterminada cuando el cliente no tiene una lista
+  asignada; no se crea una cuarta lista automática.
 - La lista puede cambiarse durante la creación del pedido.
+- Si falta el precio en la lista activa seleccionada, se prueban las listas
+  activas anteriores por identificador descendente.
 - Los cambios de precio son inmediatos y no tienen vigencia futura.
 
 No se guardan precios históricos de la lista como historial independiente; el
@@ -299,11 +304,21 @@ deuda actual + importe pendiente del nuevo pedido
 La entrega es una acción sobre una venta confirmada.
 
 - Vendedor y administrador pueden marcar `DELIVERED`.
-- La fecha y hora se asignan automáticamente.
+- La fecha y hora se asignan automáticamente; se persisten en UTC y se
+  presentan en la zona de negocio UTC-3.
 - Se registra el usuario que ejecuta la acción.
 - La dirección se toma de los datos del cliente.
 - No se requiere firma.
 - No se requiere comprobante de entrega.
+- Al marcar como entregado se consulta el saldo pendiente de la venta.
+- Si se cobra en el momento, se registra el monto y el medio `CASH` o
+  `BANK_TRANSFER`.
+- Si el medio es `BANK_TRANSFER`, se puede registrar opcionalmente el número de
+  transferencia.
+- Si el pago es parcial, el importe restante se registra en la cuenta corriente
+  del cliente.
+- Si no se cobra en el momento, el saldo pendiente se registra en la cuenta
+  corriente del cliente.
 - Se permiten múltiples intentos.
 - Un intento no entregado requiere observación.
 - Un intento no entregado no cambia el estado principal.
@@ -422,6 +437,5 @@ Quedan fuera del alcance actual, pero no deben bloquearse arquitectónicamente:
 - Proveedores y compras.
 - Medios de pago adicionales.
 - Portal de clientes.
-- Historial de costos.
 - Configurador visual de plantillas.
 - Monitoreo avanzado con Prometheus, Grafana y Loki.

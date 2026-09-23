@@ -49,7 +49,7 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Activar y desactivar clientes lógicamente.
 - [x] Asignar vendedor.
 - [x] Asignar y limpiar lista de precios.
-- [x] Validar identificación fiscal única.
+- [x] Validar identificación fiscal única cuando se informa; el campo es opcional.
 - [x] Auditar altas, modificaciones, estados y asignaciones.
 - [x] Filtrar lecturas seller por clientes asignados.
 
@@ -163,6 +163,8 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [ ] Aplicar pagos a deuda específica o mediante FIFO.
 - [ ] Configurar límite de crédito global.
 - [ ] Advertencias auditadas por exceso de crédito.
+- [ ] Registrar cobros durante la entrega y enviar el saldo restante a la cuenta
+  corriente.
 
 ### Documentos y notificaciones
 

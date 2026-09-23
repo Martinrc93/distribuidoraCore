@@ -370,14 +370,22 @@ venta y resumen del cliente.
 ```mermaid
 stateDiagram-v2
     [*] --> CONFIRMED
-    CONFIRMED --> DeliveryAttempt: iniciar intento
+    CONFIRMED --> DeliveryAttempt: vendedor marca entrega
     DeliveryAttempt --> CONFIRMED: no entregado + observación
-    DeliveryAttempt --> DELIVERED: entrega exitosa
+    DeliveryAttempt --> PaymentDecision: entrega exitosa
+    PaymentDecision --> DELIVERED: sin saldo pendiente
+    PaymentDecision --> PaymentForm: cobrar al entregar
+    PaymentForm --> DELIVERED: pago total
+    PaymentForm --> AccountLedger: pago parcial
+    PaymentDecision --> AccountLedger: no cobrar
+    AccountLedger --> DELIVERED: registrar saldo pendiente
     DELIVERED --> [*]
 ```
 
-La fecha y hora provienen del backend. La observación es obligatoria cuando el
-resultado es no entregado. El intento fallido no cambia el estado principal.
+La fecha y hora provienen del backend y se presentan en UTC-3. La observación es
+obligatoria cuando el resultado es no entregado. El intento fallido no cambia el
+estado principal. Al entregar se puede registrar efectivo o transferencia; el
+saldo restante se registra en la cuenta corriente.
 
 ## 10. Documentos, impresión y WhatsApp
 

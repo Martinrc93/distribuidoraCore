@@ -38,7 +38,7 @@ Cliente:
 ```json
 {
   "businessName": "Nuevo cliente",
-  "taxId": "30-71234567-1",
+  "cuitId": "30-71234567-1",
   "sellerId": "uuid-opcional"
 }
 ```
@@ -58,8 +58,8 @@ Producto:
 
 ## Reglas
 
-- `businessName`, `taxId`, SKU, nombre, categoría y presentación son obligatorios.
-- `taxId` y SKU son únicos.
+- `businessName`, SKU, nombre, categoría y presentación son obligatorios.
+- `cuitId`, cuando se informa, y SKU son únicos.
 - `cost` y `price` no pueden ser negativos.
 - La desactivación es lógica y cambia `status` a `INACTIVE`.
 - No se eliminan clientes con pedidos/ventas ni productos con movimientos.

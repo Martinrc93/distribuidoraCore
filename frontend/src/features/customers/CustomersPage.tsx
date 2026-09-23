@@ -12,7 +12,7 @@ import { Panel } from '../../shared/components/Panel'
 type Customer = {
   id: string
   name: string
-  taxId: string
+  cuitId?: string | null
   seller?: string
   sellerId?: string
   priceListId?: string | null
@@ -65,13 +65,13 @@ function CustomerForm({
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
   const [businessName, setBusinessName] = useState(initial?.name ?? '')
-  const [taxId, setTaxId] = useState(initial?.taxId ?? '')
+  const [cuitId, setCuitId] = useState(initial?.cuitId ?? '')
   const [sellerId, setSellerId] = useState(initial?.sellerId ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     setBusinessName(initial?.name ?? '')
-    setTaxId(initial?.taxId ?? '')
+    setCuitId(initial?.cuitId ?? '')
     setSellerId(initial?.sellerId ?? '')
     setError('')
   }, [initial])
@@ -82,7 +82,7 @@ function CustomerForm({
     setSaving(true)
     setError('')
     try {
-      const body = { businessName, taxId, sellerId: sellerId || undefined }
+      const body = { businessName, cuitId: cuitId.trim() || null, sellerId: sellerId || undefined }
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
       await queryClient.invalidateQueries({ queryKey: CUSTOMER_QUERY_KEY })
@@ -99,7 +99,7 @@ function CustomerForm({
   return <Panel title={initial ? 'Editar cliente' : 'Nuevo cliente'}>
     <form className="form-grid" onSubmit={submit}>
       <label className="field"><span>Razón social</span><input className="input" value={businessName} onChange={(event) => setBusinessName(event.target.value)} required /></label>
-      <label className="field"><span>Identificación fiscal</span><input className="input" value={taxId} onChange={(event) => setTaxId(event.target.value)} required /></label>
+      <label className="field"><span>CUIT (opcional)</span><input className="input" value={cuitId} onChange={(event) => setCuitId(event.target.value)} /></label>
       {isAdmin && <label className="field"><span>Vendedor asignado</span><select className="select" aria-label="Vendedor asignado" value={sellerId} onChange={(event) => setSellerId(event.target.value)}><option value="">Sin asignar</option>{sellers.map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName} ({seller.email})</option>)}</select></label>}
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="page-actions"><Button variant="secondary" type="button" onClick={onDone}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div>
@@ -162,7 +162,7 @@ export default function CustomersPage() {
   const rows = (query.data?.content ?? []).map((customer) => ({
     id: customer.id,
     name: customer.name,
-    taxId: customer.taxId,
+    cuitId: customer.cuitId,
     seller: customer.seller ?? 'Sin asignar',
     balance: money(customer.balance),
     status: customer.status,
@@ -170,7 +170,7 @@ export default function CustomersPage() {
   }))
   const columns: TableColumn[] = [
     { key: 'name', label: 'Cliente', emphasis: true },
-    { key: 'taxId', label: 'Identificación' },
+    { key: 'cuitId', label: 'CUIT' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'balance', label: 'Saldo', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },

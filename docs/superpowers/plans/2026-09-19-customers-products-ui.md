@@ -99,8 +99,8 @@ git commit -m "test: cover frontend mutation and permission helpers"
 
 **Interfaces:**
 - `CustomersPage` owns the `/api/customers?page=0&size=20` query and invalidates that exact query key after mutations.
-- `CustomerForm` accepts `initial?: { id: string; name: string; taxId: string; sellerId?: string; priceListId?: string; status?: string }` and `onDone: () => void`.
-- Customer create/update payloads are `{ businessName, taxId, sellerId?: string }`; price-list assignment uses a separate `PATCH /api/customers/{id}/price-list` call with `{ priceListId: string | null }`.
+- `CustomerForm` accepts `initial?: { id: string; name: string; cuitId?: string | null; sellerId?: string; priceListId?: string; status?: string }` and `onDone: () => void`.
+- Customer create/update payloads are `{ businessName, cuitId?: string | null, sellerId?: string }`; price-list assignment uses a separate `PATCH /api/customers/{id}/price-list` call with `{ priceListId: string | null }`.
 - Status payloads are `{ status: 'ACTIVE' | 'INACTIVE' }`.
 
 - `GET /api/sellers?page=0&size=100` returns seller projections `{ id: string, displayName: string, email: string }` and is restricted to `ADMIN_ALL`.

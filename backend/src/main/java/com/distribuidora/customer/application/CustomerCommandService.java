@@ -23,40 +23,44 @@ public class CustomerCommandService {
         this.audit = audit;
     }
 
-    public record CustomerInput(String businessName, String taxId, UUID sellerId) { }
+    public record CustomerInput(String businessName, String cuitId, UUID sellerId) { }
 
     public static void validate(CustomerInput input) {
-        if (input == null || blank(input.businessName()) || blank(input.taxId())) {
-            throw new IllegalArgumentException("businessName y taxId son obligatorios");
+        if (input == null || blank(input.businessName())) {
+            throw new IllegalArgumentException("businessName es obligatorio");
         }
     }
 
     @Transactional
     public UUID create(CustomerInput input) {
         validate(input);
-        if (exists("select exists(select 1 from customer.customers where tax_id = ?)", input.taxId())) {
+        String cuitId = normalize(input.cuitId());
+        if (cuitId != null && exists("select exists(select 1 from customer.customers where tax_id = ?)", cuitId)) {
             throw new IllegalStateException("Ya existe un cliente con esa identificación");
         }
         UUID id = UUID.randomUUID();
         jdbc.update("""
             insert into customer.customers(id, business_name, tax_id, seller_id, balance, status, created_at)
             values (?, ?, ?, ?, 0, 'ACTIVE', ?)
-            """, id, input.businessName().trim(), input.taxId().trim(), input.sellerId(), timestamp());
-        audit.record(actorId(), "CUSTOMER_CREATE", "CUSTOMER", id.toString(), "SUCCESS", Map.of("taxId", input.taxId()));
+            """, id, input.businessName().trim(), cuitId, input.sellerId(), timestamp());
+        Map<String, Object> details = new HashMap<>();
+        details.put("cuitId", cuitId);
+        audit.record(actorId(), "CUSTOMER_CREATE", "CUSTOMER", id.toString(), "SUCCESS", details);
         return id;
     }
 
     @Transactional
     public void update(UUID id, CustomerInput input) {
         validate(input);
+        String cuitId = normalize(input.cuitId());
         if (!exists("select exists(select 1 from customer.customers where id = ?)", id)) {
             throw new EmptyResultDataAccessException(1);
         }
-        if (exists("select exists(select 1 from customer.customers where tax_id = ? and id <> ?)", input.taxId(), id)) {
+        if (cuitId != null && exists("select exists(select 1 from customer.customers where tax_id = ? and id <> ?)", cuitId, id)) {
             throw new IllegalStateException("Ya existe un cliente con esa identificación");
         }
         jdbc.update("update customer.customers set business_name = ?, tax_id = ?, seller_id = ? where id = ?",
-            input.businessName().trim(), input.taxId().trim(), input.sellerId(), id);
+            input.businessName().trim(), cuitId, input.sellerId(), id);
         audit.record(actorId(), "CUSTOMER_UPDATE", "CUSTOMER", id.toString(), "SUCCESS", Map.of());
     }
 
@@ -100,4 +104,5 @@ public class CustomerCommandService {
 
     private Timestamp timestamp() { return Timestamp.from(Instant.now()); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
+    private static String normalize(String value) { return blank(value) ? null : value.trim(); }
 }

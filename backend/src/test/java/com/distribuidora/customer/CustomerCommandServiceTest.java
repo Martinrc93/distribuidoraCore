@@ -43,6 +43,11 @@ class CustomerCommandServiceTest {
     }
 
     @Test
+    void allowsMissingTaxId() {
+        CustomerCommandService.validate(new CustomerCommandService.CustomerInput("Cliente sin identificacion", null, null));
+    }
+
+    @Test
     void assignsActivePriceListAndAuditsChange() {
         UUID customerId = UUID.randomUUID();
         UUID priceListId = UUID.randomUUID();

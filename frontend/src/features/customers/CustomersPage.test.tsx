@@ -24,7 +24,7 @@ function response(body: unknown, status = 200) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 }
 
-const customers = { content: [{ id: 'customer-1', name: 'Almacén Norte', taxId: '30-123', seller: 'Lucía', balance: 1000, status: 'ACTIVE', priceListId: 'list-1' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
+const customers = { content: [{ id: 'customer-1', name: 'Almacén Norte', cuitId: '30-123', seller: 'Lucía', balance: 1000, status: 'ACTIVE', priceListId: 'list-1' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
 describe('CustomersPage', () => {
   afterEach(() => cleanup())
@@ -49,13 +49,34 @@ describe('CustomersPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /nuevo cliente/i }))
     await user.type(screen.getByLabelText(/razón social/i), 'Despensa Centro')
-    await user.type(screen.getByLabelText(/identificación fiscal/i), '30-456')
+    await user.type(screen.getByLabelText(/cuit/i), '30-456')
     await user.selectOptions(screen.getByLabelText(/vendedor/i), 'seller-1')
     await user.click(screen.getByRole('button', { name: /guardar cliente/i }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Despensa Centro', taxId: '30-456', sellerId: 'seller-1' }) })))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Despensa Centro', cuitId: '30-456', sellerId: 'seller-1' }) })))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/customers?page=0&size=20'] })
     expect(await screen.findByText('Cliente creado correctamente.')).toBeInTheDocument()
+  })
+
+  it('creates a customer without a tax identification', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/customers') && !init?.method) return response(customers)
+      if (path.startsWith('/api/sellers')) return response({ content: [] })
+      if (path === '/api/customers' && init?.method === 'POST') return response({ id: 'new-customer' }, 201)
+      return response({})
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /nuevo cliente/i }))
+    await user.type(screen.getByLabelText(/razón social/i), 'Cliente Eventual')
+    await user.click(screen.getByRole('button', { name: /guardar cliente/i }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ businessName: 'Cliente Eventual', cuitId: null, sellerId: undefined }),
+    })))
   })
 
   it('edits a customer, assigns a price list, and confirms status changes', async () => {
@@ -81,7 +102,7 @@ describe('CustomersPage', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar/i }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ businessName: 'Almacén Sur', taxId: '30-123', sellerId: undefined }) })))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ businessName: 'Almacén Sur', cuitId: '30-123', sellerId: undefined }) })))
     expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/price-list', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ priceListId: 'list-2' }) }))
     expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/status', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ status: 'INACTIVE' }) }))
     expect(await screen.findByText('Cliente desactivado correctamente.')).toBeInTheDocument()
@@ -89,7 +110,7 @@ describe('CustomersPage', () => {
 
   it('synchronizes the form when switching between customers', async () => {
     const user = userEvent.setup()
-    const secondCustomer = { ...customers.content[0], id: 'customer-2', name: 'Almacén Sur', taxId: '30-456' }
+    const secondCustomer = { ...customers.content[0], id: 'customer-2', name: 'Almacén Sur', cuitId: '30-456' }
     vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers?page=') ? response({ ...customers, content: [customers.content[0], secondCustomer] }) : response({ content: [] }))
     renderPage()
 
@@ -98,7 +119,7 @@ describe('CustomersPage', () => {
     await user.click(screen.getAllByRole('button', { name: /editar/i })[1])
 
     expect(screen.getByLabelText(/razón social/i)).toHaveValue('Almacén Sur')
-    expect(screen.getByLabelText(/identificación fiscal/i)).toHaveValue('30-456')
+    expect(screen.getByLabelText(/cuit/i)).toHaveValue('30-456')
   })
 
   it.each([
@@ -187,7 +208,7 @@ describe('CustomersPage', () => {
     renderPage()
     await user.click(await screen.findByRole('button', { name: /nuevo cliente/i }))
     await user.type(screen.getByLabelText(/razón social/i), 'Duplicado')
-    await user.type(screen.getByLabelText(/identificación fiscal/i), '30-123')
+    await user.type(screen.getByLabelText(/cuit/i), '30-123')
     await user.click(screen.getByRole('button', { name: /guardar cliente/i }))
 
     expect(await screen.findByText('El CUIT ya existe')).toBeInTheDocument()

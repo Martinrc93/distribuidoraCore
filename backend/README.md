@@ -137,9 +137,10 @@ Errores esperados:
 ## Pricing
 
 El módulo de pricing usa listas normalizadas y precios por producto. La
-migración crea tres listas activas: `GENERAL`, `LISTA_2` y `LISTA_3`. Se pueden
-crear hasta diez listas en total; las listas y sus precios no se eliminan
-físicamente. `GENERAL` es la lista default y fallback para clientes sin lista
+migración crea diez listas con identificadores deterministas: `GENERAL` y
+`LISTA_2` a `LISTA_3` quedan activas; `LISTA_4` a `LISTA_10` quedan inactivas.
+Se pueden crear hasta diez listas en total; las listas y sus precios no se
+eliminan físicamente. `GENERAL` es la lista default para clientes sin lista
 asignada. Los cambios de precio tienen efecto inmediato.
 
 Lecturas autenticadas:
@@ -152,9 +153,11 @@ GET /api/pricing/resolve?customerId={customerId}&productId={productId}&priceList
 ```
 
 La resolución usa `priceListId` explícito cuando se informa; si no, usa la
-lista asignada al cliente y, en último lugar, `GENERAL`. La respuesta contiene
-`priceListId`, `priceListCode`, `productId` y `unitPrice`. Una lista inactiva o
-un precio inexistente no se sustituye por otra lista.
+lista asignada al cliente y, en último lugar, `GENERAL`. Si la lista activa no
+tiene precio para el producto, prueba las listas activas anteriores por
+identificador descendente. Por ejemplo, desde `LISTA_3` prueba `LISTA_2` y
+luego `GENERAL`. La respuesta contiene `priceListId`, `priceListCode`,
+`productId` y `unitPrice`.
 
 Mutaciones exclusivas de `ADMIN_ALL`:
 
@@ -210,15 +213,16 @@ Errores de Pricing:
 - `403 Forbidden` (`code: FORBIDDEN`) para un JWT válido sin `ADMIN_ALL` al
   ejecutar cualquiera de las cinco mutaciones.
 - `404 Not Found` (`code: NOT_FOUND`) cuando no existe la lista, cliente o
-  producto solicitado, y cuando no existe el precio del producto en la lista
-  seleccionada. Un precio ausente no hace fallback a otra lista.
+  producto solicitado, o cuando no existe el precio del producto en la lista
+  seleccionada ni en las listas activas anteriores.
 - `409 Conflict` (`code: CONFLICT`) al repetir un código de lista, crear una
   undécima lista, cambiar un precio en una lista inactiva, asignar una lista
   inactiva, desactivar `GENERAL` o resolver mediante una lista inactiva.
 
 La resolución selecciona, en este orden, `priceListId` explícito, la lista
 asignada al cliente o la lista activa `GENERAL`. Una lista inactiva explícita o
-asignada es un conflicto (`409`), no un fallback.
+asignada es un conflicto (`409`). El fallback por falta de precio solo recorre
+listas activas con un identificador menor.
 
 ## Confirmación de pedidos
 

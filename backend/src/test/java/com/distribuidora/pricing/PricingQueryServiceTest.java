@@ -132,18 +132,26 @@ class PricingQueryServiceTest {
     }
 
     @Test
-    void returnsNotFoundWhenProductPriceIsMissing() {
+    void fallsBackToPreviousListWhenProductPriceIsMissing() {
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
-        UUID listId = UUID.randomUUID();
+        UUID listId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        UUID previousListId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         Map<String, Object> customer = new HashMap<>();
         customer.put("price_list_id", listId);
         when(jdbc.queryForMap(anyString(), any(Object[].class)))
-            .thenReturn(customer, Map.of("id", listId, "code", "LISTA_2", "status", "ACTIVE"));
+            .thenReturn(customer, Map.of("id", listId, "code", "LISTA_3", "status", "ACTIVE"));
         when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("product_prices"), any(Object[].class)))
-            .thenThrow(new EmptyResultDataAccessException(1));
+            .thenThrow(new EmptyResultDataAccessException(1))
+            .thenReturn(Map.of("priceListId", previousListId, "priceListCode", "LISTA_2",
+                "productId", productId, "unitPrice", new BigDecimal("11.0000")));
+        when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("price_lists"), any(Object[].class)))
+            .thenReturn(List.of(Map.of("id", previousListId, "code", "LISTA_2", "status", "ACTIVE")));
 
-        assertThatThrownBy(() -> service.resolve(customerId, productId, null))
-            .isInstanceOf(EmptyResultDataAccessException.class);
+        Map<String, Object> result = service.resolve(customerId, productId, null);
+
+        assertThat(result).containsEntry("priceListId", previousListId)
+            .containsEntry("priceListCode", "LISTA_2")
+            .containsEntry("unitPrice", new BigDecimal("11.0000"));
     }
 }

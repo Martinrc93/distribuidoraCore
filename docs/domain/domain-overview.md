@@ -66,7 +66,7 @@ erDiagram
 
 ```text
 lista del cliente si existe
-→ lista general si no existe
+→ `LISTA_1` si no existe
 → cambio manual de lista durante el pedido
 → precio de lista
 → override autorizado

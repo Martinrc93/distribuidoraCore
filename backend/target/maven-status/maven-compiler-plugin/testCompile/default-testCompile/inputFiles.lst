@@ -2,7 +2,9 @@ P:\dev\distribuidora\backend\src\test\java\com\distribuidora\catalog\ProductComm
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\customer\CustomerCommandServiceTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\ReadQueryServiceTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\SellerReadQueryTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\db\migration\OptionalCustomerTaxIdMigrationContractTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\db\migration\PricingMigrationContractTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\db\migration\RemainingPriceListsMigrationContractTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\demo\DemoDataSeederTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\DistribuidoraApplicationTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\document\DocumentControllerTest.java

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- `tax_id` y `sku` permanecen únicos.
+- `tax_id`, cuando se informa, y `sku` permanecen únicos.
 - `cost` y `price` no pueden ser negativos.
 - No se borran físicamente clientes ni productos.
 - Todos los commands requieren JWT.

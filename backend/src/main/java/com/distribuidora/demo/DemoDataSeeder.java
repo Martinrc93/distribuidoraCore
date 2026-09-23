@@ -81,8 +81,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             SELECT price_lists.id, products.id, products.price, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM catalog.price_lists
             CROSS JOIN catalog.products
-            WHERE price_lists.code IN ('GENERAL', 'LISTA_2', 'LISTA_3')
-              AND price_lists.status = 'ACTIVE'
+            WHERE price_lists.status = 'ACTIVE'
             ON CONFLICT (price_list_id, product_id) DO NOTHING
             """);
     }

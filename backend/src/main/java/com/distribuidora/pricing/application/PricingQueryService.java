@@ -52,6 +52,28 @@ public class PricingQueryService {
         }
 
         UUID resolvedListId = (UUID) selectedList.get("id");
+        try {
+            return findPrice(resolvedListId, productId);
+        } catch (EmptyResultDataAccessException missingPrice) {
+            List<Map<String, Object>> previousLists = jdbc.queryForList("""
+                select id, code, status
+                from catalog.price_lists
+                where status = 'ACTIVE' and id < ?
+                order by id desc
+                """, resolvedListId);
+
+            for (Map<String, Object> previousList : previousLists) {
+                try {
+                    return findPrice((UUID) previousList.get("id"), productId);
+                } catch (EmptyResultDataAccessException ignored) {
+                    // Continue with the next previous active list.
+                }
+            }
+            throw missingPrice;
+        }
+    }
+
+    private Map<String, Object> findPrice(UUID listId, UUID productId) {
         Map<String, Object> price = jdbc.queryForMap("""
             select pp.price_list_id as "priceListId", pl.code as "priceListCode",
                    pp.product_id as "productId", pp.price as "unitPrice"
@@ -59,7 +81,7 @@ public class PricingQueryService {
             join catalog.price_lists pl on pl.id = pp.price_list_id
             join catalog.products p on p.id = pp.product_id
             where pp.price_list_id = ? and pp.product_id = ?
-            """, resolvedListId, productId);
+            """, listId, productId);
         if (price.isEmpty()) {
             throw new EmptyResultDataAccessException(1);
         }
