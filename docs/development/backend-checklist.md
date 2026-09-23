@@ -45,6 +45,7 @@ Estado actualizado: 2026-09-19
 - [x] Asignación opcional de lista a clientes.
 - [x] Resolución explícita, asignada y fallback `GENERAL`.
 - [x] Auditoría y autorización `ADMIN_ALL`.
+- [ ] Autorizar descuentos por producto y generales únicamente para `ADMIN`.
 - [ ] Historial de precios y vigencias futuras, si el negocio lo requiere.
 - [ ] Reglas de descuentos comerciales persistidas fuera de la confirmación.
 

@@ -76,6 +76,7 @@ Estado actualizado: 2026-09-19
 - [ ] Selección explícita de lista de precios.
 - [ ] Búsqueda de productos y stock disponible.
 - [ ] Cálculo visual de líneas/descuentos como preview, sin reemplazar backend.
+- [ ] Mostrar y permitir descuentos por producto o generales solo a usuarios `ADMIN`.
 - [ ] Campo `idempotencyKey` generado por cada intento de confirmación.
 - [ ] Confirmación contra `/api/orders/confirm`.
 - [ ] Prevenir doble click mientras confirma.

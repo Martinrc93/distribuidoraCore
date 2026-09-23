@@ -48,6 +48,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [ ] Exponer las listas afectadas en el error de validacion.
 - [ ] Eliminar historial de costos del alcance funcional.
 - [ ] CRUD completo de marcas y categorias.
+- [ ] Restringir la configuracion y aplicacion de descuentos por producto o generales a `ADMIN`.
 
 ### Inventario
 
@@ -126,6 +127,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [ ] Conectar nuevo pedido con `/api/orders/confirm`.
 - [ ] Seleccionar cliente, lista y productos con stock.
 - [ ] Preview de descuentos y totales sin reemplazar el backend.
+- [ ] Ocultar controles de descuentos a usuarios que no sean `ADMIN`.
 - [ ] Idempotency key, bloqueo de doble envio y reintento seguro.
 - [ ] Detalle de venta con snapshots, pagos y saldo.
 - [ ] Registrar pagos parciales y combinados.

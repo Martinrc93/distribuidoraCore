@@ -251,6 +251,10 @@ precio de lista
 
 El backend es la fuente de verdad del cálculo.
 
+La configuracion y aplicacion de descuentos, tanto por producto como generales,
+requiere permiso administrativo. Por el momento solo el rol `ADMIN` puede
+realizar estas operaciones; vendedores y otros usuarios deben ser rechazados.
+
 ### Payment y cuenta corriente
 
 Responsables de pagos y deuda de clientes.
