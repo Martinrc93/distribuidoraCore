@@ -14,6 +14,13 @@ spring:
       name: test-admin
       password: test-password
 
+app:
+  security:
+    jwt-secret: test-secret-that-is-at-least-32-bytes-long
+    jwt-issuer: test
+  seed-demo: false
+  demo-password:
+
 management:
   endpoints:
     web:
