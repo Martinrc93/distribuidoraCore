@@ -45,6 +45,8 @@ Responsable de la identidad y el acceso al sistema:
 - Desbloquear usuarios.
 - Inhabilitar usuarios mediante baja lógica.
 - Gestionar roles y permisos.
+- Emitir refresh tokens rotativos y revocables almacenados como hash SHA-256.
+- Detectar reuso de refresh tokens revocados e invalidar sesiones preventivamente.
 - Revocar sesiones.
 
 Un usuario inhabilitado no puede iniciar sesión ni ser asignado como vendedor.

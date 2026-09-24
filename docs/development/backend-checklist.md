@@ -20,7 +20,7 @@ Estado actualizado: 2026-09-19
 - [x] Auditoría append-only con actor, operación y request ID.
 - [ ] Alta administrativa de usuarios `INVITED`.
 - [ ] Activación con token de un solo uso y expiración.
-- [ ] Refresh tokens rotativos, revocables y almacenados como hash.
+- [x] Refresh tokens rotativos, revocables y almacenados como hash.
 - [ ] Bloqueo/desbloqueo administrativo y revocación de sesiones.
 - [ ] Endpoints administrativos completos para usuarios, roles y permisos.
 

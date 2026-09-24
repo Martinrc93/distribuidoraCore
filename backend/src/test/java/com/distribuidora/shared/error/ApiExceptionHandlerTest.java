@@ -133,6 +133,22 @@ class ApiExceptionHandlerTest {
         assertThat(problem.getProperties().get("affectedPriceLists")).isEqualTo(exception.getAffectedPriceLists());
     }
 
+    @Test
+    void mapsInvalidRefreshTokenToUnauthorizedProblemDetail() throws Exception {
+        com.distribuidora.identity.application.InvalidRefreshTokenException exception =
+            new com.distribuidora.identity.application.InvalidRefreshTokenException("Token de refresco expirado");
+
+        ResponseEntity<?> response = invoke(exception, "/api/auth/refresh");
+        ProblemDetail problem = (ProblemDetail) response.getBody();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(problem).isNotNull();
+        assertThat(problem.getTitle()).isEqualTo("Unauthorized");
+        assertThat(problem.getDetail()).isEqualTo("Token de refresco expirado");
+        assertThat(problem.getProperties()).containsEntry("code", "INVALID_REFRESH_TOKEN");
+        assertThat(problem.getProperties()).containsEntry("instance", "/api/auth/refresh");
+    }
+
     private ResponseEntity<?> invoke(Exception exception, String path) throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
         Method method = resolver.resolveMethodByThrowable(exception);

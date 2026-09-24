@@ -16,8 +16,8 @@ import com.distribuidora.order.application.IdempotencyConflictException;
 import com.distribuidora.document.application.SaleDocumentConflictException;
 import com.distribuidora.document.application.SaleDocumentNotFoundException;
 
-import java.util.Map;
 import com.distribuidora.catalog.application.ProductPriceValidationException;
+import com.distribuidora.identity.application.InvalidRefreshTokenException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -74,6 +74,18 @@ public class ApiExceptionHandler {
         );
         problem.setTitle("Unauthorized");
         problem.setProperty("code", "INVALID_CREDENTIALS");
+        problem.setProperty("instance", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    ResponseEntity<ProblemDetail> handleInvalidRefreshToken(InvalidRefreshTokenException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNAUTHORIZED,
+            exception.getMessage()
+        );
+        problem.setTitle("Unauthorized");
+        problem.setProperty("code", "INVALID_REFRESH_TOKEN");
         problem.setProperty("instance", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
     }
