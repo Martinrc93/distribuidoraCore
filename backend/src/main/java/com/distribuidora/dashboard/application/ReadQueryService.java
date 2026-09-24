@@ -72,7 +72,7 @@ public class ReadQueryService {
         String term = like(search);
         if (sellerScoped()) {
             return page("""
-                select p.id, p.sku, p.name, p.category, p.presentation, p.price,
+                select p.id, p.sku, p.name, p.category, p.presentation,
                        coalesce(ib.quantity, 0) as stock, p.status
                 from catalog.products p left join inventory.inventory_balances ib on ib.product_id = p.id
                 where lower(p.name) like ? or lower(p.sku) like ? order by p.name
@@ -80,7 +80,7 @@ public class ReadQueryService {
                 page, size, term, term);
         }
         return page("""
-            select p.id, p.sku, p.name, p.category, p.presentation, p.cost, p.price,
+            select p.id, p.sku, p.name, p.category, p.presentation, p.cost,
                    coalesce(ib.quantity, 0) as stock, p.status
             from catalog.products p
             left join inventory.inventory_balances ib on ib.product_id = p.id

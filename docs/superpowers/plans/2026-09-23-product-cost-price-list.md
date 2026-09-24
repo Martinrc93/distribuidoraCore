@@ -176,24 +176,24 @@ Expected: PASS.
 - Order pricing continues reading `catalog.product_prices` through
   `PricingQueryService`.
 
-- [ ] **Step 1: Update failing read tests**
+- [x] **Step 1: Update failing read tests**
 
 Change assertions to require no `price` key and to preserve admin cost versus
 seller cost visibility.
 
-- [ ] **Step 2: Run the focused read tests**
+- [x] **Step 2: Run the focused read tests**
 
 Run: `mvn -q -Dtest=ReadQueryServiceTest,PricingQueryServiceTest test`
 
 Expected: FAIL against the current `p.price` SQL projections.
 
-- [ ] **Step 3: Remove `p.price` from product queries**
+- [x] **Step 3: Remove `p.price` from product queries**
 
 Delete the product-level price projection in both seller and admin branches;
 leave stock, status, ownership, search, pagination, and cost visibility
 unchanged.
 
-- [ ] **Step 4: Verify order price resolution remains list-based**
+- [x] **Step 4: Verify order price resolution remains list-based**
 
 Run: `mvn -q -Dtest=PricingQueryServiceTest,PricingCommandServiceTest test`
 

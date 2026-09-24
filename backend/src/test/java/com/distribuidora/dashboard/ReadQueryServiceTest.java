@@ -41,7 +41,12 @@ class ReadQueryServiceTest {
 
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc, times(2)).queryForList(sql.capture(), any(Object[].class));
-        assertThat(sql.getAllValues()).allSatisfy(query -> assertThat(query).contains("p.sku"));
+        assertThat(sql.getAllValues()).allSatisfy(query -> {
+            assertThat(query).contains("p.sku");
+            assertThat(query).doesNotContain("p.price");
+        });
+        assertThat(sql.getAllValues().get(0)).contains("p.cost");
+        assertThat(sql.getAllValues().get(1)).doesNotContain("p.cost");
     }
 
     @Test
