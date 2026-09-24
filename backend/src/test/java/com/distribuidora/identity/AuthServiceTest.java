@@ -39,6 +39,7 @@ class AuthServiceTest {
 
     @Mock UserAccountRepository users;
     @Mock RefreshTokenRepository refreshTokens;
+    @Mock com.distribuidora.identity.infrastructure.UserActivationTokenRepository activationTokens;
     @Mock JwtService jwtService;
     @Mock AuditService auditService;
 
@@ -48,7 +49,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
-        authService = new AuthService(users, refreshTokens, encoder, jwtService, auditService, 7);
+        authService = new AuthService(users, refreshTokens, activationTokens, encoder, jwtService, auditService, 7);
     }
 
     @Test
@@ -200,5 +201,85 @@ class AuthServiceTest {
 
         assertThat(activeToken.isRevoked()).isTrue();
         verify(auditService).record(eq(userId), eq("LOGOUT"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
+    }
+
+    @Test
+    void activateWithValidTokenActivatesUserAndMarksTokenUsed() {
+        UUID userId = UUID.randomUUID();
+        UserAccount invitedUser = new UserAccount("invited@distribuidora.local", "!INVITED!");
+        ReflectionTestUtils.setField(invitedUser, "id", userId);
+        ReflectionTestUtils.setField(invitedUser, "status", UserStatus.INVITED);
+
+        String rawToken = "valid-activation-token";
+        String tokenHash = AuthService.hashToken(rawToken);
+
+        com.distribuidora.identity.domain.UserActivationToken token =
+            new com.distribuidora.identity.domain.UserActivationToken(userId, tokenHash, Instant.now().plusSeconds(1800));
+
+        when(activationTokens.findByTokenHash(tokenHash)).thenReturn(Optional.of(token));
+        when(users.findById(userId)).thenReturn(Optional.of(invitedUser));
+
+        authService.activate(new AuthDtos.ActivateUserRequest(rawToken, "NewSecurePassword123"));
+
+        assertThat(invitedUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(encoder.matches("NewSecurePassword123", invitedUser.getPasswordHash())).isTrue();
+        assertThat(token.isUsed()).isTrue();
+
+        verify(users).save(invitedUser);
+        verify(activationTokens).save(token);
+        verify(auditService).record(eq(userId), eq("USER_ACTIVATE"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
+    }
+
+    @Test
+    void activateWithInvalidOrUsedTokenThrowsException() {
+        String rawToken = "already-used-token";
+        String tokenHash = AuthService.hashToken(rawToken);
+
+        com.distribuidora.identity.domain.UserActivationToken token =
+            new com.distribuidora.identity.domain.UserActivationToken(UUID.randomUUID(), tokenHash, Instant.now().plusSeconds(1800));
+        token.markUsed(Instant.now().minusSeconds(60));
+
+        when(activationTokens.findByTokenHash(tokenHash)).thenReturn(Optional.of(token));
+
+        assertThatThrownBy(() -> authService.activate(new AuthDtos.ActivateUserRequest(rawToken, "NewSecurePassword123")))
+            .isInstanceOf(com.distribuidora.identity.application.InvalidActivationTokenException.class)
+            .hasMessageContaining("utilizado");
+    }
+
+    @Test
+    void activateWithExpiredTokenThrowsException() {
+        UUID userId = UUID.randomUUID();
+        String rawToken = "expired-activation-token";
+        String tokenHash = AuthService.hashToken(rawToken);
+
+        com.distribuidora.identity.domain.UserActivationToken token =
+            new com.distribuidora.identity.domain.UserActivationToken(userId, tokenHash, Instant.now().minusSeconds(10));
+
+        when(activationTokens.findByTokenHash(tokenHash)).thenReturn(Optional.of(token));
+
+        assertThatThrownBy(() -> authService.activate(new AuthDtos.ActivateUserRequest(rawToken, "NewSecurePassword123")))
+            .isInstanceOf(com.distribuidora.identity.application.InvalidActivationTokenException.class)
+            .hasMessageContaining("expirado");
+    }
+
+    @Test
+    void activateWithNonInvitedUserThrowsException() {
+        UUID userId = UUID.randomUUID();
+        UserAccount activeUser = new UserAccount("active@distribuidora.local", encoder.encode("Pass123"));
+        ReflectionTestUtils.setField(activeUser, "id", userId);
+        ReflectionTestUtils.setField(activeUser, "status", UserStatus.ACTIVE);
+
+        String rawToken = "token-for-active-user";
+        String tokenHash = AuthService.hashToken(rawToken);
+
+        com.distribuidora.identity.domain.UserActivationToken token =
+            new com.distribuidora.identity.domain.UserActivationToken(userId, tokenHash, Instant.now().plusSeconds(1800));
+
+        when(activationTokens.findByTokenHash(tokenHash)).thenReturn(Optional.of(token));
+        when(users.findById(userId)).thenReturn(Optional.of(activeUser));
+
+        assertThatThrownBy(() -> authService.activate(new AuthDtos.ActivateUserRequest(rawToken, "NewSecurePassword123")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("pendiente de activación");
     }
 }

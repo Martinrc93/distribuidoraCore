@@ -17,6 +17,7 @@ import com.distribuidora.document.application.SaleDocumentConflictException;
 import com.distribuidora.document.application.SaleDocumentNotFoundException;
 
 import com.distribuidora.catalog.application.ProductPriceValidationException;
+import com.distribuidora.identity.application.InvalidActivationTokenException;
 import com.distribuidora.identity.application.InvalidRefreshTokenException;
 import java.util.stream.Collectors;
 
@@ -88,6 +89,18 @@ public class ApiExceptionHandler {
         problem.setProperty("code", "INVALID_REFRESH_TOKEN");
         problem.setProperty("instance", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
+    }
+
+    @ExceptionHandler(InvalidActivationTokenException.class)
+    ResponseEntity<ProblemDetail> handleInvalidActivationToken(InvalidActivationTokenException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            exception.getMessage()
+        );
+        problem.setTitle("Invalid activation token");
+        problem.setProperty("code", "INVALID_ACTIVATION_TOKEN");
+        problem.setProperty("instance", request.getRequestURI());
+        return ResponseEntity.badRequest().body(problem);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

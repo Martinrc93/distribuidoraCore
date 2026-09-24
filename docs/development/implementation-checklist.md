@@ -21,7 +21,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Roles `ADMIN` y `SELLER` con permisos persistidos.
 - [x] Autorizacion `@PreAuthorize` y ownership de vendedor.
 - [x] Refresh tokens rotativos y revocables.
-- [ ] Invitacion, activacion y revocacion administrativa de sesiones.
+- [x] Invitacion, activacion y revocacion administrativa de sesiones.
 
 ### Usuarios, vendedores y clientes
 

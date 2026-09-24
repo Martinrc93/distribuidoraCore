@@ -89,4 +89,21 @@ public class UserAccount {
         failedLoginAttempts = 0;
         lockedUntil = null;
     }
+
+    public void activate(String newPasswordHash) {
+        this.status = UserStatus.ACTIVE;
+        this.passwordHash = newPasswordHash;
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+    }
+
+    public void block() {
+        this.status = UserStatus.BLOCKED;
+    }
+
+    public void unblock() {
+        this.status = UserStatus.ACTIVE;
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+    }
 }

@@ -31,6 +31,7 @@ public class AuthService {
 
     private final UserAccountRepository users;
     private final RefreshTokenRepository refreshTokens;
+    private final com.distribuidora.identity.infrastructure.UserActivationTokenRepository activationTokens;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuditService auditService;
@@ -40,6 +41,7 @@ public class AuthService {
     public AuthService(
         UserAccountRepository users,
         RefreshTokenRepository refreshTokens,
+        com.distribuidora.identity.infrastructure.UserActivationTokenRepository activationTokens,
         PasswordEncoder passwordEncoder,
         JwtService jwtService,
         AuditService auditService,
@@ -47,6 +49,7 @@ public class AuthService {
     ) {
         this.users = users;
         this.refreshTokens = refreshTokens;
+        this.activationTokens = activationTokens;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.auditService = auditService;
@@ -158,6 +161,50 @@ public class AuthService {
                 auditService.record(token.getUserId(), "LOGOUT", "USER", token.getUserId().toString(), "SUCCESS", Map.of());
             }
         });
+    }
+
+    @Transactional
+    public void activate(AuthDtos.ActivateUserRequest request) {
+        if (request == null || request.activationToken() == null || request.activationToken().isBlank()
+            || request.password() == null || request.password().isBlank()) {
+            throw new InvalidActivationTokenException("Token de activación y contraseña son obligatorios");
+        }
+        if (request.password().length() < 8) {
+            throw new IllegalArgumentException("La contraseña debe tener al menos 8 caracteres");
+        }
+
+        String tokenHash = hashToken(request.activationToken().trim());
+        com.distribuidora.identity.domain.UserActivationToken activationToken =
+            activationTokens.findByTokenHash(tokenHash).orElse(null);
+
+        if (activationToken == null || activationToken.isUsed()) {
+            auditService.record(null, "USER_ACTIVATE", "USER", tokenHash, "FAILURE",
+                Map.of("reason", "token_invalid_or_used"));
+            throw new InvalidActivationTokenException("Token de activación inválido o ya utilizado");
+        }
+
+        Instant now = Instant.now();
+        if (activationToken.isExpired(now)) {
+            auditService.record(activationToken.getUserId(), "USER_ACTIVATE", "USER",
+                activationToken.getUserId().toString(), "FAILURE", Map.of("reason", "token_expired"));
+            throw new InvalidActivationTokenException("El token de activación ha expirado");
+        }
+
+        UserAccount user = users.findById(activationToken.getUserId()).orElse(null);
+        if (user == null) {
+            throw new InvalidActivationTokenException("Usuario no encontrado");
+        }
+        if (user.getStatus() != UserStatus.INVITED) {
+            throw new IllegalStateException("El usuario no se encuentra pendiente de activación");
+        }
+
+        user.activate(passwordEncoder.encode(request.password()));
+        users.save(user);
+
+        activationToken.markUsed(now);
+        activationTokens.save(activationToken);
+
+        auditService.record(user.getId(), "USER_ACTIVATE", "USER", user.getId().toString(), "SUCCESS", Map.of());
     }
 
     public static String hashToken(String rawToken) {

@@ -18,10 +18,10 @@ Estado actualizado: 2026-09-19
 - [x] Argon2, JWT stateless y bloqueo tras intentos fallidos.
 - [x] Autoridades JWT cargadas desde roles/permisos persistidos.
 - [x] Auditoría append-only con actor, operación y request ID.
-- [ ] Alta administrativa de usuarios `INVITED`.
-- [ ] Activación con token de un solo uso y expiración.
+- [x] Alta administrativa de usuarios `INVITED`.
+- [x] Activación con token de un solo uso y expiración.
 - [x] Refresh tokens rotativos, revocables y almacenados como hash.
-- [ ] Bloqueo/desbloqueo administrativo y revocación de sesiones.
+- [x] Bloqueo/desbloqueo administrativo y revocación de sesiones.
 - [ ] Endpoints administrativos completos para usuarios, roles y permisos.
 
 ## Customers, Sellers Y Catalog

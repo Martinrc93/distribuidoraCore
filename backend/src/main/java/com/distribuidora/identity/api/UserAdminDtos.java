@@ -5,6 +5,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.time.Instant;
+import java.util.UUID;
+
 public final class UserAdminDtos {
     private UserAdminDtos() { }
 
@@ -13,6 +16,19 @@ public final class UserAdminDtos {
         @NotBlank @Size(min = 8, max = 200) String temporaryPassword,
         @NotNull Role role,
         @Size(max = 160) String displayName
+    ) { }
+
+    public record InviteUserRequest(
+        @NotBlank @Email @Size(max = 320) String email,
+        @NotNull Role role,
+        @Size(max = 160) String displayName
+    ) { }
+
+    public record InviteUserResponse(
+        UUID userId,
+        String email,
+        String activationToken,
+        Instant expiresAt
     ) { }
 
     public enum Role { ADMIN, SELLER }

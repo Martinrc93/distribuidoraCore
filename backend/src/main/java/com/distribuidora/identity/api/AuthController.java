@@ -4,6 +4,7 @@ import com.distribuidora.identity.application.AuthService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -35,6 +36,12 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/activate")
+    public ResponseEntity<Void> activate(@Valid @RequestBody ActivatePayload payload) {
+        authService.activate(new AuthDtos.ActivateUserRequest(payload.activationToken(), payload.password()));
+        return ResponseEntity.noContent().build();
+    }
+
     public record LoginPayload(@Email @NotBlank String email, @NotBlank String password) {
     }
 
@@ -42,5 +49,8 @@ public class AuthController {
     }
 
     public record LogoutPayload(@NotBlank String refreshToken) {
+    }
+
+    public record ActivatePayload(@NotBlank String activationToken, @NotBlank @Size(min = 8, max = 200) String password) {
     }
 }

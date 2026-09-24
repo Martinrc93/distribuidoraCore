@@ -113,4 +113,36 @@ class AuthControllerTest {
 
         verify(authService).logout(any());
     }
+
+    @Test
+    void activateReturns204() throws Exception {
+        mockMvc.perform(post("/api/auth/activate")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {
+                        "activationToken": "valid-token-123",
+                        "password": "NewStrongPassword123"
+                    }
+                    """))
+            .andExpect(status().isNoContent());
+
+        verify(authService).activate(any());
+    }
+
+    @Test
+    void activateWithInvalidTokenReturns400() throws Exception {
+        org.mockito.Mockito.doThrow(new com.distribuidora.identity.application.InvalidActivationTokenException("Token de activación inválido"))
+            .when(authService).activate(any());
+
+        mockMvc.perform(post("/api/auth/activate")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {
+                        "activationToken": "bad-token",
+                        "password": "NewStrongPassword123"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_ACTIVATION_TOKEN"));
+    }
 }
