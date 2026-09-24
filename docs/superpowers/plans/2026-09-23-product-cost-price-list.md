@@ -283,20 +283,20 @@ Expected: PASS with no product-level price assumptions.
 - Product flows show cost-only edits and the affected-list price requirement.
 - No documentation promises cost history or a product-level general price.
 
-- [ ] **Step 1: Search for stale terminology**
+- [x] **Step 1: Search for stale terminology**
 
 Run: `rg -n "precio general|historial de costos|products\.price|p\.price|price general|cost history" docs backend frontend --glob '!**/target/**' --glob '!**/node_modules/**'`
 
-- [ ] **Step 2: Update diagrams and domain rules**
+- [x] **Step 2: Update diagrams and domain rules**
 
 Replace stale product-price references with per-list prices and document the
 transactional cost-update rule.
 
-- [ ] **Step 3: Remove the obsolete cost-history diagram**
+- [x] **Step 3: Remove the obsolete cost-history diagram**
 
 Delete the future cost-history flow and its README entry.
 
-- [ ] **Step 4: Verify documentation consistency**
+- [x] **Step 4: Verify documentation consistency**
 
 Run the search again and confirm remaining `price` references are only for
 `catalog.product_prices`, order unit prices, or payment amounts.

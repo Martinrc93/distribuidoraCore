@@ -6,7 +6,7 @@
 flowchart TD
     A[Producto en pedido] --> B{Cliente tiene lista?}
     B -->|Si| C[Usar lista del cliente]
-    B -->|No| D[Usar lista predeterminada LISTA_1]
+    B -->|No| D[Usar lista predeterminada GENERAL]
     C --> E{Usuario cambia lista?}
     D --> E
     E -->|Si| F[Usar lista seleccionada]

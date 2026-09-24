@@ -10,6 +10,5 @@ Diagramas recomendados:
 - `flow-suppliers-purchases.md`: proveedores y compras.
 - `component-reports-dashboard.md`: reportes y dashboard.
 - `component-customer-portal.md`: portal de clientes.
-- `flow-cost-history.md`: historial de costos.
 - `component-template-builder.md`: configurador visual de plantillas.
 - `component-observability.md`: metricas, logs y trazas operativas.

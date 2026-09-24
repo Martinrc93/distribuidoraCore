@@ -12,6 +12,8 @@ identity.users
 seller.seller_profiles
 customer.customers
 catalog.products
+catalog.price_lists
+catalog.product_prices
 inventory.balances
 inventory.stock_movements
 order.orders
@@ -45,7 +47,8 @@ Se utilizarán constraints para reglas estructurales:
 
 - `NOT NULL` para datos requeridos.
 - `UNIQUE` para username, email y códigos de negocio.
-- `CHECK` para precios, costos, cantidades y estados válidos.
+- `CHECK` para costos (`cost >= 0`), precios (`price >= 0`), cantidades y estados válidos.
+- Precios de venta normalizados exclusivamente en `catalog.product_prices` por lista (`catalog.products` solo almacena el costo).
 - Índices para búsquedas, estados, fechas y referencias.
 - Optimistic locking mediante `version` en entidades editables.
 - Locking pesimista para balances de stock.
