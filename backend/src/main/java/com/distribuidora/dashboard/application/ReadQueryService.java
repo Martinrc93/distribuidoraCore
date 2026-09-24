@@ -288,6 +288,38 @@ public class ReadQueryService {
             page, size);
     }
 
+    public PageResponse<Map<String, Object>> sellers(int page, int size, String search, String status) {
+        String term = like(search);
+        String state = status == null || status.isBlank() ? "%" : status.trim();
+        return page("""
+            select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
+                   u.email, sp.status, sp.created_at as "createdAt",
+                   (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
+            from seller.seller_profiles sp
+            join identity.users u on u.id = sp.user_id
+            where (lower(sp.display_name) like ? or lower(u.email) like ?)
+              and sp.status like ?
+            order by sp.display_name
+            """, """
+            select count(*)
+            from seller.seller_profiles sp
+            join identity.users u on u.id = sp.user_id
+            where (lower(sp.display_name) like ? or lower(u.email) like ?)
+              and sp.status like ?
+            """, page, size, term, term, state);
+    }
+
+    public Map<String, Object> sellerDetail(UUID id) {
+        return jdbc.queryForMap("""
+            select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
+                   u.email, sp.status, sp.created_at as "createdAt",
+                   (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
+            from seller.seller_profiles sp
+            join identity.users u on u.id = sp.user_id
+            where sp.id = ?
+            """, id);
+    }
+
     private PageResponse<Map<String, Object>> page(String sql, String countSql, int page, int size, Object... parameters) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);

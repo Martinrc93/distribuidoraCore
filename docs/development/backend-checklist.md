@@ -30,10 +30,10 @@ Estado actualizado: 2026-09-19
 - [x] Baja lógica de clientes.
 - [x] CRUD de productos y baja lógica.
 - [x] Validación de unicidad, importes y estados.
-- [~] Perfiles de vendedor creados en seed, pero falta CRUD administrativo completo.
-- [ ] CRUD de vendedores y asociación con usuarios.
-- [ ] Restricción de vendedores a clientes asignados.
-- [ ] APIs internas para resolver vendedor asignado.
+- [x] CRUD administrativo completo de perfiles de vendedor.
+- [x] CRUD de vendedores y asociación con usuarios.
+- [x] Restricción de vendedores a clientes asignados.
+- [x] APIs internas para resolver vendedor asignado.
 - [ ] Catálogo completo de marcas y categorías como entidades administrables.
 
 ## Pricing
