@@ -47,7 +47,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Actualizar costo y precios afectados en una sola transaccion.
 - [x] Exponer las listas afectadas en el error de validacion.
 - [x] Eliminar historial de costos del alcance funcional.
-- [ ] CRUD completo de marcas y categorias.
+- [x] CRUD completo de marcas y categorias.
 
 ### Inventario
 
