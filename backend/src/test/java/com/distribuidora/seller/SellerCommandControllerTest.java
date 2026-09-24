@@ -47,6 +47,12 @@ class SellerCommandControllerTest {
 
         Method deleteMethod = SellerCommandController.class.getDeclaredMethod("delete", UUID.class);
         assertThat(deleteMethod.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+
+        Method reassignCustomersMethod = SellerCommandController.class.getDeclaredMethod("reassignCustomers", SellerDtos.ReassignCustomersRequest.class);
+        assertThat(reassignCustomersMethod.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+
+        Method reassignOrdersMethod = SellerCommandController.class.getDeclaredMethod("reassignOrders", SellerDtos.ReassignOrdersRequest.class);
+        assertThat(reassignOrdersMethod.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
     }
 
     @Test
@@ -113,5 +119,37 @@ class SellerCommandControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         verify(service).deactivate(sellerId);
+    }
+
+    @Test
+    void reassignCustomers_returnsOkWithResponse() {
+        UUID s1 = UUID.randomUUID();
+        UUID s2 = UUID.randomUUID();
+        SellerDtos.ReassignCustomersRequest request = new SellerDtos.ReassignCustomersRequest(s1, s2, null, true);
+        SellerDtos.ReassignCustomersResponse expected = new SellerDtos.ReassignCustomersResponse(s1, s2, 5, 2);
+
+        when(service.reassignCustomers(request)).thenReturn(expected);
+
+        ResponseEntity<SellerDtos.ReassignCustomersResponse> response = controller.reassignCustomers(request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isEqualTo(expected);
+        verify(service).reassignCustomers(request);
+    }
+
+    @Test
+    void reassignOrders_returnsOkWithResponse() {
+        UUID s2 = UUID.randomUUID();
+        UUID o1 = UUID.randomUUID();
+        SellerDtos.ReassignOrdersRequest request = new SellerDtos.ReassignOrdersRequest(s2, java.util.List.of(o1), true);
+        SellerDtos.ReassignOrdersResponse expected = new SellerDtos.ReassignOrdersResponse(s2, 1);
+
+        when(service.reassignOrders(request)).thenReturn(expected);
+
+        ResponseEntity<SellerDtos.ReassignOrdersResponse> response = controller.reassignOrders(request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isEqualTo(expected);
+        verify(service).reassignOrders(request);
     }
 }

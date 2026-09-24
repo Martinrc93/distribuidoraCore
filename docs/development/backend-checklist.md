@@ -34,6 +34,7 @@ Estado actualizado: 2026-09-19
 - [x] CRUD de vendedores y asociación con usuarios.
 - [x] Restricción de vendedores a clientes asignados.
 - [x] APIs internas para resolver vendedor asignado.
+- [x] Reasignación masiva de clientes y pedidos pendientes conservando historial.
 - [ ] Catálogo completo de marcas y categorías como entidades administrables.
 
 ## Pricing

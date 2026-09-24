@@ -206,4 +206,150 @@ class SellerCommandServiceTest {
             .thenReturn(List.of());
         assertThat(service.findSellerIdByUserId(userId)).isEmpty();
     }
+
+    @Test
+    void reassignCustomers_validatesRequestParameters() {
+        UUID s1 = UUID.randomUUID();
+        UUID s2 = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.reassignCustomers(null))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(null, s2, null, true)))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(s1, null, null, true)))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(s1, s1, null, true)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("no pueden ser el mismo");
+    }
+
+    @Test
+    void reassignCustomers_rejectsWhenSourceDoesNotExist() {
+        UUID source = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(source)))
+            .thenReturn(false);
+
+        assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(source, target, null, true)))
+            .isInstanceOf(EmptyResultDataAccessException.class)
+            .hasMessageContaining("origen");
+    }
+
+    @Test
+    void reassignCustomers_rejectsWhenTargetDoesNotExist() {
+        UUID source = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(source)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
+            .thenReturn(false);
+
+        assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(source, target, null, true)))
+            .isInstanceOf(EmptyResultDataAccessException.class)
+            .hasMessageContaining("destino");
+    }
+
+    @Test
+    void reassignCustomers_rejectsWhenTargetIsInactive() {
+        UUID source = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(source)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+            .thenReturn("INACTIVE");
+
+        assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(source, target, null, true)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("debe estar activo");
+    }
+
+    @Test
+    void reassignCustomers_reassignsAllCustomersAndPendingOrders_andAudits() {
+        UUID source = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(source)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+            .thenReturn("ACTIVE");
+
+        when(jdbc.update(eq("update customer.customers set seller_id = ? where seller_id = ?"), eq(target), eq(source)))
+            .thenReturn(8);
+        when(jdbc.update(eq("update orders.orders set seller_id = ? where seller_id = ? and status = 'CONFIRMED'"), eq(target), eq(source)))
+            .thenReturn(3);
+
+        SellerDtos.ReassignCustomersResponse response = service.reassignCustomers(
+            new SellerDtos.ReassignCustomersRequest(source, target, null, true)
+        );
+
+        assertThat(response.sourceSellerId()).isEqualTo(source);
+        assertThat(response.targetSellerId()).isEqualTo(target);
+        assertThat(response.reassignedCustomersCount()).isEqualTo(8);
+        assertThat(response.reassignedOrdersCount()).isEqualTo(3);
+
+        verify(audit).record(eq(adminUserId), eq("SELLER_CUSTOMER_REASSIGNMENT"), eq("SELLER"), eq(target.toString()), eq("SUCCESS"), any());
+    }
+
+    @Test
+    void reassignCustomers_reassignsSpecificCustomersWithoutOrdersWhenDisabled() {
+        UUID source = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+        UUID c1 = UUID.randomUUID();
+        UUID c2 = UUID.randomUUID();
+
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(source)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+            .thenReturn("ACTIVE");
+
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(2);
+
+        SellerDtos.ReassignCustomersResponse response = service.reassignCustomers(
+            new SellerDtos.ReassignCustomersRequest(source, target, List.of(c1, c2), false)
+        );
+
+        assertThat(response.reassignedCustomersCount()).isEqualTo(2);
+        assertThat(response.reassignedOrdersCount()).isEqualTo(0);
+    }
+
+    @Test
+    void reassignOrders_rejectsInvalidTargetOrEmptyOrders() {
+        UUID target = UUID.randomUUID();
+        assertThatThrownBy(() -> service.reassignOrders(null))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reassignOrders(new SellerDtos.ReassignOrdersRequest(null, List.of(UUID.randomUUID()), true)))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reassignOrders(new SellerDtos.ReassignOrdersRequest(target, List.of(), true)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void reassignOrders_reassignsConfirmedOrdersAndAudits() {
+        UUID target = UUID.randomUUID();
+        UUID o1 = UUID.randomUUID();
+        UUID o2 = UUID.randomUUID();
+
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+            .thenReturn("ACTIVE");
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(2);
+
+        SellerDtos.ReassignOrdersResponse response = service.reassignOrders(
+            new SellerDtos.ReassignOrdersRequest(target, List.of(o1, o2), true)
+        );
+
+        assertThat(response.targetSellerId()).isEqualTo(target);
+        assertThat(response.reassignedOrdersCount()).isEqualTo(2);
+        verify(audit).record(eq(adminUserId), eq("SELLER_ORDER_REASSIGNMENT"), eq("SELLER"), eq(target.toString()), eq("SUCCESS"), any());
+    }
 }

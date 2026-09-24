@@ -31,7 +31,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Asignacion de vendedor y lista de precios.
 - [x] CUIT opcional y unico cuando se informa.
 - [x] CRUD completo de vendedores existentes.
-- [ ] Reasignacion masiva de clientes y pedidos.
+- [x] Reasignacion masiva de clientes y pedidos.
 
 ### Catalogo y precios
 

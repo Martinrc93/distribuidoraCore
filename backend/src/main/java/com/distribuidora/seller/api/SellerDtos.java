@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public final class SellerDtos {
@@ -37,6 +38,35 @@ public final class SellerDtos {
         String status,
         Instant createdAt,
         long assignedCustomersCount
+    ) {
+    }
+
+    public record ReassignCustomersRequest(
+        @NotNull(message = "sourceSellerId es obligatorio") UUID sourceSellerId,
+        @NotNull(message = "targetSellerId es obligatorio") UUID targetSellerId,
+        List<UUID> customerIds,
+        Boolean reassignPendingOrders
+    ) {
+    }
+
+    public record ReassignCustomersResponse(
+        UUID sourceSellerId,
+        UUID targetSellerId,
+        int reassignedCustomersCount,
+        int reassignedOrdersCount
+    ) {
+    }
+
+    public record ReassignOrdersRequest(
+        @NotNull(message = "targetSellerId es obligatorio") UUID targetSellerId,
+        @NotNull(message = "orderIds es obligatorio") List<UUID> orderIds,
+        Boolean onlyPending
+    ) {
+    }
+
+    public record ReassignOrdersResponse(
+        UUID targetSellerId,
+        int reassignedOrdersCount
     ) {
     }
 }

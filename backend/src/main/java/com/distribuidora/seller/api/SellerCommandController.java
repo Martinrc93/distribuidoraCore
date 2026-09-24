@@ -58,4 +58,20 @@ public class SellerCommandController {
         service.deactivate(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/reassign-customers")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<SellerDtos.ReassignCustomersResponse> reassignCustomers(
+            @Valid @RequestBody SellerDtos.ReassignCustomersRequest request) {
+        SellerDtos.ReassignCustomersResponse response = service.reassignCustomers(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/reassign-orders")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<SellerDtos.ReassignOrdersResponse> reassignOrders(
+            @Valid @RequestBody SellerDtos.ReassignOrdersRequest request) {
+        SellerDtos.ReassignOrdersResponse response = service.reassignOrders(request);
+        return ResponseEntity.ok(response);
+    }
 }

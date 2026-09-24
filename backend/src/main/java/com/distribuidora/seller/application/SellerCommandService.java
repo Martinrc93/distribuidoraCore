@@ -169,6 +169,143 @@ public class SellerCommandService {
         return sellers.isEmpty() ? Optional.empty() : Optional.of(sellers.getFirst());
     }
 
+    @Transactional
+    public SellerDtos.ReassignCustomersResponse reassignCustomers(SellerDtos.ReassignCustomersRequest request) {
+        if (request == null || request.sourceSellerId() == null || request.targetSellerId() == null) {
+            throw new IllegalArgumentException("sourceSellerId y targetSellerId son obligatorios");
+        }
+        if (request.sourceSellerId().equals(request.targetSellerId())) {
+            throw new IllegalArgumentException("El vendedor origen y el vendedor destino no pueden ser el mismo");
+        }
+
+        boolean sourceExists = Boolean.TRUE.equals(
+            jdbc.queryForObject("select exists(select 1 from seller.seller_profiles where id = ?)", Boolean.class, request.sourceSellerId())
+        );
+        if (!sourceExists) {
+            throw new EmptyResultDataAccessException("El vendedor origen no existe", 1);
+        }
+
+        boolean targetExists = Boolean.TRUE.equals(
+            jdbc.queryForObject("select exists(select 1 from seller.seller_profiles where id = ?)", Boolean.class, request.targetSellerId())
+        );
+        if (!targetExists) {
+            throw new EmptyResultDataAccessException("El vendedor destino no existe", 1);
+        }
+
+        String targetStatus = jdbc.queryForObject("select status from seller.seller_profiles where id = ?", String.class, request.targetSellerId());
+        if (!"ACTIVE".equalsIgnoreCase(targetStatus)) {
+            throw new IllegalStateException("El vendedor destino debe estar activo");
+        }
+
+        int reassignedCustomers;
+        if (request.customerIds() == null || request.customerIds().isEmpty()) {
+            reassignedCustomers = jdbc.update(
+                "update customer.customers set seller_id = ? where seller_id = ?",
+                request.targetSellerId(), request.sourceSellerId()
+            );
+        } else {
+            String placeholders = String.join(",", java.util.Collections.nCopies(request.customerIds().size(), "?"));
+            List<Object> params = new java.util.ArrayList<>();
+            params.add(request.targetSellerId());
+            params.add(request.sourceSellerId());
+            params.addAll(request.customerIds());
+            reassignedCustomers = jdbc.update(
+                "update customer.customers set seller_id = ? where seller_id = ? and id in (" + placeholders + ")",
+                params.toArray()
+            );
+        }
+
+        int reassignedOrders = 0;
+        boolean reassignOrders = request.reassignPendingOrders() == null || Boolean.TRUE.equals(request.reassignPendingOrders());
+        if (reassignOrders) {
+            if (request.customerIds() == null || request.customerIds().isEmpty()) {
+                reassignedOrders = jdbc.update(
+                    "update orders.orders set seller_id = ? where seller_id = ? and status = 'CONFIRMED'",
+                    request.targetSellerId(), request.sourceSellerId()
+                );
+            } else {
+                String placeholders = String.join(",", java.util.Collections.nCopies(request.customerIds().size(), "?"));
+                List<Object> params = new java.util.ArrayList<>();
+                params.add(request.targetSellerId());
+                params.add(request.sourceSellerId());
+                params.addAll(request.customerIds());
+                reassignedOrders = jdbc.update(
+                    "update orders.orders set seller_id = ? where seller_id = ? and status = 'CONFIRMED' and customer_id in (" + placeholders + ")",
+                    params.toArray()
+                );
+            }
+        }
+
+        audit.record(
+            actorId(),
+            "SELLER_CUSTOMER_REASSIGNMENT",
+            "SELLER",
+            request.targetSellerId().toString(),
+            "SUCCESS",
+            Map.of(
+                "sourceSellerId", request.sourceSellerId().toString(),
+                "targetSellerId", request.targetSellerId().toString(),
+                "reassignedCustomersCount", reassignedCustomers,
+                "reassignedOrdersCount", reassignedOrders
+            )
+        );
+
+        return new SellerDtos.ReassignCustomersResponse(
+            request.sourceSellerId(),
+            request.targetSellerId(),
+            reassignedCustomers,
+            reassignedOrders
+        );
+    }
+
+    @Transactional
+    public SellerDtos.ReassignOrdersResponse reassignOrders(SellerDtos.ReassignOrdersRequest request) {
+        if (request == null || request.targetSellerId() == null || request.orderIds() == null || request.orderIds().isEmpty()) {
+            throw new IllegalArgumentException("targetSellerId y orderIds son obligatorios");
+        }
+
+        boolean targetExists = Boolean.TRUE.equals(
+            jdbc.queryForObject("select exists(select 1 from seller.seller_profiles where id = ?)", Boolean.class, request.targetSellerId())
+        );
+        if (!targetExists) {
+            throw new EmptyResultDataAccessException("El vendedor destino no existe", 1);
+        }
+
+        String targetStatus = jdbc.queryForObject("select status from seller.seller_profiles where id = ?", String.class, request.targetSellerId());
+        if (!"ACTIVE".equalsIgnoreCase(targetStatus)) {
+            throw new IllegalStateException("El vendedor destino debe estar activo");
+        }
+
+        boolean onlyPending = request.onlyPending() == null || Boolean.TRUE.equals(request.onlyPending());
+        String placeholders = String.join(",", java.util.Collections.nCopies(request.orderIds().size(), "?"));
+        List<Object> params = new java.util.ArrayList<>();
+        params.add(request.targetSellerId());
+        params.addAll(request.orderIds());
+
+        String sql = onlyPending
+            ? "update orders.orders set seller_id = ? where id in (" + placeholders + ") and status = 'CONFIRMED'"
+            : "update orders.orders set seller_id = ? where id in (" + placeholders + ")";
+
+        int reassignedOrders = jdbc.update(sql, params.toArray());
+
+        audit.record(
+            actorId(),
+            "SELLER_ORDER_REASSIGNMENT",
+            "SELLER",
+            request.targetSellerId().toString(),
+            "SUCCESS",
+            Map.of(
+                "targetSellerId", request.targetSellerId().toString(),
+                "reassignedOrdersCount", reassignedOrders
+            )
+        );
+
+        return new SellerDtos.ReassignOrdersResponse(
+            request.targetSellerId(),
+            reassignedOrders
+        );
+    }
+
     private UUID actorId() {
         if (currentUser != null) {
             try {
