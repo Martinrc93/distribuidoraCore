@@ -24,13 +24,23 @@ public class OrderConfirmationController {
     @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
     public ResponseEntity<OrderConfirmationDtos.ConfirmationResponse> confirm(
         @Valid @RequestBody OrderConfirmationDtos.ConfirmationRequest request) {
-        return ResponseEntity.status(201).body(service.confirm(request));
+        return ResponseEntity.status(201).body(toResponse(service.confirm(request)));
     }
 
     @PutMapping("/{orderId}")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<OrderEditDtos.EditResponse> editConfirmed(
         @PathVariable java.util.UUID orderId, @Valid @RequestBody OrderEditDtos.EditRequest request) {
-        return ResponseEntity.ok(service.editConfirmed(orderId, request));
+        OrderConfirmationService.EditResult result = service.editConfirmed(orderId, request);
+        return ResponseEntity.ok(new OrderEditDtos.EditResponse(result.orderId(), result.saleId(),
+            result.total(), result.paid(), result.balance()));
+    }
+
+    private static OrderConfirmationDtos.ConfirmationResponse toResponse(OrderConfirmationService.ConfirmationResult result) {
+        OrderConfirmationDtos.CreditLimitWarning warning = result.creditLimitWarning() == null ? null
+            : new OrderConfirmationDtos.CreditLimitWarning(result.creditLimitWarning().creditLimit(),
+                result.creditLimitWarning().projectedBalance(), result.creditLimitWarning().exceededBy());
+        return new OrderConfirmationDtos.ConfirmationResponse(result.orderId(), result.saleId(), result.orderNumber(),
+            result.saleNumber(), result.total(), result.paid(), result.balance(), warning);
     }
 }

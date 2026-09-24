@@ -6,7 +6,14 @@ Los scripts requieren PowerShell 7 y `pg_dump`, `pg_restore`, `createdb`,
 `dropdb` y `psql` de una versión PostgreSQL compatible con el servidor. Se puede
 definir `PG_BIN` si los ejecutables no están en `PATH`.
 
-Configurar en el entorno del usuario que ejecuta la tarea programada:
+La clave se obtiene en este orden: variable `BACKUP_ENCRYPTION_KEY` (Base64 de
+64 bytes aleatorios) o almacén local DPAPI creado para la cuenta Windows actual
+con `scripts/initialize-backup-key.ps1`. DPAPI protege la clave en el host, pero
+no permite recuperarla al perder el perfil/equipo. Antes de depender de los
+backups para recuperación ante desastre, exportar/escrowar la clave en un gestor
+de secretos independiente; nunca guardar el material en claro junto a los
+backups o en el repositorio. Configurar también en el entorno del usuario que
+ejecuta la tarea programada:
 
 - `DB_HOST`, `DB_PORT`, `DB_USERNAME` y `DB_PASSWORD`.
 - `POSTGRES_DB` para elegir la base por defecto.
@@ -28,17 +35,54 @@ directamente al cifrador; no crea un dump temporal en claro en disco.
 
 ```powershell
 ./scripts/backup-postgres.ps1 -Database distribuidora
-./scripts/register-postgres-backup-task.ps1
+./scripts/register-postgres-backup-task.ps1 -Database distribuidora `
+  -PgHost localhost -Username distribuidora `
+  -PgBin 'C:\ruta\a\PostgreSQL\bin' `
+  -OutputDirectory "$env:LOCALAPPDATA\Distribuidora\Backups" `
+  -ExternalOutputDirectory 'C:\ruta\a\destino\sincronizado'
 ```
 
-La tarea se programa diariamente a las 03:00 bajo el usuario actual. Los archivos
-se guardan en `backups/`, excluido de Git. La retención deja el backup más
-reciente por cada uno de los dos días más recientes y un backup por mes durante
-los últimos doce meses. Copiar además los archivos cifrados a un destino externo:
-el directorio local no cubre pérdida del mismo equipo o disco.
+La tarea se programa diariamente a las 03:00 bajo el usuario actual con token
+interactivo; el usuario debe haber iniciado sesión y PostgreSQL debe estar
+disponible. En 2026-09-24 se corrigió el paso de argumentos a PowerShell usando
+una acción `-EncodedCommand`, y el wrapper ahora genera un log nuevo por
+ejecución. El contexto de Task Scheduler no veía el almacén DPAPI existente;
+se materializó el mismo blob cifrado en el perfil de la tarea, sin regenerar la
+clave, con ACL limitada al usuario y SYSTEM.
 
-El script falla de forma no cero si `pg_dump` o el cifrado fallan; la tarea
-programada registra el resultado para monitoreo.
+La ejecución programada de control terminó con código `0` a las 05:55. El
+backup local y su mirror en el directorio externo de OneDrive configurado
+pasaron HMAC y la prueba completa de restauración/tamper en una base descartable
+(Flyway V7). La tarea quedó habilitada para la siguiente ejecución diaria a las
+03:00. Los logs se guardan por ejecución en
+`%LOCALAPPDATA%\Distribuidora\Logs\postgres-backup-task-<runId>.log`.
+
+El canal `Microsoft-Windows-TaskScheduler/Operational` continúa deshabilitado:
+Windows denegó su activación/consulta desde esta sesión. La causa se aisló con
+tareas de prueba y el resultado/log del job. La observación Cloud Files
+`0x00000009` se había interpretado incorrectamente como parcial/no sincronizado.
+Según la definición oficial de Windows, `0x1` es `PLACEHOLDER` y `0x8` es
+`IN_SYNC`; por tanto `0x00000009` representa placeholder en sincronía. El
+marcador temporal de diagnóstico se eliminó. La confirmación posterior del
+archivo en OneDrive se registra abajo.
+
+Revisión adicional del 2026-09-24: el backup más reciente está presente en el
+directorio local configurado (1.001.256 bytes) y su HMAC volvió a validarse. El
+usuario confirmó que lo ve en OneDrive a las 05:55; junto con el estado Cloud
+Files `0x00000009` (placeholder + `InSync`), esto confirma la copia externa.
+KeePassXC 2.7.12 se instaló en modo portable con firma y hash oficiales
+verificados. Se corrigieron el stdin de Windows PowerShell 5.1 y la ruta de la
+entrada (la raíz de la bóveda, sin depender de un grupo `Recovery`). El usuario
+confirmó `RESULT=OK`; la bóveda real existe (2.110 bytes) y la entrada se leyó
+de vuelta sin imprimir el secreto.
+Windows Cloud Files informó estado `0x00000009`: `PLACEHOLDER` + `IN_SYNC`, por
+lo que la bóveda está sincronizada en OneDrive. La contraseña maestra no se
+guardó en el repositorio ni junto a la bóveda; su custodia fuera de OneDrive
+queda a cargo del usuario.
+
+La retención deja el backup más reciente por cada uno de los dos días más
+recientes y un backup por mes durante los últimos doce meses. El directorio
+local no cubre pérdida del mismo equipo o disco.
 
 ## Prueba de restauración
 

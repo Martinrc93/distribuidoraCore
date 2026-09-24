@@ -1,13 +1,12 @@
 package com.distribuidora.identity.application;
 
-import com.distribuidora.identity.api.AuthDtos;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.identity.domain.RefreshToken;
 import com.distribuidora.identity.domain.UserAccount;
 import com.distribuidora.identity.domain.UserStatus;
 import com.distribuidora.identity.infrastructure.RefreshTokenRepository;
 import com.distribuidora.identity.infrastructure.UserAccountRepository;
-import com.distribuidora.shared.security.JwtService;
+import com.distribuidora.identity.security.JwtService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,6 +27,20 @@ import java.util.UUID;
 
 @Service
 public class AuthService {
+    public interface LoginCommand {
+        String email();
+        String password();
+    }
+
+    public interface RefreshCommand { String refreshToken(); }
+    public interface LogoutCommand { String refreshToken(); }
+
+    public interface ActivateUserCommand {
+        String activationToken();
+        String password();
+    }
+
+    public record LoginResult(String accessToken, String tokenType, long expiresInSeconds, String refreshToken) { }
 
     private final UserAccountRepository users;
     private final RefreshTokenRepository refreshTokens;
@@ -57,7 +70,7 @@ public class AuthService {
     }
 
     @Transactional(noRollbackFor = BadCredentialsException.class)
-    public AuthDtos.LoginResponse login(AuthDtos.LoginRequest request) {
+    public LoginResult login(LoginCommand request) {
         String email = request.email() == null ? "" : request.email().trim().toLowerCase(Locale.ROOT);
         UserAccount user = users.findByEmailIgnoreCase(email).orElse(null);
         if (user == null) {
@@ -84,7 +97,7 @@ public class AuthService {
         refreshTokens.save(refreshToken);
 
         auditService.record(user.getId(), "LOGIN", "USER", userId, "SUCCESS", Map.of());
-        return new AuthDtos.LoginResponse(
+        return new LoginResult(
             jwtService.issue(user, users.findAuthorityCodes(user.getId())),
             "Bearer",
             jwtService.accessTokenSeconds(),
@@ -93,7 +106,7 @@ public class AuthService {
     }
 
     @Transactional(noRollbackFor = InvalidRefreshTokenException.class)
-    public AuthDtos.LoginResponse refresh(AuthDtos.RefreshRequest request) {
+    public LoginResult refresh(RefreshCommand request) {
         if (request.refreshToken() == null || request.refreshToken().isBlank()) {
             throw new InvalidRefreshTokenException("Token de refresco requerido");
         }
@@ -152,11 +165,11 @@ public class AuthService {
         String newAccessToken = jwtService.issue(user, users.findAuthorityCodes(userId));
         auditService.record(userId, "TOKEN_REFRESH", "USER", userId.toString(), "SUCCESS", Map.of());
 
-        return new AuthDtos.LoginResponse(newAccessToken, "Bearer", jwtService.accessTokenSeconds(), newRawToken);
+        return new LoginResult(newAccessToken, "Bearer", jwtService.accessTokenSeconds(), newRawToken);
     }
 
     @Transactional
-    public void logout(AuthDtos.LogoutRequest request) {
+    public void logout(LogoutCommand request) {
         if (request.refreshToken() == null || request.refreshToken().isBlank()) {
             return;
         }
@@ -172,7 +185,7 @@ public class AuthService {
     }
 
     @Transactional
-    public void activate(AuthDtos.ActivateUserRequest request) {
+    public void activate(ActivateUserCommand request) {
         if (request == null || request.activationToken() == null || request.activationToken().isBlank()
             || request.password() == null || request.password().isBlank()) {
             throw new InvalidActivationTokenException("Token de activación y contraseña son obligatorios");

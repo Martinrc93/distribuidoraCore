@@ -123,14 +123,14 @@ class DeliveryLifecycleServiceTest {
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("balance", new BigDecimal("20.0000")));
         when(jdbc.queryForList(contains("sum(quantity) as net_quantity"), any(Object[].class))).thenReturn(List.of(
-            Map.of("product_id", firstProductId, "net_quantity", new BigDecimal("-2.0")),
-            Map.of("product_id", secondProductId, "net_quantity", new BigDecimal("-1.5"))));
+            Map.of("depot_id", InventoryMovementService.DEFAULT_DEPOT_ID, "product_id", firstProductId, "net_quantity", new BigDecimal("-2.0")),
+            Map.of("depot_id", InventoryMovementService.DEFAULT_DEPOT_ID, "product_id", secondProductId, "net_quantity", new BigDecimal("-1.5"))));
 
         service.cancel(orderId);
 
-        verify(inventory).apply(firstProductId, new BigDecimal("2.0"), "SALE_CANCELLATION",
+        verify(inventory).apply(InventoryMovementService.DEFAULT_DEPOT_ID, firstProductId, new BigDecimal("2.0"), "SALE_CANCELLATION",
             orderId, "Sale cancellation");
-        verify(inventory).apply(secondProductId, new BigDecimal("1.5"), "SALE_CANCELLATION",
+        verify(inventory).apply(InventoryMovementService.DEFAULT_DEPOT_ID, secondProductId, new BigDecimal("1.5"), "SALE_CANCELLATION",
             orderId, "Sale cancellation");
         verify(jdbc).update(contains("insert into customer.account_ledger"), any(Object[].class));
         verify(jdbc).update(contains("update customer.customers set balance = balance -"), any(Object[].class));
@@ -154,7 +154,8 @@ class DeliveryLifecycleServiceTest {
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("balance", BigDecimal.ZERO));
         when(jdbc.queryForList(contains("sum(quantity) as net_quantity"), eq(new Object[]{orderId, saleId})))
-            .thenReturn(List.of(Map.of("product_id", productId, "net_quantity", new BigDecimal("-2.0"))));
+            .thenReturn(List.of(Map.of("depot_id", InventoryMovementService.DEFAULT_DEPOT_ID,
+                "product_id", productId, "net_quantity", new BigDecimal("-2.0"))));
 
         service.cancel(orderId);
 

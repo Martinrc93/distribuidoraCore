@@ -6,6 +6,7 @@ import com.distribuidora.order.api.OrderConfirmationDtos;
 import com.distribuidora.order.application.OrderCalculationService;
 import com.distribuidora.order.application.OrderConfirmationService;
 import com.distribuidora.pricing.application.PricingQueryService;
+import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -33,6 +34,9 @@ class OrderConfirmationServiceTest {
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
     private final OrderConfirmationService service = new OrderConfirmationService(jdbc, pricing, calculation, inventory, audit);
+    private final CommercialDiscountRuleQueryService discountRules = mock(CommercialDiscountRuleQueryService.class);
+    private final OrderConfirmationService serviceWithDiscountRules = new OrderConfirmationService(
+        jdbc, pricing, discountRules, calculation, inventory, audit);
 
     @AfterEach
     void clearAuthentication() {
@@ -62,7 +66,7 @@ class OrderConfirmationServiceTest {
         assertThat(response.saleId()).isNotNull();
         assertThat(response.total()).isEqualByComparingTo("20.0000");
         assertThat(response.paid()).isEqualByComparingTo("20.0000");
-        verify(inventory).apply(eq(productId), argThat(value -> value.compareTo(new BigDecimal("-2.0")) == 0),
+        verify(inventory).apply(eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), argThat(value -> value.compareTo(new BigDecimal("-2.0")) == 0),
             eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
         verify(jdbc).update(contains("payment.payments"), any(Object[].class));
         verify(jdbc, never()).update(contains("account_ledger"), any(Object[].class));
@@ -80,7 +84,7 @@ class OrderConfirmationServiceTest {
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         AtomicInteger lookups = new AtomicInteger();
-        AtomicReference<OrderConfirmationDtos.ConfirmationResponse> committed = new AtomicReference<>();
+        AtomicReference<OrderConfirmationService.ConfirmationResult> committed = new AtomicReference<>();
         AtomicReference<String> storedFingerprint = new AtomicReference<>();
         when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenAnswer(invocation -> {
             if (lookups.incrementAndGet() == 1) return List.of();
@@ -121,6 +125,11 @@ class OrderConfirmationServiceTest {
             List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2"), BigDecimal.ZERO, null)),
             request.orderDiscountPercent(), request.payments());
         assertThatThrownBy(() -> service.confirm(changedRequest))
+            .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
+        var changedDepotRequest = new OrderConfirmationDtos.ConfirmationRequest(
+            request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(),
+            request.payments(), UUID.randomUUID());
+        assertThatThrownBy(() -> service.confirm(changedDepotRequest))
             .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
         verify(pricing, times(1)).resolve(customerId, productId, null);
     }
@@ -182,7 +191,7 @@ class OrderConfirmationServiceTest {
             new BigDecimal("5.00"), List.of()));
 
         assertThat(response.total()).isEqualByComparingTo("9.0250");
-        verify(inventory).apply(eq(productId), any(), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
+        verify(inventory).apply(eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), any(), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
     }
 
     @Test
@@ -191,6 +200,43 @@ class OrderConfirmationServiceTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("request");
         verifyNoInteractions(jdbc, pricing, inventory, audit);
+    }
+
+    @Test
+    void appliesPersistedLineAndOrderDiscountRulesAndStoresRuleSnapshots() {
+        authenticate("ORDER_CREATE");
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
+        UUID lineRuleId = UUID.randomUUID();
+        UUID orderRuleId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+            .thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
+        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
+            "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("100.0000")));
+        when(discountRules.lineDiscount(customerId, productId, listId))
+            .thenReturn(java.util.Optional.of(new CommercialDiscountRuleQueryService.DiscountSnapshot(
+                lineRuleId, new BigDecimal("10.0000"))));
+        when(discountRules.orderDiscount(customerId, null))
+            .thenReturn(java.util.Optional.of(new CommercialDiscountRuleQueryService.DiscountSnapshot(
+                orderRuleId, new BigDecimal("5.0000"))));
+
+        var response = serviceWithDiscountRules.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "discount-rule-order", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of()));
+
+        assertThat(response.total()).isEqualByComparingTo("85.5000");
+        var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
+        assertThat(orderInsert.getValue()).contains(orderRuleId, new BigDecimal("5.0000"));
+        var itemInserts = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, times(2)).update(argThat(sql -> sql.contains("order_items") || sql.contains("sale_items")),
+            itemInserts.capture());
+        assertThat(itemInserts.getAllValues()).allSatisfy(args ->
+            assertThat(java.util.Arrays.asList(args)).contains(lineRuleId));
     }
 
     @Test
@@ -322,7 +368,7 @@ class OrderConfirmationServiceTest {
         assertThat((BigDecimal) ledger.getValue()[3]).isEqualByComparingTo("10.0000");
     }
 
-    private OrderConfirmationDtos.ConfirmationResponse confirmWithPayments(
+    private OrderConfirmationService.ConfirmationResult confirmWithPayments(
         List<OrderConfirmationDtos.PaymentRequest> payments) {
         authenticate("ORDER_CREATE");
         UUID customerId = UUID.randomUUID();

@@ -155,7 +155,7 @@ idempotencia, auditoría, consulta de estado y despacho mediante outbox.
 ## Actualización: endurecimiento operativo (2026-09-24)
 
 - Se configuró workflow CI para PostgreSQL 16 y ejecución completa de Maven;
-  está pendiente confirmar la primera ejecución remota.
+  la primera ejecución remota pasó para `2d1decf` ([run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828)).
 - Se activaron logs ECS JSON, propagación segura de `X-Request-Id`, métricas
   HTTP y métricas de backlog/resultado/duración del worker outbox.
 - Se agregaron scripts de backup cifrado, retención local y registro de tarea
@@ -164,9 +164,115 @@ idempotencia, auditoría, consulta de estado y despacho mediante outbox.
   descartable, que se eliminó al terminar.
 - Solicitudes terminales y eventos outbox se purgan tras 90 días por defecto;
   auditoría enmascarada se conserva.
-- Riesgos operativos medios pendientes: activar la tarea diaria, configurar
-  destino externo de backups y confirmar CI remoto. Durante restore se usa un
-  dump temporal descifrado en `%TEMP%`, que requiere volumen cifrado y ACL.
+- Estado histórico de la revisión inicial: Task Scheduler devolvió código `1`
+  y la tarea se deshabilitó entonces para evitar una programación falsa. La
+  incidencia se corrigió en el seguimiento del 2026-09-24 (ver abajo). Durante
+  restore se usa un dump temporal descifrado en `%TEMP%`, que requiere volumen
+  cifrado y ACL.
 
 Verificación final: suite Maven **301 tests, 0 fallos, 0 errores y 0 omitidos**;
 18 pruebas funcionales contra PostgreSQL 16.4 con Flyway V1–V20.
+
+## Complemento de verificación (2026-09-24)
+
+- Se añadió ArchUnit con reglas incrementales para API/infraestructura y
+  dominio/capas de entrega. La regla global sin ciclos detectó dependencias
+  existentes; quedan registradas en `docs/architecture/module-boundaries.md`.
+- Se añadieron APIs para consulta paginada de usuarios, cambio de rol,
+  administración de permisos por rol y consulta de roles/permisos, con
+  protección del último administrador, invalidación de sesiones y auditoría.
+  Contrato: `docs/api/identity-admin.md`.
+- Seguimiento operativo posterior (2026-09-24): se corrigió la acción del task
+  usando `-EncodedCommand`, se cambió el log a un archivo por ejecución y se
+  materializó en el contexto programado el mismo almacén DPAPI cifrado, sin
+  regenerar la clave. La corrida del backup programado devolvió `0`; HMAC y
+  restauración/tamper desde el archivo nuevo pasaron en PostgreSQL descartable
+  (Flyway V7). La tarea diaria quedó habilitada para las 03:00.
+- Corrección del estado OneDrive (2026-09-24): `0x00000009` significa
+  placeholder + `InSync` (`0x1` + `0x8`), no parcial/no sincronizado. El usuario
+  confirmó que ve el backup de las 05:55:56 en OneDrive. KeePassXC 2.7.12
+  portable se instaló con hash/firma verificados. Se corrigió stdin en Windows
+  PowerShell 5.1 y la ruta hacia el grupo inexistente `Recovery`; el archivo
+  incompleto se eliminó y la prueba con datos ficticios pasó. Después, el
+  usuario confirmó `RESULT=OK` para el escrow real; la bóveda existe y Cloud
+  Files confirmó sincronización (`0x00000009`, `PLACEHOLDER` + `InSync`). La
+  activación/consulta del canal Operational de Task Scheduler fue denegada por
+  Windows; se usó el log por ejecución para diagnosticar.
+- Revisión del 2026-09-24: el backup local más reciente sigue presente y pasó
+  HMAC nuevamente; el usuario confirmó su presencia en OneDrive. Se instaló
+  KeePassXC 2.7.12 portable para el escrow independiente de DPAPI. Los dos
+  intentos fallidos no dejaron archivo; se corrigió el manejo de stdin y la
+  entrada a grupo inexistente, y la prueba con datos ficticios pasó. La clave
+  no se incluyó en documentación ni repositorio.
+- Cierre KeePassXC (2026-09-24): el usuario confirmó `RESULT=OK`; la bóveda real
+  existe, la entrada se leyó de vuelta y Cloud Files devolvió `0x00000009`
+  (`PLACEHOLDER` + `InSync`). La clave no se escribió en este registro y la
+  contraseña maestra queda bajo custodia del usuario fuera de OneDrive.
+- Verificación PostgreSQL previa: **314 tests, 0 fallos, 0 errores y 0
+  omitidos**, incluidos 19 casos PostgreSQL 16.4/Flyway V1–V20 en una base
+  descartable eliminada al terminar.
+
+## Cierre de arquitectura y cobertura HTTP (2026-09-24)
+
+- El handler de `ProductPriceValidationException` se trasladó a
+  `catalog.api.CatalogExceptionHandler`; la regla `shared`↛`catalog` impide
+  reintroducir la arista que cerraba el ciclo conocido
+  `audit → shared → catalog → audit`.
+- Los servicios de aplicación dejaron de importar DTOs HTTP. Los módulos
+  exponen contratos/resultados de aplicación y sus controllers adaptan las
+  respuestas a DTOs de transporte. `application`↛`api` se verifica con
+  ArchUnit.
+- Se agregaron **14 casos HTTP `MockMvc`** entre marcas, categorías, pagos de
+  cuenta corriente, entrega, devoluciones, vendedores y límite de crédito.
+  Comprueban binding, respuestas serializadas, códigos HTTP y rechazos de
+  validación.
+- Pruebas: los ocho tests de controller/arquitectura enfocados pasaron (**46
+  tests, 0 fallos**); la suite completa terminó con **328 tests, 0 fallos, 0
+  errores y 19 omitidos**. Los omitidos son las pruebas PostgreSQL opt-in,
+  porque esta ejecución no tenía `POSTGRES_TEST_URL`; la verificación
+  PostgreSQL previa está registrada arriba.
+
+## Revisión completa del grafo modular (2026-09-24)
+
+- `ModuleBoundaryTest` ahora aplica la regla global de slices sin ciclos e
+  importa solo clases de producción. Esto evita que clases de test o bytecode
+  obsoleto en `target` alteren el análisis.
+- Se resolvieron las dependencias de errores específicas que salían de
+  `shared`: JWT/filtro y errores de identidad pertenecen a `identity`, el
+  cableado de seguridad está en `config`, y los handlers de documentos y
+  conflictos de idempotencia viven en `document` y `order`.
+- Se documentó el grafo observado en
+  `docs/architecture/module-boundaries.md`; `shared` ya no tiene dependencias
+  salientes hacia módulos de negocio y todos los slices de producción forman
+  un grafo sin ciclos.
+- Suite Maven completa: **329 tests, 0 fallos, 0 errores y 19 omitidos**;
+  ArchUnit pasó. Los casos omitidos requieren `POSTGRES_TEST_URL`; la ejecución
+  con PostgreSQL descartable previa está registrada arriba.
+
+## Cadena de seguridad HTTP (2026-09-24)
+
+- Se fijó en `SecurityConfig` el entry point de autenticación anónima a `401`,
+  alineando la respuesta de la cadena de producción con el contrato REST.
+- `SecurityChainAuthorizationTest` recorre la configuración de seguridad de
+  producción y el filtro JWT con tokens firmados y usuarios activos/versionados.
+  Seis pruebas pasan: anónimo `401`, permiso insuficiente `403` y rutas de marca,
+  documentos, pagos, entrega, inventario y administración con las authorities
+  funcionales actuales. También rechazan cruces entre permisos no relacionados.
+- El repositorio de usuarios se simula solo en la matriz rápida. La prueba
+  PostgreSQL recorre login HTTP real, authorities de roles persistidos, cambio
+  administrativo de rol/permisos, `401` para el JWT anterior y permisos
+  actualizados al emitir un JWT nuevo.
+
+## Verificación PostgreSQL descartable (2026-09-24)
+
+- La suite completa se ejecutó con PostgreSQL Portable 16.4 en un cluster nuevo
+  bajo `%TEMP%`, enlazado solo a `127.0.0.1:55432`. El cluster persistente del
+  proyecto no se inició ni se modificó.
+- Flyway aplicó V1–V20 y Hibernate verificó el esquema (`ddl-auto=validate`).
+  Pasaron los **21 tests** de `PostgresBackendFixesIntegrationTest`; la suite
+  total terminó con **337 tests, 0 fallos, 0 errores y 0 omitidos**.
+- En este host `pg_ctl` no pudo iniciar/detener el proceso por restricciones de
+  token de Windows. El servidor temporal se inició directamente y se detuvo
+  verificando el PID registrado en `postmaster.pid`, el ejecutable y el cluster;
+  se comprobó que el puerto quedó cerrado antes de eliminar solo el directorio
+  temporal validado. No se usó ni modificó el cluster PostgreSQL persistente.

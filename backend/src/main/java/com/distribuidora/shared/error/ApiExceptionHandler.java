@@ -12,30 +12,10 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import com.distribuidora.order.application.IdempotencyConflictException;
-import com.distribuidora.document.application.SaleDocumentConflictException;
-import com.distribuidora.document.application.SaleDocumentNotFoundException;
-
-import com.distribuidora.catalog.application.ProductPriceValidationException;
-import com.distribuidora.identity.application.InvalidActivationTokenException;
-import com.distribuidora.identity.application.InvalidRefreshTokenException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
-
-    @ExceptionHandler(ProductPriceValidationException.class)
-    ResponseEntity<ProblemDetail> handleProductPriceValidation(ProductPriceValidationException exception, HttpServletRequest request) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST,
-            exception.getMessage()
-        );
-        problem.setTitle("Invalid product prices");
-        problem.setProperty("code", "INVALID_PRODUCT_PRICES");
-        problem.setProperty("instance", request.getRequestURI());
-        problem.setProperty("affectedPriceLists", exception.getAffectedPriceLists());
-        return ResponseEntity.badRequest().body(problem);
-    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     ResponseEntity<ProblemDetail> handleBadRequest(IllegalArgumentException exception, HttpServletRequest request) {
@@ -45,21 +25,6 @@ public class ApiExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     ResponseEntity<ProblemDetail> handleConflict(IllegalStateException exception, HttpServletRequest request) {
         return problem(HttpStatus.CONFLICT, "Conflict", "CONFLICT", "El recurso ya existe o no puede modificarse", request);
-    }
-
-    @ExceptionHandler(IdempotencyConflictException.class)
-    ResponseEntity<ProblemDetail> handleIdempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request) {
-        return problem(HttpStatus.CONFLICT, "Conflict", "IDEMPOTENCY_CONFLICT", exception.getMessage(), request);
-    }
-
-    @ExceptionHandler(SaleDocumentNotFoundException.class)
-    ResponseEntity<ProblemDetail> handleSaleDocumentNotFound(SaleDocumentNotFoundException exception, HttpServletRequest request) {
-        return problem(HttpStatus.NOT_FOUND, "Not found", "NOT_FOUND", exception.getMessage(), request);
-    }
-
-    @ExceptionHandler(SaleDocumentConflictException.class)
-    ResponseEntity<ProblemDetail> handleSaleDocumentConflict(SaleDocumentConflictException exception, HttpServletRequest request) {
-        return problem(HttpStatus.CONFLICT, "Conflict", "CONFLICT", exception.getMessage(), request);
     }
 
     @ExceptionHandler(EmptyResultDataAccessException.class)
@@ -77,30 +42,6 @@ public class ApiExceptionHandler {
         problem.setProperty("code", "INVALID_CREDENTIALS");
         problem.setProperty("instance", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
-    }
-
-    @ExceptionHandler(InvalidRefreshTokenException.class)
-    ResponseEntity<ProblemDetail> handleInvalidRefreshToken(InvalidRefreshTokenException exception, HttpServletRequest request) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-            HttpStatus.UNAUTHORIZED,
-            exception.getMessage()
-        );
-        problem.setTitle("Unauthorized");
-        problem.setProperty("code", "INVALID_REFRESH_TOKEN");
-        problem.setProperty("instance", request.getRequestURI());
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
-    }
-
-    @ExceptionHandler(InvalidActivationTokenException.class)
-    ResponseEntity<ProblemDetail> handleInvalidActivationToken(InvalidActivationTokenException exception, HttpServletRequest request) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST,
-            exception.getMessage()
-        );
-        problem.setTitle("Invalid activation token");
-        problem.setProperty("code", "INVALID_ACTIVATION_TOKEN");
-        problem.setProperty("instance", request.getRequestURI());
-        return ResponseEntity.badRequest().body(problem);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

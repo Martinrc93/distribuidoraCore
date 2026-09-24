@@ -2,11 +2,12 @@
 
 ```mermaid
 flowchart TD
-    A[Solicitar devolucion] --> B[Validar venta y productos]
-    B --> C{Devolucion autorizada?}
+    A[Solicitar devolución] --> B[Validar venta entregada y líneas]
+    B --> C{Cantidad disponible?}
     C -->|No| D[Rechazar solicitud]
-    C -->|Si| E[Bloquear balance]
-    E --> F[Registrar movimiento RETURN]
-    F --> G[Actualizar saldo]
-    G --> H[Auditar devolucion]
+    C -->|Sí| E[Leer depósito persistido por la venta]
+    E --> F[Bloquear balance de ese producto y depósito]
+    F --> G[Registrar movimiento RETURN]
+    G --> H[Actualizar saldo en ese depósito]
+    H --> I[Auditar devolución]
 ```

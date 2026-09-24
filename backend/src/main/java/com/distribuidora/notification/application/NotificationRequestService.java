@@ -5,7 +5,6 @@ import com.distribuidora.document.application.SaleDocumentService;
 import com.distribuidora.document.rendering.OpenPdfA4Renderer;
 import com.distribuidora.document.rendering.OpenPdfTicketRenderer;
 import com.distribuidora.document.rendering.SaleDocumentModel;
-import com.distribuidora.notification.api.NotificationDtos;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -19,6 +18,18 @@ import java.util.regex.Pattern;
 
 @Service
 public class NotificationRequestService {
+    public interface CreateNotificationCommand {
+        String channel();
+        String recipient();
+        String format();
+        String idempotencyKey();
+    }
+
+    public record CreateNotificationResult(UUID requestId, String status) { }
+
+    public record NotificationStatus(UUID requestId, String status, int attemptCount,
+                                     java.time.Instant requestedAt, java.time.Instant sentAt, String lastError) { }
+
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final Pattern PHONE = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
     private final JdbcTemplate jdbc;
@@ -47,7 +58,7 @@ public class NotificationRequestService {
     }
 
     @Transactional
-    public NotificationDtos.CreateResponse request(UUID orderId, NotificationDtos.CreateRequest request) {
+    public CreateNotificationResult request(UUID orderId, CreateNotificationCommand request) {
         if (orderId == null || request == null) throw new IllegalArgumentException("La solicitud de notificación es obligatoria");
         currentUser.requireOrderAccess(orderId);
         String channel = normalize(request.channel());
@@ -78,7 +89,7 @@ public class NotificationRequestService {
         UUID requestId = uuid(existing.get("id"));
         if (!"QUEUED".equals(existing.get("status")) && jdbc.queryForObject(
                 "select outbox_event_id is not null from notification.delivery_requests where id = ?", Boolean.class, requestId)) {
-            return new NotificationDtos.CreateResponse(requestId, (String) existing.get("status"));
+            return new CreateNotificationResult(requestId, (String) existing.get("status"));
         }
         UUID eventId = outbox.enqueue("NOTIFICATION_DELIVERY_REQUESTED", "NOTIFICATION", requestId,
             Map.of("notificationRequestId", requestId.toString()), "NOTIFICATION_REQUEST:" + requestId);
@@ -89,15 +100,15 @@ public class NotificationRequestService {
             audit.recordWithinTransaction(currentUser.userId(), "NOTIFICATION_REQUEST", "NOTIFICATION", requestId.toString(),
                 "SUCCESS", Map.of("channel", channel, "format", format, "recipient", mask(recipient)));
         }
-        return new NotificationDtos.CreateResponse(requestId, "QUEUED");
+        return new CreateNotificationResult(requestId, "QUEUED");
     }
 
     @Transactional(readOnly = true)
-    public NotificationDtos.StatusResponse status(UUID orderId, UUID requestId) {
+    public NotificationStatus status(UUID orderId, UUID requestId) {
         currentUser.requireOrderAccess(orderId);
         return jdbc.queryForObject("select id, status, attempt_count, created_at, sent_at, last_error "
                 + "from notification.delivery_requests where id = ? and order_id = ?",
-            (rs, rowNum) -> new NotificationDtos.StatusResponse(rs.getObject("id", UUID.class), rs.getString("status"),
+            (rs, rowNum) -> new NotificationStatus(rs.getObject("id", UUID.class), rs.getString("status"),
                 rs.getInt("attempt_count"), rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("sent_at") == null ? null : rs.getTimestamp("sent_at").toInstant(), rs.getString("last_error")),
             requestId, orderId);

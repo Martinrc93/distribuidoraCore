@@ -7,7 +7,7 @@ flowchart TD
     C --> D{Delta valido?}
     D -->|No| E[Rechazar modificacion]
     D -->|Si| F[Bloquear balances afectados]
-    F --> G[Aplicar movimientos compensatorios]
+    F --> G[Aplicar movimientos en el depósito guardado por el pedido]
     G --> H[Actualizar pedido y venta]
     H --> I[Auditar operacion]
 ```

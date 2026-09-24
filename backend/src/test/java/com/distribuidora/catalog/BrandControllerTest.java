@@ -3,10 +3,12 @@ package com.distribuidora.catalog;
 import com.distribuidora.catalog.api.BrandController;
 import com.distribuidora.catalog.api.CatalogAdminDtos;
 import com.distribuidora.catalog.application.BrandService;
+import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.lang.reflect.Method;
 import java.time.Instant;
@@ -17,16 +19,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
 class BrandControllerTest {
     private BrandService service;
     private BrandController controller;
+    private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         service = mock(BrandService.class);
         controller = new BrandController(service);
+        mockMvc = standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
     @Test
@@ -92,21 +102,23 @@ class BrandControllerTest {
 
     @Test
     void list_returnsOk() {
-        CatalogAdminDtos.BrandResponse brand = new CatalogAdminDtos.BrandResponse(
+        BrandService.BrandView brand = new BrandService.BrandView(
             UUID.randomUUID(), "Quilmes", "QUIL", "ACTIVE", Instant.now(), 5L
         );
+        CatalogAdminDtos.BrandResponse expected = new CatalogAdminDtos.BrandResponse(
+            brand.id(), brand.name(), brand.code(), brand.status(), brand.createdAt(), brand.productCount());
         when(service.list("quil", "ACTIVE")).thenReturn(List.of(brand));
 
         ResponseEntity<List<CatalogAdminDtos.BrandResponse>> response = controller.list("quil", "ACTIVE");
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody()).containsExactly(brand);
+        assertThat(response.getBody()).containsExactly(expected);
     }
 
     @Test
     void getById_returnsOk() {
         UUID id = UUID.randomUUID();
-        CatalogAdminDtos.BrandResponse brand = new CatalogAdminDtos.BrandResponse(
+        BrandService.BrandView brand = new BrandService.BrandView(
             id, "Quilmes", "QUIL", "ACTIVE", Instant.now(), 5L
         );
         when(service.getById(id)).thenReturn(brand);
@@ -114,6 +126,35 @@ class BrandControllerTest {
         ResponseEntity<CatalogAdminDtos.BrandResponse> response = controller.getById(id);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody()).isEqualTo(brand);
+        assertThat(response.getBody()).isEqualTo(new CatalogAdminDtos.BrandResponse(
+            brand.id(), brand.name(), brand.code(), brand.status(), brand.createdAt(), brand.productCount()));
+    }
+
+    @Test
+    void httpCreateBindsRequestAndSerializesCreatedId() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.create(any())).thenReturn(id);
+
+        mockMvc.perform(post("/api/brands")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"name":"Quilmes","code":"QUIL"}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(id.toString()));
+
+        verify(service).create(new CatalogAdminDtos.CreateBrandRequest("Quilmes", "QUIL"));
+    }
+
+    @Test
+    void httpCreateRejectsBlankNameBeforeCallingService() throws Exception {
+        mockMvc.perform(post("/api/brands")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"name":"   ","code":"QUIL"}
+                    """))
+            .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(service);
     }
 }

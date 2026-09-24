@@ -1,5 +1,10 @@
 # Diseño: Inventario transaccional
 
+> Estado actualizado (2026-09-24): este documento registra el alcance inicial.
+> Los movimientos automáticos de venta/cancelación y el soporte multi-depósito
+> se implementaron posteriormente. El diseño vigente del inventario se describe
+> en [`docs/api/inventory.md`](../../api/inventory.md) y la migración V23.
+
 ## Objetivo
 
 Implementar la primera vertical real del módulo `inventory`, permitiendo ajustes manuales auditables y consultas de saldo e historial, sin alterar el modelo append-only de movimientos.
@@ -17,7 +22,7 @@ Incluye:
 - Consulta paginada de saldos e historial por producto.
 - Autorización administrativa mediante `STOCK_ADJUST`.
 
-No incluye todavía:
+No incluía en su alcance inicial:
 
 - Movimientos automáticos por confirmación o cancelación de ventas.
 - Múltiples depósitos.

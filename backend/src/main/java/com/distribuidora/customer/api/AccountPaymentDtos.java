@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import com.distribuidora.customer.application.AccountPaymentService;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -20,7 +21,7 @@ public final class AccountPaymentDtos {
         @NotBlank @Pattern(regexp = "CASH|BANK_TRANSFER") String method,
         @Size(max = 100) String transferReference,
         UUID saleId
-    ) { }
+    ) implements AccountPaymentService.PaymentCommand { }
 
     public record Allocation(UUID saleId, String saleNumber, UUID paymentId, BigDecimal amount) { }
 

@@ -128,9 +128,9 @@ class ProductCommandServiceTest {
             eq("SKU-1"), eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(120)), eq(productId));
 
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("catalog.product_prices"),
-            eq(list1Id), eq(productId), eq(BigDecimal.valueOf(130)));
+            eq(list1Id), eq(productId), eq(BigDecimal.valueOf(130)), any(), any());
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("catalog.product_prices"),
-            eq(list2Id), eq(productId), eq(BigDecimal.valueOf(135)));
+            eq(list2Id), eq(productId), eq(BigDecimal.valueOf(135)), any(), any());
     }
 
     @Test
@@ -155,7 +155,7 @@ class ProductCommandServiceTest {
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("update catalog.products set sku = ?"),
             eq("SKU-1"), eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(110)), eq(productId));
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("catalog.product_prices"),
-            eq(list1Id), eq(productId), eq(BigDecimal.valueOf(125)));
+            eq(list1Id), eq(productId), eq(BigDecimal.valueOf(125)), any(), any());
     }
 
     @Test

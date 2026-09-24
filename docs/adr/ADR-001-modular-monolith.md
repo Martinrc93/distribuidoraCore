@@ -78,7 +78,11 @@ futuro si existe una razón concreta.
 
 ## Guardrails
 
-- Tests ArchUnit o Spring Modulith para verificar dependencias.
+- ArchUnit verifica cuatro límites de capas (API→infraestructura,
+  dominio→capas de entrega, `shared`↛`catalog` y `application`↛`api`) y que el
+  grafo de slices de producción esté libre de ciclos. Se resolvieron los ciclos
+  encontrados al revisar el grafo completo. Ver
+  `docs/architecture/module-boundaries.md`.
 - APIs internas pequeñas y documentadas.
 - Entidades JPA no compartidas entre módulos.
 - Eventos para efectos secundarios, no para ocultar invariantes críticas.

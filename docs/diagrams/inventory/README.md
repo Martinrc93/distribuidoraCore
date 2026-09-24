@@ -1,11 +1,9 @@
 # Inventory
 
-Diagramas recomendados:
+Diagramas de inventario:
 
-- `flow-manual-adjustment.md`: ajuste firmado, motivo, permisos y auditoria.
-- `sequence-sale-stock-output.md`: salida de stock al confirmar una venta.
-- `sequence-sale-cancellation-reversal.md`: reversa de stock al cancelar.
+- `flow-manual-adjustment.md`: ajuste firmado, motivo, permisos y auditoría.
 - `flow-confirmed-order-delta.md`: delta compensatorio al editar un pedido.
-- `flow-return.md`: devolucion futura.
-- `state-stock-balance.md`: saldo, movimientos y consistencia.
-- `er-inventory.md`: balance, movimiento y origen de movimiento.
+- `flow-return.md`: devolución al depósito de la venta.
+- `flow-depot-transfer.md`: transferencia atómica entre dos depósitos.
+- `er-inventory-depots.md`: depósitos, balances compuestos y movimientos.

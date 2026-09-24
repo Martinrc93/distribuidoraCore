@@ -26,16 +26,32 @@ public class InventoryCommandService {
 
     @Transactional
     public void adjust(UUID productId, BigDecimal quantity, String reason) {
+        adjust(InventoryMovementService.DEFAULT_DEPOT_ID, productId, quantity, reason);
+    }
+
+    @Transactional
+    public void adjust(UUID depotId, UUID productId, BigDecimal quantity, String reason) {
         validate(productId, quantity, reason);
+        UUID resolvedDepotId = depotId == null ? InventoryMovementService.DEFAULT_DEPOT_ID : depotId;
         String status = jdbc.queryForObject(
             "select status from catalog.products where id = ?", String.class, productId);
         if (!"ACTIVE".equals(status)) {
             throw new IllegalStateException("El producto no está activo");
         }
         UUID actorId = actorId();
-        movements.apply(productId, quantity, "MANUAL_ADJUSTMENT", null, reason);
-        audit.record(actorId, "STOCK_ADJUSTMENT", "PRODUCT", productId.toString(), "SUCCESS",
-            Map.of("quantity", quantity, "reason", reason.trim()));
+        movements.apply(resolvedDepotId, productId, quantity, "MANUAL_ADJUSTMENT", null, reason);
+        audit.recordWithinTransaction(actorId, "STOCK_ADJUSTMENT", "PRODUCT", productId.toString(), "SUCCESS",
+            Map.of("depotId", resolvedDepotId.toString(), "quantity", quantity, "reason", reason.trim()));
+    }
+
+    @Transactional
+    public UUID transfer(UUID fromDepotId, UUID toDepotId, UUID productId, BigDecimal quantity, String reason) {
+        UUID actorId = actorId();
+        UUID transferId = movements.transfer(fromDepotId, toDepotId, productId, quantity, reason);
+        audit.recordWithinTransaction(actorId, "STOCK_TRANSFER", "STOCK_TRANSFER", transferId.toString(), "SUCCESS",
+            Map.of("fromDepotId", fromDepotId.toString(), "toDepotId", toDepotId.toString(),
+                "productId", productId.toString(), "quantity", quantity, "reason", reason.trim()));
+        return transferId;
     }
 
     private void validate(UUID productId, BigDecimal quantity, String reason) {

@@ -22,12 +22,12 @@ public class BrandController {
     public ResponseEntity<List<CatalogAdminDtos.BrandResponse>> list(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status) {
-        return ResponseEntity.ok(service.list(search, status));
+        return ResponseEntity.ok(service.list(search, status).stream().map(BrandController::toResponse).toList());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<CatalogAdminDtos.BrandResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(service.getById(id));
+        return ResponseEntity.ok(toResponse(service.getById(id)));
     }
 
     @PostMapping
@@ -56,5 +56,10 @@ public class BrandController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.deactivate(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private static CatalogAdminDtos.BrandResponse toResponse(BrandService.BrandView view) {
+        return new CatalogAdminDtos.BrandResponse(view.id(), view.name(), view.code(), view.status(),
+            view.createdAt(), view.productCount());
     }
 }

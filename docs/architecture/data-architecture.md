@@ -13,8 +13,11 @@ seller.seller_profiles
 customer.customers
 catalog.products
 catalog.price_lists
-catalog.product_prices
-inventory.balances
+catalog.product_price_history
+catalog.product_prices (compatibilidad)
+catalog.commercial_discount_rules
+inventory.depots
+inventory.inventory_balances (depot_id, product_id)
 inventory.stock_movements
 order.orders
 sale.sales
@@ -30,7 +33,8 @@ audit.entries
 - `timestamptz` en PostgreSQL.
 - `Instant` en Java.
 - Zona de presentación: `America/Argentina/Buenos_Aires`.
-- Fechas almacenadas en UTC.
+- Timestamps almacenados en UTC; las vigencias comerciales son `DATE` y usan
+  explícitamente `America/Argentina/Buenos_Aires`.
 
 ## Importes y cantidades
 
@@ -48,10 +52,20 @@ Se utilizarán constraints para reglas estructurales:
 - `NOT NULL` para datos requeridos.
 - `UNIQUE` para username, email y códigos de negocio.
 - `CHECK` para costos (`cost >= 0`), precios (`price >= 0`), cantidades y estados válidos.
-- Precios de venta normalizados exclusivamente en `catalog.product_prices` por lista (`catalog.products` solo almacena el costo).
+- `catalog.product_price_history` es la fuente de verdad de precios por lista,
+  producto y fecha; `catalog.products` conserva solo el costo.
+- `catalog.product_prices` se mantiene por compatibilidad con escrituras
+  inmediatas antiguas y no se usa para resolver precios de negocio.
+- Las reglas comerciales guardan porcentaje, scope y vigencias inclusivas;
+  pedido y venta copian el porcentaje e ID usados para preservar el snapshot.
 - Índices para búsquedas, estados, fechas y referencias.
 - Optimistic locking mediante `version` en entidades editables.
 - Locking pesimista para balances de stock.
+- Cada balance y movimiento pertenece a un depósito. El depósito `CENTRAL` es
+  el predeterminado; la migración V23 asigna allí los saldos y operaciones
+  existentes. Pedidos y ventas conservan el depósito que descontó el stock.
+- Una transferencia bloquea en orden estable los saldos de origen y destino,
+  valida disponibilidad en el origen y guarda ambos movimientos atómicamente.
 
 Las reglas que dependen de varios módulos se validan en casos de uso y no se
 resuelven únicamente con foreign keys.
@@ -65,6 +79,8 @@ Son append-only:
 - Aplicaciones de pagos.
 - Auditoría.
 - Intentos de entrega.
+- Cambios de precios ya efectivos. Las programaciones futuras pueden editarse o
+  cancelarse hasta su fecha de vigencia.
 
 Las correcciones se expresan mediante reversas, ajustes o movimientos nuevos.
 

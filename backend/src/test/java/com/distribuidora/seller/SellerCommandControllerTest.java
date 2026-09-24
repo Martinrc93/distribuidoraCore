@@ -3,10 +3,12 @@ package com.distribuidora.seller;
 import com.distribuidora.seller.api.SellerCommandController;
 import com.distribuidora.seller.api.SellerDtos;
 import com.distribuidora.seller.application.SellerCommandService;
+import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.lang.reflect.Method;
 import java.util.UUID;
@@ -16,16 +18,24 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
 class SellerCommandControllerTest {
     private SellerCommandService service;
     private SellerCommandController controller;
+    private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         service = mock(SellerCommandService.class);
         controller = new SellerCommandController(service);
+        mockMvc = standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
     @Test
@@ -128,7 +138,8 @@ class SellerCommandControllerTest {
         SellerDtos.ReassignCustomersRequest request = new SellerDtos.ReassignCustomersRequest(s1, s2, null, true);
         SellerDtos.ReassignCustomersResponse expected = new SellerDtos.ReassignCustomersResponse(s1, s2, 5, 2);
 
-        when(service.reassignCustomers(request)).thenReturn(expected);
+        when(service.reassignCustomers(request)).thenReturn(new SellerCommandService.ReassignCustomersResult(
+            expected.sourceSellerId(), expected.targetSellerId(), expected.reassignedCustomersCount(), expected.reassignedOrdersCount()));
 
         ResponseEntity<SellerDtos.ReassignCustomersResponse> response = controller.reassignCustomers(request);
 
@@ -144,12 +155,42 @@ class SellerCommandControllerTest {
         SellerDtos.ReassignOrdersRequest request = new SellerDtos.ReassignOrdersRequest(s2, java.util.List.of(o1), true);
         SellerDtos.ReassignOrdersResponse expected = new SellerDtos.ReassignOrdersResponse(s2, 1);
 
-        when(service.reassignOrders(request)).thenReturn(expected);
+        when(service.reassignOrders(request)).thenReturn(new SellerCommandService.ReassignOrdersResult(
+            expected.targetSellerId(), expected.reassignedOrdersCount()));
 
         ResponseEntity<SellerDtos.ReassignOrdersResponse> response = controller.reassignOrders(request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isEqualTo(expected);
         verify(service).reassignOrders(request);
+    }
+
+    @Test
+    void httpCreateBindsRequestAndSerializesSellerId() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        when(service.create(any())).thenReturn(sellerId);
+
+        mockMvc.perform(post("/api/sellers")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"userId":"%s","displayName":"Vendedor Uno"}
+                    """.formatted(userId)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(sellerId.toString()));
+
+        verify(service).create(new SellerDtos.CreateSellerRequest(userId, "Vendedor Uno"));
+    }
+
+    @Test
+    void httpCreateRejectsMissingUserIdBeforeCallingService() throws Exception {
+        mockMvc.perform(post("/api/sellers")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"displayName":"Vendedor Uno"}
+                    """))
+            .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(service);
     }
 }

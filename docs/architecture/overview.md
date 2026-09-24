@@ -91,6 +91,6 @@ despliegue independiente, autonomía de equipo o aislamiento operativo.
 ## Alcance de esta arquitectura
 
 Incluye autenticación local, usuarios, vendedores, clientes, catálogo,
-inventario, pedidos, ventas, pagos, cuenta corriente, documentos, impresión,
-notificaciones y auditoría. Impuestos, ARCA, múltiples depósitos, compras,
-proveedores, reportes y portal de clientes quedan fuera del alcance inicial.
+inventario multi-depósito, pedidos, ventas, pagos, cuenta corriente, documentos,
+impresión, notificaciones y auditoría. Impuestos, ARCA, compras, proveedores,
+reportes y portal de clientes quedan fuera del alcance inicial.

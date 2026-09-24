@@ -1,6 +1,6 @@
 # Frontend Development Checklist
 
-Estado actualizado: 2026-09-19
+Estado actualizado: 2026-09-24
 
 ## Cómo Leerlo
 
@@ -61,6 +61,9 @@ Estado actualizado: 2026-09-19
 
 - [x] Consulta real de saldos e inventario.
 - [~] Historial de movimientos: endpoint backend disponible, vista de detalle pendiente.
+- [ ] Selector y administración de depósitos con balances por depósito (`ADMIN_ALL`).
+- [ ] Formulario de transferencia entre depósitos (`STOCK_ADJUST`), saldo disponible y feedback de error/éxito.
+- [ ] Elegir depósito al confirmar un pedido y conservar la selección en reintentos seguros.
 - [ ] Formulario de ajuste manual con cantidad en múltiplos de `0.5`.
 - [ ] Mostrar advertencia de saldo negativo.
 - [ ] Ocultar ajuste manual para usuarios sin `STOCK_ADJUST`.

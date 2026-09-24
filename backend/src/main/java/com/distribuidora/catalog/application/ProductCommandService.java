@@ -91,12 +91,7 @@ public class ProductCommandService {
 
         if (input.prices() != null) {
             for (ProductPriceInput priceInput : input.prices()) {
-                jdbc.update("""
-                    insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at)
-                    values (?, ?, ?, current_timestamp, current_timestamp)
-                    on conflict (price_list_id, product_id)
-                    do update set price = excluded.price, updated_at = current_timestamp
-                    """, priceInput.priceListId(), id, priceInput.price());
+                storeCurrentPrice(priceInput.priceListId(), id, priceInput.price());
             }
         }
 
@@ -110,20 +105,40 @@ public class ProductCommandService {
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
         validateActive("catalog.brands", input.brandId());
         if (!exists("select exists(select 1 from catalog.products where id = ?)", id)) throw new EmptyResultDataAccessException(1);
+        jdbc.queryForObject("select id from catalog.products where id = ? for update", UUID.class, id);
         if (exists("select exists(select 1 from catalog.products where sku = ? and id <> ?)", input.sku(), id)) {
             throw new IllegalStateException("Ya existe un producto con ese SKU");
         }
 
         List<ActiveListPrice> activePrices = jdbc.query("""
-            select pl.id as price_list_id, pl.code, pp.price
+            select pl.id as price_list_id, pl.code, effective.price
             from catalog.price_lists pl
-            join catalog.product_prices pp on pp.price_list_id = pl.id
-            where pl.status = 'ACTIVE' and pp.product_id = ?
+            join lateral (
+                select h.price
+                from catalog.product_price_history h
+                where h.price_list_id = pl.id and h.product_id = ?
+                  and h.effective_on <= (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date
+                order by h.effective_on desc, h.created_at desc, h.id desc
+                limit 1
+            ) effective on true
+            where pl.status = 'ACTIVE'
             """, (rs, rowNum) -> new ActiveListPrice(
                 rs.getObject("price_list_id", UUID.class),
                 rs.getString("code"),
                 rs.getBigDecimal("price")
             ), id);
+
+        if (Boolean.TRUE.equals(jdbc.queryForObject("""
+            select exists(
+                select 1 from catalog.product_price_history h
+                join catalog.price_lists pl on pl.id = h.price_list_id and pl.status = 'ACTIVE'
+                where h.product_id = ?
+                  and h.effective_on > (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date
+                  and h.price < ?
+            )
+            """, Boolean.class, id, input.cost()))) {
+            throw new IllegalStateException("El nuevo costo supera un precio futuro programado; ajuste o cancele esa vigencia primero");
+        }
 
         List<ProductPriceValidationException.AffectedPriceList> affected = activePrices.stream()
             .filter(ap -> input.cost().compareTo(ap.price()) > 0)
@@ -160,12 +175,7 @@ public class ProductCommandService {
 
         if (input.prices() != null) {
             for (ProductPriceInput priceInput : input.prices()) {
-                jdbc.update("""
-                    insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at)
-                    values (?, ?, ?, current_timestamp, current_timestamp)
-                    on conflict (price_list_id, product_id)
-                    do update set price = excluded.price, updated_at = current_timestamp
-                    """, priceInput.priceListId(), id, priceInput.price());
+                storeCurrentPrice(priceInput.priceListId(), id, priceInput.price());
             }
         }
 
@@ -180,6 +190,20 @@ public class ProductCommandService {
     }
 
     private boolean exists(String sql, Object... args) { return Boolean.TRUE.equals(jdbc.queryForObject(sql, Boolean.class, args)); }
+    private void storeCurrentPrice(UUID listId, UUID productId, BigDecimal price) {
+        Timestamp now = timestamp();
+        jdbc.update("""
+            insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at)
+            values (?, ?, ?, ?, ?)
+            on conflict (price_list_id, product_id)
+            do update set price = excluded.price, updated_at = excluded.updated_at
+            """, listId, productId, price, now, now);
+        jdbc.update("""
+            insert into catalog.product_price_history
+                (id, price_list_id, product_id, price, effective_on, created_at, updated_at)
+            values (?, ?, ?, ?, (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date, ?, ?)
+            """, UUID.randomUUID(), listId, productId, price, now, now);
+    }
     private String resolveActiveName(String table, UUID entityId, String fallback) {
         if (entityId == null) return fallback;
         List<String> names = jdbc.query("select name from " + table + " where id = ? and status = 'ACTIVE'",

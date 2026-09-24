@@ -13,11 +13,12 @@ flowchart TD
     E -->|No| G[Conservar lista resuelta]
     F --> H[Obtener precio]
     G --> H
-    H --> I{Precio disponible?}
-    I -->|Si| J[Guardar snapshot en pedido]
-    I -->|No| K[Buscar lista activa anterior]
-    K --> L{Existe lista anterior?}
-    L -->|Si| M[Intentar precio en lista anterior]
-    M --> I
-    L -->|No| N[Mostrar error]
+    H --> I[Buscar ultima version con vigencia <= fecha comercial]
+    I --> J{Precio disponible?}
+    J -->|Si| K[Guardar snapshot en pedido]
+    J -->|No| L[Buscar lista activa anterior]
+    L --> M{Existe lista anterior?}
+    M -->|Si| N[Intentar precio vigente en lista anterior]
+    N --> J
+    M -->|No| O[Mostrar error]
 ```
