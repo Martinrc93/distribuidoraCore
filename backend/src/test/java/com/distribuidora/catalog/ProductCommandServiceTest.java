@@ -168,4 +168,34 @@ class ProductCommandServiceTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("no puede ser menor al costo");
     }
+
+    @Test
+    void createsProductWithActiveBrandAndCategoryReferences() {
+        UUID categoryId = UUID.randomUUID();
+        UUID brandId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(categoryId))).thenReturn(List.of("Bebidas"));
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.brands"), eq(Boolean.class), eq(brandId)))
+            .thenReturn(true);
+
+        ProductInput input = new ProductInput("SKU-REF", "Producto", "Texto legado", "Unidad",
+            BigDecimal.TEN, List.of(), categoryId, brandId);
+        service.create(input);
+
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("category_id, brand_id"),
+            any(UUID.class), eq("SKU-REF"), eq("Producto"), eq("Bebidas"), eq("Unidad"),
+            eq(BigDecimal.TEN), any(), eq(categoryId), eq(brandId));
+    }
+
+    @Test
+    void rejectsInactiveOrMissingCategoryReference() {
+        UUID categoryId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(categoryId))).thenReturn(List.of());
+
+        ProductInput input = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad",
+            BigDecimal.TEN, List.of(), categoryId, null);
+
+        assertThatThrownBy(() -> service.create(input))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("categoría seleccionada");
+    }
 }

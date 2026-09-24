@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -351,5 +352,21 @@ class SellerCommandServiceTest {
         assertThat(response.targetSellerId()).isEqualTo(target);
         assertThat(response.reassignedOrdersCount()).isEqualTo(2);
         verify(audit).record(eq(adminUserId), eq("SELLER_ORDER_REASSIGNMENT"), eq("SELLER"), eq(target.toString()), eq("SUCCESS"), any());
+    }
+
+    @Test
+    void reassignOrdersRejectsRequestsThatCouldModifyHistoricalOrders() {
+        UUID target = UUID.randomUUID();
+        when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
+            .thenReturn(true);
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+            .thenReturn("ACTIVE");
+
+        assertThatThrownBy(() -> service.reassignOrders(
+            new SellerDtos.ReassignOrdersRequest(target, List.of(UUID.randomUUID()), false)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("CONFIRMED");
+
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 }

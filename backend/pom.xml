@@ -137,4 +137,18 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>isolated-build</id>
+            <activation>
+                <property>
+                    <name>isolated.build.dir</name>
+                </property>
+            </activation>
+            <build>
+                <directory>${isolated.build.dir}</directory>
+            </build>
+        </profile>
+    </profiles>
 </project>

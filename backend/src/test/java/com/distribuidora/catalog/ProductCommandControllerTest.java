@@ -2,6 +2,7 @@ package com.distribuidora.catalog;
 
 import com.distribuidora.catalog.api.ProductCommandController;
 import com.distribuidora.catalog.application.ProductCommandService;
+import com.distribuidora.catalog.application.ProductCommandService.ProductInput;
 import com.distribuidora.catalog.application.ProductPriceValidationException;
 import com.distribuidora.catalog.application.ProductPriceValidationException.AffectedPriceList;
 import com.distribuidora.shared.error.ApiExceptionHandler;
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -77,6 +79,34 @@ class ProductCommandControllerTest {
             .andExpect(status().isNoContent());
 
         verify(service).update(eq(id), any());
+    }
+
+    @Test
+    void mapsBrandAndCategoryIdsFromProductPayload() throws Exception {
+        UUID categoryId = UUID.randomUUID();
+        UUID brandId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(service.create(any())).thenReturn(productId);
+
+        mockMvc.perform(post("/api/products")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {
+                        "sku": "SKU-REF",
+                        "name": "Producto",
+                        "category": "Bebidas",
+                        "categoryId": "%s",
+                        "brandId": "%s",
+                        "presentation": "Unidad",
+                        "cost": 100
+                    }
+                    """.formatted(categoryId, brandId)))
+            .andExpect(status().isCreated());
+
+        ArgumentCaptor<ProductInput> input = ArgumentCaptor.forClass(ProductInput.class);
+        verify(service).create(input.capture());
+        assertThat(input.getValue().categoryId()).isEqualTo(categoryId);
+        assertThat(input.getValue().brandId()).isEqualTo(brandId);
     }
 
     @Test

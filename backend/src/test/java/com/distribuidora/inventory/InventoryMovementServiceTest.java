@@ -72,12 +72,31 @@ class InventoryMovementServiceTest {
     void rejectsUnsupportedTypesAndInvalidDeltasBeforeDatabaseAccess() {
         UUID productId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> service.apply(productId, BigDecimal.ONE, "RETURN", UUID.randomUUID(), "Devolución"))
+        assertThatThrownBy(() -> service.apply(productId, BigDecimal.ONE, "UNKNOWN", UUID.randomUUID(), "Devolución"))
             .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.apply(productId, new BigDecimal("0.25"), "SALE", UUID.randomUUID(), "Venta"))
             .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.apply(productId, BigDecimal.ZERO, "SALE", UUID.randomUUID(), "Venta"))
             .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void appliesReturnToInactiveProductAndRecordsPositiveMovement() {
+        UUID productId = UUID.randomUUID();
+        UUID returnId = UUID.randomUUID();
+        when(jdbc.queryForObject(
+            eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
+            eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("-1.0"));
+
+        service.apply(productId, new BigDecimal("0.5"), "RETURN", returnId, "Producto devuelto");
+
+        verify(jdbc).update(
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
+            eq(new BigDecimal("-0.5")), any(), eq(productId));
+        verify(jdbc).update(
+            eq("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)"),
+            any(UUID.class), eq(productId), eq("RETURN"), eq(new BigDecimal("0.5")), eq("Producto devuelto"),
+            eq("RETURN"), eq(returnId), any());
     }
 }

@@ -35,8 +35,15 @@ public class ProductCommandService {
         String category,
         String presentation,
         BigDecimal cost,
-        List<ProductPriceInput> prices
-    ) { }
+        List<ProductPriceInput> prices,
+        UUID categoryId,
+        UUID brandId
+    ) {
+        public ProductInput(String sku, String name, String category, String presentation,
+                            BigDecimal cost, List<ProductPriceInput> prices) {
+            this(sku, name, category, presentation, cost, prices, null, null);
+        }
+    }
 
     public record ActiveListPrice(UUID priceListId, String code, BigDecimal price) { }
 
@@ -69,14 +76,17 @@ public class ProductCommandService {
     @Transactional
     public UUID create(ProductInput input) {
         validate(input);
+        String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
+        validateActive("catalog.brands", input.brandId());
         if (exists("select exists(select 1 from catalog.products where sku = ?)", input.sku())) {
             throw new IllegalStateException("Ya existe un producto con ese SKU");
         }
         UUID id = UUID.randomUUID();
         jdbc.update("""
-            insert into catalog.products(id, sku, name, category, presentation, cost, status, created_at)
-            values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
-            """, id, input.sku().trim(), input.name().trim(), input.category().trim(), input.presentation().trim(), input.cost(), timestamp());
+            insert into catalog.products(id, sku, name, category, presentation, cost, status, created_at, category_id, brand_id)
+            values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+            """, id, input.sku().trim(), input.name().trim(), categoryName.trim(), input.presentation().trim(),
+            input.cost(), timestamp(), input.categoryId(), input.brandId());
         jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, 0, ?)", id, timestamp());
 
         if (input.prices() != null) {
@@ -97,6 +107,8 @@ public class ProductCommandService {
     @Transactional
     public void update(UUID id, ProductInput input) {
         validate(input);
+        String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
+        validateActive("catalog.brands", input.brandId());
         if (!exists("select exists(select 1 from catalog.products where id = ?)", id)) throw new EmptyResultDataAccessException(1);
         if (exists("select exists(select 1 from catalog.products where sku = ? and id <> ?)", input.sku(), id)) {
             throw new IllegalStateException("Ya existe un producto con ese SKU");
@@ -137,8 +149,14 @@ public class ProductCommandService {
             }
         }
 
-        jdbc.update("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ? where id = ?",
-            input.sku().trim(), input.name().trim(), input.category().trim(), input.presentation().trim(), input.cost(), id);
+        if (input.categoryId() == null && input.brandId() == null) {
+            jdbc.update("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ? where id = ?",
+                input.sku().trim(), input.name().trim(), categoryName.trim(), input.presentation().trim(), input.cost(), id);
+        } else {
+            jdbc.update("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ?, category_id = coalesce(?, category_id), brand_id = coalesce(?, brand_id) where id = ?",
+                input.sku().trim(), input.name().trim(), categoryName.trim(), input.presentation().trim(),
+                input.cost(), input.categoryId(), input.brandId(), id);
+        }
 
         if (input.prices() != null) {
             for (ProductPriceInput priceInput : input.prices()) {
@@ -162,6 +180,18 @@ public class ProductCommandService {
     }
 
     private boolean exists(String sql, Object... args) { return Boolean.TRUE.equals(jdbc.queryForObject(sql, Boolean.class, args)); }
+    private String resolveActiveName(String table, UUID entityId, String fallback) {
+        if (entityId == null) return fallback;
+        List<String> names = jdbc.query("select name from " + table + " where id = ? and status = 'ACTIVE'",
+            (rs, row) -> rs.getString(1), entityId);
+        if (names.isEmpty()) throw new IllegalArgumentException("La categoría seleccionada no existe o está inactiva");
+        return names.getFirst();
+    }
+    private void validateActive(String table, UUID entityId) {
+        if (entityId != null && !exists("select exists(select 1 from " + table + " where id = ? and status = 'ACTIVE')", entityId)) {
+            throw new IllegalArgumentException("La marca seleccionada no existe o está inactiva");
+        }
+    }
     private UUID actorId() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch (Exception ignored) { return null; } }
     private Timestamp timestamp() { return Timestamp.from(Instant.now()); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }

@@ -1,0 +1,46 @@
+name: Backend PostgreSQL
+
+on:
+  push:
+    branches: [feature/backend]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-postgres.yml"
+  pull_request:
+    branches: [feature/backend]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-postgres.yml"
+
+jobs:
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: distribuidora_test
+          POSTGRES_USER: distribuidora
+          POSTGRES_PASSWORD: distribuidora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U distribuidora -d distribuidora_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Run backend tests with PostgreSQL integration enabled
+        working-directory: backend
+        env:
+          POSTGRES_TEST_URL: jdbc:postgresql://127.0.0.1:5432/distribuidora_test
+          POSTGRES_TEST_USERNAME: distribuidora
+          POSTGRES_TEST_PASSWORD: distribuidora
+        run: mvn --batch-mode --no-transfer-progress test

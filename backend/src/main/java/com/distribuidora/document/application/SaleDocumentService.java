@@ -34,6 +34,15 @@ public class SaleDocumentService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SaleDocumentModel load(UUID orderId) {
         if (currentUser != null) currentUser.requireOrderAccess(orderId);
+        return loadModel(orderId);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public SaleDocumentModel loadForDelivery(UUID orderId) {
+        return loadModel(orderId);
+    }
+
+    private SaleDocumentModel loadModel(UUID orderId) {
         Map<String, Object> header;
         try {
             header = jdbc.queryForMap("""

@@ -51,6 +51,9 @@ class DeliveryLifecycleServiceTest {
         UUID orderId = UUID.randomUUID();
         authenticate("SELLER");
         when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(confirmed(orderId));
+        when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class))).thenReturn(Map.of("balance", BigDecimal.ZERO));
+        when(jdbc.queryForObject(contains("from customer.account_ledger"), eq(BigDecimal.class), any(Object[].class)))
+            .thenReturn(BigDecimal.ZERO.setScale(4));
         when(jdbc.queryForObject(contains("max(attempt_number)"), eq(Integer.class), any(Object[].class))).thenReturn(2);
 
         service.recordAttempt(orderId, new DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null));
@@ -58,6 +61,29 @@ class DeliveryLifecycleServiceTest {
         verify(jdbc).update(contains("insert into orders.delivery_attempts"), any(Object[].class));
         verify(jdbc).update(contains("update orders.orders set status = 'DELIVERED'"), any(Object[].class));
         verify(jdbc).update(contains("update sale.sales set status = 'DELIVERED'"), any(Object[].class));
+    }
+
+    @Test
+    void rejectsCollectionOnFailedDeliveryBeforeDatabaseAccess() {
+        var request = new DeliveryLifecycleDtos.DeliveryAttemptRequest("FAILED", "Closed", List.of(
+            new DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("1.00"))), null);
+
+        assertThatThrownBy(() -> service.recordAttempt(UUID.randomUUID(), request))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        verifyNoInteractions(jdbc, inventory, audit);
+    }
+
+    @Test
+    void transferReferenceRequiresBankTransferPayment() {
+        var request = new DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null, List.of(
+            new DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("1.00"))), "TR-123");
+
+        assertThatThrownBy(() -> service.recordAttempt(UUID.randomUUID(), request))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("BANK_TRANSFER");
+
+        verifyNoInteractions(jdbc, inventory, audit);
     }
 
     @Test
@@ -96,11 +122,9 @@ class DeliveryLifecycleServiceTest {
             "total", new BigDecimal("15.0000")));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("balance", new BigDecimal("20.0000")));
-        when(jdbc.queryForList(contains("movement_type = 'SALE_CANCELLATION'"), any(Object[].class)))
-            .thenReturn(List.of());
-        when(jdbc.queryForList(contains("movement_type = 'SALE'"), any(Object[].class))).thenReturn(List.of(
-            Map.of("id", UUID.randomUUID(), "product_id", firstProductId, "quantity", new BigDecimal("-2.0")),
-            Map.of("id", UUID.randomUUID(), "product_id", secondProductId, "quantity", new BigDecimal("-1.5"))));
+        when(jdbc.queryForList(contains("sum(quantity) as net_quantity"), any(Object[].class))).thenReturn(List.of(
+            Map.of("product_id", firstProductId, "net_quantity", new BigDecimal("-2.0")),
+            Map.of("product_id", secondProductId, "net_quantity", new BigDecimal("-1.5"))));
 
         service.cancel(orderId);
 
@@ -117,7 +141,7 @@ class DeliveryLifecycleServiceTest {
     }
 
     @Test
-    void cancellationReadsSaleMovementsUsingBothOrderAndSaleReferences() {
+    void cancellationReadsNetSaleMovementsUsingBothOrderAndSaleReferences() {
         UUID orderId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
         UUID customerId = UUID.randomUUID();
@@ -129,14 +153,12 @@ class DeliveryLifecycleServiceTest {
             "total", new BigDecimal("2.0000")));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("balance", BigDecimal.ZERO));
-        when(jdbc.queryForList(contains("movement_type = 'SALE_CANCELLATION'"), any(Object[].class)))
-            .thenReturn(List.of());
-        when(jdbc.queryForList(contains("movement_type = 'SALE'"), eq(new Object[]{orderId, saleId})))
-            .thenReturn(List.of(Map.of("id", UUID.randomUUID(), "product_id", productId, "quantity", new BigDecimal("-2.0"))));
+        when(jdbc.queryForList(contains("sum(quantity) as net_quantity"), eq(new Object[]{orderId, saleId})))
+            .thenReturn(List.of(Map.of("product_id", productId, "net_quantity", new BigDecimal("-2.0"))));
 
         service.cancel(orderId);
 
-        verify(jdbc, times(2)).queryForList(contains("reference_id in (?, ?)"), eq(new Object[]{orderId, saleId}));
+        verify(jdbc).queryForList(contains("reference_id in (?, ?)"), eq(new Object[]{orderId, saleId}));
     }
 
     @Test
@@ -152,10 +174,7 @@ class DeliveryLifecycleServiceTest {
             "total", new BigDecimal("2.0000")));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("balance", BigDecimal.ZERO));
-        when(jdbc.queryForList(contains("movement_type = 'SALE_CANCELLATION'"), any(Object[].class))).thenReturn(List.of(
-            Map.of("product_id", productId, "quantity", new BigDecimal("2.0"))));
-        when(jdbc.queryForList(contains("movement_type = 'SALE'"), any(Object[].class))).thenReturn(List.of(
-            Map.of("id", UUID.randomUUID(), "product_id", productId, "quantity", new BigDecimal("-2.0"))));
+        when(jdbc.queryForList(contains("sum(quantity) as net_quantity"), any(Object[].class))).thenReturn(List.of());
 
         service.cancel(orderId);
 

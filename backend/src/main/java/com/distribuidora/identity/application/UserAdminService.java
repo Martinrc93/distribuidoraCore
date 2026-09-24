@@ -136,6 +136,8 @@ public class UserAdminService {
         if (!userExists(userId)) {
             throw new IllegalArgumentException("Usuario no encontrado");
         }
+        jdbc.update("update identity.users set version = version + 1, updated_at = ? where id = ?",
+            Timestamp.from(Instant.now()), userId);
         refreshTokens.revokeAllByUserId(userId, Instant.now());
         audit.record(currentUser.userId(), "REVOKE_SESSIONS", "USER", userId.toString(), "SUCCESS", Map.of());
     }
@@ -145,7 +147,7 @@ public class UserAdminService {
         if (!userExists(userId)) {
             throw new IllegalArgumentException("Usuario no encontrado");
         }
-        jdbc.update("update identity.users set status = 'BLOCKED', updated_at = ? where id = ?",
+        jdbc.update("update identity.users set status = 'BLOCKED', version = version + 1, updated_at = ? where id = ?",
             Timestamp.from(Instant.now()), userId);
         refreshTokens.revokeAllByUserId(userId, Instant.now());
         audit.record(currentUser.userId(), "USER_BLOCK", "USER", userId.toString(), "SUCCESS", Map.of());
@@ -156,7 +158,7 @@ public class UserAdminService {
         if (!userExists(userId)) {
             throw new IllegalArgumentException("Usuario no encontrado");
         }
-        jdbc.update("update identity.users set status = 'ACTIVE', failed_login_attempts = 0, locked_until = null, updated_at = ? where id = ?",
+        jdbc.update("update identity.users set status = 'ACTIVE', failed_login_attempts = 0, locked_until = null, version = version + 1, updated_at = ? where id = ?",
             Timestamp.from(Instant.now()), userId);
         audit.record(currentUser.userId(), "USER_UNBLOCK", "USER", userId.toString(), "SUCCESS", Map.of());
     }

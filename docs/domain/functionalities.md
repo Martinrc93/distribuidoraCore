@@ -158,7 +158,10 @@ Reglas:
 - La confirmación de una venta registra una salida.
 - La cancelación de una venta no pagada registra una reversión.
 - La edición de un pedido confirmado calcula un delta y registra movimientos
-  compensatorios.
+  compensatorios. Solo puede editarse mientras pedido y venta sigan en
+  `CONFIRMED`, mediante `ADMIN_ALL`; se conservan los pagos existentes y la
+  cuenta corriente se ajusta por el cambio de total. No se permite reducir el
+  total por debajo del importe pagado.
 
 Tipos iniciales de movimiento:
 

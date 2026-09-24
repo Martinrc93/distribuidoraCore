@@ -3,6 +3,8 @@ package com.distribuidora.identity.infrastructure;
 import com.distribuidora.identity.domain.UserAccount;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.List;
@@ -27,4 +29,9 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.data.jpa.repository.Query(value = "insert into identity.user_roles(user_id, role_id) values (?1, ?2) on conflict do nothing", nativeQuery = true)
     void assignRole(UUID userId, UUID roleId);
+
+    @Transactional
+    @Modifying
+    @Query("update UserAccount u set u.version = u.version + 1, u.updatedAt = ?2 where u.id = ?1")
+    void incrementSessionVersion(UUID userId, java.time.Instant updatedAt);
 }

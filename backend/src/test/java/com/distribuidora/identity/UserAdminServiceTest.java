@@ -104,6 +104,9 @@ class UserAdminServiceTest {
 
         service.revokeSessions(targetUserId);
 
+        ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(updateSql.capture(), any(), eq(targetUserId));
+        org.assertj.core.api.Assertions.assertThat(updateSql.getValue()).contains("version = version + 1");
         verify(refreshTokens).revokeAllByUserId(eq(targetUserId), any());
         verify(audit).record(eq(currentAdminId), eq("REVOKE_SESSIONS"), eq("USER"),
             eq(targetUserId.toString()), eq("SUCCESS"), any());
@@ -117,7 +120,9 @@ class UserAdminServiceTest {
 
         service.blockUser(targetUserId);
 
-        verify(jdbc).update(anyString(), any(Object[].class));
+        ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(updateSql.capture(), any(Object[].class));
+        assertThat(updateSql.getValue()).contains("status = 'BLOCKED'", "version = version + 1");
         verify(refreshTokens).revokeAllByUserId(eq(targetUserId), any());
         verify(audit).record(eq(currentAdminId), eq("USER_BLOCK"), eq("USER"),
             eq(targetUserId.toString()), eq("SUCCESS"), any());
@@ -131,7 +136,9 @@ class UserAdminServiceTest {
 
         service.unblockUser(targetUserId);
 
-        verify(jdbc).update(anyString(), any(Object[].class));
+        ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(updateSql.capture(), any(Object[].class));
+        assertThat(updateSql.getValue()).contains("status = 'ACTIVE'", "version = version + 1");
         verify(audit).record(eq(currentAdminId), eq("USER_UNBLOCK"), eq("USER"),
             eq(targetUserId.toString()), eq("SUCCESS"), any());
     }

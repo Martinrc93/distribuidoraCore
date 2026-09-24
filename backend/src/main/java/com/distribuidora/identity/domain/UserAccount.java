@@ -76,6 +76,7 @@ public class UserAccount {
     public UserStatus getStatus() { return status; }
     public short getFailedLoginAttempts() { return failedLoginAttempts; }
     public Instant getLockedUntil() { return lockedUntil; }
+    public long getVersion() { return version; }
 
     public void registerFailedLogin() {
         failedLoginAttempts++;

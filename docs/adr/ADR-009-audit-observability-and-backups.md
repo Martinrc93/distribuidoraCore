@@ -98,6 +98,22 @@ incorporar almacenamiento externo o un segundo destino.
 - El backup interno no protege completamente contra pérdida del servidor.
 - El equipo debe verificar restauraciones, no solo generación de archivos.
 
+## Implementación actual (2026-09-24)
+
+- Consola en formato ECS JSON; `X-Request-Id` validado y agregado a MDC.
+- Actuator expone health/info/metrics; `http.server.requests` registra latencia
+  e histogramas. Métricas outbox: pendientes, procesados, fallidos, agotados y
+  duración de lote.
+- CI de backend con servicio PostgreSQL 16 y pruebas opt-in habilitadas.
+- Scripts PowerShell para backup custom cifrado AES-256-CBC + HMAC-SHA256,
+  retención de dos días y doce cortes mensuales, tarea diaria y prueba de
+  restauración/tamper en una base descartable.
+- Solicitudes terminales de notificación y eventos outbox se purgan luego de
+  90 días por defecto; auditoría enmascarada se conserva.
+- El backup todavía requiere copia externa para proteger contra pérdida del
+  mismo host/disco. La restauración descifra temporalmente en `%TEMP%` bajo ACL
+  del usuario operativo y requiere que ese volumen tenga cifrado.
+
 ## Pending decisions
 
 - Destino externo de backups.

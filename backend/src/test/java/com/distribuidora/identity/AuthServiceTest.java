@@ -65,6 +65,7 @@ class AuthServiceTest {
 
         AuthDtos.LoginResponse response = authService.login(new AuthDtos.LoginRequest("ADMIN@DISTRIBUIDORA.LOCAL", "Correct123"));
 
+        verify(users).flush();
         assertThat(response.accessToken()).isEqualTo("access-token-123");
         assertThat(response.expiresInSeconds()).isEqualTo(900L);
         assertThat(response.refreshToken()).isNotBlank();
@@ -169,13 +170,13 @@ class AuthServiceTest {
     }
 
     @Test
-    void refreshWithRevokedTokenTriggersReuseDetectionAndRevokesAllSessions() {
+    void refreshWithReplacedTokenTriggersReuseDetectionAndRevokesAllSessions() {
         UUID userId = UUID.randomUUID();
         String rawToken = "already-revoked-token";
         String tokenHash = AuthService.hashToken(rawToken);
 
         RefreshToken revokedToken = new RefreshToken(userId, tokenHash, Instant.now().plusSeconds(86400));
-        revokedToken.revoke(Instant.now().minusSeconds(300));
+        revokedToken.replaceWith(UUID.randomUUID(), Instant.now().minusSeconds(300));
 
         when(refreshTokens.findByTokenHash(tokenHash)).thenReturn(Optional.of(revokedToken));
 
@@ -184,8 +185,27 @@ class AuthServiceTest {
             .hasMessageContaining("revocado");
 
         // Should invalidate all tokens for that user
+        verify(users).incrementSessionVersion(eq(userId), any());
         verify(refreshTokens).revokeAllByUserId(eq(userId), any());
         verify(auditService).record(eq(userId), eq("TOKEN_REUSE_DETECTED"), eq("USER"), eq(userId.toString()), eq("FAILURE"), any());
+    }
+
+    @Test
+    void refreshWithTokenRevokedByLogoutDoesNotRevokeOtherSessions() {
+        UUID userId = UUID.randomUUID();
+        String rawToken = "logged-out-token";
+        String tokenHash = AuthService.hashToken(rawToken);
+        RefreshToken loggedOutToken = new RefreshToken(userId, tokenHash, Instant.now().plusSeconds(86400));
+        loggedOutToken.revoke(Instant.now().minusSeconds(60));
+        when(refreshTokens.findByTokenHash(tokenHash)).thenReturn(Optional.of(loggedOutToken));
+
+        assertThatThrownBy(() -> authService.refresh(new AuthDtos.RefreshRequest(rawToken)))
+            .isInstanceOf(InvalidRefreshTokenException.class)
+            .hasMessageContaining("revocado");
+
+        verify(refreshTokens, never()).revokeAllByUserId(any(), any());
+        verify(users, never()).incrementSessionVersion(any(), any());
+        verify(auditService).record(eq(userId), eq("TOKEN_REFRESH"), eq("USER"), eq(userId.toString()), eq("FAILURE"), any());
     }
 
     @Test

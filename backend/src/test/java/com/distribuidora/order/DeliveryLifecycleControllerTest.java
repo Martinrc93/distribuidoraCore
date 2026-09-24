@@ -8,6 +8,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.lang.reflect.Method;
 import java.util.UUID;
+import java.util.List;
+import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -29,13 +31,23 @@ class DeliveryLifecycleControllerTest {
     }
 
     @Test
+    void delegatesCollectionDetailsAlongWithDeliveryAttempt() {
+        UUID orderId = UUID.randomUUID();
+        var attempt = new DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null, List.of(
+            new DeliveryLifecycleDtos.DeliveryPaymentRequest("BANK_TRANSFER", new BigDecimal("12.50"))), "TR-123");
+
+        assertThat(controller.recordAttempt(orderId, attempt).getStatusCode().value()).isEqualTo(204);
+        verify(service).recordAttempt(orderId, attempt);
+    }
+
+    @Test
     void protectsEndpointsWithSellerOrAdminAndAdminOnlyAuthorities() throws Exception {
         Method attempt = DeliveryLifecycleController.class.getDeclaredMethod("recordAttempt", UUID.class,
             DeliveryLifecycleDtos.DeliveryAttemptRequest.class);
         Method cancel = DeliveryLifecycleController.class.getDeclaredMethod("cancel", UUID.class);
 
         assertThat(attempt.getAnnotation(PreAuthorize.class).value())
-            .isEqualTo("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')");
+            .isEqualTo("hasAnyAuthority('SALE_DELIVER', 'ADMIN_ALL')");
         assertThat(cancel.getAnnotation(PreAuthorize.class).value())
             .isEqualTo("hasAuthority('ADMIN_ALL')");
     }

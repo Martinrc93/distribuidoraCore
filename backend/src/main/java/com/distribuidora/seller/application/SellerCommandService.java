@@ -277,14 +277,15 @@ public class SellerCommandService {
         }
 
         boolean onlyPending = request.onlyPending() == null || Boolean.TRUE.equals(request.onlyPending());
+        if (!onlyPending) {
+            throw new IllegalArgumentException("Solo se pueden reasignar pedidos CONFIRMED");
+        }
         String placeholders = String.join(",", java.util.Collections.nCopies(request.orderIds().size(), "?"));
         List<Object> params = new java.util.ArrayList<>();
         params.add(request.targetSellerId());
         params.addAll(request.orderIds());
 
-        String sql = onlyPending
-            ? "update orders.orders set seller_id = ? where id in (" + placeholders + ") and status = 'CONFIRMED'"
-            : "update orders.orders set seller_id = ? where id in (" + placeholders + ")";
+        String sql = "update orders.orders set seller_id = ? where id in (" + placeholders + ") and status = 'CONFIRMED'";
 
         int reassignedOrders = jdbc.update(sql, params.toArray());
 

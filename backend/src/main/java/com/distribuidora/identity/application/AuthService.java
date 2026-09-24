@@ -73,6 +73,7 @@ public class AuthService {
         }
 
         user.resetFailedLogins();
+        users.flush();
         String userId = user.getId() == null ? null : user.getId().toString();
 
         String rawRefreshToken = generateRawToken();
@@ -108,11 +109,18 @@ public class AuthService {
         Instant now = Instant.now();
         UUID userId = oldToken.getUserId();
 
-        if (oldToken.isRevoked()) {
+        if (oldToken.isRevoked() && oldToken.getReplacedBy() != null) {
+            users.incrementSessionVersion(userId, now);
             refreshTokens.revokeAllByUserId(userId, now);
             auditService.record(userId, "TOKEN_REUSE_DETECTED", "USER", userId.toString(), "FAILURE",
                 Map.of("reason", "token_already_revoked", "token_hash", tokenHash));
             throw new InvalidRefreshTokenException("Token de refresco revocado. Posible reuso detectado.");
+        }
+
+        if (oldToken.isRevoked()) {
+            auditService.record(userId, "TOKEN_REFRESH", "USER", userId.toString(), "FAILURE",
+                Map.of("reason", "token_revoked"));
+            throw new InvalidRefreshTokenException("Token de refresco revocado");
         }
 
         if (oldToken.isExpired(now)) {

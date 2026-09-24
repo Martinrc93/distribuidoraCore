@@ -79,9 +79,26 @@ PostgreSQL conservará únicamente metadata.
 
 ## Outbox
 
-La outbox se escribe en la misma transacción de la venta, stock, pagos y
-auditoría. Un worker del monolito procesa los eventos pendientes y aplica
-reintentos.
+`notification.outbox_events` guarda el evento `ORDER_CONFIRMED` dentro de la
+misma transacción que confirma pedido, venta, stock, pagos, cuenta corriente y
+auditoría. La clave `ORDER_CONFIRMED:<orderId>` es única y evita duplicar el
+evento al repetir la operación.
+
+El worker toma lotes con `FOR UPDATE SKIP LOCKED`, publica cada evento en el
+proceso y persiste `PROCESSED` solo después de que terminen los consumidores
+síncronos. Los fallos regresan a `PENDING` con backoff exponencial (30 segundos
+iniciales, máximo seis horas); después de ocho intentos pasan a
+`RETRY_EXHAUSTED`. Un lease de dos minutos recupera trabajo abandonado si el
+proceso se interrumpe.
+
+El despacho es al menos una vez: un consumidor puede recibir el mismo ID de
+evento más de una vez si el proceso se interrumpe entre el efecto y el marcado
+final. Todo consumidor debe deduplicar por `event.id`. El polling se ejecuta
+cada cinco segundos y se configura con `OUTBOX_WORKER_ENABLED` y
+`OUTBOX_POLL_INTERVAL_MS`.
+
+La primera emisión integrada es `ORDER_CONFIRMED`; los eventos de documentos,
+WhatsApp/email y sus consumidores se incorporarán con sus flujos específicos.
 
 La falla de email, WhatsApp o almacenamiento no revierte la confirmación del
 pedido.

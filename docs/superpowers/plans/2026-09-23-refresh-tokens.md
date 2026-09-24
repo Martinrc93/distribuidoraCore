@@ -70,12 +70,10 @@ Implementar un mecanismo de refresh tokens rotativos y revocables en el backend 
   - Genera y persiste `RefreshToken`.
   - Retorna `LoginResponse` con `accessToken` y `refreshToken`.
 - **`refresh(RefreshRequest)` (Transaccional):**
-  - Calcula hash del refresh token recibido y busca en DB.
+  - Calcula hash del refresh token recibido y busca la fila con `SELECT ... FOR UPDATE` para serializar renovaciones simultáneas.
   - Si no existe: audita falla `TOKEN_REFRESH (token_not_found)` y lanza `InvalidRefreshTokenException`.
-  - Si `revokedAt != null` (detección de reuso):
-    - Revoca **todos** los refresh tokens activos del usuario: `revokeAllByUserId(token.getUserId(), now)`.
-    - Audita alerta de seguridad: `TOKEN_REUSE_DETECTED`.
-    - Lanza `InvalidRefreshTokenException("Token de refresco inválido o revocado")`.
+  - Si el token fue reemplazado (`replacedBy != null`), detecta reuso y revoca las sesiones activas.
+  - Si fue revocado sin reemplazo (por ejemplo, logout), lo rechaza sin revocar otras sesiones.
   - Si está expirado:
     - Audita falla `TOKEN_REFRESH (token_expired)`.
     - Lanza `InvalidRefreshTokenException("Token de refresco expirado")`.
