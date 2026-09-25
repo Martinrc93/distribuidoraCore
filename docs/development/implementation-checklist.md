@@ -104,7 +104,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Estados de carga, vacio y error principales.
 - [x] Manejo de sesión expirada con refresh rotativo/revocación.
 - [x] Ocultar rutas/acciones según permisos actuales; backend autoriza los comandos.
-- [~] Foco visible, labels y controles etiquetados en módulos nuevos; auditoría completa pendiente.
+- [x] Foco visible, labels y controles etiquetados verificados en los flujos principales; Playwright comprueba foco por teclado.
 
 ### Usuarios, vendedores y clientes
 
@@ -153,8 +153,8 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Registrar pagos parciales/combinados y cobros durante la entrega.
 - [x] Imputación FIFO de pagos de cuenta corriente.
 - [~] Edición administrativa solo para pedidos sin descuentos guardados y con una sola lista; falta diseñar preservación/reaplicación de reglas automáticas.
-- [ ] Imputación de pago a deuda específica (falta consulta por cliente).
-- [ ] Devolución UI (falta lectura de líneas por `saleId`).
+- [x] Imputación de pago a deuda específica mediante la proyección del cliente.
+- [x] Devolución UI con líneas reales consultadas por `saleId`.
 
 ### Entrega, documentos y calidad
 
@@ -162,12 +162,12 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Cobrar durante entrega con efectivo/transferencia y referencia opcional.
 - [x] Cancelar pedidos con confirmación/permisos y descargar PDF A4/ticket.
 - [x] Solicitar notificaciones Email/WhatsApp y consultar estado individual.
-- [ ] Historial de intentos de entrega (no está en la lectura de detalle).
+- [x] Historial de intentos de entrega en el detalle del pedido.
 - [ ] Panel de outbox completo (no existe endpoint operativo).
 - [x] Build y proxy `/api` funcionando.
 - [x] Tests Vitest de API client, componentes y flujos implementados.
-- [ ] Tests E2E login -> crear cliente -> pedido -> confirmar -> ver venta.
-- [~] Responsive aplicado; pruebas automatizadas mobile pendientes.
+- [x] Tests E2E login -> crear cliente/producto con precio -> pedido -> confirmar -> ver pedido/venta, escritorio y mobile.
+- [x] Responsive verificado automáticamente en mobile sin desborde horizontal.
 
 ## Seguimiento de integración en `main` (2026-09-25)
 
@@ -179,33 +179,49 @@ describen por sí solos el estado de esa punta.
 
 ### Próximo ciclo, por prioridad y dependencias
 
-1. [ ] **P0, CI:** diagnosticar el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
-   de `0bf06c6`: el job `backend-postgres` falló en `mvn test`. El log detallado
-   devolvió `403` desde este entorno; no atribuir la causa sin leerlo. Corregir
-   el fallo y hacer que el workflow PostgreSQL se ejecute también en pushes/PR
-   dirigidos a `main`. Cierre: run verde sobre el commit candidato de `main`,
-   con SHA, número de tests, casos PostgreSQL y migración máxima registrados.
-2. [ ] **P0, contrato de producto:** exigir en backend que el alta incluya
+1. [~] **P0, CI:** el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
+   falló al inicializar Spring: el log muestra dos beans `jwtAuthenticationFilter`
+   (`shared.security.JwtAuthenticationFilter` e
+   `identity.security.JwtAuthenticationFilter`). El job reutilizaba clases
+   compiladas sin limpiar; el workflow ahora corre `mvn clean test` y escucha
+   pushes/PR a `main`. Falta el run remoto verde del candidato de esta rama.
+2. [x] **P0, contrato de producto:** exigir en backend que el alta incluya
    al menos un precio para una lista activa, como pide
    [`functionalities.md`](../domain/functionalities.md). Hoy
-   `ProductPayload.prices` puede omitirse y `ProductCommandService.create`
-   persiste un producto sin precios. Cierre: payload ausente/vacío rechazado
-   sin insertar producto; tests HTTP y PostgreSQL; alta válida desde la UI.
-3. [ ] **P0, E2E integrado:** en un checkout limpio y una base PostgreSQL
+   `ProductCommandService.create` valida esta condición antes de leer o escribir
+   datos comerciales. Ausente/vacío devuelve HTTP 400 sin insertar; HTTP y
+   PostgreSQL verifican también el alta válida desde la UI.
+3. [x] **P0, E2E integrado:** en un checkout limpio y una base PostgreSQL
    descartable, probar login → alta de cliente → producto con precio por lista
    → confirmación idempotente de pedido → detalle de venta → cobro/entrega.
-   Cierre: prueba reproducible sobre `main`, con saldos, stock, permisos,
-   warning de crédito y reintento verificados; sin usar `backend/target` del
-   checkout de trabajo anterior.
-4. [ ] **P1, proyecciones y UI comercial:** seguir las dependencias de
+   Playwright verifica en desktop/mobile login → cliente → producto/precio →
+   stock → confirmación → detalle de pedido/venta. La prueba PostgreSQL HTTP
+   verifica reintento idempotente, permisos, warning de crédito, pagos/entrega,
+   saldo `40` y stock `8`. Verificación sobre `f92c40841b8b61c1c02dbb1e32991c2883666410`;
+   Maven usó `target-codex-followup`, nunca el `backend/target` del checkout original.
+4. [x] **P1, proyecciones y UI comercial:** seguir las dependencias de
    [`frontend-backend-gaps.md`](frontend-backend-gaps.md): deudas por
    `customerId` antes de pago a deuda específica; líneas por `saleId` antes
    de devolución; intentos de entrega antes del historial; lectura de auditoría
    antes de su pantalla. Cierre: DTOs, permisos, errores, invalidación de
-   queries y pruebas de cada flujo.
-5. [ ] **P2, calidad frontend:** filtros y paginación reales en URL,
+   queries y pruebas de cada flujo. Contratos en [`read-projections.md`](../api/read-projections.md).
+5. [x] **P2, calidad frontend:** filtros y paginación reales en URL,
    pruebas mobile y E2E, y revisión de accesibilidad. Cierre: navegación y
-   formularios verificables en desktop y mobile, sin botones inertes.
+   formularios verificables en desktop y mobile, sin botones inertes. La suite
+   prueba foco por teclado y ausencia de overflow mobile.
+
+### Evidencia local de integración
+
+- Rama `codex/integration-followup-docs`, base `origin/main` `03586fd3`; commit
+  de implementación `f92c40841b8b61c1c02dbb1e32991c2883666410`.
+- `mvn --batch-mode --no-transfer-progress clean test`, PostgreSQL 16.4,
+  Flyway V1–V23: **355 tests, 0 fallos, 0 errores, 0 omitidos**; suite
+  `PostgresBackendFixesIntegrationTest`: **26 casos, 0 fallos**.
+- `npm test -- --reporter=dot`: **94 tests en 21 archivos, todos pasaron**;
+  `npm run build`: pasó.
+- `npm run test:e2e`: **2/2** en base PostgreSQL descartable, Chromium desktop
+  y Pixel 7 mobile. Preparación y comando reproducible en
+  [`commercial-e2e.md`](commercial-e2e.md).
 
 La edición de roles/permisos desde la UI sigue aplazada por decisión del usuario;
 no incluirla en este ciclo sin una nueva indicación.

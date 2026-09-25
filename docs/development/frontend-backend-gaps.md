@@ -16,23 +16,28 @@ de usuario final. La interfaz no simula respuestas faltantes.
   el ID queda en el intento idempotente. Los demás pedidos usan `CENTRAL`.
 - Roles de usuarios visibles como datos de solo lectura.
 
-## Falta una proyección de lectura adecuada
+## Proyecciones P1 integradas en `f92c408`
 
-- **Detalle/estado de cuenta de cliente:** `GET /api/customers` devuelve saldo
-  agregado, pero no hay consulta de movimientos/deudas por `customerId`. Los
-  listados de ventas/pagos permiten búsqueda por nombre/número, no filtrado
-  estable por ID. Por eso no hay un estado de cuenta completo por cliente.
-- **Pago a deuda específica:** el comando admite `saleId`, pero la UI solo ofrece
-  FIFO. Falta consultar las deudas abiertas del cliente por `customerId` para
-  permitir una selección segura.
-- **Devoluciones de venta:** existe `POST /api/sales/{saleId}/returns`, pero
-  requiere `saleItemId` y cantidad por línea. No existe `GET /api/sales/{saleId}`
-  ni el listado de ventas incluye `orderId`/líneas; no es posible construir el
-  formulario sin elegir IDs de líneas reales. El comando tampoco devuelve dinero
-  ni acredita la cuenta corriente.
-- **Historial de intentos de entrega:** la UI puede registrar `DELIVERED`/`FAILED`
-  y cobros, pero `/api/orders/{id}` no devuelve los intentos anteriores. El estado
-  final sí aparece en el detalle.
+- **Deudas por cliente y pago a deuda específica:** `GET
+  /api/customers/{customerId}/debts` entrega saldos abiertos paginados por ID;
+  `PaymentsPage` ofrece la imputación por venta además de FIFO. Requiere
+  `SALE_PAYMENT` o `ADMIN_ALL` y aplica alcance seller. Contrato:
+  [`read-projections.md`](../api/read-projections.md).
+- **Detalle y devolución de venta:** `GET /api/sales/{saleId}` devuelve IDs y
+  cantidades reales por línea, incluyendo lo ya devuelto. La UI registra el
+  retorno y refresca venta/inventario. El comando repone stock en el depósito
+  original; no reembolsa pagos ni acredita la cuenta corriente. Ver
+  [`sale-returns.md`](../api/sale-returns.md).
+- **Historial de entrega:** el detalle del pedido incluye intentos ordenados,
+  observaciones, resultado, actor y fecha; `OrderDetailPage` los presenta.
+- **Lectura de auditoría:** `GET /api/audit` y `/admin/audit` exponen búsqueda
+  y paginación en URL para administradores (`ADMIN_ALL`).
+
+## Proyecciones que aún faltan o son parciales
+
+- **Estado de cuenta integral del cliente:** ahora se consultan deudas abiertas
+  por cliente, pero todavía no hay una vista cronológica completa de débitos,
+  créditos, pagos y ventas cerradas.
 - **Edición de pedidos con descuentos/listas múltiples:** el detalle ya expone el
   porcentaje/regla de descuento general y los descuentos/reglas por línea, pero
   la UI todavía limita la edición a pedidos confirmados sin descuentos y con una
@@ -60,7 +65,6 @@ de usuario final. La interfaz no simula respuestas faltantes.
 
 ## No existe soporte backend suficiente
 
-- **Lectura de auditoría:** no hay endpoint de consulta de eventos.
 - **Dashboard global de outbox/worker:** solo se puede consultar el estado de una
   solicitud de notificación individual.
 - **Corrección o reversión de pagos:** no existe comando de pago correctivo.
@@ -70,11 +74,12 @@ de usuario final. La interfaz no simula respuestas faltantes.
 
 ## Operación, no interfaz de usuario
 
-- El backend `0bf06c6` ya es ancestro del `main` remoto `03586fd` (verificado el
-  2026-09-25). El run PostgreSQL de `2d1decf` pasó, pero el
-  [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
-  de `0bf06c6` falló en `mvn test`. Diagnosticar el log y exigir un run verde
-  sobre `main`; el workflow aún solo escucha `feature/backend`.
+- Esta rama parte de `origin/main` `03586fd`; la implementación está en
+  `f92c408`. El [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
+  falló por una definición duplicada de `jwtAuthenticationFilter`, causada por
+  clases compiladas obsoletas. `.github/workflows/backend-postgres.yml` ahora
+  ejecuta `clean test` y escucha `main` en push y pull request. Falta confirmar
+  el resultado de Actions sobre esta rama/PR.
 - Backups programados, copia externa y ArchUnit constan como verificados en
   `backend-checklist.md`; repetirlos solo si el entorno o el código relevante
   cambian.
@@ -82,8 +87,11 @@ de usuario final. La interfaz no simula respuestas faltantes.
 
 ## Cobertura frontend aún incompleta
 
-- Pruebas E2E con Playwright y auditoría visual automatizada.
-- Pruebas específicas de navegación/forms mobile; los módulos nuevos sí usan
-  layouts responsive.
-- Paginación/filtrado URL en todos los listados: varios usan el primer bloque de
-  20 elementos y no exponen controles de página activos.
+- El flujo comercial tiene E2E Playwright en escritorio y móvil, documentado en
+  [`commercial-e2e.md`](commercial-e2e.md). Aún falta una auditoría visual global
+  automatizada.
+- Los listados principales sincronizan búsqueda, filtros y página con la URL y
+  consultan páginas al backend. El E2E comprueba navegación móvil y ausencia de
+  desbordamiento horizontal.
+- La accesibilidad se verificó de forma dirigida en flujos críticos (teclado y
+  foco visible); falta una auditoría automatizada global.

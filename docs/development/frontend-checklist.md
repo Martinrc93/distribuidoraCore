@@ -23,16 +23,16 @@ Estado actualizado: 2026-09-25
 ## Componentes Y UX Transversal
 
 - [x] Layout responsive desktop/mobile.
-- [~] Tablas transformadas a cards en mobile; varios listados muestran el primer bloque de 20 sin controles de página activos.
+- [x] Tablas transformadas a cards en mobile; listados con búsqueda/filtros y paginación conectados a parámetros de URL.
 - [x] Estados de carga y error para consultas principales.
 - [x] Componentes reutilizables de botones, paneles, badges, tablas y paginación.
 - [x] Feedback de mutaciones con mensajes de éxito y errores accionables en flujos implementados.
 - [x] Confirmación explícita para bajas lógicas, cancelaciones y acciones irreversibles implementadas.
-- [ ] Filtros y paginación persistidos en URL.
+- [x] Filtros y paginación persistidos en URL en clientes, pedidos, ventas, pagos, productos, inventario, depósitos, listas/precios/historial, descuentos, usuarios, vendedores y auditoría.
 - [~] Estados vacíos específicos en los módulos conectados; completar en las vistas pendientes.
-- [ ] Accesibilidad: foco, labels, navegación de teclado y mensajes para lectores.
+- [x] Accesibilidad revisada en flujos principales: foco visible, labels, navegación por teclado, roles/estados accesibles y mensajes de éxito/error.
 - [~] Tests de componentes, mutaciones y navegación con React Testing Library; no incluye aún todos los módulos ni E2E.
-- [ ] Tests E2E con Playwright para login y flujos comerciales.
+- [x] Tests E2E con Playwright para login y flujo comercial en Chromium desktop y Pixel 7 mobile.
 
 ## Customers
 
@@ -97,8 +97,8 @@ Estado actualizado: 2026-09-25
 - [x] Cobros parciales/combinados al confirmar pedido o durante la entrega.
 - [x] Pagos `CASH`/`BANK_TRANSFER` a cuenta corriente con imputación FIFO.
 - [x] Mostrar resultado de imputación y saldos anterior/actualizado.
-- [ ] Aplicar pago a una deuda específica (falta consulta de deudas por `customerId`).
-- [ ] Devolver venta desde la UI (falta lectura de líneas por `saleId`).
+- [x] Aplicar pago a una deuda específica consultada por `customerId`.
+- [x] Devolver venta desde la UI con las líneas de `saleId`.
 - [ ] Corregir/revertir pago (no existe endpoint de comando).
 
 ## Administración De Usuarios
@@ -114,7 +114,7 @@ Estado actualizado: 2026-09-25
 - [~] Cancelación ejecutada por backend; el detalle no expone movimientos para verificar rollback de stock.
 - [x] Descargar PDF A4 y ticket bajo demanda.
 - [x] Solicitar notificación Email/WhatsApp y consultar estado individual.
-- [ ] Ver historial de intentos de entrega (no está en la respuesta de detalle).
+- [x] Ver historial de intentos de entrega en la respuesta/detalle del pedido.
 - [ ] Mostrar estado global de outbox/worker (no existe endpoint operativo).
 
 ## Calidad Y Entrega
@@ -125,8 +125,8 @@ Estado actualizado: 2026-09-25
 - [x] Tests unitarios de API client, formularios y flujos implementados.
 - [~] Contratos TypeScript alineados con flujos implementados; sin Zod.
 - [ ] Validación de formularios con React Hook Form + Zod según la arquitectura documentada.
-- [ ] E2E login -> crear cliente -> crear pedido -> confirmar -> ver venta.
-- [~] Diseño responsive actualizado; faltan pruebas automatizadas mobile.
+- [x] E2E login -> crear cliente/producto con precio -> pedido -> confirmar -> ver pedido/venta.
+- [x] Diseño responsive actualizado; Playwright mobile comprueba navegación y ancho de documento.
 - [~] Errores/permisos cubiertos en pruebas de componente; falta auditoría visual completa.
 
 ## Siguiente Orden Recomendado
@@ -134,11 +134,11 @@ Estado actualizado: 2026-09-25
 1. [x] Conectar `Nuevo pedido` al endpoint de confirmación atómica.
 2. [x] Crear UI de Pricing, marcas/categorías y precios por lista.
 3. [x] Completar edición/baja de productos y ajustes de inventario.
-4. [~] Completar ventas/pagos y cuenta corriente; faltan deuda específica y devoluciones con líneas.
-5. [~] Implementar entrega, cancelación, documentos y notificaciones; falta historial de intentos.
+4. [~] Completar ventas/pagos y cuenta corriente; pago a deuda y devolución con líneas completados, aún falta vista integral de estado de cuenta.
+5. [~] Implementar entrega, cancelación, documentos y notificaciones; historial de intentos completado, dashboard global de outbox sigue pendiente.
 6. [x] Conectar vigencias/reglas de precio y flujos de inventario multi-depósito al frontend.
 7. [x] Mostrar rol actual en usuarios; conservar edición de roles/permisos como pendiente aplazado.
-8. [~] Tests Vitest de API client y flujos principales; E2E aún pendiente.
+8. [x] Tests Vitest de API client y flujos principales; E2E comercial desktop/mobile ejecutado.
 
 ## Criterio De Cierre Frontend
 

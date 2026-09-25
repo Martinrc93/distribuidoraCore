@@ -1,6 +1,6 @@
 # Backend Development Checklist
 
-Estado actualizado: 2026-09-24
+Estado actualizado: 2026-09-25
 
 ## Cómo Leerlo
 
@@ -29,6 +29,7 @@ Estado actualizado: 2026-09-24
 - [x] CRUD de clientes sobre PostgreSQL.
 - [x] Baja lógica de clientes.
 - [x] CRUD de productos y baja lógica.
+- [x] Alta de producto exige al menos un precio válido para una lista activa; payload omitido/vacío se rechaza antes de insertar.
 - [x] Validación de unicidad, importes y estados.
 - [x] CRUD administrativo completo de perfiles de vendedor.
 - [x] CRUD de vendedores y asociación con usuarios.
@@ -116,8 +117,10 @@ Estado actualizado: 2026-09-24
 - [x] Todos los tests `*ControllerTest` ejercitan rutas mediante `MockMvc`; se agregaron 14 casos para marcas, categorías, pagos, entregas, devoluciones, vendedores y límite de crédito.
 - [x] Matriz de cadena real: seis casos para las authorities actuales (`ADMIN_ALL`, `USER_MANAGE`, `ORDER_CREATE`, `SALE_PAYMENT`, `SALE_DELIVER`, `STOCK_ADJUST`) y límites entre rutas críticas.
 - [x] Workflow CI de PostgreSQL 16 ejecutado en GitHub Actions; [run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828) terminó correctamente para commit `2d1decf` (2026-09-24).
-- [ ] Restablecer CI PostgreSQL en la punta integrada: el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320) de `0bf06c6` terminó en `failure` durante `mvn test`. El log detallado no fue accesible (`403`) desde el entorno de auditoría; diagnosticar antes de asignar causa. El workflow actual solo escucha `feature/backend`; extenderlo a `main` y cerrar con un run verde sobre el commit candidato de `main`.
-- [ ] Validar que el alta de producto exige al menos un precio en una lista activa. `ProductPayload.prices` puede omitirse y `ProductCommandService.create` acepta la lista vacía, en contradicción con `docs/domain/functionalities.md`. Cerrar con rechazo HTTP y prueba PostgreSQL sin inserción parcial, además de conservar el alta válida con precios por lista.
+- [~] CI del candidato `f92c40841b8b61c1c02dbb1e32991c2883666410`: el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320) registró `ConflictingBeanDefinitionException` para los beans `jwtAuthenticationFilter` de `shared.security` e `identity.security`. El job corría `mvn test` sin limpiar clases compiladas obsoletas; el workflow ahora escucha `main` en push/PR y ejecuta `mvn clean test`. Run remoto del candidato pendiente.
+- [x] Validar que el alta de producto exige al menos un precio en una lista activa, según `docs/domain/functionalities.md`; el alta ausente/vacía devuelve 400 y deja cero productos, el alta válida persiste su precio. Pruebas HTTP/PostgreSQL en `PostgresBackendFixesIntegrationTest`.
+- [x] Flujo comercial PostgreSQL HTTP: login, permisos `403`, alta de cliente/producto, inventario, confirmación idempotente, warning de crédito, detalle, deuda específica y entrega/cobro; repetición devuelve los mismos IDs, saldo `40`, stock `8`.
+- [x] Verificación de `f92c40841b8b61c1c02dbb1e32991c2883666410`: PostgreSQL 16.4, Flyway V1–V23, **355 tests; 0 fallos/errores/omitidos; 26 casos PostgreSQL**.
 - [x] ArchUnit protege cuatro límites de capas y aplica una quinta regla (`ModuleBoundaryTest`) para mantener acíclicos los slices de producción.
 - [x] Se eliminó `shared → catalog`, que cerraba el ciclo identificado `audit → shared → catalog → audit`, y se desacoplaron los servicios de aplicación de DTOs API.
 - [x] Revisar/documentar el grafo completo y resolver los ciclos que involucraban identidad, documentos y pedidos; `shared` quedó sin dependencias salientes hacia módulos de negocio.
