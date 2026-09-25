@@ -58,6 +58,8 @@ erDiagram
 - No se generan saldos a favor.
 - Los snapshots de pedido y venta no cambian por modificaciones futuras de
   listas de precios.
+- Los precios comerciales residen exclusivamente en `catalog.product_prices` por lista; el producto almacena únicamente su costo.
+- El costo de un producto no puede superar el precio de ninguna lista activa sin actualizar dichos precios en la misma transacción.
 - Una venta parcialmente pagada puede entregarse.
 - Una lista de precios dada de baja no se usa en nuevos pedidos.
 - El cliente puede no tener vendedor o lista asignados.
@@ -66,7 +68,7 @@ erDiagram
 
 ```text
 lista del cliente si existe
-→ `LISTA_1` si no existe
+→ `GENERAL` (Lista general) si no existe
 → cambio manual de lista durante el pedido
 → precio de lista
 → override autorizado
@@ -98,5 +100,6 @@ más antiguo. El límite global solo genera advertencias y no bloquea la venta.
 ## Estado del dominio
 
 Los impuestos, ARCA, compras, proveedores, múltiples depósitos, reportes,
-dashboard, portal de clientes, historial de costos y layouts configurables de
-impresión quedan fuera del alcance inicial.
+dashboard, portal de clientes y layouts configurables de
+impresión quedan fuera del alcance inicial. El historial de costos ha sido
+eliminado del alcance funcional del sistema.

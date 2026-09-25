@@ -32,21 +32,21 @@
 - Preserves existing prices by ensuring every existing product has a `catalog.product_prices` row before dropping the column.
 - Changes demo product creation to insert cost first, then create list prices explicitly.
 
-- [ ] **Step 1: Write the failing migration contract test**
+- [x] **Step 1: Write the failing migration contract test**
 
 Assert the migration text contains the backfill from `products.price` into
 `product_prices`, drops the old column, and removes the old `price` check
 constraint. Assert the seed test expects prices to be stored in
 `catalog.product_prices`, not `products.price`.
 
-- [ ] **Step 2: Run the focused migration and seed tests**
+- [x] **Step 2: Run the focused migration and seed tests**
 
 Run: `mvn -q -Dtest=ProductPriceOwnershipMigrationContractTest,DemoDataSeederTest test`
 
 Expected: FAIL because `V11__move_product_prices_to_price_lists.sql` does not
 exist and the seed still references `products.price`.
 
-- [ ] **Step 3: Add the migration**
+- [x] **Step 3: Add the migration**
 
 Create `V11__move_product_prices_to_price_lists.sql` with this order:
 
@@ -67,7 +67,7 @@ ALTER TABLE catalog.products
     ADD CONSTRAINT ck_product_cost CHECK (cost >= 0);
 ```
 
-- [ ] **Step 4: Update the demo seed**
+- [x] **Step 4: Update the demo seed**
 
 Change `insertProducts()` to insert only `cost`, then insert each active list
 price using the generated product ID and a deterministic multiplier. Remove the
@@ -76,7 +76,7 @@ idempotent query that fills missing list prices from `products.cost` using the
 same seed rule or leave all rows created by `insertProducts()` present before
 calling the repair method.
 
-- [ ] **Step 5: Run the focused tests again**
+- [x] **Step 5: Run the focused tests again**
 
 Run: `mvn -q -Dtest=ProductPriceOwnershipMigrationContractTest,DemoDataSeederTest test`
 
@@ -100,7 +100,7 @@ Expected: PASS.
 - `update(UUID id, ProductInput)` reads active prices and atomically updates the
   product and supplied affected prices.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Add tests for these exact cases:
 
@@ -116,20 +116,20 @@ void validatesInitialPricesAgainstCost()
 Mock JDBC queries for active list prices and verify that the update SQL writes
 `cost` and affected `product_prices` only after validation.
 
-- [ ] **Step 2: Run the focused service tests to verify failure**
+- [x] **Step 2: Run the focused service tests to verify failure**
 
 Run: `mvn -q -Dtest=ProductCommandServiceTest test`
 
 Expected: FAIL because `ProductInput` still requires a product-level price and
 the update path does not query list prices.
 
-- [ ] **Step 3: Implement the input and validation types**
+- [x] **Step 3: Implement the input and validation types**
 
 Use a list payload, reject duplicate `priceListId` values, reject null or
 negative prices, and reject a null/negative cost. Keep text and SKU validation
 unchanged.
 
-- [ ] **Step 4: Implement the update decision tree**
+- [x] **Step 4: Implement the update decision tree**
 
 Query active list prices with list ID and code. Compute affected lists where
 `newCost.compareTo(currentPrice) > 0`. If affected lists exist, require exactly
@@ -140,20 +140,20 @@ validation exception containing affected list codes when prices are missing. The
 HTTP error body must retain the existing error envelope and add an
 `affectedPriceLists` array with `{ priceListId, code, currentPrice }` objects.
 
-- [ ] **Step 5: Update the controller payload**
+- [x] **Step 5: Update the controller payload**
 
 Remove `price` from `ProductPayload` and expose `prices` as an optional list of
 `{ priceListId, price }`. Preserve `@Valid`, decimal constraints, and
 `ADMIN_ALL` authorization.
 
-- [ ] **Step 6: Expose affected-list metadata in the error envelope**
+- [x] **Step 6: Expose affected-list metadata in the error envelope**
 
 Add a dedicated `ProductPriceValidationException` carrying the affected list
 records. In `ApiExceptionHandler`, map it to `400` using `ProblemDetail` with
 `code = "INVALID_PRODUCT_PRICES"` and an `affectedPriceLists` property. Add a
 controller/error-handler test that verifies the property is serialized.
 
-- [ ] **Step 7: Run the focused backend tests**
+- [x] **Step 7: Run the focused backend tests**
 
 Run: `mvn -q -Dtest=ProductCommandServiceTest,ProductCommandControllerTest,ApiExceptionHandlerTest test`
 
@@ -176,24 +176,24 @@ Expected: PASS.
 - Order pricing continues reading `catalog.product_prices` through
   `PricingQueryService`.
 
-- [ ] **Step 1: Update failing read tests**
+- [x] **Step 1: Update failing read tests**
 
 Change assertions to require no `price` key and to preserve admin cost versus
 seller cost visibility.
 
-- [ ] **Step 2: Run the focused read tests**
+- [x] **Step 2: Run the focused read tests**
 
 Run: `mvn -q -Dtest=ReadQueryServiceTest,PricingQueryServiceTest test`
 
 Expected: FAIL against the current `p.price` SQL projections.
 
-- [ ] **Step 3: Remove `p.price` from product queries**
+- [x] **Step 3: Remove `p.price` from product queries**
 
 Delete the product-level price projection in both seller and admin branches;
 leave stock, status, ownership, search, pagination, and cost visibility
 unchanged.
 
-- [ ] **Step 4: Verify order price resolution remains list-based**
+- [x] **Step 4: Verify order price resolution remains list-based**
 
 Run: `mvn -q -Dtest=PricingQueryServiceTest,PricingCommandServiceTest test`
 
@@ -283,20 +283,20 @@ Expected: PASS with no product-level price assumptions.
 - Product flows show cost-only edits and the affected-list price requirement.
 - No documentation promises cost history or a product-level general price.
 
-- [ ] **Step 1: Search for stale terminology**
+- [x] **Step 1: Search for stale terminology**
 
 Run: `rg -n "precio general|historial de costos|products\.price|p\.price|price general|cost history" docs backend frontend --glob '!**/target/**' --glob '!**/node_modules/**'`
 
-- [ ] **Step 2: Update diagrams and domain rules**
+- [x] **Step 2: Update diagrams and domain rules**
 
 Replace stale product-price references with per-list prices and document the
 transactional cost-update rule.
 
-- [ ] **Step 3: Remove the obsolete cost-history diagram**
+- [x] **Step 3: Remove the obsolete cost-history diagram**
 
 Delete the future cost-history flow and its README entry.
 
-- [ ] **Step 4: Verify documentation consistency**
+- [x] **Step 4: Verify documentation consistency**
 
 Run the search again and confirm remaining `price` references are only for
 `catalog.product_prices`, order unit prices, or payment amounts.

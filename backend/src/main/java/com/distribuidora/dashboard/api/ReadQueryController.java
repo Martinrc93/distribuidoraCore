@@ -60,5 +60,25 @@ public class ReadQueryController {
 
     @GetMapping("/sellers")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
-    public PageResponse<Map<String, Object>> sellers(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) { return queries.sellers(page, size); }
+    public PageResponse<Map<String, Object>> sellers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(required = false) String status) {
+        if ((search == null || search.isBlank()) && (status == null || status.isBlank())) {
+            return queries.sellers(page, size);
+        }
+        return queries.sellers(page, size, search, status);
+    }
+
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public PageResponse<Map<String, Object>> sellers(int page, int size) {
+        return queries.sellers(page, size);
+    }
+
+    @GetMapping("/sellers/{id}")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public Map<String, Object> seller(@PathVariable UUID id) {
+        return queries.sellerDetail(id);
+    }
 }

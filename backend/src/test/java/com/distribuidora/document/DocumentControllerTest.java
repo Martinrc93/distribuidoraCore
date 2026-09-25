@@ -5,7 +5,9 @@ import com.distribuidora.document.application.SaleDocumentNotFoundException;
 import com.distribuidora.document.application.SaleDocumentService;
 import com.distribuidora.document.api.DocumentController;
 import com.distribuidora.document.rendering.OpenPdfA4Renderer;
+import com.distribuidora.document.rendering.OpenPdfTicketRenderer;
 import com.distribuidora.document.rendering.SaleDocumentModel;
+import com.distribuidora.identity.infrastructure.UserAccountRepository;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import com.distribuidora.shared.security.JwtAuthenticationFilter;
 import com.distribuidora.shared.security.JwtService;
@@ -54,7 +56,13 @@ class DocumentControllerTest {
     private OpenPdfA4Renderer renderer;
 
     @MockBean
+    private OpenPdfTicketRenderer ticketRenderer;
+
+    @MockBean
     private JwtService jwtService;
+
+    @MockBean
+    private UserAccountRepository userAccountRepository;
 
     @TestConfiguration
     @EnableMethodSecurity
@@ -105,6 +113,24 @@ class DocumentControllerTest {
         mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
                 .with(user("admin").authorities(() -> "ADMIN_ALL")))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void sellerCanDownloadTicketPdf() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        SaleDocumentModel model = model("V-3");
+        byte[] pdf = "%PDF-ticket".getBytes();
+        when(service.load(orderId)).thenReturn(model);
+        when(ticketRenderer.render(model)).thenReturn(pdf);
+
+        mockMvc.perform(get("/api/orders/{orderId}/documents/ticket", orderId)
+                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ticket-V-3.pdf\""))
+            .andExpect(content().bytes(pdf));
+        verify(service).load(orderId);
+        verify(ticketRenderer).render(model);
     }
 
     @Test

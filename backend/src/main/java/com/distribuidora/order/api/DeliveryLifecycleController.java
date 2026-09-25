@@ -22,7 +22,7 @@ public class DeliveryLifecycleController {
     }
 
     @PostMapping("/{id}/delivery-attempts")
-    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('SALE_DELIVER', 'ADMIN_ALL')")
     public ResponseEntity<Void> recordAttempt(@PathVariable UUID id,
                                               @Valid @RequestBody DeliveryLifecycleDtos.DeliveryAttemptRequest request) {
         service.recordAttempt(id, request);

@@ -46,8 +46,8 @@ Se agregan migraciones para:
 - `seller.seller_profiles`: perfil comercial y vínculo opcional con usuario.
 - `customer.customers`: cliente, identificación fiscal, vendedor asignado,
   estado y saldo de cuenta corriente.
-- `catalog.products`: producto, categoría, presentación, costo, precio general,
-  estado y stock inicial derivado.
+- `catalog.products`: producto, categoría, presentación, costo, estado y stock inicial derivado.
+- `catalog.product_prices`: precios de venta asociados por lista de precios.
 - `inventory.inventory_balances`: saldo actual por producto.
 - `inventory.stock_movements`: historial append-only.
 - `orders.orders` y `orders.order_items`: pedidos confirmados y snapshots.

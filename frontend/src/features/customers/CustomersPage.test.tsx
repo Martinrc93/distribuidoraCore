@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,6 +32,17 @@ describe('CustomersPage', () => {
   beforeEach(() => {
     sessionStorage.setItem('distribuidora.accessToken', token(['ADMIN_ALL']))
     vi.restoreAllMocks()
+  })
+
+  it('shows a dash when a customer has no CUIT', async () => {
+    const customerWithoutTaxId = { ...customers.content[0], cuitId: null }
+    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers')
+      ? response({ ...customers, content: [customerWithoutTaxId] })
+      : response({ content: [] }))
+    renderPage([])
+
+    const row = await screen.findByRole('row', { name: /Almacén Norte/ })
+    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('-')
   })
 
   it('creates a customer with seller assignment and invalidates the exact list query', async () => {

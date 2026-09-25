@@ -72,17 +72,22 @@ public class ReadQueryService {
         String term = like(search);
         if (sellerScoped()) {
             return page("""
-                select p.id, p.sku, p.name, p.category, p.presentation, p.price,
+                select p.id, p.sku, p.name, coalesce(cat.name, p.category) as category,
+                       p.category_id as "categoryId", p.brand_id as "brandId", p.presentation,
                        coalesce(ib.quantity, 0) as stock, p.status
-                from catalog.products p left join inventory.inventory_balances ib on ib.product_id = p.id
+                from catalog.products p
+                left join catalog.categories cat on cat.id = p.category_id
+                left join inventory.inventory_balances ib on ib.product_id = p.id
                 where lower(p.name) like ? or lower(p.sku) like ? order by p.name
                 """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
                 page, size, term, term);
         }
         return page("""
-            select p.id, p.sku, p.name, p.category, p.presentation, p.cost, p.price,
+            select p.id, p.sku, p.name, coalesce(cat.name, p.category) as category,
+                   p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.cost,
                    coalesce(ib.quantity, 0) as stock, p.status
             from catalog.products p
+            left join catalog.categories cat on cat.id = p.category_id
             left join inventory.inventory_balances ib on ib.product_id = p.id
             where lower(p.name) like ? or lower(p.sku) like ?
             order by p.name
@@ -157,6 +162,8 @@ public class ReadQueryService {
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
                    c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
+                   o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
+                   o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    c.balance as "customerBalance", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
@@ -169,6 +176,8 @@ public class ReadQueryService {
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
                    c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
+                   o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
+                   o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    c.balance as "customerBalance", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
@@ -204,7 +213,7 @@ public class ReadQueryService {
                 """, orderId),
             "sale", sale,
             "payments", jdbc.queryForList("""
-                select p.id, p.amount, p.method, p.created_at as date
+                select p.id, p.amount, p.method, p.transfer_reference as "transferReference", p.created_at as date
                 from payment.payments p where p.sale_id = ? order by p.created_at, p.id
                 """, saleId),
             "account", account
@@ -245,7 +254,8 @@ public class ReadQueryService {
         if (sellerScoped()) {
             UUID sellerId = currentUser.requireSellerProfile();
             return page("""
-                select p.id, c.business_name as customer, s.sale_number as sale, p.amount, p.method, p.created_at as date
+                select p.id, c.business_name as customer, s.sale_number as sale, p.amount, p.method,
+                       p.transfer_reference as "transferReference", p.created_at as date
                 from payment.payments p join customer.customers c on c.id = p.customer_id
                 join sale.sales s on s.id = p.sale_id join orders.orders o on o.id = s.order_id
                 where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
@@ -259,7 +269,7 @@ public class ReadQueryService {
         }
         return page("""
             select p.id, c.business_name as customer, s.sale_number as sale,
-                   p.amount, p.method, p.created_at as date
+                   p.amount, p.method, p.transfer_reference as "transferReference", p.created_at as date
             from payment.payments p
             join customer.customers c on c.id = p.customer_id
             join sale.sales s on s.id = p.sale_id
@@ -286,6 +296,38 @@ public class ReadQueryService {
             order by sp.display_name
             """, "select count(*) from seller.seller_profiles sp join identity.users u on u.id = sp.user_id",
             page, size);
+    }
+
+    public PageResponse<Map<String, Object>> sellers(int page, int size, String search, String status) {
+        String term = like(search);
+        String state = status == null || status.isBlank() ? "%" : status.trim();
+        return page("""
+            select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
+                   u.email, sp.status, sp.created_at as "createdAt",
+                   (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
+            from seller.seller_profiles sp
+            join identity.users u on u.id = sp.user_id
+            where (lower(sp.display_name) like ? or lower(u.email) like ?)
+              and sp.status like ?
+            order by sp.display_name
+            """, """
+            select count(*)
+            from seller.seller_profiles sp
+            join identity.users u on u.id = sp.user_id
+            where (lower(sp.display_name) like ? or lower(u.email) like ?)
+              and sp.status like ?
+            """, page, size, term, term, state);
+    }
+
+    public Map<String, Object> sellerDetail(UUID id) {
+        return jdbc.queryForMap("""
+            select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
+                   u.email, sp.status, sp.created_at as "createdAt",
+                   (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
+            from seller.seller_profiles sp
+            join identity.users u on u.id = sp.user_id
+            where sp.id = ?
+            """, id);
     }
 
     private PageResponse<Map<String, Object>> page(String sql, String countSql, int page, int size, Object... parameters) {

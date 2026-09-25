@@ -40,8 +40,20 @@ class DeliveryLifecycleMigrationContractTest {
                 .doesNotContain("TRUNCATE");
     }
 
+    @Test
+    void paymentMigrationAddsOptionalTransferReference() {
+        String normalized = normalize(readMigration("/db/migration/V16__add_payment_transfer_reference.sql"));
+
+        assertThat(normalized).contains("ALTER TABLE PAYMENT.PAYMENTS ADD COLUMN TRANSFER_REFERENCE VARCHAR(100) NULL")
+            .doesNotContain("DROP TABLE", "DELETE FROM", "TRUNCATE");
+    }
+
     private static String readMigration() {
-        try (InputStream stream = DeliveryLifecycleMigrationContractTest.class.getResourceAsStream(MIGRATION_RESOURCE)) {
+        return readMigration(MIGRATION_RESOURCE);
+    }
+
+    private static String readMigration(String resource) {
+        try (InputStream stream = DeliveryLifecycleMigrationContractTest.class.getResourceAsStream(resource)) {
             assertThat(stream).as("migration resource").isNotNull();
             if (stream == null) {
                 throw new AssertionError("Migration resource is missing");

@@ -162,7 +162,7 @@ export default function CustomersPage() {
   const rows = (query.data?.content ?? []).map((customer) => ({
     id: customer.id,
     name: customer.name,
-    cuitId: customer.cuitId,
+    cuitId: customer.cuitId ?? '-',
     seller: customer.seller ?? 'Sin asignar',
     balance: money(customer.balance),
     status: customer.status,

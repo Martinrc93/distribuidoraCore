@@ -1,6 +1,6 @@
 # Alta de producto
 
-> La persistencia de precios por lista queda documentada; su implementacion esta pendiente.
+> La persistencia de precios por lista en el alta está implementada en backend; la adaptación del formulario en frontend está en desarrollo.
 
 ```mermaid
 flowchart TD

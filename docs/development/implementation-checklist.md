@@ -1,6 +1,6 @@
 # Checklist de implementacion
 
-Estado de referencia: 2026-09-23.
+Estado de referencia: 2026-09-24.
 
 Este documento separa el avance funcional del backend y del frontend. Una
 funcionalidad se marca como implementada solo cuando esta verificada en la capa
@@ -20,8 +20,9 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Login con Argon2, JWT y bloqueo por intentos fallidos.
 - [x] Roles `ADMIN` y `SELLER` con permisos persistidos.
 - [x] Autorizacion `@PreAuthorize` y ownership de vendedor.
-- [ ] Refresh tokens rotativos y revocables.
-- [ ] Invitacion, activacion y revocacion administrativa de sesiones.
+- [x] Refresh tokens rotativos con bloqueo por token, detección de reuso y revocación de access/refresh tokens por versión de sesión (tests Maven y PostgreSQL funcionales pasan).
+- [x] Invitacion y activacion con token de un solo uso (30 minutos); la activacion requiere login posterior.
+- [x] Bloqueo y revocación administrativa inmediata de sesiones (tests Maven y PostgreSQL funcionales pasan).
 
 ### Usuarios, vendedores y clientes
 
@@ -30,8 +31,8 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] CRUD de clientes y baja logica.
 - [x] Asignacion de vendedor y lista de precios.
 - [x] CUIT opcional y unico cuando se informa.
-- [ ] CRUD completo de vendedores existentes.
-- [ ] Reasignacion masiva de clientes y pedidos.
+- [x] CRUD completo de vendedores existentes.
+- [x] Reasignacion masiva de clientes y pedidos `CONFIRMED`, preservando pedidos históricos (tests Maven y PostgreSQL funcionales pasan).
 
 ### Catalogo y precios
 
@@ -40,23 +41,24 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Listas de precios con maximo de diez.
 - [x] Precios por producto y lista con `NUMERIC(19,4)`.
 - [x] Resolucion por lista explicita, lista del cliente y fallback documentado.
-- [ ] Eliminar el precio almacenado directamente en el producto.
-- [ ] Usar exclusivamente `catalog.product_prices` como fuente de precios.
-- [ ] Editar costo sin precio cuando no supera ninguna lista activa.
-- [ ] Exigir nuevos precios para todas las listas afectadas cuando el costo las supera.
-- [ ] Actualizar costo y precios afectados en una sola transaccion.
-- [ ] Exponer las listas afectadas en el error de validacion.
-- [ ] Eliminar historial de costos del alcance funcional.
-- [ ] CRUD completo de marcas y categorias.
-- [ ] Restringir la configuracion y aplicacion de descuentos por producto o generales a `ADMIN`.
+- [x] Eliminar el precio almacenado directamente en la tabla de productos (migración V11).
+- [x] Usar exclusivamente `catalog.product_prices` como fuente de precios (esquema, seed, comandos y lecturas migrados).
+- [x] Editar costo sin precio cuando no supera ninguna lista activa.
+- [x] Exigir nuevos precios para todas las listas afectadas cuando el costo las supera.
+- [x] Actualizar costo y precios afectados en una sola transaccion.
+- [x] Exponer las listas afectadas en el error de validacion.
+- [x] Eliminar historial de costos del alcance funcional.
+- [x] CRUD administrativo de marcas y categorías y asociación opcional en productos (tests Maven y PostgreSQL funcionales pasan).
+- [x] Restringir configuración y aplicación de descuentos por producto o generales a `ADMIN`.
 
 ### Inventario
 
 - [x] Saldos actuales y movimientos append-only.
 - [x] Ajustes manuales con delta firmado y lock pesimista.
 - [x] Movimientos `SALE` al confirmar pedidos.
-- [ ] Devoluciones `RETURN`.
-- [ ] Edicion de pedidos confirmados con deltas compensatorios.
+- [x] Reversión neta `SALE_CANCELLATION` al cancelar pedidos confirmados sin pagos, incluyendo movimientos compensatorios de ediciones anteriores.
+- [x] Devoluciones `RETURN` parciales con saldo por línea, lock por venta y reintegro de stock transaccional; ver [contrato de API](../api/sale-returns.md).
+- [x] Edición administrativa de pedido/venta `CONFIRMED` con reemplazo de snapshots, deltas compensatorios, pagos preservados y conciliación de ledger; ver [contrato de API](../api/order-edits.md).
 - [ ] Multi-deposito.
 
 ### Pedidos, ventas, pagos y cuenta corriente
@@ -66,20 +68,23 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Pagos `CASH`, `BANK_TRANSFER` y cuenta corriente.
 - [x] Pagos parciales, combinados e idempotencia.
 - [x] Intentos de entrega y cancelacion con rollback de stock.
-- [ ] Registrar cobros durante la entrega.
-- [ ] Registrar numero opcional de transferencia durante la entrega.
-- [ ] Enviar automaticamente el saldo restante a la cuenta corriente durante la entrega.
-- [ ] Aplicacion de pagos por deuda especifica o FIFO.
-- [ ] Limite de credito y advertencias auditadas.
+- [x] Registrar cobros `CASH`/`BANK_TRANSFER` durante la entrega.
+- [x] Guardar y exponer la referencia opcional de transferencia.
+- [x] Dejar el saldo no cobrado en cuenta corriente con un asiento `CREDIT` por lo recibido.
+- [x] Aplicacion de pagos por deuda especifica o FIFO, con endpoint, autoridad `SALE_PAYMENT`, ledger y bloqueo transaccional; ver [contrato de API](../api/account-payments.md).
+- [x] Límite de crédito global configurable y no bloqueante, advertencia en confirmación y evento auditado; ver [contrato](../api/credit-limit.md).
 
 ### Documentos, notificaciones y operacion
 
 - [x] PDF A4 bajo demanda con ownership.
-- [ ] Tickets y otros formatos.
-- [ ] Outbox transaccional y worker con reintentos.
-- [ ] WhatsApp y email configurables.
-- [ ] Metricas, logs estructurados y CI de integracion.
-- [ ] Backups, restauracion y procedimiento de rollback.
+- [x] Ticket PDF de 80 mm generado desde snapshots persistidos, bajo demanda.
+- [x] Outbox transaccional para confirmaciones, worker con leases, backoff y despacho idempotente; ver `docs/architecture/integration-architecture.md`.
+- [x] Solicitudes idempotentes email/WhatsApp mediante webhooks configurables; auditoría de solicitud y cada intento.
+- [x] Métricas HTTP/outbox, logs ECS JSON y propagación segura de request ID.
+- [x] Backup cifrado, retención definida, restauración automatizada y procedimiento de rollback documentado.
+- [~] Workflow CI PostgreSQL configurado; pendiente primera ejecución remota. Programación diaria y copia externa de backups requieren activación operativa.
+- [x] Purga de destinatarios de notificaciones y eventos terminales tras 90 días por defecto.
+- [ ] ArchUnit o Spring Modulith para validar límites modulares.
 
 ## Frontend
 
@@ -89,66 +94,85 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Cliente HTTP autenticado y shell protegido.
 - [x] Layout responsive desktop/mobile.
 - [x] Estados de carga, vacio y error principales.
-- [~] Manejo de sesion expirada sin refresh/revocacion completa.
-- [ ] Ocultar acciones segun permisos actuales.
-- [ ] Accesibilidad completa de foco, labels y teclado.
+- [x] Manejo de sesión expirada con refresh rotativo/revocación.
+- [x] Ocultar rutas/acciones según permisos actuales; backend autoriza los comandos.
+- [~] Foco visible, labels y controles etiquetados en módulos nuevos; auditoría completa pendiente.
 
 ### Usuarios, vendedores y clientes
 
 - [x] Listado, alta y edicion de clientes.
 - [x] Asignacion de vendedor y lista de precios.
 - [x] Baja logica y reactivacion.
-- [ ] Administracion completa de usuarios y vendedores.
-- [ ] Detalle de cliente con ventas, pagos y cuenta corriente.
+- [x] Invitación/creación de usuarios, activación, bloqueo, desbloqueo y revocación de sesiones.
+- [x] CRUD de vendedores y reasignación masiva de clientes/pedidos.
+- [ ] Detalle de cliente con ventas, pagos y cuenta corriente (falta consulta dedicada por cliente).
 
 ### Catalogo y precios
 
 - [x] Listado, alta, edicion y baja logica de productos.
 - [x] Validacion local de datos basicos y mensajes HTTP.
-- [ ] Quitar el campo y la columna de precio general del producto.
-- [ ] Mostrar precios exclusivamente por lista.
-- [ ] Crear y editar precios por producto/lista.
-- [ ] Editar costo sin pedir precios cuando no hay listas afectadas.
-- [ ] Mostrar automaticamente las listas afectadas cuando el nuevo costo las supera.
-- [ ] Enviar costo y nuevos precios afectados en la misma operacion.
-- [ ] Mostrar errores de listas faltantes o precios menores al costo.
-- [ ] Pantalla completa de administracion de listas.
+- [x] Quitar el campo y la columna de precio general del producto.
+- [x] Mostrar precios exclusivamente por lista.
+- [x] Crear y editar precios por producto/lista.
+- [x] Editar costo sin pedir precios cuando no hay listas afectadas.
+- [x] Mostrar automáticamente listas afectadas cuando el nuevo costo las supera.
+- [x] Enviar costo y precios afectados en la misma operación.
+- [x] Mostrar errores de listas faltantes o precios menores al costo.
+- [x] Pantalla de administración de listas, marcas y categorías.
 
 ### Inventario
 
 - [x] Consulta de saldos.
-- [~] Consulta de movimientos sin vista de detalle completa.
-- [ ] Formulario de ajuste manual.
-- [ ] Permisos, confirmacion y advertencia de saldo negativo.
+- [x] Saldos y vista paginada de movimientos por producto.
+- [x] Formulario de ajuste manual.
+- [x] Permisos, confirmación y advertencia de saldo negativo.
 
 ### Pedidos y ventas
 
-- [~] Listados reales de pedidos, ventas y pagos.
-- [ ] Conectar nuevo pedido con `/api/orders/confirm`.
-- [ ] Seleccionar cliente, lista y productos con stock.
-- [ ] Preview de descuentos y totales sin reemplazar el backend.
-- [ ] Ocultar controles de descuentos a usuarios que no sean `ADMIN`.
-- [ ] Idempotency key, bloqueo de doble envio y reintento seguro.
-- [ ] Detalle de venta con snapshots, pagos y saldo.
-- [ ] Registrar pagos parciales y combinados.
+- [x] Listados reales de pedidos, ventas y pagos.
+- [x] Nuevo pedido con cliente/lista/productos, stock, precios y confirmación en `/api/orders/confirm`.
+- [x] Preview de descuentos sin reemplazar el backend; solo `ADMIN_ALL` ve controles de descuento/precio manual.
+- [x] Idempotency key, bloqueo de doble envío y retry seguro con el mismo payload.
+- [x] Detalle de pedido/venta con snapshots, pagos y ledger por venta.
+- [x] Registrar pagos parciales/combinados y cobros durante la entrega.
+- [x] Imputación FIFO de pagos de cuenta corriente.
+- [~] Edición administrativa solo para pedidos sin descuentos guardados y con una sola lista (falta porcentaje original en la lectura).
+- [ ] Imputación de pago a deuda específica (falta consulta por cliente).
+- [ ] Devolución UI (falta lectura de líneas por `saleId`).
 
 ### Entrega, documentos y calidad
 
-- [ ] Marcar pedido/venta como entregado.
-- [ ] Registrar intentos fallidos y observaciones.
-- [ ] Cobrar durante la entrega con efectivo o transferencia.
-- [ ] Capturar numero opcional de transferencia.
-- [ ] Descargar e imprimir documentos desde la interfaz.
-- [ ] Compartir comprobantes por WhatsApp/link configurable.
+- [x] Marcar pedido como entregado y registrar intentos fallidos/observaciones.
+- [x] Cobrar durante entrega con efectivo/transferencia y referencia opcional.
+- [x] Cancelar pedidos con confirmación/permisos y descargar PDF A4/ticket.
+- [x] Solicitar notificaciones Email/WhatsApp y consultar estado individual.
+- [ ] Historial de intentos de entrega (no está en la lectura de detalle).
+- [ ] Panel de outbox completo (no existe endpoint operativo).
 - [x] Build y proxy `/api` funcionando.
-- [~] Tests de componentes parciales.
-- [ ] Tests de API client y flujos E2E.
-- [ ] Verificacion mobile de formularios y tablas.
+- [x] Tests Vitest de API client, componentes y flujos implementados.
+- [ ] Tests E2E login -> crear cliente -> pedido -> confirmar -> ver venta.
+- [~] Responsive aplicado; pruebas automatizadas mobile pendientes.
 
 ## Orden sugerido
 
-1. Completar pricing por lista y la regla de costo/precios, primero en backend y
-   luego en frontend.
-2. Conectar el nuevo pedido a la confirmacion atomica.
-3. Completar inventario, pagos, cuenta corriente y entrega.
-4. Completar documentos, notificaciones y calidad operativa.
+El detalle de funciones completas y ausencias de API se mantiene en
+[`frontend-backend-gaps.md`](frontend-backend-gaps.md).
+
+1. [x] Completar cobros durante la entrega: método, referencia opcional de transferencia y resto a cuenta corriente.
+2. [x] Imputar pagos a una deuda específica o mediante FIFO.
+3. [x] Configurar límite de crédito global y advertencias auditadas por exceso.
+4. [x] Crear outbox transaccional y worker con reintentos e idempotencia.
+5. [x] Añadir tickets y notificaciones configurables de WhatsApp/email con auditoría.
+6. [x] Implementar endurecimiento operativo: CI PostgreSQL, métricas/logs estructurados, backup/restauración, rollback y retención/purga. Falta activar la ejecución remota/programada y configurar réplica externa.
+
+Estado de verificación (2026-09-24): 301 tests, 0 fallos, 0 errores y 0
+omitidos; suite ejecutada con PostgreSQL 16.4 (Flyway V1–V20, 18 casos
+funcionales de integración). La restauración cifrada y el rechazo de alteración
+HMAC se comprobaron en una base descartable, eliminada al finalizar.
+
+### Próximas tareas backend
+
+- [ ] Confirmar primera ejecución de CI en GitHub Actions.
+- [ ] Activar la tarea diaria de backup y configurar copia externa.
+- [ ] Añadir ArchUnit o Spring Modulith.
+- [ ] Completar administración de roles/permisos y aumentar cobertura HTTP.

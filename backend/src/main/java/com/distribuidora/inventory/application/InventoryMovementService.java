@@ -14,7 +14,7 @@ import java.util.UUID;
 public class InventoryMovementService {
     private static final BigDecimal HALF = new BigDecimal("0.5");
     private static final Set<String> SUPPORTED_MOVEMENT_TYPES = Set.of(
-        "SALE", "SALE_CANCELLATION", "MANUAL_ADJUSTMENT");
+        "SALE", "SALE_CANCELLATION", "MANUAL_ADJUSTMENT", "RETURN");
 
     private final JdbcTemplate jdbc;
 
@@ -25,7 +25,7 @@ public class InventoryMovementService {
     @Transactional
     public void apply(UUID productId, BigDecimal delta, String movementType, UUID referenceId, String reason) {
         validate(productId, delta, movementType, reason);
-        if (!"SALE_CANCELLATION".equals(movementType)) {
+        if (!"SALE_CANCELLATION".equals(movementType) && !"RETURN".equals(movementType)) {
             String status = jdbc.queryForObject(
                 "select status from catalog.products where id = ?", String.class, productId);
             if (!"ACTIVE".equals(status)) {

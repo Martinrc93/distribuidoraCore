@@ -194,6 +194,18 @@ class OrderConfirmationServiceTest {
     }
 
     @Test
+    void confirmedOrderEditRequiresAdminBeforeReadingOrChangingData() {
+        authenticate("ORDER_CREATE");
+
+        assertThatThrownBy(() -> service.editConfirmed(UUID.randomUUID(), new com.distribuidora.order.api.OrderEditDtos.EditRequest(
+            null, List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO)))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+
+        verifyNoInteractions(jdbc, pricing, inventory, audit);
+    }
+
+    @Test
     void rejectsNullRequiredFieldsBeforeAnySideEffect() {
         var request = new OrderConfirmationDtos.ConfirmationRequest(
             "key-invalid", null, null, null, null, null);

@@ -1,6 +1,6 @@
 # Estado Actual Del Programa
 
-Estado relevado: 2026-09-20.
+Estado relevado: 2026-09-24.
 
 Este documento usa Mermaid para mostrar cómo quedó el sistema después de los
 bloques implementados. Las líneas punteadas representan capacidades previstas
@@ -15,7 +15,7 @@ flowchart LR
     Backend --> Flyway[Flyway migrations]
     Flyway --> DB[(PostgreSQL 16)]
     Backend --> Actuator[Actuator health/readiness]
-    Backend -.-> External[WhatsApp / Email]
+    Backend -->|webhook configurado| External[Proveedor WhatsApp / Email]
 
     subgraph Compose[Docker Compose]
         Frontend
@@ -41,9 +41,9 @@ flowchart TD
     Order[Order<br/>confirmación y lifecycle]
     Sale[Sale<br/>venta y snapshots]
     Payment[Payment<br/>pagos y cuenta corriente]
-    Document[Document<br/>PDF A4]
+    Document[Document<br/>PDF A4 y ticket 80 mm]
     Audit[Audit<br/>trazabilidad]
-    Notification[Notification<br/>pendiente]
+    Notification[Notification<br/>outbox, solicitudes, auditoría y reintentos]
 
     Identity --> Seller
     Identity --> Customer
@@ -102,6 +102,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> CONFIRMED: Confirmar pedido
+    CONFIRMED --> CONFIRMED: Editar líneas / ADMIN_ALL
     CONFIRMED --> CONFIRMED: Intento FAILED
     CONFIRMED --> DELIVERED: Intento DELIVERED
     CONFIRMED --> CANCELLED: Cancelar sin pagos / ADMIN_ALL
@@ -109,7 +110,7 @@ stateDiagram-v2
     CANCELLED --> [*]
 
     note right of CANCELLED
-      Revierte SALE con SALE_CANCELLATION
+      Revierte el neto de SALE y SALE_CANCELLATION
       y registra CREDIT en cuenta corriente
     end note
 ```
@@ -117,10 +118,11 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
     Sale[Venta CONFIRMED / DELIVERED / CANCELLED] --> Access{ORDER_CREATE<br/>o ADMIN_ALL}
-    Access -->|Permitido| Pdf[Generar PDF A4 bajo demanda]
+    Access -->|Permitido| Pdf[Generar PDF A4 o ticket bajo demanda]
     Access -->|Denegado| Forbidden[403 / ownership rechazado]
     Pdf --> Browser[Descarga o impresión]
     Pdf -. no almacena archivos .-> DB[(PostgreSQL snapshots)]
+    Pdf -->|solicitud explícita| Outbox[Webhook email / WhatsApp por outbox]
 ```
 
 ## Autorización Y Ownership

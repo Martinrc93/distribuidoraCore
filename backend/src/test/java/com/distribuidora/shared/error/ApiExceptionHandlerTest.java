@@ -1,5 +1,6 @@
 package com.distribuidora.shared.error;
 
+import com.distribuidora.catalog.application.ProductPriceValidationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ProblemDetail;
@@ -111,6 +112,41 @@ class ApiExceptionHandlerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(400);
         assertThat(problem).isNotNull();
         assertThat(problem.getProperties()).containsEntry("code", "INVALID_REQUEST");
+    }
+
+    @Test
+    void mapsProductPriceValidationExceptionToBadRequestWithAffectedPriceLists() throws Exception {
+        UUID listId = UUID.randomUUID();
+        ProductPriceValidationException exception = new ProductPriceValidationException(
+            "El nuevo costo supera listas activas",
+            java.util.List.of(new ProductPriceValidationException.AffectedPriceList(listId, "GENERAL", BigDecimal.valueOf(100)))
+        );
+
+        ResponseEntity<?> response = invoke(exception, "/api/products/123");
+        ProblemDetail problem = (ProblemDetail) response.getBody();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(problem).isNotNull();
+        assertThat(problem.getTitle()).isEqualTo("Invalid product prices");
+        assertThat(problem.getProperties()).containsEntry("code", "INVALID_PRODUCT_PRICES");
+        assertThat(problem.getProperties()).containsKey("affectedPriceLists");
+        assertThat(problem.getProperties().get("affectedPriceLists")).isEqualTo(exception.getAffectedPriceLists());
+    }
+
+    @Test
+    void mapsInvalidRefreshTokenToUnauthorizedProblemDetail() throws Exception {
+        com.distribuidora.identity.application.InvalidRefreshTokenException exception =
+            new com.distribuidora.identity.application.InvalidRefreshTokenException("Token de refresco expirado");
+
+        ResponseEntity<?> response = invoke(exception, "/api/auth/refresh");
+        ProblemDetail problem = (ProblemDetail) response.getBody();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(problem).isNotNull();
+        assertThat(problem.getTitle()).isEqualTo("Unauthorized");
+        assertThat(problem.getDetail()).isEqualTo("Token de refresco expirado");
+        assertThat(problem.getProperties()).containsEntry("code", "INVALID_REFRESH_TOKEN");
+        assertThat(problem.getProperties()).containsEntry("instance", "/api/auth/refresh");
     }
 
     private ResponseEntity<?> invoke(Exception exception, String path) throws Exception {

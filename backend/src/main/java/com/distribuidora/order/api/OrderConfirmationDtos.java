@@ -52,7 +52,15 @@ public final class OrderConfirmationDtos {
         String saleNumber,
         BigDecimal total,
         BigDecimal paid,
-        BigDecimal balance
+        BigDecimal balance,
+        CreditLimitWarning creditLimitWarning
     ) {
+        public ConfirmationResponse(UUID orderId, UUID saleId, String orderNumber, String saleNumber,
+                                    BigDecimal total, BigDecimal paid, BigDecimal balance) {
+            this(orderId, saleId, orderNumber, saleNumber, total, paid, balance, null);
+        }
+    }
+
+    public record CreditLimitWarning(BigDecimal creditLimit, BigDecimal projectedBalance, BigDecimal exceededBy) {
     }
 }

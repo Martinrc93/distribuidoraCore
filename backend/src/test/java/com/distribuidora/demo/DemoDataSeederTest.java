@@ -36,7 +36,9 @@ class DemoDataSeederTest {
             && value.contains("FROM catalog.price_lists")
             && value.contains("CROSS JOIN catalog.products")
             && value.contains("status = 'ACTIVE'")
+            && value.contains("products.cost")
             && value.contains("ON CONFLICT (price_list_id, product_id) DO NOTHING"));
+        assertThat(sql.getAllValues()).noneMatch(value -> value.contains("products.price"));
     }
 
     @Test
@@ -118,8 +120,9 @@ class DemoDataSeederTest {
     @Test
     void seedsV6ItemSnapshots() {
         when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(false);
+        when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
         when(passwordEncoder.encode("secret")).thenReturn("hash");
-        when(jdbc.queryForMap(anyString(), any()))
+        when(jdbc.queryForMap(anyString(), any(Object[].class)))
             .thenReturn(java.util.Map.of("name", "Producto", "price", new java.math.BigDecimal("10.0000")));
 
         seeder.run(mock(ApplicationArguments.class));

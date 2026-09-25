@@ -16,11 +16,26 @@ import com.distribuidora.order.application.IdempotencyConflictException;
 import com.distribuidora.document.application.SaleDocumentConflictException;
 import com.distribuidora.document.application.SaleDocumentNotFoundException;
 
-import java.util.Map;
+import com.distribuidora.catalog.application.ProductPriceValidationException;
+import com.distribuidora.identity.application.InvalidActivationTokenException;
+import com.distribuidora.identity.application.InvalidRefreshTokenException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(ProductPriceValidationException.class)
+    ResponseEntity<ProblemDetail> handleProductPriceValidation(ProductPriceValidationException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            exception.getMessage()
+        );
+        problem.setTitle("Invalid product prices");
+        problem.setProperty("code", "INVALID_PRODUCT_PRICES");
+        problem.setProperty("instance", request.getRequestURI());
+        problem.setProperty("affectedPriceLists", exception.getAffectedPriceLists());
+        return ResponseEntity.badRequest().body(problem);
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     ResponseEntity<ProblemDetail> handleBadRequest(IllegalArgumentException exception, HttpServletRequest request) {
@@ -62,6 +77,30 @@ public class ApiExceptionHandler {
         problem.setProperty("code", "INVALID_CREDENTIALS");
         problem.setProperty("instance", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    ResponseEntity<ProblemDetail> handleInvalidRefreshToken(InvalidRefreshTokenException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNAUTHORIZED,
+            exception.getMessage()
+        );
+        problem.setTitle("Unauthorized");
+        problem.setProperty("code", "INVALID_REFRESH_TOKEN");
+        problem.setProperty("instance", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
+    }
+
+    @ExceptionHandler(InvalidActivationTokenException.class)
+    ResponseEntity<ProblemDetail> handleInvalidActivationToken(InvalidActivationTokenException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            exception.getMessage()
+        );
+        problem.setTitle("Invalid activation token");
+        problem.setProperty("code", "INVALID_ACTIVATION_TOKEN");
+        problem.setProperty("instance", request.getRequestURI());
+        return ResponseEntity.badRequest().body(problem);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

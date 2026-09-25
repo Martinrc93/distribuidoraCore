@@ -187,6 +187,9 @@ Criterios:
 
 Aplicado mediante `V7__add_delivery_cancellation_support.sql`:
 
+- La migración V16 agrega `payment.payments.transfer_reference` nullable para
+  conservar el identificador opcional de transferencias cobradas al entregar.
+
 - Estados de pedido y venta `CONFIRMED`, `DELIVERED` y `CANCELLED`, con
   `delivered_at` y `cancelled_at`.
 - `orders.delivery_attempts` append-only, con número consecutivo, resultado
@@ -194,13 +197,31 @@ Aplicado mediante `V7__add_delivery_cancellation_support.sql`:
 - Un intento `FAILED` conserva pedido y venta en `CONFIRMED` y permite otro
   intento.
 - Un intento `DELIVERED` cambia pedido y venta juntos a `DELIVERED`; ambos son
-  terminales.
+  terminales. Puede registrar cobros `CASH`/`BANK_TRANSFER` y referencia
+  opcional de transferencia en la misma transacción.
 - La cancelación solo opera desde `CONFIRMED`, solo la puede ejecutar un
   administrador y rechaza ventas con importe pagado.
 - La cancelación revierte cada movimiento `SALE` con un movimiento
   `SALE_CANCELLATION`, crea un `CREDIT` por la deuda pendiente y disminuye el
   saldo del cliente en la misma transacción. Pedido y venta pasan a
   `CANCELLED`.
+
+### Edición administrativa de pedidos confirmados
+
+Aplicada sin migración de esquema mediante `PUT /api/orders/{orderId}`:
+
+- Solo `ADMIN_ALL` puede reemplazar las líneas de una orden y venta en estado
+  `CONFIRMED`.
+- La operación recalcula precios, descuentos y snapshots; mantiene el importe
+  pagado y ajusta la cuenta corriente con un asiento compensatorio append-only.
+- Las diferencias de inventario se registran como `SALE` o
+  `SALE_CANCELLATION` y quedan enlazadas a la orden.
+- La cancelación posterior revierte el saldo neto de movimientos por producto,
+  evitando restituir stock de más tras una edición.
+- Contrato HTTP y reglas: [`docs/api/order-edits.md`](../api/order-edits.md).
+- Pruebas unitarias y PostgreSQL verifican autorización, edición de líneas,
+  conciliación de deuda, stock, protección del importe pagado y cancelación
+  posterior.
 
 Contrato HTTP:
 
@@ -217,8 +238,10 @@ POST /api/orders/{orderId}/cancel
 -> 204 No Content
 ```
 
-`delivery-attempts` requiere `ORDER_CREATE` o `ADMIN_ALL`; `cancel` requiere
-`ADMIN_ALL`. El request de intento valida `result` no vacío, limitado a 20
+`delivery-attempts` requiere `SALE_DELIVER` o `ADMIN_ALL`; `cancel` requiere
+`ADMIN_ALL`. Al marcar `DELIVERED` se admiten pagos y referencia opcionales,
+según el [contrato de cobros](../api/delivery-collection.md). El request de
+intento valida `result` no vacío, limitado a 20
 caracteres, `observation` opcional de hasta 2000 caracteres y observación no
 blanca cuando `result` es `FAILED`.
 
@@ -236,13 +259,88 @@ Errores del contrato:
 Criterios V7:
 
 - Un `FAILED` persiste el intento y conserva ambos estados en `CONFIRMED`.
-- Un `DELIVERED` actualiza pedido y venta sin modificar stock, pagos ni ledger.
+- Un `DELIVERED` sin cobros no modifica pagos ni ledger; si se envían cobros,
+  registra pagos y crédito de cuenta corriente de forma atómica.
 - Cancelar revierte movimientos `SALE`, agrega `SALE_CANCELLATION`, registra el
   `CREDIT` de cuenta corriente y devuelve el balance del cliente al valor previo.
 - Reintentar después de `DELIVERED` o `CANCELLED` es rechazado y no agrega
   movimientos, intentos, créditos ni cambios de balance.
 - El smoke reproducible de PostgreSQL verifica estos invariantes sobre el
   volumen persistente de Compose.
+
+### V17: Imputación de pagos de cuenta corriente
+
+Aplicado mediante `V17__add_sale_payment_permission.sql` y el servicio de pagos:
+
+- `POST /api/customers/{customerId}/account-payments` permite imputación a una
+  venta específica o FIFO por fecha y UUID.
+- Cada porción crea un pago y un asiento `CREDIT`, incrementa `sale.paid` y
+  reduce el balance del cliente, todo en una transacción auditada.
+- La autoridad `SALE_PAYMENT` se asigna a vendedores y se limita a clientes
+  asignados; `ADMIN_ALL` mantiene acceso administrativo.
+- Se bloquean primero las ventas afectadas y después el cliente; pruebas reales
+  concurrentes confirman que no se aplica dos veces la misma deuda.
+- Contrato: [`docs/api/account-payments.md`](../api/account-payments.md).
+
+### V18: Límite de crédito global
+
+Aplicado mediante `V18__add_global_credit_limit.sql`:
+
+- `GET/PUT /api/settings/credit-limit` permite a administradores consultar,
+  establecer o desactivar el límite global.
+- La confirmación calcula el saldo proyectado del cliente con la nueva deuda a
+  cuenta corriente. Si excede el límite, confirma igualmente y devuelve una
+  advertencia con límite, saldo proyectado y exceso.
+- La venta conserva snapshots del límite y saldo calculados; el evento
+  `CREDIT_LIMIT_WARNING` queda auditado en la misma transacción. Un reintento
+  idempotente devuelve la advertencia guardada sin duplicar la auditoría.
+- Contrato: [`docs/api/credit-limit.md`](../api/credit-limit.md).
+
+Verificación: PostgreSQL 16.4, Flyway V1–V18, 16 casos de integración y suite
+Maven completa con 290 tests, 0 fallos, 0 errores y 0 omitidos.
+
+### V19: Outbox transaccional y worker
+
+Aplicado mediante `V19__create_transactional_outbox.sql`:
+
+- La confirmación escribe `ORDER_CONFIRMED` y un payload JSONB mínimo en la
+  misma transacción comercial. La clave única `ORDER_CONFIRMED:<orderId>` evita
+  duplicados por reintentos de la confirmación.
+- Un worker programado reclama hasta 50 eventos cada cinco segundos mediante
+  `FOR UPDATE SKIP LOCKED`; leases de dos minutos recuperan eventos abandonados.
+- Los consumidores reciben un ID de evento estable. El despacho es al menos
+  una vez y los consumidores deben deduplicar por ID.
+- Los fallos usan backoff exponencial de 30 segundos hasta seis horas y se
+  agotan tras ocho intentos; se conserva el error limitado a 2000 caracteres.
+- Se puede desactivar el polling con `OUTBOX_WORKER_ENABLED=false` y modificar
+  su frecuencia con `OUTBOX_POLL_INTERVAL_MS`.
+- Diseño operativo: [`docs/architecture/integration-architecture.md`](../architecture/integration-architecture.md).
+
+Verificación: PostgreSQL 16.4, Flyway V1–V19, 17 casos funcionales de
+integración y suite Maven completa con 293 tests, 0 fallos, 0 errores y 0
+omitidos.
+
+### V20: Tickets y solicitudes de notificación
+
+Aplicado mediante `V20__create_notification_delivery_requests.sql`:
+
+- Se agrega `GET /api/orders/{orderId}/documents/ticket`, que genera un ticket
+  PDF de 80 mm bajo demanda desde snapshots y aplica ownership.
+- `POST /api/orders/{orderId}/notifications` encola solicitudes idempotentes de
+  `EMAIL` o `WHATSAPP`, con formato `A4` o `TICKET`. El `GET` anidado permite
+  consultar estado e intentos bajo la misma regla de ownership.
+- El envío consume outbox con webhooks de proveedores configurados por entorno;
+  URL, token y timeout no se guardan en PostgreSQL.
+- Se auditan solicitud (destinatario enmascarado), inicio/resultado de cada
+  intento y agotamiento de reintentos. La solicitud guarda su estado operativo.
+- Contrato/configuración: [`docs/api/notifications.md`](../api/notifications.md).
+
+El registro operativo conserva el email o teléfono requerido por el proveedor.
+La tarea 7 implementa purga a 90 días para solicitudes terminales; ver
+[`postgres-backup-restore.md`](../operations/postgres-backup-restore.md).
+
+Verificación: PostgreSQL 16.4, Flyway V1–V20, 18 casos funcionales y suite Maven
+completa con 299 tests, 0 fallos, 0 errores y 0 omitidos.
 
 ## Fase 6: Documents y Notifications
 
@@ -255,12 +353,16 @@ Aplicado:
 - El endpoint requiere `ORDER_CREATE` o `ADMIN_ALL` y admite ventas
   `CONFIRMED`, `DELIVERED` y `CANCELLED`.
 
-Pendiente explícitamente:
+Implementado:
 
-- Tickets y otros formatos de comprobante.
-- Envío explícito por WhatsApp mediante link o proveedor configurable.
-- Envío por email.
-- Outbox para efectos secundarios sin ocultar invariantes transaccionales.
+- Ticket PDF de 80 mm protegido por ownership.
+- Solicitudes asíncronas e idempotentes de comprobantes por email o WhatsApp.
+- Webhooks externos configurables mediante variables de entorno y reintentos
+  idempotentes desde outbox.
+- Auditoría de solicitud y de intentos, con consulta del estado.
+
+Pendiente: configurar URLs y credenciales de proveedores por entorno, y definir
+retención/purga de destinatarios.
 
 Criterios:
 
@@ -270,16 +372,32 @@ Criterios:
 
 ## Fase 7: Operación y endurecimiento
 
-Implementar:
+Implementado:
 
-- Backups PostgreSQL diarios, retención definida y verificación de tamaño.
-- Prueba de restauración automatizada.
-- Logs estructurados con correlation ID.
-- Métricas básicas de latencia, errores y disponibilidad.
-- Tests arquitectónicos ArchUnit o Spring Modulith.
+- Workflow de CI con PostgreSQL 16 que ejecuta la suite Maven opt-in.
+- Logs ECS JSON con request ID seguro en MDC; métricas HTTP de latencia y
+  métricas outbox de pendientes, éxito, fallo, agotamiento y duración.
+- Scripts PowerShell de backup custom cifrado con AES-256-CBC y HMAC-SHA256,
+  retención local, registro de tarea diaria y restauración con validación HMAC.
+- Prueba de restauración/tamper ejecutada en una base PostgreSQL descartable.
+- Procedimiento de rollback y recuperación documentado.
+- Purga a 90 días de solicitudes terminales y eventos outbox; se conserva la
+  auditoría con destinatario enmascarado.
+
+Pendiente de activación o evolución:
+
+- Confirmar primera ejecución del workflow en GitHub Actions.
+- Registrar/activar la tarea diaria en el host operativo y configurar réplica
+  externa de backups cifrados.
+- Incorporar ArchUnit o Spring Modulith.
 
 Criterios:
 
 - Las dependencias entre módulos violatorias fallan en CI.
 - Existe procedimiento de restauración probado.
 - Los eventos críticos pueden rastrearse desde request hasta auditoría.
+
+Verificación de cierre (2026-09-24): suite Maven completa **301 tests, 0
+fallos, 0 errores y 0 omitidos**; PostgreSQL 16.4, Flyway V1–V20 y 18 pruebas
+funcionales. La restauración/tamper se verificó por separado en una base
+descartable, que se eliminó al concluir.

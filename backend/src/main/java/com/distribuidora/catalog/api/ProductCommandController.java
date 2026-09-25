@@ -10,6 +10,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -36,11 +37,29 @@ public class ProductCommandController {
         service.setStatus(id, body.status()); return ResponseEntity.noContent().build();
     }
 
-    public record ProductPayload(@NotBlank String sku, @NotBlank String name, @NotBlank String category,
-                                 @NotBlank String presentation, @NotNull @DecimalMin("0") BigDecimal cost,
-                                 @NotNull @DecimalMin("0") BigDecimal price) {
-        ProductCommandService.ProductInput input() { return new ProductCommandService.ProductInput(sku, name, category, presentation, cost, price); }
+    public record ProductPricePayload(
+        @NotNull UUID priceListId,
+        @NotNull @DecimalMin("0") BigDecimal price
+    ) { }
+
+    public record ProductPayload(
+        @NotBlank String sku,
+        @NotBlank String name,
+        @NotBlank String category,
+        @NotBlank String presentation,
+        @NotNull @DecimalMin("0") BigDecimal cost,
+        @Valid List<ProductPricePayload> prices,
+        UUID categoryId,
+        UUID brandId
+    ) {
+        public ProductCommandService.ProductInput input() {
+            List<ProductCommandService.ProductPriceInput> priceInputs = prices != null
+                ? prices.stream().map(p -> new ProductCommandService.ProductPriceInput(p.priceListId(), p.price())).toList()
+                : List.of();
+            return new ProductCommandService.ProductInput(sku, name, category, presentation, cost, priceInputs, categoryId, brandId);
+        }
     }
+
     public record StatusPayload(String status) { }
     public record IdResponse(UUID id) { }
 }

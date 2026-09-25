@@ -8,6 +8,7 @@ flowchart TD
     D --> E{Destino valido?}
     E -->|No| F[Mostrar error]
     E -->|Si| G[Actualizar asignaciones]
-    G --> H[Conservar historial de pedidos]
-    H --> I[Auditar reasignacion]
+    G --> H[Reasignar solo pedidos CONFIRMED]
+    H --> J[Conservar pedidos DELIVERED y CANCELLED]
+    J --> I[Auditar reasignacion]
 ```

@@ -45,6 +45,8 @@ Responsable de la identidad y el acceso al sistema:
 - Desbloquear usuarios.
 - Inhabilitar usuarios mediante baja lógica.
 - Gestionar roles y permisos.
+- Emitir refresh tokens rotativos y revocables almacenados como hash SHA-256.
+- Detectar reuso de refresh tokens revocados e invalidar sesiones preventivamente.
 - Revocar sesiones.
 
 Un usuario inhabilitado no puede iniciar sesión ni ser asignado como vendedor.
@@ -103,13 +105,18 @@ nombre = marca + " " + presentación
 
 El producto es el artículo vendible y la unidad controlada por inventario.
 
-La edición del costo y la actualización obligatoria de precios afectados por
-lista quedan documentadas como implementación pendiente.
+La edición del costo valida atómicamente contra los precios de todas las listas
+activas. Si el nuevo costo supera el precio de una o más listas activas, la
+operación exige enviar nuevos precios mayores o iguales al costo para todas las
+listas afectadas; de lo contrario, la edición de costo se procesa sin exigir
+precios. El costo y los precios afectados se persisten en una sola transacción.
+El backend rechaza el costo e informa las listas afectadas si faltan precios de
+reemplazo.
 
 #### Listas de precios
 
-- Se crean diez listas iniciales: `Lista 1` a `Lista 10`.
-- Las listas 1 a 3 quedan activas; las listas 4 a 10 quedan inactivas.
+- Se crean diez listas iniciales: `Lista general` (`GENERAL`), `Lista 2` (`LISTA_2`) a `Lista 10` (`LISTA_10`).
+- Las tres primeras quedan activas; de la 4 a la 10 quedan inactivas.
 - El administrador puede cambiar sus nombres.
 - El administrador puede agregar listas hasta un máximo total de diez.
 - El máximo incluye listas activas e inactivas.
@@ -119,7 +126,7 @@ lista quedan documentadas como implementación pendiente.
 - Una lista dada de baja no se usa en nuevos pedidos.
 - Los pedidos históricos conservan el precio aplicado.
 - Un cliente puede tener una lista asignada, pero no es obligatorio.
-- `LISTA_1` es la lista predeterminada cuando el cliente no tiene una lista
+- `GENERAL` (`Lista general`) es la lista predeterminada cuando el cliente no tiene una lista
   asignada; no se crea una cuarta lista automática.
 - La lista puede cambiarse durante la creación del pedido.
 - Si falta el precio en la lista activa seleccionada, se prueban las listas
@@ -151,7 +158,10 @@ Reglas:
 - La confirmación de una venta registra una salida.
 - La cancelación de una venta no pagada registra una reversión.
 - La edición de un pedido confirmado calcula un delta y registra movimientos
-  compensatorios.
+  compensatorios. Solo puede editarse mientras pedido y venta sigan en
+  `CONFIRMED`, mediante `ADMIN_ALL`; se conservan los pagos existentes y la
+  cuenta corriente se ajusta por el cambio de total. No se permite reducir el
+  total por debajo del importe pagado.
 
 Tipos iniciales de movimiento:
 

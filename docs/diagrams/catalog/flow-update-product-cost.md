@@ -1,6 +1,6 @@
 # Actualizacion de costo y precios por lista
 
-> **Implementacion pendiente:** este flujo define la regla de negocio, pero todavia no esta implementado en backend ni frontend.
+> Regla de negocio implementada y verificada en el backend; la adaptación del formulario en el frontend para mostrar listas afectadas está en desarrollo.
 
 ```mermaid
 flowchart TD

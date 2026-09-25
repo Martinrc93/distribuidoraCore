@@ -76,6 +76,7 @@ public class UserAccount {
     public UserStatus getStatus() { return status; }
     public short getFailedLoginAttempts() { return failedLoginAttempts; }
     public Instant getLockedUntil() { return lockedUntil; }
+    public long getVersion() { return version; }
 
     public void registerFailedLogin() {
         failedLoginAttempts++;
@@ -88,5 +89,22 @@ public class UserAccount {
     public void resetFailedLogins() {
         failedLoginAttempts = 0;
         lockedUntil = null;
+    }
+
+    public void activate(String newPasswordHash) {
+        this.status = UserStatus.ACTIVE;
+        this.passwordHash = newPasswordHash;
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+    }
+
+    public void block() {
+        this.status = UserStatus.BLOCKED;
+    }
+
+    public void unblock() {
+        this.status = UserStatus.ACTIVE;
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
     }
 }

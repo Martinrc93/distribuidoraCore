@@ -103,12 +103,14 @@ token de un solo uso.
 
 - Autenticación independiente de proveedores externos.
 - Revocación explícita de refresh tokens.
+- El access JWT incluye la versión de sesión del usuario; el filtro verifica estado y versión actuales para que bloqueo y revocación administrativa invaliden access tokens ya emitidos.
 - Autorización centralizada y auditable.
 - Preparado para agregar OIDC en el futuro.
 
 ### Negativas
 
 - JWT y refresh tokens requieren rotación, revocación y manejo de expiración.
+- Para invalidar access JWT inmediatamente, cada request autenticado consulta el estado y la versión de sesión del usuario; por eso la autorización requiere acceso a la base de datos.
 - Cambios de permisos pueden tardar hasta la renovación del access token.
 - Email y gestión de tokens pasan a ser responsabilidades del sistema.
 
