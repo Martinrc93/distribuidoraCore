@@ -103,7 +103,7 @@ ciclos. Los omitidos son los casos PostgreSQL opt-in; esta ejecución no tenía
 `POSTGRES_TEST_URL`. La verificación PostgreSQL previa se registra por separado
 en el estado del backend.
 
-`PostgresBackendFixesIntegrationTest` habilita sus 24 casos cuando se define
+`PostgresBackendFixesIntegrationTest` habilita sus 25 casos cuando se define
 `POSTGRES_TEST_URL`; activa Flyway y `ddl-auto=validate`, por lo que debe apuntar
 siempre a una base descartable. Verificación completa previa del 2026-09-24:
 **337 tests, 0 fallos, 0 errores y 0 omitidos**; los 21 casos PostgreSQL pasaron

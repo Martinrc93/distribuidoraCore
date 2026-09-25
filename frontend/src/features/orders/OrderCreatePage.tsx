@@ -216,7 +216,7 @@ export default function OrderCreatePage() {
   return <>
     <PageHeader eyebrow="Operación" title="Nuevo pedido" actions={<Button variant="secondary" href="/orders">Cancelar</Button>} />
     {readLoading ? <Panel><EmptyState title="Cargando datos del pedido" description={isAdmin ? 'Consultando clientes, productos, vendedores y listas activas.' : 'Consultando clientes, productos y listas activas.'} /></Panel>
-      : readError ? <Panel><EmptyState title="No se pudo preparar el pedido" description={readError.message} /></Panel>
+      : readError ? <Panel><EmptyState title="No se pudo preparar el pedido" description={readError.message} action={isAdmin && sellersQuery.isError && readError === sellersQuery.error ? <Button variant="secondary" onClick={() => sellersQuery.refetch()}>Reintentar vendedores</Button> : undefined} /></Panel>
         : <form onSubmit={confirm}>
           {error && <p className="error-text" role="alert">{error}</p>}
           <div className="order-layout">

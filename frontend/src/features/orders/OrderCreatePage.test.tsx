@@ -74,6 +74,27 @@ describe('OrderCreatePage', () => {
     expect(fetchMock).not.toHaveBeenCalledWith('/api/sellers?page=0&size=100', expect.anything())
   })
 
+  it('retries a failed admin seller-list read and then shows the order form', async () => {
+    const user = userEvent.setup()
+    let sellerFetches = 0
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      if (String(input).startsWith('/api/sellers')) {
+        sellerFetches += 1
+        if (sellerFetches === 1) return response({}, 503)
+      }
+      return catalogResponse(input)
+    })
+    renderPage(['ADMIN_ALL', 'ORDER_CREATE'])
+
+    expect(await screen.findByText('No se pudo preparar el pedido')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Cliente')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reintentar vendedores' }))
+
+    expect(await screen.findByLabelText('Cliente')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(sellerFetches).toBe(2)
+  })
+
   it('allows an admin to override the seller and resets it when the customer changes', async () => {
     const user = userEvent.setup()
     vi.spyOn(global, 'fetch').mockImplementation((input) => catalogResponse(input))

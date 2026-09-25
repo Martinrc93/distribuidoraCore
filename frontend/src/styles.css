@@ -107,7 +107,9 @@ h3 { font-size: 14px; margin-bottom: 5px; }
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
 .pagination div { display: flex; gap: 7px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 25px; }
-.order-customer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 14px; margin-bottom: 25px; }
+.order-customer-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-bottom: 25px; }
+.order-customer-grid > .field { min-width: 0; }
+.order-customer-grid .select { width: 100%; min-width: 0; }
 .field { display: grid; gap: 7px; color: #62625d; font-size: 11px; font-weight: 700; }
 .field .input, .field .select { color: var(--ink); font-weight: 400; }
 .read-only-field { display: flex; min-height: 39px; align-items: center; color: var(--ink); font-size: 13px; font-weight: 400; }

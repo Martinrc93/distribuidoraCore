@@ -218,7 +218,7 @@ class OrderConfirmationServiceTest {
 
         var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
-        assertThat(orderInsert.getValue()).contains(selectedSellerId);
+        assertThat(orderInsert.getValue()[3]).isEqualTo(selectedSellerId);
     }
 
     @Test
