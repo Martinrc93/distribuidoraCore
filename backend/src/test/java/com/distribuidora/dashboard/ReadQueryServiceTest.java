@@ -44,6 +44,8 @@ class ReadQueryServiceTest {
         assertThat(sql.getAllValues()).allSatisfy(query -> {
             assertThat(query).contains("p.sku");
             assertThat(query).doesNotContain("p.price");
+            assertThat(query).contains("left join inventory.inventory_balances ib on ib.product_id = p.id");
+            assertThat(query).doesNotContain("sum(quantity)");
         });
         assertThat(sql.getAllValues().get(0)).contains("p.cost");
         assertThat(sql.getAllValues().get(1)).doesNotContain("p.cost");
@@ -103,6 +105,7 @@ class ReadQueryServiceTest {
             "order by sm.created_at desc",
             "limit ? offset ?"
         );
+        assertThat(sql.getValue()).doesNotContain("depot_id", "depotCode", "inventory.depots");
         assertThat(parameters.getValue()).containsExactly(productId, 2, 2);
         verify(jdbc).queryForObject(
             eq("select count(*) from inventory.stock_movements where product_id = ?"),

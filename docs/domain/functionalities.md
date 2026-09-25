@@ -171,15 +171,15 @@ SALE_CANCELLATION
 MANUAL_ENTRY
 MANUAL_ADJUSTMENT
 RETURN
-TRANSFER_OUT
-TRANSFER_IN
 ```
 
-Cada saldo pertenece a un depósito y producto. `CENTRAL` es el predeterminado;
-V23 migró allí los saldos y operaciones existentes. Los pedidos guardan el
-depósito seleccionado, las transferencias crean movimientos pareados bajo lock
-de ambos saldos y las devoluciones/cancelaciones reponen el stock donde se
-descontó. El contrato está en [`docs/api/inventory.md`](../api/inventory.md).
+El stock activo es un saldo único por producto. V24 suma por producto los
+balances anteriores, elimina las asociaciones a depósitos y conserva los
+registros históricos de movimientos, pedidos y ventas. Los nuevos pedidos,
+ediciones, devoluciones, cancelaciones y ajustes modifican directamente ese
+saldo. No se crean nuevas transferencias; si existen, sus movimientos `TRANSFER`
+permanecen solo como parte del historial previo a V24. El contrato está en
+[`docs/api/inventory.md`](../api/inventory.md).
 
 ### Order
 

@@ -7,9 +7,11 @@ Accepted
 ## Context
 
 El usuario carga un pedido en el frontend, selecciona un cliente y obtiene su
-vendedor asignado. El pedido no se persiste como borrador: recién al confirmar
-se crea el pedido confirmado, la venta, el impacto de stock y la información de
-pago.
+vendedor asignado como valor inicial. Un administrador puede seleccionar otro
+perfil seller existente para el pedido; los demás usuarios deben conservar la
+atribución a su perfil seller autenticado. El pedido no se persiste como
+borrador: recién al confirmar se crea el pedido confirmado, la venta, el impacto
+de stock y la información de pago.
 
 El sistema necesita listas de precios, overrides, descuentos acumulables,
 pagos parciales, pagos combinados y cuenta corriente interna.
@@ -55,6 +57,13 @@ Reglas:
 - El cliente puede tener una lista de precios opcional.
 - Si no tiene lista, se utiliza `GENERAL`.
 - La lista puede cambiarse durante la creación del pedido.
+- `sellerId` es opcional en la confirmación y solo `ADMIN_ALL` puede elegirlo;
+  si se omite, se utiliza el vendedor asignado al cliente.
+- El vendedor resuelto se persiste en `orders.orders.seller_id`. Para usuarios
+  no administradores el servidor exige el perfil seller autenticado, aunque el
+  request incluya otro `sellerId`.
+- La atribución de un pedido no cambia la asignación del cliente en
+  `customer.customers.seller_id`.
 - Los descuentos de línea y total son acumulables.
 
 Pagos:

@@ -30,10 +30,10 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 - Se reemplazan los snapshots de líneas de pedido y venta con los precios y descuentos calculados para esta edición.
 - El ledger de la venta se ajusta por la diferencia entre el total nuevo y el total anterior con un asiento append-only `DEBIT` o `CREDIT`; así se conservan pagos a cuenta previamente imputados. El balance agregado del cliente se ajusta por el mismo delta.
 - La diferencia de cantidades por producto genera movimientos compensatorios: más unidades vendidas crea `SALE` negativo; reducción o eliminación de unidades crea `SALE_CANCELLATION` positivo.
-- El depósito elegido al confirmar el pedido se conserva; la edición aplica esos deltas en el mismo depósito y no permite cambiarlo.
+- Los deltas de cantidades se aplican al saldo único por producto; el pedido no tiene atributo de depósito.
 - Todos los cambios de líneas, stock, ledger, balance y auditoría `ORDER_EDIT` ocurren en una transacción. Si falla una parte, no persisten cambios parciales.
 - La cancelación posterior revierte el efecto neto por producto de movimientos `SALE` y `SALE_CANCELLATION`, incluso si el pedido tuvo ediciones previas.
-- La reversión agrupa los movimientos por depósito y producto, para reponer exactamente donde se descontó.
+- La reversión agrupa los movimientos por producto para restaurar el saldo único sin sobre-restaurar ediciones anteriores.
 
 Respuesta `200 OK`:
 

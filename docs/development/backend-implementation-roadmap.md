@@ -143,12 +143,12 @@ Implementado y ampliado:
 - Ajuste manual de stock mediante delta firmado.
 - Lock pesimista del balance dentro de la transacción.
 - Auditoría del ajuste manual con operación `STOCK_ADJUSTMENT`.
-- Depósitos con `CENTRAL` como predeterminado y migración V23 de saldos y
-  movimientos existentes.
-- Balances por depósito, ajustes y transferencias atómicas con locks ordenados.
-- Depósito persistido en pedidos/ventas y conservado por ediciones,
-  devoluciones y cancelaciones; lecturas agregadas mantienen el contrato
-  anterior.
+- V24 consolida los balances V23 en un único saldo por producto y elimina las
+  tablas/columnas de depósitos.
+- Ajustes, ventas, ediciones, devoluciones y cancelaciones modifican directamente
+  el saldo único bajo lock transaccional.
+- Lecturas de stock y movimientos no exponen ubicación; administración de
+  depósitos y transferencias ya no forman parte del dominio.
 
 Evolución completada:
 

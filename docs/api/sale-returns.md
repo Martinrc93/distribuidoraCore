@@ -37,7 +37,7 @@ La operación devuelve `201 Created`:
 }
 ```
 
-La cabecera, las líneas, el movimiento de inventario `RETURN` y la auditoría se guardan en una transacción. La venta se bloquea durante la validación para serializar devoluciones simultáneas. Un error al actualizar cualquier saldo revierte toda la operación. La devolución repone el depósito guardado en la venta, incluso si se encuentra inactivo. Los productos inactivos pueden volver al stock; el balance histórico del depósito debe existir.
+La cabecera, las líneas, el movimiento de inventario `RETURN` y la auditoría se guardan en una transacción. La venta se bloquea durante la validación para serializar devoluciones simultáneas. Un error al actualizar el saldo único del producto revierte toda la operación. Los productos inactivos pueden volver al stock.
 
 Las cantidades devueltas y el stock quedan registrados, pero esta operación no emite reembolsos ni créditos de cuenta corriente y no cambia el total pagado de la venta. La devolución financiera queda pendiente de una decisión de negocio.
 
@@ -48,4 +48,4 @@ Respuestas de error:
 - `404`: venta inexistente.
 - `409 CONFLICT`: venta todavía no entregada o cantidad superior al saldo disponible para devolución.
 
-Las devoluciones requieren las tablas creadas en `V15__add_sale_returns.sql` y el depósito persistido por venta en V23.
+Las devoluciones requieren las tablas creadas en `V15__add_sale_returns.sql`. El movimiento `RETURN` aumenta directamente el saldo único del producto.

@@ -63,16 +63,16 @@ Estado actualizado: 2026-09-25
 - [x] Reversión `SALE_CANCELLATION` al cancelar una venta confirmada sin pagos.
 - [x] Edición administrativa de pedidos confirmados con deltas `SALE`/`SALE_CANCELLATION`; pagos existentes se conservan y el ledger compensa la deuda. La cancelación revierte el efecto neto de ambos tipos de movimiento.
 - [x] Devoluciones `RETURN` parciales por línea de venta; límite acumulado bajo lock, movimiento de stock y auditoría transaccionales. Endpoint documentado en `docs/api/sale-returns.md`.
-- [x] Depósito `CENTRAL` predeterminado; V23 migra balances/movimientos y asigna operaciones existentes sin perder stock.
-- [x] CRUD administrativo y consulta paginada de balances por depósito; el predeterminado no se desactiva.
-- [x] Ajustes opcionales por depósito y transferencias atómicas, con lock determinista, saldo suficiente en origen, dos movimientos y auditoría.
-- [x] Confirmar pedidos en un depósito seleccionado; edición, devolución y cancelación conservan/restauran el depósito original.
-- [x] `/api/inventory` suma stock de todos los depósitos y los movimientos exponen su depósito; contrato en `docs/api/inventory.md`.
+- [x] V24 unifica `inventory_balances` a una fila por producto y consolida balances V23 mediante suma.
+- [x] Ajustes y movimientos actualizan el saldo único por producto bajo lock pesimista.
+- [x] Confirmación, edición, devolución y cancelación actualizan directamente el saldo único.
+- [x] API paginada de stock y movimientos sin campos de ubicación; se eliminaron endpoints de depósitos y transferencias.
 - [x] Diagramas de flujo y ER actualizados en `docs/diagrams/inventory/`.
 
 ## Order, Sale, Payment Y Cuenta Corriente
 
 - [x] Confirmación atómica `POST /api/orders/confirm`.
+- [x] Atribución de vendedor al confirmar: admin puede enviar `sellerId` opcional o usar el asignado al cliente por defecto; el servidor fuerza el perfil autenticado para no-admin. Se persiste en `orders.orders.seller_id` sin modificar la asignación del cliente.
 - [x] No se persisten borradores.
 - [x] Snapshots de producto, lista, precio y descuentos.
 - [x] Descuentos de línea y descuento total con `BigDecimal`.
@@ -111,8 +111,9 @@ Estado actualizado: 2026-09-25
 - [x] Verificación final con matriz HTTP y PostgreSQL descartable (2026-09-24): 337 tests, 0 fallos, 0 errores y 0 omitidos; los 21 casos PostgreSQL pasaron en PostgreSQL 16.4/Flyway V1–V20, incluyendo login HTTP y revocación de JWT por cambio de rol/permisos.
 - [x] Historial/vigencias de precios (2026-09-24): 31 tests dirigidos de pricing/productos pasaron; 22 casos de integración pasaron en PostgreSQL 16.4, Flyway V1–V21 y `ddl-auto=validate` sobre instancia descartable. PostgreSQL encontró un alias inválido en la primera ejecución; se corrigió y la suite completa pasó en la repetición.
 - [x] Reglas de descuentos (2026-09-24): 31 tests dirigidos pasaron; 23 casos de integración pasaron en PostgreSQL 16.4, Flyway V1–V22 y `ddl-auto=validate` sobre base nueva del cluster TEMP verificado.
-- [x] Multi-depósito (2026-09-24): 56 tests dirigidos pasaron, incluidos seis casos de autorización HTTP; 24 casos de integración pasaron en PostgreSQL 16.4, Flyway V1–V23 y `ddl-auto=validate` en una base nueva del cluster TEMP verificado.
+- [x] Multi-depósito (2026-09-24, histórico anterior a V24): 56 tests dirigidos y 24 casos de integración pasaron con Flyway V1–V23; V24 retiró después esa funcionalidad.
 - [x] Suite completa de cierre del backlog (2026-09-24): **350 tests, 0 fallos, 0 errores y 0 omitidos**, incluidos 24 casos PostgreSQL 16.4/Flyway V1–V23 y validación JPA en una base descartable nueva; ArchUnit global pasó.
+- [x] Verificación Task 3 seller-selection (2026-09-25): `mvn test`: **358 tests, 0 fallos, 0 errores, 25 omitidos**; `PostgresBackendFixesIntegrationTest`: **25 tests, 0 fallos, 0 errores, 0 omitidos** en PostgreSQL 16.15 descartable con Flyway V1–V24 y validación JPA. Frontend: **88 tests pasaron** y `npm run build` finalizó correctamente.
 - [x] Verificación de migraciones V1–V20 en PostgreSQL descartable.
 - [x] Todos los tests `*ControllerTest` ejercitan rutas mediante `MockMvc`; se agregaron 14 casos para marcas, categorías, pagos, entregas, devoluciones, vendedores y límite de crédito.
 - [x] Matriz de cadena real: seis casos para las authorities actuales (`ADMIN_ALL`, `USER_MANAGE`, `ORDER_CREATE`, `SALE_PAYMENT`, `SALE_DELIVER`, `STOCK_ADJUST`) y límites entre rutas críticas.
@@ -178,7 +179,7 @@ no tenía `POSTGRES_TEST_URL`.
 
 Estado del backlog autorizado (2026-09-24): historial/vigencias de precios,
 reglas de descuentos persistidas y multi-depósito completados, probados y
-documentados. Los tres ítems de este lote están cerrados. La verificación
+documentados entonces; V24 retiró luego multi-depósito. Los tres ítems de este lote están cerrados. La verificación
 completa final pasó con 350 tests. Los tres ítems de implementación de este
 lote quedaron cerrados. La configuración operativa de URLs y credenciales
 reales del proveedor de notificaciones sigue pendiente; no se habilitaron

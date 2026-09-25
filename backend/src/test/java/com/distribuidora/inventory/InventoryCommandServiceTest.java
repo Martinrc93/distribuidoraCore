@@ -51,9 +51,8 @@ class InventoryCommandServiceTest {
         UUID productId = UUID.randomUUID();
         authenticate();
         when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
-        when(jdbc.queryForObject(eq("select status from inventory.depots where id = ?"), eq(String.class), any(UUID.class)))
-            .thenReturn("ACTIVE");
-        when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), any(UUID.class), eq(productId))).thenReturn(BigDecimal.TEN);
+        when(jdbc.queryForObject(eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
+            eq(BigDecimal.class), eq(productId))).thenReturn(BigDecimal.TEN);
 
         service.adjust(productId, new BigDecimal("-1.5"), "Corrección");
         service.adjust(productId, new BigDecimal("2.0"), "Reposición");
@@ -83,25 +82,22 @@ class InventoryCommandServiceTest {
             eq("select status from catalog.products where id = ?"), eq(String.class), eq(productId)))
             .thenReturn("ACTIVE");
         when(jdbc.queryForObject(
-            eq("select quantity from inventory.inventory_balances where depot_id = ? and product_id = ? for update"),
-            eq(BigDecimal.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId)))
+            eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
+            eq(BigDecimal.class), eq(productId)))
             .thenReturn(new BigDecimal("10.0"));
-        when(jdbc.queryForObject(eq("select status from inventory.depots where id = ?"), eq(String.class), any(UUID.class)))
-            .thenReturn("ACTIVE");
 
         BigDecimal delta = new BigDecimal("-1.5");
         service.adjust(productId, delta, "Merma");
 
         verify(jdbc).update(
-            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where depot_id = ? and product_id = ?"),
-            eq(new BigDecimal("8.5")), any(), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId));
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
+            eq(new BigDecimal("8.5")), any(), eq(productId));
         verify(jdbc).update(
-            eq("insert into inventory.stock_movements(id, depot_id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-            any(UUID.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), eq("MANUAL_ADJUSTMENT"), eq(delta), eq("Merma"),
+            eq("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)"),
+            any(UUID.class), eq(productId), eq("MANUAL_ADJUSTMENT"), eq(delta), eq("Merma"),
             eq(null), eq(null), any());
         verify(audit).recordWithinTransaction(eq(actorId), eq("STOCK_ADJUSTMENT"), eq("PRODUCT"), eq(productId.toString()),
-            eq("SUCCESS"), eq(Map.of("depotId", InventoryMovementService.DEFAULT_DEPOT_ID.toString(),
-                "quantity", delta, "reason", "Merma")));
+            eq("SUCCESS"), eq(Map.of("quantity", delta, "reason", "Merma")));
     }
 
     @Test

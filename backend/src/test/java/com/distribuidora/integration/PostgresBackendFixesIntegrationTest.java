@@ -16,8 +16,6 @@ import com.distribuidora.identity.security.JwtService;
 import com.distribuidora.identity.domain.RefreshToken;
 import com.distribuidora.identity.infrastructure.RefreshTokenRepository;
 import com.distribuidora.inventory.application.InventoryMovementService;
-import com.distribuidora.inventory.application.InventoryCommandService;
-import com.distribuidora.inventory.application.InventoryDepotService;
 import com.distribuidora.order.api.OrderConfirmationDtos;
 import com.distribuidora.order.api.OrderEditDtos;
 import com.distribuidora.order.application.DeliveryLifecycleService;
@@ -120,8 +118,6 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired PricingCommandService pricingCommandService;
     @Autowired PricingQueryService pricingQueryService;
     @Autowired InventoryMovementService inventoryMovementService;
-    @Autowired InventoryCommandService inventoryCommandService;
-    @Autowired InventoryDepotService inventoryDepotService;
     @Autowired SaleReturnService saleReturnService;
     @Autowired OrderConfirmationService orderConfirmationService;
     @Autowired DeliveryLifecycleService deliveryLifecycleService;
@@ -146,7 +142,6 @@ class PostgresBackendFixesIntegrationTest {
     private final Set<UUID> sales = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> saleItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> products = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final Set<UUID> depots = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> discountRules = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> brands = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> categories = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -175,7 +170,6 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from catalog.product_price_history where product_id in (%s)", products);
         deleteIds("delete from catalog.product_prices where product_id in (%s)", products);
         deleteIds("delete from catalog.products where id in (%s)", products);
-        deleteIds("delete from inventory.depots where id in (%s)", depots);
         deleteIds("delete from seller.seller_profiles where id in (%s)", sellers);
         deleteIds("delete from identity.refresh_tokens where user_id in (%s)", users);
         deleteIds("delete from identity.user_activation_tokens where user_id in (%s)", users);
@@ -208,7 +202,6 @@ class PostgresBackendFixesIntegrationTest {
         sales.clear();
         saleItems.clear();
         products.clear();
-        depots.clear();
         discountRules.clear();
         brands.clear();
         categories.clear();
@@ -599,6 +592,31 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void administratorSellerSelectionPersistsOnOrderWithoutReassigningCustomer() {
+        UUID customerSellerId = createSeller("order-customer");
+        UUID selectedSellerId = createSeller("order-selected");
+        UUID customerId = createCustomer(customerSellerId);
+        UUID productId = createProduct("selected-seller-order");
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", productId);
+        putGeneralPrice(productId, new BigDecimal("10.0000"));
+        UUID actorId = UUID.randomUUID();
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+
+        var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "selected-seller-order-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), selectedSellerId));
+        orders.add(result.orderId());
+        sales.add(result.saleId());
+
+        assertThat(orderSeller(result.orderId())).isEqualTo(selectedSellerId);
+        assertThat(jdbc.queryForObject("select seller_id from customer.customers where id = ?", UUID.class, customerId))
+            .isEqualTo(customerSellerId);
+    }
+
+    @Test
     void productCategoryAndBrandReferencesPersistAndInactiveReferencesAreRejected() {
         UUID categoryId = createCategory();
         UUID brandId = createBrand();
@@ -731,89 +749,59 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
-    void stockTransfersAndOrderLifecyclePreserveSelectedDepot() {
-        UUID actorId = createUser("multi-depot");
+    void orderLifecycleUsesSingleProductStockForSaleEditReturnAndCancellation() {
+        UUID actorId = createUser("single-stock");
         SecurityContextHolder.getContext().setAuthentication(
             UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
                 List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
         UUID customerId = createCustomer(null);
-        UUID productId = createProduct("multi-depot");
+        UUID productId = createProduct("single-stock");
         putGeneralPrice(productId, new BigDecimal("10.0000"));
-        UUID centralDepot = InventoryMovementService.DEFAULT_DEPOT_ID;
-        InventoryDepotService.Depot createdDepot = inventoryDepotService.create(
-            "NORTE-" + UUID.randomUUID().toString().substring(0, 8), "Depósito Norte");
-        UUID selectedDepot = createdDepot.id();
-        depots.add(selectedDepot);
-        auditResources.add(selectedDepot.toString());
-        jdbc.update("update inventory.inventory_balances set quantity = 10 where depot_id = ? and product_id = ?",
-            centralDepot, productId);
-
-        UUID transferId = inventoryCommandService.transfer(centralDepot, selectedDepot, productId,
-            new BigDecimal("2.0"), "Reposición inicial");
-        auditResources.add(transferId.toString());
-        assertThat(stock(centralDepot, productId)).isEqualByComparingTo("8.0");
-        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("2.0");
-        assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where reference_id = ? "
-            + "and movement_type in ('TRANSFER_OUT', 'TRANSFER_IN')", Long.class, transferId)).isEqualTo(2L);
-
-        assertThatThrownBy(() -> inventoryCommandService.transfer(centralDepot, selectedDepot, productId,
-            new BigDecimal("100.0"), "No debe transferirse"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("stock suficiente");
-        assertThat(stock(centralDepot, productId)).isEqualByComparingTo("8.0");
-        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("2.0");
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", productId);
 
         var firstSale = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
-            "multi-depot-first-" + UUID.randomUUID(), customerId, null,
+            "single-stock-first-" + UUID.randomUUID(), customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
-            BigDecimal.ZERO, List.of(), selectedDepot));
+            BigDecimal.ZERO, List.of()));
         orders.add(firstSale.orderId());
         sales.add(firstSale.saleId());
-        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("1.0");
-        assertThat(jdbc.queryForObject("select depot_id from orders.orders where id = ?", UUID.class, firstSale.orderId()))
-            .isEqualTo(selectedDepot);
-        assertThat(jdbc.queryForObject("select depot_id from sale.sales where id = ?", UUID.class, firstSale.saleId()))
-            .isEqualTo(selectedDepot);
+        assertThat(stock(productId)).isEqualByComparingTo("9.0");
+
+        orderConfirmationService.editConfirmed(firstSale.orderId(), new OrderEditDtos.EditRequest(null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2.0"), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO));
+        assertThat(stock(productId)).isEqualByComparingTo("8.0");
 
         UUID firstSaleItem = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, firstSale.saleId());
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("update orders.orders set status = 'DELIVERED', delivered_at = ? where id = ?", now, firstSale.orderId());
         jdbc.update("update sale.sales set status = 'DELIVERED', delivered_at = ? where id = ?", now, firstSale.saleId());
-        inventoryDepotService.setActive(selectedDepot, false);
-        assertThatThrownBy(() -> inventoryCommandService.transfer(centralDepot, selectedDepot, productId,
-            new BigDecimal("0.5"), "No transfer to an inactive depot"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("no está activo");
-        saleReturnService.create(firstSale.saleId(), new SaleReturnDtos.ReturnRequest("Devolución al depósito original",
+        saleReturnService.create(firstSale.saleId(), new SaleReturnDtos.ReturnRequest("Devolución de stock único",
             List.of(new SaleReturnDtos.ReturnItemRequest(firstSaleItem, new BigDecimal("0.5")))));
-        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("1.5");
-        inventoryDepotService.setActive(selectedDepot, true);
+        assertThat(stock(productId)).isEqualByComparingTo("8.5");
 
         var secondSale = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
-            "multi-depot-second-" + UUID.randomUUID(), customerId, null,
+            "single-stock-second-" + UUID.randomUUID(), customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("0.5"), BigDecimal.ZERO, null)),
-            BigDecimal.ZERO, List.of(), selectedDepot));
+            BigDecimal.ZERO, List.of()));
         orders.add(secondSale.orderId());
         sales.add(secondSale.saleId());
+        assertThat(stock(productId)).isEqualByComparingTo("8.0");
         deliveryLifecycleService.cancel(secondSale.orderId());
-        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("1.5");
+        assertThat(stock(productId)).isEqualByComparingTo("8.5");
 
-        assertThat(inventoryDepotService.balances(selectedDepot, 0, 100, "multi-depot").content())
-            .anySatisfy(balance -> assertThat(balance.get("stock")).isEqualTo(new BigDecimal("1.5000")));
-        assertThat(readQueryService.inventory(0, 100, "multi-depot").content())
-            .anySatisfy(balance -> assertThat(balance.get("stock")).isEqualTo(new BigDecimal("9.5000")));
+        assertThat(readQueryService.inventory(0, 100, "single-stock").content())
+            .anySatisfy(balance -> assertThat(balance.get("stock")).isEqualTo(new BigDecimal("8.5000")));
         assertThat(readQueryService.movements(productId, 0, 100).content())
-            .anySatisfy(movement -> assertThat(movement).containsEntry("depotId", selectedDepot));
-        assertThat(inventoryDepotService.list()).anySatisfy(depot ->
-            assertThat(depot).isEqualTo(createdDepot));
-        assertThatThrownBy(() -> inventoryDepotService.setActive(centralDepot, false))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("predeterminado");
+            .allSatisfy(movement -> assertThat(movement).doesNotContainKeys("depotId", "depotCode"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> orderProjection = (Map<String, Object>) readQueryService.orderDetail(firstSale.orderId()).get("order");
+        assertThat(orderProjection).doesNotContainKey("depotId");
     }
 
-    private BigDecimal stock(UUID depotId, UUID productId) {
-        return jdbc.queryForObject("select quantity from inventory.inventory_balances where depot_id = ? and product_id = ?",
-            BigDecimal.class, depotId, productId);
+    private BigDecimal stock(UUID productId) {
+        return jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?",
+            BigDecimal.class, productId);
     }
 
     @Test

@@ -78,7 +78,7 @@ public class ReadQueryService {
                        coalesce(ib.quantity, 0) as stock, p.status
                 from catalog.products p
                 left join catalog.categories cat on cat.id = p.category_id
-                left join (select product_id, sum(quantity) as quantity from inventory.inventory_balances group by product_id) ib on ib.product_id = p.id
+                left join inventory.inventory_balances ib on ib.product_id = p.id
                 where lower(p.name) like ? or lower(p.sku) like ? order by p.name
                 """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
                 page, size, term, term);
@@ -89,7 +89,7 @@ public class ReadQueryService {
                    coalesce(ib.quantity, 0) as stock, p.status
             from catalog.products p
             left join catalog.categories cat on cat.id = p.category_id
-            left join (select product_id, sum(quantity) as quantity from inventory.inventory_balances group by product_id) ib on ib.product_id = p.id
+            left join inventory.inventory_balances ib on ib.product_id = p.id
             where lower(p.name) like ? or lower(p.sku) like ?
             order by p.name
             """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
@@ -100,11 +100,12 @@ public class ReadQueryService {
         String term = like(search);
         return page("""
             select p.id, p.name as product,
-                   coalesce((select sum(b.quantity) from inventory.inventory_balances b where b.product_id = p.id), 0) as stock,
-                   sm.movement_type as "lastMovement", sm.depot_id as "lastMovementDepotId",
+                   coalesce(ib.quantity, 0) as stock,
+                   sm.movement_type as "lastMovement",
                    sm.created_at as updated
             from catalog.products p
-            left join lateral (select movement_type, depot_id, created_at from inventory.stock_movements
+            left join inventory.inventory_balances ib on ib.product_id = p.id
+            left join lateral (select movement_type, created_at from inventory.stock_movements
                 where product_id = p.id order by created_at desc limit 1) sm on true
             where lower(p.name) like ?
             order by p.name
@@ -114,12 +115,10 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> movements(UUID productId, int page, int size) {
         return page("""
-            select sm.id, sm.depot_id as "depotId", d.code as "depotCode",
-                   sm.movement_type as "movementType", sm.quantity, sm.reason,
+            select sm.id, sm.movement_type as "movementType", sm.quantity, sm.reason,
                    sm.reference_type as "referenceType", sm.reference_id as "referenceId",
                    sm.created_at as date
             from inventory.stock_movements sm
-            join inventory.depots d on d.id = sm.depot_id
             where sm.product_id = ?
             order by sm.created_at desc
             """, "select count(*) from inventory.stock_movements where product_id = ?",
@@ -197,7 +196,7 @@ public class ReadQueryService {
         if (sellerScoped()) currentUser.requireOrderAccess(orderId);
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer, o.depot_id as "depotId", o.status, o.subtotal, o.discount, o.total,
+                   c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
                    o.order_discount_percent as "orderDiscountPercent",
                    o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
@@ -230,7 +229,7 @@ public class ReadQueryService {
     public Map<String, Object> orderDetailByNumber(String orderNumber) {
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer, o.depot_id as "depotId", o.status, o.subtotal, o.discount, o.total,
+                   c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
                    o.order_discount_percent as "orderDiscountPercent",
                    o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",

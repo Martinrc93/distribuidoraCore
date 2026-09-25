@@ -91,13 +91,19 @@ permisos por los endpoints administrativos, rechazo del JWT anterior con `401`
 y verificación del acceso y authorities del nuevo login. Se usa un rol temporal
 único por test para no mutar los permisos semilla de `ADMIN` o `SELLER`.
 
+La misma clase verifica que una confirmación administrativa persista el vendedor
+elegido en `orders.orders.seller_id` sin cambiar el vendedor asignado al cliente.
+Esta prueba y el resto de los casos de esa clase se ejecutan contra una base
+PostgreSQL 16 descartable, con `POSTGRES_TEST_URL`, `POSTGRES_TEST_USERNAME` y
+`POSTGRES_TEST_PASSWORD` definidos.
+
 Verificación del 2026-09-24 tras revisar el grafo modular: **329 tests, 0
 fallos, 0 errores y 19 omitidos**. ArchUnit pasó, incluida la regla global de
 ciclos. Los omitidos son los casos PostgreSQL opt-in; esta ejecución no tenía
 `POSTGRES_TEST_URL`. La verificación PostgreSQL previa se registra por separado
 en el estado del backend.
 
-`PostgresBackendFixesIntegrationTest` habilita sus 24 casos cuando se define
+`PostgresBackendFixesIntegrationTest` habilita sus 25 casos cuando se define
 `POSTGRES_TEST_URL`; activa Flyway y `ddl-auto=validate`, por lo que debe apuntar
 siempre a una base descartable. Verificación completa previa del 2026-09-24:
 **337 tests, 0 fallos, 0 errores y 0 omitidos**; los 21 casos PostgreSQL pasaron
@@ -116,11 +122,34 @@ dirigidos** y **23 casos PostgreSQL** pasaron con Flyway V1–V22 y
 y alcance, aplicación al confirmar y persistencia de snapshots tras desactivar
 la regla.
 
-Verificación incremental multi-depósito del 2026-09-24: **56 tests dirigidos**
-(incluida la matriz HTTP de permisos) y **24 casos PostgreSQL** pasaron con
-Flyway V1–V23 y `ddl-auto=validate`. Se cubrieron migración de saldos existentes,
-transferencia atómica, saldo insuficiente, pedido, devolución y cancelación en
-el depósito seleccionado, consultas agregadas y autorización de rutas.
+Verificación histórica multi-depósito del 2026-09-24 (previa a V24): **56 tests
+dirigidos** (incluida la matriz HTTP de permisos) y **24 casos PostgreSQL**
+pasaron con Flyway V1–V23 y `ddl-auto=validate`. La funcionalidad fue sustituida
+por inventario de stock único; la migración V24 cuenta con prueba PostgreSQL que
+verifica consolidación y conservación de los registros de negocio.
+
+Verificación de inventario único (2026-09-25): `mvn test` pasó con **352 tests,
+0 fallos y 0 errores**; 24 casos PostgreSQL opt-in se ejecutaron por separado y
+pasaron en PostgreSQL 16.15 con Flyway V1–V24 y `ddl-auto=validate`. La prueba
+Testcontainers de V24 confirmó la suma de balances y la conservación de
+movimientos/pedidos/ventas. Frontend: **85 tests pasaron** y `npm run build`
+terminó correctamente.
+
+Verificación final de Task 3 (2026-09-25):
+
+- `mvn test`: `Tests run: 358, Failures: 0, Errors: 0, Skipped: 25`; `BUILD
+  SUCCESS`. Los 25 omitidos son los casos opt-in de
+  `PostgresBackendFixesIntegrationTest`, ejecutados a continuación con PostgreSQL.
+- `mvn -Dtest=PostgresBackendFixesIntegrationTest test`, con
+  `POSTGRES_TEST_URL=jdbc:postgresql://localhost:62417/distribuidora`, usuario
+  `distribuidora` y una contraseña de base descartable: `Tests run: 25, Failures:
+  0, Errors: 0, Skipped: 0`; `BUILD SUCCESS`. PostgreSQL 16.15 descartable,
+  Flyway validó y aplicó V1–V24 y JPA inicializó con validación. Incluye
+  persistencia del vendedor escogido y confirma que la asignación del cliente no
+  cambia.
+- `npm run test`: **19 archivos y 88 tests pasaron**.
+- `npm run build`: `tsc -b` pasó; Vite transformó 110 módulos y terminó con
+  `✓ built in 1.87s`.
 
 Verificación completa de cierre (2026-09-24): **350 tests, 0 fallos, 0 errores
 y 0 omitidos**, incluidos los 24 casos PostgreSQL en PostgreSQL 16.4 con Flyway

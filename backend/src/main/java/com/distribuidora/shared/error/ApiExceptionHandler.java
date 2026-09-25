@@ -12,6 +12,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -74,6 +75,11 @@ public class ApiExceptionHandler {
     ResponseEntity<ProblemDetail> handleMalformedRequest(Exception exception, HttpServletRequest request) {
         return problem(HttpStatus.BAD_REQUEST, "Invalid request", "INVALID_REQUEST",
             "La solicitud contiene datos inválidos", request);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    ResponseEntity<ProblemDetail> handleRouteNotFound(NoResourceFoundException exception, HttpServletRequest request) {
+        return problem(HttpStatus.NOT_FOUND, "Not found", "NOT_FOUND", "El recurso no existe", request);
     }
 
     @ExceptionHandler(Exception.class)

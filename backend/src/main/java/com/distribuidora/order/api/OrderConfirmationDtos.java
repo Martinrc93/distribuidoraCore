@@ -26,7 +26,7 @@ public final class OrderConfirmationDtos {
         @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 4)
         BigDecimal orderDiscountPercent,
         List<@NotNull @Valid PaymentRequest> payments,
-        UUID depotId
+        UUID sellerId
     ) implements OrderConfirmationService.ConfirmationCommand {
         public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
                                    List<LineRequest> lines, BigDecimal orderDiscountPercent,

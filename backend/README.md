@@ -65,8 +65,14 @@ GET /swagger-ui.html
 
 ## Inventario
 
+El stock se mantiene como un único saldo por producto. Los pedidos y ajustes
+modifican ese saldo directamente; no hay depósitos ni transferencias de stock.
+
 Los endpoints de inventario requieren un JWT. Los ajustes requieren además la
 autoridad `STOCK_ADJUST`; el token de un administrador la incluye.
+Los reintentos de pedidos son idempotentes bajo el contrato actual; un intento
+iniciado antes de V24 puede requerir reconciliarse si vuelve a enviarse después
+de la migración.
 
 Login de ejemplo:
 
@@ -240,6 +246,7 @@ Request de confirmación:
 {
   "idempotencyKey": "checkout-2026-0001",
   "customerId": "<customer-uuid>",
+  "sellerId": "<optional-seller-uuid>",
   "priceListId": "<optional-price-list-uuid>",
   "lines": [{
     "productId": "<product-uuid>",
@@ -251,6 +258,13 @@ Request de confirmación:
   "payments": [{"method": "CASH", "amount": 18.0000}]
 }
 ```
+
+`sellerId` es opcional y solo permite elegir vendedor a un administrador con
+`ADMIN_ALL`. Si el administrador lo omite, el pedido toma el vendedor asignado
+al cliente. El vendedor resuelto se guarda en `orders.orders.seller_id`; cambiar
+el vendedor del pedido no modifica `customer.customers.seller_id`. Para usuarios
+no administradores, el servidor siempre atribuye el pedido al perfil seller del
+usuario autenticado y rechaza un `sellerId` que intente reemplazarlo.
 
 `payments` puede combinar `CASH`, `BANK_TRANSFER` y `CUSTOMER_ACCOUNT`. Si se
 omite o está vacío, el total completo genera un débito en cuenta corriente.

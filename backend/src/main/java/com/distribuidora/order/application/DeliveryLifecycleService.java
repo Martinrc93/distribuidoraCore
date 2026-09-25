@@ -164,14 +164,13 @@ public class DeliveryLifecycleService {
         // Confirmation historically used orderId, while demo/legacy rows may use saleId.
         // Reverse the net stock effect so previous order edits cannot cause over-restoration.
         List<Map<String, Object>> netMovements = jdbc.queryForList(
-            "select depot_id, product_id, sum(quantity) as net_quantity from inventory.stock_movements "
+            "select product_id, sum(quantity) as net_quantity from inventory.stock_movements "
                 + "where movement_type in ('SALE', 'SALE_CANCELLATION') and reference_id in (?, ?) "
-                + "group by depot_id, product_id having sum(quantity) <> 0 order by depot_id, product_id", new Object[]{orderId, saleId});
+                + "group by product_id having sum(quantity) <> 0 order by product_id", new Object[]{orderId, saleId});
         for (Map<String, Object> movement : netMovements) {
-            UUID depotId = uuid(movement, "depot_id");
             UUID productId = uuid(movement, "product_id");
             BigDecimal netQuantity = decimal(movement.get("net_quantity"));
-            inventory.apply(depotId, productId, netQuantity.negate(), "SALE_CANCELLATION", orderId, "Sale cancellation");
+            inventory.apply(productId, netQuantity.negate(), "SALE_CANCELLATION", orderId, "Sale cancellation");
         }
     }
 

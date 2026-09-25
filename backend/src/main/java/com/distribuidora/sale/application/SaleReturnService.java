@@ -54,7 +54,7 @@ public class SaleReturnService {
         validate(saleId, request);
 
         Map<String, Object> sale = jdbc.queryForMap("""
-            select s.id, s.depot_id, s.status as sale_status, o.status as order_status
+            select s.id, s.status as sale_status, o.status as order_status
             from sale.sales s
             join orders.orders o on o.id = s.order_id
             where s.id = ?
@@ -105,7 +105,7 @@ public class SaleReturnService {
         for (ReturnItemResult item : resolved) {
             jdbc.update("insert into sale.return_items(id, return_id, sale_id, sale_item_id, product_id, quantity) values (?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID(), returnId, saleId, item.saleItemId(), item.productId(), item.quantity());
-            inventory.apply(uuid(sale.get("depot_id")), item.productId(), item.quantity(), "RETURN", returnId, reason);
+            inventory.apply(item.productId(), item.quantity(), "RETURN", returnId, reason);
         }
 
         audit.recordWithinTransaction(actorId, "SALE_RETURN", "SALE", saleId.toString(), "SUCCESS",

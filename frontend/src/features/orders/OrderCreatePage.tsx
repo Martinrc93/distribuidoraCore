@@ -8,18 +8,18 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 
-type Customer = { id: string; name: string; priceListId?: string | null; balance?: number }
+type Customer = { id: string; name: string; sellerId?: string | null; seller?: string | null; priceListId?: string | null; balance?: number }
 type Product = { id: string; sku: string; name: string; presentation: string; stock?: number; status?: string }
 type PriceList = { id: string; code: string; name: string; status: string }
-type Depot = { id: string; code: string; name: string; status: string; isDefault: boolean }
+type Seller = { id: string; displayName: string; email: string }
 type PriceResolution = { productId: string; priceListId: string; priceListCode: string; unitPrice: number }
 type DraftLine = { productId: string; quantity: string; lineDiscountPercent: string; unitPriceOverride: string }
 type DraftPayment = { method: 'CASH' | 'BANK_TRANSFER' | 'CUSTOMER_ACCOUNT'; amount: string }
 type ConfirmationRequest = {
   idempotencyKey: string
   customerId: string
+  sellerId?: string | null
   priceListId: string
-  depotId?: string
   lines: Array<{ productId: string; quantity: number; lineDiscountPercent: number; unitPriceOverride?: number }>
   orderDiscountPercent: number
   payments: Array<{ method: DraftPayment['method']; amount: number }>
@@ -38,7 +38,7 @@ type ConfirmationResponse = {
 const CUSTOMER_KEY = ['/api/customers?page=0&size=20']
 const PRODUCT_KEY = ['/api/products?page=0&size=20']
 const PRICE_LIST_KEY = ['/api/pricing/lists?page=0&size=20']
-const DEPOTS_KEY = ['/api/inventory/depots']
+const SELLER_KEY = ['/api/sellers?page=0&size=100']
 
 function money(value: number) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
@@ -65,14 +65,13 @@ export default function OrderCreatePage() {
   const customersQuery = useQuery({ queryKey: CUSTOMER_KEY, queryFn: () => apiGet<ApiPage<Customer>>('/api/customers?page=0&size=20') })
   const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGet<ApiPage<Product>>('/api/products?page=0&size=20') })
   const listsQuery = useQuery({ queryKey: PRICE_LIST_KEY, queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20') })
-  const depotsQuery = useQuery({ queryKey: DEPOTS_KEY, queryFn: () => apiGet<Depot[]>('/api/inventory/depots'), enabled: isAdmin })
+  const sellersQuery = useQuery({ queryKey: SELLER_KEY, queryFn: () => apiGet<ApiPage<Seller>>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const customers = customersQuery.data?.content ?? []
   const products = productsQuery.data?.content ?? []
   const activeLists = (listsQuery.data?.content ?? []).filter((list) => list.status === 'ACTIVE')
-  const activeDepots = (depotsQuery.data ?? []).filter((depot) => depot.status === 'ACTIVE')
   const [customerId, setCustomerId] = useState('')
+  const [sellerId, setSellerId] = useState('')
   const [explicitListId, setExplicitListId] = useState('')
-  const [depotId, setDepotId] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([])
   const [selectedProductId, setSelectedProductId] = useState('')
   const [payments, setPayments] = useState<DraftPayment[]>([{ method: 'CASH', amount: '' }])
@@ -104,13 +103,6 @@ export default function OrderCreatePage() {
   const previewDiscount = isAdmin ? previewSubtotal * (Number(orderDiscountPercent || 0) / 100) : 0
   const previewTotal = Math.max(0, previewSubtotal - previewDiscount)
   const hasUnsavedDraft = Boolean(customerId || lines.length || payments.some((payment) => payment.amount.trim()))
-
-  useEffect(() => {
-    if (!isAdmin || !activeDepots.length) return
-    if (depotId && activeDepots.some((depot) => depot.id === depotId)) return
-    const defaultDepot = activeDepots.find((depot) => depot.isDefault) ?? activeDepots[0]
-    setDepotId(defaultDepot.id)
-  }, [activeDepots, depotId, isAdmin])
 
   useEffect(() => {
     if (!hasUnsavedDraft || responseData) return
@@ -153,7 +145,6 @@ export default function OrderCreatePage() {
   function buildPayload(): ConfirmationRequest | undefined {
     if (!customerId) { setError('Seleccioná un cliente.'); return undefined }
     if (!resolvedListId) { setError('Seleccioná una lista de precios.'); return undefined }
-    if (isAdmin && !depotId) { setError('Seleccioná un depósito para el pedido.'); return undefined }
     if (lines.length === 0) { setError('Agregá al menos un producto al pedido.'); return undefined }
     if (resolutions.some((resolution) => resolution.isLoading)) { setError('Esperá a que se resuelvan los precios antes de confirmar.'); return undefined }
     if (resolutions.some((resolution) => resolution.isError || !resolution.data)) { setError('No se pudo resolver el precio de una línea. Revisá la lista y los productos.'); return undefined }
@@ -179,7 +170,7 @@ export default function OrderCreatePage() {
     }
     const discount = isAdmin ? Number(orderDiscountPercent || 0) : 0
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento general debe estar entre 0 y 100%.'); return undefined }
-    return { idempotencyKey: newKey(), customerId, priceListId: resolvedListId, ...(isAdmin && depotId ? { depotId } : {}), lines: payloadLines, orderDiscountPercent: discount, payments: payloadPayments }
+    return { idempotencyKey: newKey(), customerId, ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, payments: payloadPayments }
   }
 
   async function confirm(event: FormEvent) {
@@ -219,22 +210,24 @@ export default function OrderCreatePage() {
     </Panel>
   </>
 
-  const readError = customersQuery.error ?? productsQuery.error ?? listsQuery.error ?? (isAdmin ? depotsQuery.error : null)
-  const readLoading = customersQuery.isLoading || productsQuery.isLoading || listsQuery.isLoading || (isAdmin && depotsQuery.isLoading)
+  const readError = customersQuery.error ?? productsQuery.error ?? listsQuery.error ?? (isAdmin ? sellersQuery.error : null)
+  const readLoading = customersQuery.isLoading || productsQuery.isLoading || listsQuery.isLoading || (isAdmin && sellersQuery.isLoading)
 
   return <>
-    <PageHeader eyebrow="Operación" title="Nuevo pedido" description="Elegí un cliente, revisá los precios de su lista y confirmá el pedido." actions={<Button variant="secondary" href="/orders">Cancelar</Button>} />
-    {readLoading ? <Panel><EmptyState title="Cargando datos del pedido" description="Consultando clientes, productos y listas activas." /></Panel>
-      : readError ? <Panel><EmptyState title="No se pudo preparar el pedido" description={readError.message} /></Panel>
+    <PageHeader eyebrow="Operación" title="Nuevo pedido" actions={<Button variant="secondary" href="/orders">Cancelar</Button>} />
+    {readLoading ? <Panel><EmptyState title="Cargando datos del pedido" description={isAdmin ? 'Consultando clientes, productos, vendedores y listas activas.' : 'Consultando clientes, productos y listas activas.'} /></Panel>
+      : readError ? <Panel><EmptyState title="No se pudo preparar el pedido" description={readError.message} action={isAdmin && sellersQuery.isError && readError === sellersQuery.error ? <Button variant="secondary" onClick={() => sellersQuery.refetch()}>Reintentar vendedores</Button> : undefined} /></Panel>
         : <form onSubmit={confirm}>
           {error && <p className="error-text" role="alert">{error}</p>}
           <div className="order-layout">
             <div className="order-main">
               <Panel title="Datos del pedido">
-                <div className="form-grid">
-                  <label className="field"><span>Cliente</span><select className="select" value={customerId} onChange={(event) => { draftChanged(); setCustomerId(event.target.value); setExplicitListId('') }} required><option value="">Seleccionar cliente...</option>{customers.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+                <div className="order-customer-grid">
+                  <label className="field"><span>Cliente</span><select className="select" value={customerId} onChange={(event) => { const selectedCustomerId = event.target.value; draftChanged(); setCustomerId(selectedCustomerId); setSellerId(customers.find((item) => item.id === selectedCustomerId)?.sellerId ?? ''); setExplicitListId('') }} required><option value="">Seleccionar cliente...</option>{customers.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+                  {isAdmin
+                    ? <label className="field"><span>Vendedor</span><select className="select" aria-label="Vendedor" value={sellerId} onChange={(event) => { draftChanged(); setSellerId(event.target.value) }}><option value="">Usar vendedor del cliente</option>{(sellersQuery.data?.content ?? []).map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>
+                    : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>}
                   <label className="field"><span>Lista de precios</span><select className="select" value={resolvedListId} onChange={(event) => { draftChanged(); setExplicitListId(event.target.value) }} required><option value="">Seleccionar lista...</option>{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select></label>
-                  {isAdmin && <label className="field"><span>Depósito para el pedido</span><select className="select" aria-label="Depósito para el pedido" value={depotId} onChange={(event) => { draftChanged(); setDepotId(event.target.value) }} required><option value="">Seleccionar depósito...</option>{activeDepots.map((depot) => <option value={depot.id} key={depot.id}>{depot.code} · {depot.name}{depot.isDefault ? ' · Predeterminado' : ''}</option>)}</select></label>}
                 </div>
                 {customer && <p className="helper-text">Saldo de cuenta corriente actual: {money(Number(customer.balance ?? 0))}</p>}
                 <div className="section-heading"><div><h3>Productos</h3><p>Los precios se resuelven para el cliente y la lista seleccionada.</p></div></div>

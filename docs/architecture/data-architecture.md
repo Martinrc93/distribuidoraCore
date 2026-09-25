@@ -16,8 +16,7 @@ catalog.price_lists
 catalog.product_price_history
 catalog.product_prices (compatibilidad)
 catalog.commercial_discount_rules
-inventory.depots
-inventory.inventory_balances (depot_id, product_id)
+inventory.inventory_balances (product_id)
 inventory.stock_movements
 order.orders
 sale.sales
@@ -61,11 +60,11 @@ Se utilizarán constraints para reglas estructurales:
 - Índices para búsquedas, estados, fechas y referencias.
 - Optimistic locking mediante `version` en entidades editables.
 - Locking pesimista para balances de stock.
-- Cada balance y movimiento pertenece a un depósito. El depósito `CENTRAL` es
-  el predeterminado; la migración V23 asigna allí los saldos y operaciones
-  existentes. Pedidos y ventas conservan el depósito que descontó el stock.
-- Una transferencia bloquea en orden estable los saldos de origen y destino,
-  valida disponibilidad en el origen y guarda ambos movimientos atómicamente.
+- `inventory.inventory_balances` mantiene un saldo por producto. V24 suma los
+  balances V23 por `product_id`, conserva el timestamp de actualización más
+  reciente y elimina depósitos y columnas de ubicación en movimientos, pedidos
+  y ventas. Los registros de negocio y movimientos se conservan sin esa
+  atribución histórica.
 
 Las reglas que dependen de varios módulos se validan en casos de uso y no se
 resuelven únicamente con foreign keys.

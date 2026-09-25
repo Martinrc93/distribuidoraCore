@@ -71,10 +71,8 @@ Estado actualizado: 2026-09-25
 - [x] Ocultar ajustes para usuarios sin `STOCK_ADJUST`.
 - [x] Confirmación antes de aplicar ajuste.
 - [x] Feedback de éxito e invalidación de consultas.
-- [x] Selector y administración de depósitos, búsqueda y balances paginados por depósito (`ADMIN_ALL`).
-- [x] Ajustar inventario en el depósito seleccionado y mostrar el saldo correspondiente.
-- [x] Transferir entre depósitos activos con saldo de origen, validación previa, motivo y confirmación (`STOCK_ADJUST`).
-- [x] Identificar el depósito en movimientos y refrescar balances tras ajustes/transferencias.
+- [x] Mostrar una lista única paginada y buscable de stock por producto.
+- [x] Ajustar el saldo único; movimientos y payloads no incluyen ubicación.
 
 ## Orders
 
@@ -84,7 +82,7 @@ Estado actualizado: 2026-09-25
 - [x] Preview de líneas/descuentos sin sustituir el backend.
 - [x] Mostrar descuentos y precios manuales solo a `ADMIN_ALL`.
 - [x] `idempotencyKey` por intento, bloqueo de doble envío y retry con clave/payload iguales.
-- [x] Seleccionar depósito para administradores; conservar `depotId` en retry e invalidar el intento al cambiar depósito. Otros usuarios usan `CENTRAL` del backend.
+- [x] Crear pedidos sin subtítulo ni selector de depósito; todos los usuarios usan el stock único del backend.
 - [x] Confirmación contra `/api/orders/confirm`; render de números, total, cobrado, saldo y warning de crédito.
 - [x] Detalle de pedido/venta con snapshots, pagos y ledger asociado a la venta.
 - [~] Edición administrativa disponible si no hay descuentos guardados y se usa una sola lista; el detalle ya expone descuento/regla general, pero la UI aún no preserva reglas automáticas al editar.
@@ -136,7 +134,7 @@ Estado actualizado: 2026-09-25
 3. [x] Completar edición/baja de productos y ajustes de inventario.
 4. [~] Completar ventas/pagos y cuenta corriente; pago a deuda y devolución con líneas completados, aún falta vista integral de estado de cuenta.
 5. [~] Implementar entrega, cancelación, documentos y notificaciones; historial de intentos completado, dashboard global de outbox sigue pendiente.
-6. [x] Conectar vigencias/reglas de precio y flujos de inventario multi-depósito al frontend.
+6. [x] Conectar vigencias/reglas de precio y flujos de inventario de stock único al frontend.
 7. [x] Mostrar rol actual en usuarios; conservar edición de roles/permisos como pendiente aplazado.
 8. [x] Tests Vitest de API client y flujos principales; E2E comercial desktop/mobile ejecutado.
 

@@ -5,9 +5,10 @@
 Accepted
 
 Actualización (2026-09-24): la extensión multi-depósito prevista inicialmente
-se implementó con V23. `inventory_balances` ahora se identifica por
-`(depot_id, product_id)` y los saldos existentes se asignaron al depósito
-predeterminado `CENTRAL`. El contrato vigente está en
+se implementó con V23. Actualización (2026-09-25): V24 reemplazó esa extensión
+por un saldo único por producto y consolidó los balances existentes. Se
+conservan los principios de movimientos append-only y modificación transaccional
+de stock. El contrato vigente está en
 [`docs/api/inventory.md`](../api/inventory.md).
 
 ## Context
@@ -66,9 +67,10 @@ a:
 warehouseId + productId
 ```
 
-La extensión ya está implementada: las transferencias validan saldo disponible
-y persisten salida/entrada atómicas; pedido y venta conservan el depósito usado.
-El detalle actual está en la migración V23.
+La extensión multi-depósito fue implementada en V23 y posteriormente reemplazada
+por stock único con V24. Las transferencias y la ubicación por pedido/venta que
+se describen en este ADR son comportamiento histórico, no parte del modelo
+vigente.
 
 ## Alternatives considered
 
@@ -93,7 +95,8 @@ para salidas concurrentes del mismo producto.
 - Trazabilidad completa.
 - Stock negativo explícito y auditable.
 - Correcciones sin reescribir historia.
-- Saldos independientes por depósito y producto, con transferencias trazables.
+- El diseño original ofrecía saldos independientes por depósito y producto; V24
+  reemplazó ese comportamiento por un único saldo consolidado por producto.
 
 ### Negativas
 
