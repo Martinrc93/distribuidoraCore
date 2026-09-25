@@ -108,4 +108,3 @@ class SellerReadQueryTest {
         assertThat(authorization.value()).isEqualTo("hasAuthority('ADMIN_ALL')");
     }
 }
-
