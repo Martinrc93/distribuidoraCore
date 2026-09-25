@@ -8,6 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type Product = {
   id: string
@@ -35,7 +36,6 @@ type ProductFormValues = {
   prices: Record<string, string>
 }
 
-const PRODUCT_QUERY_KEY = ['/api/products?page=0&size=20']
 const PRICE_LIST_QUERY_KEY = ['/api/pricing/lists?page=0&size=20']
 const CATEGORIES_QUERY_KEY = ['/api/categories']
 const BRANDS_QUERY_KEY = ['/api/brands']
@@ -177,12 +177,12 @@ function ProductForm({
       }
       if (initial) await apiPut(`/api/products/${initial.id}`, body)
       else await apiPost('/api/products', body)
-      await queryClient.invalidateQueries({ queryKey: PRODUCT_QUERY_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') })
       await queryClient.invalidateQueries({ queryKey: PRICE_LIST_QUERY_KEY })
       onSuccess(initial ? 'Producto actualizado correctamente.' : 'Producto creado correctamente.')
       onDone()
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ queryKey: PRODUCT_QUERY_KEY })
+      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') })
       if (cause instanceof ApiError && cause.affectedPriceLists?.length) {
         setAffectedLists(cause.affectedPriceLists)
         setError(errorMessage(cause, 'El costo supera precios vigentes. Completá los precios indicados.'))
@@ -222,7 +222,12 @@ function ProductForm({
 export default function ProductsPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
-  const query = useQuery({ queryKey: PRODUCT_QUERY_KEY, queryFn: () => apiGet<ApiPage<Product>>('/api/products?page=0&size=20') })
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
+  const search = getFilter('search')
+  const searchParam = search.trim() ? `&search=${encodeURIComponent(search.trim())}` : ''
+  const productPath = `/api/products?page=${page}&size=${pageSize}${searchParam}`
+  const productQueryKey = [productPath]
+  const query = useQuery({ queryKey: productQueryKey, queryFn: () => apiGet<ApiPage<Product>>(productPath) })
   const listsQuery = useQuery({ queryKey: PRICE_LIST_QUERY_KEY, queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20'), enabled: isAdmin })
   const categoriesQuery = useQuery({ queryKey: CATEGORIES_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/categories'), enabled: isAdmin })
   const brandsQuery = useQuery({ queryKey: BRANDS_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/brands'), enabled: isAdmin })
@@ -248,11 +253,11 @@ export default function ProductsPage() {
     try {
       const status = statusProduct.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
       await apiPatch(`/api/products/${statusProduct.id}/status`, { status })
-      await queryClient.invalidateQueries({ queryKey: PRODUCT_QUERY_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') })
       setStatusProduct(undefined)
       setFeedback(status === 'ACTIVE' ? 'Producto activado correctamente.' : 'Producto desactivado correctamente.')
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ queryKey: PRODUCT_QUERY_KEY })
+      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') })
       setActionError(errorMessage(cause, 'No se pudo actualizar el estado del producto.'))
     } finally {
       setMutating(false)
@@ -288,7 +293,8 @@ export default function ProductsPage() {
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
     {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} activeLists={activeLists} categories={categories} brands={brands} optionsLoading={optionsLoading} optionsError={optionsError} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} />}
     <Panel>
-      {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title="Todavía no hay productos" description="Creá el primer producto para comenzar a gestionar el catálogo." action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Mostrando hasta 20 de {query.data?.totalElements ?? 0} resultados</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled={(query.data?.totalElements ?? 0) <= 20}>Siguiente</Button></div></div></>}
+      <div className="toolbar"><label className="field"><span>Buscar productos</span><input className="input search-input" aria-label="Buscar productos" placeholder="Nombre o SKU" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
+      {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title={search ? 'No hay productos para mostrar' : 'Todavía no hay productos'} description={search ? 'Probá otra búsqueda.' : 'Creá el primer producto para comenzar a gestionar el catálogo.'} action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)} disabled={mutating || formSaving}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating || formSaving}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
   </>

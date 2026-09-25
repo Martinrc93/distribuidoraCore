@@ -22,10 +22,10 @@ function pageHistory(effectiveOn: string) {
   return { content: [{ effectiveOn, price: 150.5, recordedAt: '2026-09-24T12:00:00Z', updatedAt: '2026-09-24T12:00:00Z', scheduled: effectiveOn > '2026-09-24' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 }
 
-function renderPage(authorities = ['ADMIN_ALL']) {
+function renderPage(authorities = ['ADMIN_ALL'], initialEntries = ['/price-lists']) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sessionStorage.setItem('distribuidora.accessToken', token(authorities))
-  render(<QueryClientProvider client={queryClient}><MemoryRouter><PriceListsPage /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={initialEntries}><PriceListsPage /></MemoryRouter></QueryClientProvider>)
   return queryClient
 }
 
@@ -51,7 +51,7 @@ describe('PriceListsPage', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ code: 'PROMO', name: 'Promoción' }),
     })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/pricing/lists?page=0&size=20'] })
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('Lista creada correctamente.')).toBeInTheDocument()
   })
 
@@ -145,6 +145,23 @@ describe('PriceListsPage', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1/history?page=1&size=20', expect.anything()))
     expect(await screen.findByText('2026-10-01')).toBeInTheDocument()
+  })
+
+  it('resets the selected list price page when changing lists', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const path = String(input)
+      if (path === '/api/pricing/lists?page=0&size=20') return response(lists)
+      if (path === '/api/pricing/lists/list-1/prices?page=2&size=20') return response({ ...prices, page: 2, totalPages: 3 })
+      if (path === '/api/pricing/lists/list-2/prices?page=0&size=20') return response({ ...prices, content: [], page: 0, totalPages: 0 })
+      return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+    })
+    renderPage(['ADMIN_ALL'], ['/price-lists?pricePage=2&historyPage=4'])
+
+    await screen.findByText('Harina')
+    await user.click(screen.getByRole('tab', { name: /minorista/i }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-2/prices?page=0&size=20', expect.anything()))
   })
 
   it('confirms list deactivation and hides pricing mutations from sellers', async () => {

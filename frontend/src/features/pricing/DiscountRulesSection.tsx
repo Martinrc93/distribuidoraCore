@@ -7,6 +7,7 @@ import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { Panel } from '../../shared/components/Panel'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type RuleKind = 'LINE' | 'ORDER'
 type RuleStatus = 'ACTIVE' | 'INACTIVE'
@@ -78,7 +79,7 @@ function statusLabel(status: RuleStatus) {
 export default function DiscountRulesSection() {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
-  const [rulesPage, setRulesPage] = useState(0)
+  const { page: rulesPage, setPage: setRulesPage } = useUrlListState([], 20, 'rulePage')
   const rulesPath = `${RULES_PATH}?page=${rulesPage}&size=20`
   const rulesKey = [rulesPath]
   const rulesQuery = useQuery({ queryKey: rulesKey, queryFn: () => apiGet<ApiPage<DiscountRule>>(rulesPath) })
@@ -209,7 +210,7 @@ export default function DiscountRulesSection() {
       {feedback && <p className="success-text" role="status">{feedback}</p>}
       {error && !showForm && <p className="error-text" role="alert">{error}</p>}
       {rulesQuery.isLoading ? <EmptyState title="Cargando reglas" description="Consultando descuentos comerciales." /> : rulesQuery.isError ? <EmptyState title="No se pudieron cargar las reglas" description={rulesQuery.error.message} action={<Button variant="secondary" onClick={() => rulesQuery.refetch()}>Reintentar reglas</Button>} /> : rows.length ? <DataTable columns={columns} rows={rows} /> : <EmptyState title="Todavía no hay reglas" description="Creá reglas por línea o por pedido para automatizar descuentos comerciales." action={isAdmin ? <Button onClick={() => { setShowForm(true); setError('') }}>+ Nueva regla</Button> : undefined} />}
-      {rulesQuery.data && rulesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {rulesPage + 1} de {rulesQuery.data.totalPages} · {rulesQuery.data.totalElements} reglas</span><div><Button variant="secondary" aria-label="Reglas anteriores" onClick={() => setRulesPage((page) => Math.max(0, page - 1))} disabled={rulesPage === 0}>Anterior</Button><Button variant="secondary" aria-label="Siguiente reglas" onClick={() => setRulesPage((page) => Math.min((rulesQuery.data?.totalPages ?? 1) - 1, page + 1))} disabled={rulesPage + 1 >= rulesQuery.data.totalPages}>Siguiente</Button></div></div>}
+      {rulesQuery.data && rulesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {rulesPage + 1} de {rulesQuery.data.totalPages} · {rulesQuery.data.totalElements} reglas</span><div><Button variant="secondary" aria-label="Reglas anteriores" onClick={() => setRulesPage(rulesPage - 1)} disabled={rulesPage === 0}>Anterior</Button><Button variant="secondary" aria-label="Siguiente reglas" onClick={() => setRulesPage(rulesPage + 1)} disabled={rulesPage + 1 >= rulesQuery.data.totalPages}>Siguiente</Button></div></div>}
     </Panel>
     {showForm && isAdmin && <Panel title={editingRule ? `Editar regla ${editingRule.code}` : 'Nueva regla'}><form className="form-grid" onSubmit={submit}>
       <label className="field"><span>Código</span><input className="input" value={draft.code} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))} required maxLength={40} disabled={saveMutation.isPending} /></label>

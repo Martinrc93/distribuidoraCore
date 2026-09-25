@@ -9,13 +9,11 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type User = { id: string; email: string; name: string; status: string; roles?: string | null }
 type UserAction = { user: User; action: 'block' | 'unblock' | 'revoke-sessions' }
 type Row = Record<string, string>
-const USERS_PATH = '/api/users?page=0&size=20'
-const USERS_KEY = [USERS_PATH]
-
 function statusName(value: string) {
   return value === 'ACTIVE' ? 'Activo' : value === 'BLOCKED' ? 'Bloqueado' : value === 'INVITED' ? 'Invitado' : value
 }
@@ -32,8 +30,11 @@ function errorMessage(cause: unknown) {
 export function UsersPage() {
   const isAdmin = hasAuthority('ADMIN_ALL') || hasAuthority('USER_MANAGE')
   const queryClient = useQueryClient()
-  const query = useQuery({ queryKey: USERS_KEY, queryFn: () => apiGet<ApiPage<User>>(USERS_PATH) })
-  const [search, setSearch] = useState('')
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
+  const search = getFilter('search')
+  const usersPath = `/api/users?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}`
+  const usersKey = [usersPath]
+  const query = useQuery({ queryKey: usersKey, queryFn: () => apiGet<ApiPage<User>>(usersPath) })
   const [showInvite, setShowInvite] = useState(false)
   const [creationMode, setCreationMode] = useState<'invite' | 'temporary'>('invite')
   const [email, setEmail] = useState('')
@@ -67,7 +68,7 @@ export function UsersPage() {
         setFeedback('Usuario creado correctamente. Compartí la contraseña provisoria de manera segura.')
         setTemporaryPassword('')
       }
-      await queryClient.invalidateQueries({ queryKey: USERS_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/users?') })
       setEmail('')
       setDisplayName('')
       setShowInvite(false)
@@ -85,7 +86,7 @@ export function UsersPage() {
     setError('')
     try {
       await apiPost(`/api/users/${action.user.id}/${action.action}`, {})
-      await queryClient.invalidateQueries({ queryKey: USERS_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/users?') })
       setFeedback(action.action === 'block' ? 'Usuario bloqueado.' : action.action === 'unblock' ? 'Usuario desbloqueado.' : 'Sesiones revocadas.')
       setAction(undefined)
     } catch (cause) {
@@ -95,7 +96,7 @@ export function UsersPage() {
     }
   }
 
-  const filtered = (query.data?.content ?? []).filter((user) => `${user.email} ${user.name}`.toLowerCase().includes(search.trim().toLowerCase()))
+  const filtered = query.data?.content ?? []
   const rows: Row[] = filtered.map((user) => ({ id: user.id, email: user.email, name: user.name, status: user.status, roles: user.roles ?? '' }))
   const columns: TableColumn[] = [
     { key: 'name', label: 'Usuario', emphasis: true },
@@ -129,8 +130,8 @@ export function UsersPage() {
       <div className="page-actions"><Button type="button" variant="secondary" onClick={() => setShowInvite(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : creationMode === 'invite' ? 'Enviar invitación' : 'Crear usuario'}</Button></div>
     </form></Panel>}
     <Panel>
-      <div className="toolbar"><input className="input search-input" aria-label="Buscar usuarios" placeholder="Buscar por email..." value={search} onChange={(event) => setSearch(event.target.value)} /></div>
-      {query.isLoading ? <EmptyState title="Cargando usuarios" description="Consultando usuarios." /> : query.isError ? <EmptyState title="No se pudieron cargar los usuarios" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay usuarios para mostrar" description="Invitá a un usuario para habilitar el acceso." action={isAdmin ? <Button onClick={() => setShowInvite(true)}>+ Invitar usuario</Button> : undefined} /> : <DataTable columns={columns} rows={rows} />}
+      <div className="toolbar"><label className="field"><span>Buscar usuarios</span><input className="input search-input" aria-label="Buscar usuarios" placeholder="Email o nombre" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
+      {query.isLoading ? <EmptyState title="Cargando usuarios" description="Consultando usuarios." /> : query.isError ? <EmptyState title="No se pudieron cargar los usuarios" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay usuarios para mostrar" description="Invitá a un usuario para habilitar el acceso." action={isAdmin ? <Button onClick={() => setShowInvite(true)}>+ Invitar usuario</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} usuarios</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {action && <div role="dialog" aria-modal="true" aria-labelledby="user-action-title" className="modal-backdrop"><Panel title="Confirmar acción"><h2 id="user-action-title">{action.action === 'block' ? `¿Bloquear ${action.user.email}?` : action.action === 'unblock' ? `¿Desbloquear ${action.user.email}?` : `¿Revocar todas las sesiones de ${action.user.email}?`}</h2><div className="page-actions"><Button variant="secondary" onClick={() => setAction(undefined)} disabled={saving}>Cancelar</Button><Button onClick={confirmAction} disabled={saving}>{saving ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
   </>

@@ -13,11 +13,13 @@ import OrderLifecycleActions from './OrderLifecycleActions'
 
 type OrderItem = { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; priceListId: string; priceListCode: string; lineDiscountPercent: number }
 type Payment = { id: string; amount: number; method: string; transferReference?: string | null; date: string }
+type DeliveryAttempt = { id: string; attemptNumber: number; result: 'DELIVERED' | 'FAILED'; observation?: string | null; attemptedAt: string; attemptedBy: string }
 type OrderDetail = {
   order: { id: string; number: string; customerId: string; customer: string; status: string; subtotal: number; discount: number; total: number; customerBalance: number; date: string }
   items: OrderItem[]
   sale: { id: string; number: string; status: string; total: number; paid: number; balance: number; date: string }
   payments: Payment[]
+  deliveryAttempts: DeliveryAttempt[]
   account: { debit: number; credit: number; net: number }
 }
 type EditLine = { productId: string; productName: string; quantity: string; lineDiscountPercent: string }
@@ -44,7 +46,7 @@ export default function OrderDetailPage() {
   if (query.isLoading) return <><PageHeader eyebrow="Operación" title="Pedido" description="Consultando pedido, venta y cobros." /><Panel><EmptyState title="Cargando pedido" description="Consultando snapshots comerciales." /></Panel></>
   if (query.isError || !query.data) return <><PageHeader eyebrow="Operación" title="Pedido" description="No se pudo abrir el detalle." /><Panel><EmptyState title="No se pudo cargar el pedido" description={query.error?.message ?? 'Revisá el número o el acceso al pedido.'} action={<Button variant="secondary" href="/orders">Volver a pedidos</Button>} /></Panel></>
 
-  const { order, items, sale, payments, account } = query.data
+  const { order, items, sale, payments, account, deliveryAttempts = [] } = query.data
   const commonListId = items[0]?.priceListId
   const samePriceList = items.every((item) => item.priceListId === commonListId)
   const hasSavedDiscount = Number(order.discount ?? 0) !== 0 || items.some((item) => Number(item.lineDiscountPercent ?? 0) !== 0)
@@ -142,6 +144,17 @@ export default function OrderDetailPage() {
       <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setEditing(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button></div>
     </form></Panel> : <>
       <Panel title="Productos del pedido"><DataTable columns={itemColumns} rows={itemRows} /></Panel>
+      <Panel title="Intentos de entrega">
+        {deliveryAttempts.length === 0 ? <EmptyState title="Todavía no hay intentos" description="Las visitas de entrega registradas aparecerán acá." /> : <DataTable
+          columns={[
+            { key: 'attempt', label: 'Intento', emphasis: true },
+            { key: 'result', label: 'Resultado', render: (value) => <Badge tone={value === 'DELIVERED' ? 'strong' : 'muted'}>{value === 'DELIVERED' ? 'Entregada' : 'No entregada'}</Badge> },
+            { key: 'date', label: 'Fecha' },
+            { key: 'observation', label: 'Observación' },
+          ]}
+          rows={deliveryAttempts.map((attempt) => ({ id: attempt.id, attempt: String(attempt.attemptNumber), result: attempt.result, date: date(attempt.attemptedAt), observation: attempt.observation || '—' }))}
+        />}
+      </Panel>
       <div className="content-grid two-thirds">
         <Panel title="Pagos registrados">{paymentRows.length ? <DataTable columns={paymentColumns} rows={paymentRows} /> : <EmptyState title="Todavía no hay pagos" description="El saldo permanece en la cuenta corriente del cliente." />}</Panel>
         <Panel title="Cuenta corriente"><dl className="account-ledger"><dt>Débitos de esta venta</dt><dd>{money(account.debit)}</dd><dt>Créditos aplicados</dt><dd>{money(account.credit)}</dd><dt>Saldo pendiente</dt><dd>{money(account.net)}</dd><dt>Saldo total del cliente</dt><dd>{money(order.customerBalance)}</dd></dl></Panel>

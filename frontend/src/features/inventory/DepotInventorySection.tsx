@@ -7,6 +7,7 @@ import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { Panel } from '../../shared/components/Panel'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type Depot = { id: string; code: string; name: string; status: 'ACTIVE' | 'INACTIVE'; isDefault: boolean }
 type DepotBalance = { productId: string; sku: string; product: string; stock: number; updated?: string | null }
@@ -20,7 +21,6 @@ type DepotInventorySectionProps = {
 
 const DEPOTS_PATH = '/api/inventory/depots'
 const DEPOTS_KEY = [DEPOTS_PATH]
-const INVENTORY_KEY = ['/api/inventory?page=0&size=20']
 
 function readableError(cause: unknown) {
   if (cause instanceof ApiError && cause.status === 403) return 'No tenés permiso para esta acción de inventario.'
@@ -42,8 +42,8 @@ export default function DepotInventorySection({ selectedDepotId, onSelectedDepot
   const depots = Array.isArray(depotsQuery.data) ? depotsQuery.data : []
   const activeDepots = depots.filter((depot) => depot.status === 'ACTIVE')
   const selectedDepot = depots.find((depot) => depot.id === selectedDepotId)
-  const [search, setSearch] = useState('')
-  const [balancePage, setBalancePage] = useState(0)
+  const { page: balancePage, getFilter, setFilter, setPage: setBalancePage } = useUrlListState([], 20, 'depotPage')
+  const search = getFilter('depotSearch')
   const balancePath = selectedDepotId
     ? `/api/inventory/depots/${selectedDepotId}/balances?page=${balancePage}&size=20&search=${encodeURIComponent(search.trim())}`
     : ''
@@ -105,7 +105,7 @@ export default function DepotInventorySection({ selectedDepotId, onSelectedDepot
     }),
     onSuccess: async (_result, draft) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: INVENTORY_KEY }),
+        queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/inventory?') }),
         invalidateDepotBalances(),
         queryClient.invalidateQueries({ queryKey: [`/api/inventory/${draft.productId}/movements?page=0&size=20`] }),
       ])
@@ -172,9 +172,9 @@ export default function DepotInventorySection({ selectedDepotId, onSelectedDepot
           {isAdmin && <div className="field"><span>Administración de depósitos</span><div className="page-actions">{depots.filter((depot) => !depot.isDefault).map((depot) => <Button key={depot.id} variant="link" onClick={() => setStatusDepot(depot)}>{depot.status === 'ACTIVE' ? 'Desactivar' : 'Activar'} depósito {depot.code}</Button>)}</div></div>}
         </div>
         {selectedDepot && <p className="helper-text">Los ajustes y transferencias se registran sobre {selectedDepot.code} · {selectedDepot.name}.</p>}
-        <div className="toolbar"><input className="input search-input" aria-label="Buscar productos del depósito" placeholder="Buscar producto o SKU..." value={search} onChange={(event) => { setSearch(event.target.value); setBalancePage(0) }} /></div>
+        <div className="toolbar"><label className="field"><span>Buscar productos del depósito</span><input className="input search-input" aria-label="Buscar productos del depósito" placeholder="Buscar producto o SKU..." value={search} onChange={(event) => { setFilter('depotSearch', event.target.value); setBalancePage(0) }} /></label></div>
         {balancesQuery.isLoading ? <EmptyState title="Cargando saldos" description={`Consultando ${selectedDepot?.name ?? 'el depósito seleccionado'}.`} /> : balancesQuery.isError ? <EmptyState title="No se pudieron cargar los saldos" description={balancesQuery.error.message} action={<Button variant="secondary" onClick={() => balancesQuery.refetch()}>Reintentar</Button>} /> : rows.length === 0 ? <EmptyState title="Sin productos para mostrar" description="No hay productos que coincidan con esta búsqueda en el depósito." /> : <DataTable columns={columns} rows={rows} />}
-        {balancesQuery.data && balancesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {balancePage + 1} de {balancesQuery.data.totalPages} · {balancesQuery.data.totalElements} productos</span><div><Button variant="secondary" onClick={() => setBalancePage((page) => Math.max(0, page - 1))} disabled={balancePage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setBalancePage((page) => Math.min((balancesQuery.data?.totalPages ?? 1) - 1, page + 1))} disabled={balancePage + 1 >= balancesQuery.data.totalPages}>Siguiente</Button></div></div>}
+        {balancesQuery.data && balancesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {balancePage + 1} de {balancesQuery.data.totalPages} · {balancesQuery.data.totalElements} productos</span><div><Button variant="secondary" onClick={() => setBalancePage(balancePage - 1)} disabled={balancePage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setBalancePage(balancePage + 1)} disabled={balancePage + 1 >= balancesQuery.data.totalPages}>Siguiente</Button></div></div>}
       </>}
     </Panel>
     {showCreate && isAdmin && <Panel title="Nuevo depósito"><form className="form-grid" onSubmit={submitCreate}>

@@ -62,7 +62,7 @@ describe('InventoryPage', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/inventory/product-1/adjustments', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ quantity: -0.5, reason: 'Corrección de conteo', depotId: 'depot-central' }),
     })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/inventory?page=0&size=20'] })
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('Ajuste de inventario registrado.')).toBeInTheDocument()
   })

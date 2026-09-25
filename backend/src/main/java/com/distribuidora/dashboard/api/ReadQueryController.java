@@ -28,6 +28,13 @@ public class ReadQueryController {
     @GetMapping("/customers")
     public PageResponse<Map<String, Object>> customers(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.customers(page, size, search); }
 
+    @GetMapping("/customers/{customerId}/debts")
+    @PreAuthorize("hasAnyAuthority('SALE_PAYMENT', 'ADMIN_ALL')")
+    public PageResponse<Map<String, Object>> customerDebts(@PathVariable UUID customerId,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return queries.customerDebts(customerId, page, size);
+    }
+
     @GetMapping("/products")
     public PageResponse<Map<String, Object>> products(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.products(page, size, search); }
 
@@ -48,11 +55,21 @@ public class ReadQueryController {
     @GetMapping("/orders/by-number/{orderNumber}")
     public Map<String, Object> orderByNumber(@PathVariable String orderNumber) { return queries.orderDetailByNumber(orderNumber); }
 
+    @GetMapping("/sales/{saleId}")
+    public Map<String, Object> sale(@PathVariable UUID saleId) { return queries.saleDetail(saleId); }
+
     @GetMapping("/sales")
     public PageResponse<Map<String, Object>> sales(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.sales(page, size, search); }
 
     @GetMapping("/payments")
     public PageResponse<Map<String, Object>> payments(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.payments(page, size, search); }
+
+    @GetMapping("/audit")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public PageResponse<Map<String, Object>> auditEvents(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) {
+        return queries.auditEvents(page, size, search);
+    }
 
     @GetMapping("/users")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")

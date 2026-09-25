@@ -58,6 +58,37 @@ describe('PaymentsPage', () => {
     })))
     expect(await screen.findByRole('status')).toHaveTextContent(/Pago aplicado por FIFO/)
     expect(screen.getAllByText('VEN-001').length).toBeGreaterThan(0)
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/payments?page=0&size=20&search='] })
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
+  })
+
+  it('loads customer debts and imputes payment to the selected sale', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/payments')) return response(payments)
+      if (path.startsWith('/api/customers?')) return response(customers)
+      if (path === '/api/customers/customer-1/debts?page=0&size=100') return response({ content: [
+        { saleId: 'sale-1', saleNumber: 'VEN-001', orderNumber: 'PED-001', status: 'DELIVERED', balance: 200, createdAt: '2026-09-24T10:00:00Z' },
+      ], page: 0, size: 100, totalElements: 1, totalPages: 1 })
+      if (path === '/api/customers/customer-1/account-payments' && init?.method === 'POST') return response({
+        customerId: 'customer-1', received: 50, balanceBefore: 200, balanceAfter: 150, allocationMode: 'SPECIFIC', allocations: [{ saleId: 'sale-1', saleNumber: 'VEN-001', paymentId: 'payment-2', amount: 50 }],
+      }, 201)
+      return response({})
+    })
+    const queryClient = renderPage()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await user.click(await screen.findByRole('button', { name: /registrar pago/i }))
+    await user.selectOptions(screen.getByLabelText('Cliente del pago'), 'customer-1')
+    await screen.findByRole('option', { name: /VEN-001/ })
+    await user.selectOptions(screen.getByLabelText('Imputación'), 'sale-1')
+    await user.type(screen.getByLabelText('Importe a registrar'), '50')
+    await user.click(screen.getByRole('button', { name: /guardar pago/i }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/account-payments', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ amount: 50, method: 'CASH', saleId: 'sale-1' }),
+    })))
+    expect(await screen.findByRole('status')).toHaveTextContent(/deuda seleccionada/i)
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['customer-debts', 'customer-1'] })
   })
 })

@@ -42,6 +42,7 @@ class ProductCommandControllerTest {
     @Test
     void returnsCreatedIdForProductCreation() throws Exception {
         UUID id = UUID.randomUUID();
+        UUID priceListId = UUID.randomUUID();
         when(service.create(any())).thenReturn(id);
 
         mockMvc.perform(post("/api/products")
@@ -52,13 +53,36 @@ class ProductCommandControllerTest {
                         "name": "Producto Test",
                         "category": "Bebidas",
                         "presentation": "Unidad",
-                        "cost": 100.00
+                        "cost": 100.00,
+                        "prices": [{"priceListId":"%s","price":125.00}]
                     }
-                    """))
+                    """.formatted(priceListId)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(id.toString()));
 
         verify(service).create(any());
+    }
+
+    @Test
+    void mapsMissingOrEmptyInitialPricesToBadRequest() throws Exception {
+        doThrow(new IllegalArgumentException("Se requiere al menos un precio para una lista activa"))
+            .when(service).create(any());
+
+        mockMvc.perform(post("/api/products")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"sku":"SKU-MISSING","name":"Producto","category":"Bebidas","presentation":"Unidad","cost":100}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(post("/api/products")
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"sku":"SKU-EMPTY","name":"Producto","category":"Bebidas","presentation":"Unidad","cost":100,"prices":[]}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
     @Test

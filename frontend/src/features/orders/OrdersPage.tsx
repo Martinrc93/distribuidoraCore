@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
 import { apiGet, type ApiPage } from '../../shared/api/client'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
@@ -7,6 +6,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type Order = { id: string; number: string; customer: string; seller: string; total: number; status: string; date: string }
 type Row = Record<string, string>
@@ -20,9 +20,10 @@ function formatDate(value: string) {
 }
 
 export default function OrdersPage() {
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
-  const path = `/api/orders?page=0&size=20&search=${encodeURIComponent(search.trim())}&status=${encodeURIComponent(status)}`
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'status'])
+  const search = getFilter('search')
+  const status = getFilter('status')
+  const path = `/api/orders?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&status=${encodeURIComponent(status)}`
   const query = useQuery({ queryKey: [path], queryFn: () => apiGet<ApiPage<Order>>(path) })
   const rows: Row[] = (query.data?.content ?? []).map((order) => ({
     id: order.id,
@@ -48,11 +49,10 @@ export default function OrdersPage() {
     <PageHeader eyebrow="Operación" title="Pedidos" description="Consultá pedidos, cobros, entregas y snapshots comerciales." actions={<Button href="/orders/new">+ Nuevo pedido</Button>} />
     <Panel>
       <form className="toolbar" onSubmit={(event) => event.preventDefault()}>
-        <input className="input search-input" placeholder="Buscar por cliente o número..." aria-label="Buscar pedidos" value={search} onChange={(event) => setSearch(event.target.value)} />
-        <select className="select" aria-label="Filtrar por estado" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos los estados</option><option value="CONFIRMED">Confirmado</option><option value="DELIVERED">Entregado</option><option value="CANCELLED">Cancelado</option></select>
-        <Button variant="secondary" type="submit">Buscar</Button>
+        <label className="field"><span>Buscar pedidos</span><input className="input search-input" placeholder="Cliente o número" aria-label="Buscar pedidos" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
+        <label className="field"><span>Filtrar por estado</span><select className="select" aria-label="Filtrar por estado" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="">Todos los estados</option><option value="CONFIRMED">Confirmado</option><option value="DELIVERED">Entregado</option><option value="CANCELLED">Cancelado</option></select></label>
       </form>
-      {query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay pedidos para mostrar" description="Probá otra búsqueda o creá un pedido." action={<Button href="/orders/new">+ Nuevo pedido</Button>} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Mostrando hasta 20 de {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled={(query.data?.totalElements ?? 0) <= 20}>Siguiente</Button></div></div></>}
+      {query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay pedidos para mostrar" description="Probá otra búsqueda o creá un pedido." action={<Button href="/orders/new">+ Nuevo pedido</Button>} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
   </>
 }

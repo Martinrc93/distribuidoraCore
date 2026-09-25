@@ -8,6 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type Customer = {
   id: string
@@ -22,8 +23,6 @@ type Customer = {
 
 type Seller = { id: string; displayName: string; email: string }
 type PriceList = { id: string; code: string; name: string; status: string }
-
-const CUSTOMER_QUERY_KEY = ['/api/customers?page=0&size=20']
 
 function money(value: unknown) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value ?? 0))
@@ -85,11 +84,11 @@ function CustomerForm({
       const body = { businessName, cuitId: cuitId.trim() || null, sellerId: sellerId || undefined }
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
-      await queryClient.invalidateQueries({ queryKey: CUSTOMER_QUERY_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
       onSuccess(initial ? 'Cliente actualizado correctamente.' : 'Cliente creado correctamente.')
       onDone()
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ queryKey: CUSTOMER_QUERY_KEY })
+      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
       setError(errorMessage(cause, 'No se pudo guardar el cliente.'))
     } finally {
       setSaving(false)
@@ -110,7 +109,10 @@ function CustomerForm({
 export default function CustomersPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
-  const query = useQuery({ queryKey: CUSTOMER_QUERY_KEY, queryFn: () => apiGet<ApiPage<Customer>>('/api/customers?page=0&size=20') })
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
+  const search = getFilter('search')
+  const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}`
+  const query = useQuery({ queryKey: [customerPath], queryFn: () => apiGet<ApiPage<Customer>>(customerPath) })
   const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGet<ApiPage<Seller>>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const listsQuery = useQuery({ queryKey: ['/api/pricing/lists?page=0&size=100'], queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=100'), enabled: isAdmin })
   const [formCustomer, setFormCustomer] = useState<Customer | undefined>()
@@ -122,7 +124,7 @@ export default function CustomersPage() {
   const [statusCustomer, setStatusCustomer] = useState<Customer | undefined>()
 
   async function invalidate() {
-    await queryClient.invalidateQueries({ queryKey: CUSTOMER_QUERY_KEY })
+    await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
   }
 
   async function assignPriceList(customer: Customer) {
@@ -183,8 +185,8 @@ export default function CustomersPage() {
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
     {isAdmin && (showForm || formCustomer) && <CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} />}
     {isAdmin && formCustomer && <Panel title="Lista de precios" description="La asignación se aplica al cliente seleccionado."><div className="form-grid"><label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" value={selectedLists[formCustomer.id] ?? formCustomer.priceListId ?? ''} onChange={(event) => setSelectedLists((current) => ({ ...current, [formCustomer.id]: event.target.value }))} disabled={listsQuery.isError}><option value="">Sin lista asignada</option>{(listsQuery.data?.content ?? []).map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select></label>{listsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar las listas de precios. <Button variant="link" type="button" onClick={() => listsQuery.refetch()}>Reintentar</Button></p>}<Button type="button" onClick={() => assignPriceList(formCustomer)} disabled={actionSaving || listsQuery.isError}>{actionSaving ? 'Guardando...' : 'Asignar lista'}</Button></div></Panel>}
-    <Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar por nombre o identificación..." aria-label="Buscar clientes" /><Button variant="secondary">Filtrar</Button></div>
-      {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay clientes" description="Creá el primer cliente para comenzar a gestionar la operación." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo cliente</Button> : undefined} /> : <DataTable columns={columns} rows={rows} />}
+    <Panel><div className="toolbar"><label className="field"><span>Buscar clientes</span><input className="input search-input" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
+      {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay clientes" description="Creá el primer cliente para comenzar a gestionar la operación." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo cliente</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {isAdmin && sellersQuery.isError && (showForm || formCustomer) && <p className="error-text" role="alert">No se pudieron cargar los vendedores. <Button variant="link" type="button" onClick={() => sellersQuery.refetch()}>Reintentar</Button></p>}
     {statusCustomer && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusCustomer.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusCustomer.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusCustomer(undefined)}>Cancelar</Button><Button onClick={changeStatus} disabled={actionSaving}>{actionSaving ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}

@@ -7,13 +7,12 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type Seller = { id: string; userId: string; displayName: string; email: string; status: string; assignedCustomersCount: number }
 type User = { id: string; email: string; status: string }
 type Order = { id: string; number: string; customer: string; status: string }
 type Row = Record<string, string>
-const SELLERS_PATH = '/api/sellers?page=0&size=20&search=&status='
-const SELLERS_KEY = [SELLERS_PATH]
 const USERS_PATH = '/api/users?page=0&size=20'
 const USERS_KEY = [USERS_PATH]
 const ORDERS_PATH = '/api/orders?page=0&size=20&search=&status='
@@ -26,7 +25,12 @@ function readable(cause: unknown) {
 
 export default function SellersPage() {
   const queryClient = useQueryClient()
-  const sellersQuery = useQuery({ queryKey: SELLERS_KEY, queryFn: () => apiGet<ApiPage<Seller>>(SELLERS_PATH) })
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'status'])
+  const search = getFilter('search')
+  const status = getFilter('status')
+  const sellersPath = `/api/sellers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&status=${encodeURIComponent(status)}`
+  const sellersKey = [sellersPath]
+  const sellersQuery = useQuery({ queryKey: sellersKey, queryFn: () => apiGet<ApiPage<Seller>>(sellersPath) })
   const usersQuery = useQuery({ queryKey: USERS_KEY, queryFn: () => apiGet<ApiPage<User>>(USERS_PATH) })
   const ordersQuery = useQuery({ queryKey: ORDERS_KEY, queryFn: () => apiGet<ApiPage<Order>>(ORDERS_PATH) })
   const sellers = sellersQuery.data?.content ?? []
@@ -76,7 +80,7 @@ export default function SellersPage() {
         if (!userId) { setError('Seleccioná un usuario para vincular.'); setSaving(false); return }
         await apiPost('/api/sellers', { userId, displayName: displayName.trim() })
       }
-      await queryClient.invalidateQueries({ queryKey: SELLERS_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/sellers?') })
       setShowCreate(false)
       setFeedback(editingSeller ? 'Vendedor actualizado correctamente.' : 'Vendedor creado correctamente.')
     } catch (cause) {
@@ -92,7 +96,7 @@ export default function SellersPage() {
     setError('')
     try {
       await apiPatch(`/api/sellers/${seller.id}/status`, { status })
-      await queryClient.invalidateQueries({ queryKey: SELLERS_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/sellers?') })
       setFeedback(status === 'ACTIVE' ? 'Vendedor activado.' : 'Vendedor desactivado.')
     } catch (cause) {
       setError(readable(cause))
@@ -110,8 +114,8 @@ export default function SellersPage() {
         sourceSellerId, targetSellerId, reassignPendingOrders,
       })
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: SELLERS_KEY }),
-        queryClient.invalidateQueries({ queryKey: ['/api/customers'] }),
+        queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/sellers?') }),
+        queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') }),
         queryClient.invalidateQueries({ queryKey: ['/api/orders'] }),
       ])
       setFeedback(`${result.reassignedCustomersCount} clientes y ${result.reassignedOrdersCount} pedidos reasignados.`)
@@ -163,7 +167,7 @@ export default function SellersPage() {
       <label className="field"><span>Nombre para mostrar</span><input className="input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} required maxLength={160} disabled={saving} /></label>
       <div className="page-actions"><Button type="button" variant="secondary" onClick={() => setShowCreate(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar vendedor'}</Button></div>
     </form></Panel>}
-    <Panel title="Perfiles comerciales">{sellersQuery.isLoading ? <EmptyState title="Cargando vendedores" description="Consultando perfiles comerciales." /> : sellersQuery.isError ? <EmptyState title="No se pudieron cargar los vendedores" description={sellersQuery.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay vendedores" description="Creá un perfil comercial asociado a un usuario." action={<Button onClick={openCreate}>+ Nuevo vendedor</Button>} /> : <DataTable columns={columns} rows={rows} />}</Panel>
+    <Panel title="Perfiles comerciales"><div className="toolbar"><label className="field"><span>Buscar vendedores</span><input className="input search-input" aria-label="Buscar vendedores" placeholder="Nombre o email" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label><label className="field"><span>Estado</span><select className="select" aria-label="Filtrar vendedores por estado" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="">Todos</option><option value="ACTIVE">Activos</option><option value="INACTIVE">Inactivos</option></select></label></div>{sellersQuery.isLoading ? <EmptyState title="Cargando vendedores" description="Consultando perfiles comerciales." /> : sellersQuery.isError ? <EmptyState title="No se pudieron cargar los vendedores" description={sellersQuery.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay vendedores" description="Creá un perfil comercial asociado a un usuario." action={<Button onClick={openCreate}>+ Nuevo vendedor</Button>} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {sellersQuery.data?.totalElements ?? 0} vendedores</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (sellersQuery.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}</Panel>
     {reassignCustomers && <Panel title="Reasignar clientes"><form className="form-grid" onSubmit={(event) => { event.preventDefault(); setConfirmCustomerReassign(true) }}>
       <label className="field"><span>Vendedor de origen</span><select className="select" value={sourceSellerId} onChange={(event) => setSourceSellerId(event.target.value)}><option value="">Seleccionar...</option>{sellers.map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>
       <label className="field"><span>Vendedor de destino</span><select className="select" value={targetSellerId} onChange={(event) => setTargetSellerId(event.target.value)}><option value="">Seleccionar...</option>{sellers.filter((seller) => seller.status === 'ACTIVE').map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>

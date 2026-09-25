@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DepotInventorySection from './DepotInventorySection'
@@ -22,7 +23,7 @@ function renderSection(onAdjust = vi.fn(), authorities = ['ADMIN_ALL', 'STOCK_AD
   }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sessionStorage.setItem('distribuidora.accessToken', token(authorities))
-  render(<QueryClientProvider client={queryClient}><TestSection /></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter><TestSection /></MemoryRouter></QueryClientProvider>)
   return queryClient
 }
 
@@ -90,7 +91,7 @@ describe('DepotInventorySection', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/inventory/transfers', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ fromDepotId: 'depot-central', toDepotId: 'depot-north', productId: 'product-1', quantity: 1.5, reason: 'Reposición de sucursal' }),
     })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/inventory?page=0&size=20'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/inventory/product-1/movements?page=0&size=20'] })
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
   })
 

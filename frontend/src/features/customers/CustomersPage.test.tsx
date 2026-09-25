@@ -65,7 +65,7 @@ describe('CustomersPage', () => {
     await user.click(screen.getByRole('button', { name: /guardar cliente/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Despensa Centro', cuitId: '30-456', sellerId: 'seller-1' }) })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/customers?page=0&size=20'] })
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('Cliente creado correctamente.')).toBeInTheDocument()
   })
 
@@ -162,7 +162,7 @@ describe('CustomersPage', () => {
     }
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(path, expect.objectContaining({ method })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/customers?page=0&size=20'] })
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
   })
 
   it('shows customer mutation feedback for update and price-list assignment', async () => {

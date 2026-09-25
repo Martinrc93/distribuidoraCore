@@ -76,6 +76,7 @@ public class ProductCommandService {
     @Transactional
     public UUID create(ProductInput input) {
         validate(input);
+        validateCreatePrices(input.prices());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
         validateActive("catalog.brands", input.brandId());
         if (exists("select exists(select 1 from catalog.products where sku = ?)", input.sku())) {
@@ -190,6 +191,17 @@ public class ProductCommandService {
     }
 
     private boolean exists(String sql, Object... args) { return Boolean.TRUE.equals(jdbc.queryForObject(sql, Boolean.class, args)); }
+    private void validateCreatePrices(List<ProductPriceInput> prices) {
+        if (prices == null || prices.isEmpty()) {
+            throw new IllegalArgumentException("Se requiere al menos un precio para una lista activa");
+        }
+        for (ProductPriceInput price : prices) {
+            if (!exists("select exists(select 1 from catalog.price_lists where id = ? and status = 'ACTIVE')", price.priceListId())) {
+                throw new IllegalArgumentException("Los precios iniciales solo pueden pertenecer a listas activas");
+            }
+        }
+    }
+
     private void storeCurrentPrice(UUID listId, UUID productId, BigDecimal price) {
         Timestamp now = timestamp();
         jdbc.update("""

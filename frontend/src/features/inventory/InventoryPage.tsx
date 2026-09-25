@@ -8,13 +8,11 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import DepotInventorySection from './DepotInventorySection'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type InventoryItem = { id: string; product: string; stock: number; lastMovement?: string | null; updated?: string }
 type Movement = { id: string; movementType: string; quantity: number; reason: string; referenceType?: string; referenceId?: string; depotCode?: string; date: string }
 type Row = Record<string, string>
-
-const INVENTORY_PATH = '/api/inventory?page=0&size=20'
-const INVENTORY_KEY = [INVENTORY_PATH]
 
 function date(value?: string) {
   return value ? new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
@@ -22,11 +20,17 @@ function date(value?: string) {
 
 export default function InventoryPage() {
   const queryClient = useQueryClient()
-  const query = useQuery({ queryKey: INVENTORY_KEY, queryFn: () => apiGet<ApiPage<InventoryItem>>(INVENTORY_PATH) })
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
+  const { page: movementPage, setPage: setMovementPage } = useUrlListState([], 20, 'movementPage')
+  const search = getFilter('search')
+  const searchParam = search.trim() ? `&search=${encodeURIComponent(search.trim())}` : ''
+  const inventoryPath = `/api/inventory?page=${page}&size=${pageSize}${searchParam}`
+  const inventoryKey = [inventoryPath]
+  const query = useQuery({ queryKey: inventoryKey, queryFn: () => apiGet<ApiPage<InventoryItem>>(inventoryPath) })
   const [selectedProduct, setSelectedProduct] = useState<InventoryItem | undefined>()
   const [selectedDepotId, setSelectedDepotId] = useState('')
   const [selectedDepotCode, setSelectedDepotCode] = useState('')
-  const movementsPath = selectedProduct ? `/api/inventory/${selectedProduct.id}/movements?page=0&size=20` : ''
+  const movementsPath = selectedProduct ? `/api/inventory/${selectedProduct.id}/movements?page=${movementPage}&size=${pageSize}` : ''
   const movementsKey = [movementsPath]
   const movementsQuery = useQuery({ queryKey: movementsKey, queryFn: () => apiGet<ApiPage<Movement>>(movementsPath), enabled: Boolean(selectedProduct) })
   const [adjustmentProduct, setAdjustmentProduct] = useState<InventoryItem | undefined>()
@@ -59,7 +63,7 @@ export default function InventoryPage() {
     setPageError('')
     try {
       await apiPost(`/api/inventory/${adjustmentProduct.id}/adjustments`, { quantity: amount, reason: reason.trim(), ...(adjustmentDepotId ? { depotId: adjustmentDepotId } : {}) })
-      await queryClient.invalidateQueries({ queryKey: INVENTORY_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/inventory?') })
       if (adjustmentDepotId) await queryClient.invalidateQueries({
         predicate: (cachedQuery) => typeof cachedQuery.queryKey[0] === 'string'
           && cachedQuery.queryKey[0].startsWith(`/api/inventory/depots/${adjustmentDepotId}/balances?`),
@@ -92,7 +96,7 @@ export default function InventoryPage() {
     { key: 'actions', label: '', render: (_value, row) => {
       const item = query.data?.content.find((candidate) => candidate.id === row.id)
       if (!item) return null
-      return <div className="page-actions"><Button variant="link" onClick={() => setSelectedProduct(item)}>Ver movimientos de {item.product}</Button></div>
+      return <div className="page-actions"><Button variant="link" onClick={() => { setSelectedProduct(item); setMovementPage(0) }}>Ver movimientos de {item.product}</Button></div>
     } },
   ]
 
@@ -121,7 +125,8 @@ export default function InventoryPage() {
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {pageError && <p className="error-text" role="alert">{pageError}</p>}
     <Panel title="Saldos por producto">
-      {query.isLoading ? <EmptyState title="Cargando inventario" description="Consultando saldos actuales." /> : query.isError ? <EmptyState title="No se pudo cargar el inventario" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay saldos" description="Los saldos aparecen cuando se crean productos." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Mostrando hasta 20 de {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled={(query.data?.totalElements ?? 0) <= 20}>Siguiente</Button></div></div></>}
+      <div className="toolbar"><label className="field"><span>Buscar productos</span><input className="input search-input" aria-label="Buscar inventario" placeholder="Nombre o SKU" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
+      {query.isLoading ? <EmptyState title="Cargando inventario" description="Consultando saldos actuales." /> : query.isError ? <EmptyState title="No se pudo cargar el inventario" description={query.error.message} /> : rows.length === 0 ? <EmptyState title={search ? 'No hay saldos para mostrar' : 'Todavía no hay saldos'} description={search ? 'Probá otra búsqueda.' : 'Los saldos aparecen cuando se crean productos.'} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     <DepotInventorySection
       selectedDepotId={selectedDepotId}
@@ -134,8 +139,8 @@ export default function InventoryPage() {
         setAdjustmentError('')
       }}
     />
-    {selectedProduct && <Panel title={`Movimientos · ${selectedProduct.product}`} action={<Button variant="link" onClick={() => setSelectedProduct(undefined)}>Cerrar detalle</Button>}>
-      {movementsQuery.isLoading ? <EmptyState title="Cargando movimientos" description="Consultando el historial de stock." /> : movementsQuery.isError ? <EmptyState title="No se pudieron cargar los movimientos" description={movementsQuery.error.message} /> : movementRows.length === 0 ? <EmptyState title="Sin movimientos" description="Este producto todavía no registra movimientos de stock." /> : <DataTable columns={movementColumns} rows={movementRows} />}
+    {selectedProduct && <Panel title={`Movimientos · ${selectedProduct.product}`} action={<Button variant="link" onClick={() => { setSelectedProduct(undefined); setMovementPage(0) }}>Cerrar detalle</Button>}>
+      {movementsQuery.isLoading ? <EmptyState title="Cargando movimientos" description="Consultando el historial de stock." /> : movementsQuery.isError ? <EmptyState title="No se pudieron cargar los movimientos" description={movementsQuery.error.message} /> : movementRows.length === 0 ? <EmptyState title="Sin movimientos" description="Este producto todavía no registra movimientos de stock." /> : <><DataTable columns={movementColumns} rows={movementRows} />{movementsQuery.data && movementsQuery.data.totalPages > 1 && <div className="pagination"><span>Página {movementPage + 1} de {movementsQuery.data.totalPages} · {movementsQuery.data.totalElements} movimientos</span><div><Button variant="secondary" onClick={() => setMovementPage(movementPage - 1)} disabled={movementPage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setMovementPage(movementPage + 1)} disabled={movementPage + 1 >= movementsQuery.data.totalPages}>Siguiente</Button></div></div>}</>}
     </Panel>}
     {adjustmentProduct && <div role="dialog" aria-modal="true" aria-labelledby="adjustment-title" className="modal-backdrop"><Panel title="Ajustar inventario"><form className="form-grid" onSubmit={submitAdjustment}>
       <h2 id="adjustment-title">{adjustmentProduct.product} · saldo en depósito {adjustmentProduct.stock}</h2>

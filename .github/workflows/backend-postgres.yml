@@ -2,12 +2,12 @@ name: Backend PostgreSQL
 
 on:
   push:
-    branches: [feature/backend]
+    branches: [feature/backend, main]
     paths:
       - "backend/**"
       - ".github/workflows/backend-postgres.yml"
   pull_request:
-    branches: [feature/backend]
+    branches: [feature/backend, main]
     paths:
       - "backend/**"
       - ".github/workflows/backend-postgres.yml"
@@ -43,4 +43,4 @@ jobs:
           POSTGRES_TEST_URL: jdbc:postgresql://127.0.0.1:5432/distribuidora_test
           POSTGRES_TEST_USERNAME: distribuidora
           POSTGRES_TEST_PASSWORD: distribuidora
-        run: mvn --batch-mode --no-transfer-progress test
+        run: mvn --batch-mode --no-transfer-progress clean test

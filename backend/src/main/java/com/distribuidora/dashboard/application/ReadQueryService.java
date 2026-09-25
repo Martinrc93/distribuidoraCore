@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -160,6 +161,38 @@ public class ReadQueryService {
              """, page, size, term, term, state);
     }
 
+    public PageResponse<Map<String, Object>> customerDebts(UUID customerId, int page, int size) {
+        if (currentUser != null) currentUser.requireCustomerAccess(customerId);
+        jdbc.queryForObject("select id from customer.customers where id = ?", UUID.class, customerId);
+        String rows = """
+            select s.id as "saleId", s.sale_number as "saleNumber", s.status,
+                   s.total, s.paid, o.id as "orderId", o.order_number as "orderNumber",
+                   s.created_at as "createdAt",
+                   least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) as balance
+            from sale.sales s
+            join orders.orders o on o.id = s.order_id
+            left join lateral (
+                select sum(amount) filter (where entry_type = 'DEBIT') as debit,
+                       sum(amount) filter (where entry_type = 'CREDIT') as credit
+                from customer.account_ledger where sale_id = s.id
+            ) l on true
+            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
+              and least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) > 0
+            order by s.created_at, s.id
+            """;
+        String count = """
+            select count(*) from sale.sales s
+            left join lateral (
+                select sum(amount) filter (where entry_type = 'DEBIT') as debit,
+                       sum(amount) filter (where entry_type = 'CREDIT') as credit
+                from customer.account_ledger where sale_id = s.id
+            ) l on true
+            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
+              and least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) > 0
+            """;
+        return page(rows, count, page, size, customerId);
+    }
+
     public Map<String, Object> orderDetail(UUID orderId) {
         if (sellerScoped()) currentUser.requireOrderAccess(orderId);
         Map<String, Object> order = jdbc.queryForMap("""
@@ -175,6 +208,23 @@ public class ReadQueryService {
             where o.id = ?
             """, orderId);
         return detail(order, orderId);
+    }
+
+    public Map<String, Object> saleDetail(UUID saleId) {
+        UUID orderId = jdbc.queryForObject("select order_id from sale.sales where id = ?", UUID.class, saleId);
+        if (sellerScoped()) currentUser.requireOrderAccess(orderId);
+        Map<String, Object> detail = new HashMap<>(orderDetail(orderId));
+        detail.put("saleItems", jdbc.queryForList("""
+            select si.id as "saleItemId", si.product_id as "productId", si.product_name as "productName",
+                   si.quantity, coalesce(sum(ri.quantity), 0) as "returnedQuantity",
+                   greatest(si.quantity - coalesce(sum(ri.quantity), 0), 0) as "returnableQuantity"
+            from sale.sale_items si
+            left join sale.return_items ri on ri.sale_item_id = si.id and ri.sale_id = si.sale_id
+            where si.sale_id = ?
+            group by si.id, si.product_id, si.product_name, si.quantity
+            order by si.id
+            """, saleId));
+        return detail;
     }
 
     public Map<String, Object> orderDetailByNumber(String orderNumber) {
@@ -226,6 +276,11 @@ public class ReadQueryService {
                 select p.id, p.amount, p.method, p.transfer_reference as "transferReference", p.created_at as date
                 from payment.payments p where p.sale_id = ? order by p.created_at, p.id
                 """, saleId),
+            "deliveryAttempts", jdbc.queryForList("""
+                select da.id, da.attempt_number as "attemptNumber", da.result, da.observation,
+                       da.attempted_by as "attemptedBy", da.attempted_at as "attemptedAt"
+                from orders.delivery_attempts da where da.order_id = ? order by da.attempt_number
+                """, orderId),
             "account", account
         );
     }
@@ -287,6 +342,24 @@ public class ReadQueryService {
             order by p.created_at desc
             """, "select count(*) from payment.payments p join customer.customers c on c.id = p.customer_id join sale.sales s on s.id = p.sale_id where lower(c.business_name) like ? or lower(s.sale_number) like ?",
             page, size, term, term);
+    }
+
+    public PageResponse<Map<String, Object>> auditEvents(int page, int size, String search) {
+        String term = like(search);
+        return page("""
+                select ae.id, ae.actor_user_id as "actorUserId", u.email as actor,
+                       ae.operation, ae.resource_type as "resourceType", ae.resource_id as "resourceId",
+                       ae.result, ae.correlation_id as "correlationId", ae.details::text as details,
+                       ae.created_at as "createdAt"
+                from audit.audit_events ae left join identity.users u on u.id = ae.actor_user_id
+                where lower(ae.operation) like ? or lower(ae.resource_type) like ?
+                   or lower(coalesce(ae.resource_id, '')) like ? or lower(ae.result) like ?
+                order by ae.created_at desc, ae.id desc
+                """, """
+                select count(*) from audit.audit_events ae
+                where lower(ae.operation) like ? or lower(ae.resource_type) like ?
+                   or lower(coalesce(ae.resource_id, '')) like ? or lower(ae.result) like ?
+                """, page, size, term, term, term, term);
     }
 
     public PageResponse<Map<String, Object>> users(int page, int size, String search) {

@@ -23,6 +23,7 @@ import PaymentsPage from '../features/payments/PaymentsPage'
 import SellersPage from '../features/admin/SellersPage'
 import CreditLimitPage from '../features/admin/CreditLimitPage'
 import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
+import AuditPage from '../features/admin/AuditPage'
 
 type Row = Record<string, string>
 
@@ -97,6 +98,7 @@ const menuGroups = [
       ['Usuarios', '/admin/users'],
       ['Vendedores', '/admin/sellers'],
       ['Configuración', '/admin/settings'],
+      ['Auditoría', '/admin/audit'],
     ],
   },
 ]
@@ -156,7 +158,6 @@ function AppShell() {
           <div className="breadcrumbs">Empresa / Operación</div>
           <div className="topbar-actions">
             <span className="connection-status"><span className="status-dot" /> Sistema operativo</span>
-            <Button variant="secondary">Ayuda</Button>
           </div>
         </header>
         <main className="page-content">
@@ -211,17 +212,13 @@ const orderColumns: TableColumn[] = [
   { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
 ]
 
-function PlaceholderPage({ title, description, action }: { title: string; description: string; action?: string }) {
-  return <><PageHeader eyebrow="Módulo" title={title} description={description} actions={action ? <Button>{action}</Button> : undefined} /><Panel><EmptyState title="Vista preparada" description="La distribución de contenido está lista para conectar con la API." action={<Button variant="secondary">Configurar vista</Button>} /></Panel></>
+function PlaceholderPage({ title, description }: { title: string; description: string }) {
+  return <><PageHeader eyebrow="Módulo" title={title} description={description} /><Panel><EmptyState title="Página no disponible" description="Volvé al resumen para continuar con una pantalla conectada." action={<Button variant="secondary" href="/dashboard">Volver al resumen</Button>} /></Panel></>
 }
 
 function StatusBadge({ value }: { value: string }) {
   const tone: BadgeTone = value.toLowerCase().includes('cancel') || value.toLowerCase().includes('bloque') || value === 'Pendiente' ? 'muted' : value.toLowerCase().includes('entreg') || value === 'Pagada' || value === 'Activo' ? 'strong' : 'soft'
   return <Badge tone={tone}>{value}</Badge>
-}
-
-function Pagination({ total = 0 }: { total?: number }) {
-  return <div className="pagination"><span>Mostrando hasta 20 de {total} resultados</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled={total <= 20}>Siguiente</Button></div></div>
 }
 
 export default function App() {
@@ -246,7 +243,8 @@ export default function App() {
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/sellers" element={<SellersPage />} />
         <Route path="/admin/settings" element={<CreditLimitPage />} />
-        <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." action="Volver al resumen" />} />
+        <Route path="/admin/audit" element={hasAuthority('ADMIN_ALL') ? <AuditPage /> : <Navigate to="/orders" replace />} />
+        <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." />} />
       </Route>
       </Route>
     </Routes>

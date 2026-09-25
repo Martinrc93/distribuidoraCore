@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
@@ -8,13 +9,12 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import DiscountRulesSection from './DiscountRulesSection'
+import { useUrlListState } from '../../shared/useUrlListState'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean }
 type ProductPrice = { productId: string; sku: string; name: string; price: number; effectiveOn?: string }
 type PriceHistory = { effectiveOn: string; price: number; recordedAt: string; updatedAt: string; scheduled: boolean }
 type Row = Record<string, string>
-
-const LISTS_KEY = ['/api/pricing/lists?page=0&size=20']
 
 function money(value: unknown) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 4 }).format(Number(value ?? 0))
@@ -38,18 +38,23 @@ function State({ error }: { error?: Error | null }) {
 export default function PriceListsPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
-  const listsQuery = useQuery({ queryKey: LISTS_KEY, queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20') })
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { page: listPage, pageSize, setPage: setListPage } = useUrlListState([], 20, 'page')
+  const { page: pricePage, setPage: setPricePage } = useUrlListState([], 20, 'pricePage')
+  const { page: historyPage, setPage: setHistoryPage } = useUrlListState([], 20, 'historyPage')
+  const listsPath = `/api/pricing/lists?page=${listPage}&size=${pageSize}`
+  const listsKey = [listsPath]
+  const listsQuery = useQuery({ queryKey: listsKey, queryFn: () => apiGet<ApiPage<PriceList>>(listsPath) })
   const lists = listsQuery.data?.content ?? []
   const [selectedId, setSelectedId] = useState('')
   const selectedList = lists.find((list) => list.id === selectedId)
   const [editingHistoryProduct, setEditingHistoryProduct] = useState<ProductPrice | undefined>()
   const [historyEntryToCancel, setHistoryEntryToCancel] = useState<PriceHistory | undefined>()
-  const [historyPage, setHistoryPage] = useState(0)
-  const pricesPath = `/api/pricing/lists/${selectedId}/prices?page=0&size=20`
+  const pricesPath = `/api/pricing/lists/${selectedId}/prices?page=${pricePage}&size=${pageSize}`
   const pricesKey = [pricesPath]
   const pricesQuery = useQuery({ queryKey: pricesKey, queryFn: () => apiGet<ApiPage<ProductPrice>>(pricesPath), enabled: Boolean(selectedId) })
   const historyPath = editingHistoryProduct && selectedId
-    ? `/api/pricing/lists/${selectedId}/products/${editingHistoryProduct.productId}/history?page=${historyPage}&size=20`
+    ? `/api/pricing/lists/${selectedId}/products/${editingHistoryProduct.productId}/history?page=${historyPage}&size=${pageSize}`
     : ''
   const historyKey = [historyPath]
   const historyQuery = useQuery({ queryKey: historyKey, queryFn: () => apiGet<ApiPage<PriceHistory>>(historyPath), enabled: Boolean(historyPath) })
@@ -75,7 +80,7 @@ export default function PriceListsPage() {
   const createMutation = useMutation({
     mutationFn: () => apiPost('/api/pricing/lists', { code: code.trim(), name: name.trim() }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: LISTS_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/pricing/lists?') })
       setShowCreate(false)
       setCode('')
       setName('')
@@ -104,7 +109,7 @@ export default function PriceListsPage() {
     setError('')
     try {
       await apiPut(`/api/pricing/lists/${renameList.id}`, { name: rename.trim() })
-      await queryClient.invalidateQueries({ queryKey: LISTS_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/pricing/lists?') })
       setRenameList(undefined)
       setFeedback('Nombre de lista actualizado.')
     } catch (cause) {
@@ -118,7 +123,7 @@ export default function PriceListsPage() {
     try {
       const status = statusList.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
       await apiPatch(`/api/pricing/lists/${statusList.id}/status`, { status })
-      await queryClient.invalidateQueries({ queryKey: LISTS_KEY })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/pricing/lists?') })
       setStatusList(undefined)
       setFeedback(status === 'ACTIVE' ? 'Lista activada correctamente.' : 'Lista desactivada correctamente.')
     } catch (cause) {
@@ -208,14 +213,15 @@ export default function PriceListsPage() {
     </form></Panel>}
     {listsQuery.isLoading || listsQuery.isError ? <Panel><State error={listsQuery.error} /></Panel> : lists.length === 0 ? <Panel><EmptyState title="Todavía no hay listas" description="Creá una lista de precios para asignar valores de venta a los productos." action={isAdmin ? <Button onClick={() => setShowCreate(true)}>+ Nueva lista</Button> : undefined} /></Panel> : <>
       <Panel title="Listas disponibles" description="Elegí una lista para consultar y editar sus precios.">
-        <div className="price-list-tabs" role="tablist" aria-label="Listas disponibles">{lists.map((list) => <button className={`price-list-tab${selectedId === list.id ? ' selected' : ''}`} type="button" role="tab" aria-selected={selectedId === list.id} key={list.id} onClick={() => { setSelectedId(list.id); setEditingHistoryProduct(undefined); setHistoryPage(0); setFeedback(''); setError('') }}>
+        <div className="price-list-tabs" role="tablist" aria-label="Listas disponibles">{lists.map((list) => <button className={`price-list-tab${selectedId === list.id ? ' selected' : ''}`} type="button" role="tab" aria-selected={selectedId === list.id} key={list.id} onClick={() => { const next = new URLSearchParams(searchParams); next.delete('pricePage'); next.delete('historyPage'); setSearchParams(next); setSelectedId(list.id); setEditingHistoryProduct(undefined); setFeedback(''); setError('') }}>
           <strong>{list.name}</strong><span>{list.code}{list.isDefault ? ' · Predeterminada' : ''}</span><span>{list.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span>
         </button>)}</div>
         {isAdmin && selectedList && <div className="page-actions price-list-actions"><Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button><Button variant="secondary" onClick={() => setStatusList(selectedList)}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button></div>}
+        {listsQuery.data && listsQuery.data.totalPages > 1 && <div className="pagination"><span>Página {listPage + 1} de {listsQuery.data.totalPages} · {listsQuery.data.totalElements} listas</span><div><Button variant="secondary" onClick={() => setListPage(listPage - 1)} disabled={listPage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setListPage(listPage + 1)} disabled={listPage + 1 >= listsQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
       <Panel title={selectedList ? `Precios · ${selectedList.name}` : 'Precios'}>
         {pricesQuery.isLoading || pricesQuery.isError ? <State error={pricesQuery.error} /> : rows.length === 0 ? <EmptyState title="Esta lista todavía no tiene precios" description="Los precios aparecen cuando se asignan a productos." /> : <DataTable columns={priceColumns} rows={rows} />}
-        {pricesQuery.data && pricesQuery.data.totalElements > 20 && <div className="pagination"><span>Mostrando hasta 20 de {pricesQuery.data.totalElements} productos</span><div><Button variant="secondary" disabled>Anterior</Button><Button variant="secondary" disabled>Siguiente</Button></div></div>}
+        {pricesQuery.data && pricesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {pricePage + 1} de {pricesQuery.data.totalPages} · {pricesQuery.data.totalElements} productos</span><div><Button variant="secondary" onClick={() => setPricePage(pricePage - 1)} disabled={pricePage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPricePage(pricePage + 1)} disabled={pricePage + 1 >= pricesQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
     </>}
     {editingHistoryProduct && <Panel title={`Historial de precios · ${editingHistoryProduct.name}`} action={<Button variant="link" onClick={() => { setEditingHistoryProduct(undefined); setHistoryPage(0) }}>Cerrar historial</Button>}>
@@ -237,7 +243,7 @@ export default function PriceListsPage() {
         updatedAt: new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.updatedAt)),
         status: entry.scheduled ? 'Programado' : 'Vigente/histórico',
       }))} /> : <EmptyState title="Sin historial" description="Este producto no registra vigencias de precio." />}
-      {historyQuery.data && historyQuery.data.totalPages > 1 && <div className="pagination"><span>Página {historyPage + 1} de {historyQuery.data.totalPages} · {historyQuery.data.totalElements} vigencias</span><div><Button variant="secondary" aria-label="Historial anterior" onClick={() => setHistoryPage((page) => Math.max(0, page - 1))} disabled={historyPage === 0}>Anterior</Button><Button variant="secondary" aria-label="Siguiente historial" onClick={() => setHistoryPage((page) => Math.min((historyQuery.data?.totalPages ?? 1) - 1, page + 1))} disabled={historyPage + 1 >= historyQuery.data.totalPages}>Siguiente</Button></div></div>}
+      {historyQuery.data && historyQuery.data.totalPages > 1 && <div className="pagination"><span>Página {historyPage + 1} de {historyQuery.data.totalPages} · {historyQuery.data.totalElements} vigencias</span><div><Button variant="secondary" aria-label="Historial anterior" onClick={() => setHistoryPage(historyPage - 1)} disabled={historyPage === 0}>Anterior</Button><Button variant="secondary" aria-label="Siguiente historial" onClick={() => setHistoryPage(historyPage + 1)} disabled={historyPage + 1 >= historyQuery.data.totalPages}>Siguiente</Button></div></div>}
     </Panel>}
     {editingProduct && <div role="dialog" aria-modal="true" aria-labelledby="price-dialog-title" className="modal-backdrop"><Panel title="Editar precio"><form className="form-grid" onSubmit={savePrice}>
       <h2 id="price-dialog-title">{editingProduct.name} · {selectedList?.name}</h2>

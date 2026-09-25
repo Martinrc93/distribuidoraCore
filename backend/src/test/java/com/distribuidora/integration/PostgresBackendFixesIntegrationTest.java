@@ -445,12 +445,167 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void productCreationRequiresActivePriceOverHttpAndPersistsValidPriceInPostgres() throws Exception {
+        UUID adminId = createUser("product-price-http");
+        assignRole(adminId, "ADMIN");
+        String token = loginHttp(email(adminId));
+        String sku = "HTTP-" + UUID.randomUUID().toString().substring(0, 12);
+        String base = "\"name\":\"HTTP price product\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":10";
+
+        mockMvc.perform(post("/api/products")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sku\":\"" + sku + "\"," + base + "}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(post("/api/products")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sku\":\"" + sku + "\"," + base + ",\"prices\":[]}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        assertThat(jdbc.queryForObject("select count(*) from catalog.products where sku = ?", Long.class, sku)).isZero();
+
+        MvcResult created = mockMvc.perform(post("/api/products")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sku\":\"" + sku + "\"," + base + ",\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        UUID productId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).path("id").asText());
+        products.add(productId);
+        assertThat(jdbc.queryForObject("select count(*) from catalog.product_prices where product_id = ? and price_list_id = ? and price = 25",
+            Long.class, productId, UUID.fromString("00000000-0000-0000-0000-000000000001"))).isEqualTo(1L);
+    }
+
+    @Test
+    void commercialHttpFlowConfirmsIdempotentlyAndTracksDeliveryAgainstPostgres() throws Exception {
+        UUID adminId = createUser("commercial-e2e-admin");
+        assignRole(adminId, "ADMIN");
+        String adminToken = loginHttp(email(adminId));
+
+        UUID limitedUserId = createUser("commercial-e2e-limited");
+        String orderOnlyRole = createRoleWithPermission("ORDER_CREATE");
+        assignRole(limitedUserId, orderOnlyRole);
+        String limitedToken = loginHttp(email(limitedUserId));
+        mockMvc.perform(get("/api/settings/credit-limit").header("Authorization", "Bearer " + limitedToken))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/audit").header("Authorization", "Bearer " + limitedToken))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/settings/credit-limit")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"creditLimit\":5}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.enabled").value(true));
+
+        MvcResult customerResponse = mockMvc.perform(post("/api/customers")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"businessName\":\"Commercial E2E " + UUID.randomUUID() + "\",\"cuitId\":null,\"sellerId\":null}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        UUID customerId = UUID.fromString(objectMapper.readTree(customerResponse.getResponse().getContentAsString()).path("id").asText());
+        customers.add(customerId);
+
+        String sku = "E2E-" + UUID.randomUUID().toString().substring(0, 12);
+        MvcResult productResponse = mockMvc.perform(post("/api/products")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sku\":\"" + sku + "\",\"name\":\"Commercial E2E product\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":5,\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        UUID productId = UUID.fromString(objectMapper.readTree(productResponse.getResponse().getContentAsString()).path("id").asText());
+        products.add(productId);
+
+        mockMvc.perform(post("/api/inventory/{productId}/adjustments", productId)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"quantity\":10,\"reason\":\"commercial E2E opening stock\"}"))
+            .andExpect(status().isNoContent());
+
+        String idempotencyKey = "commercial-e2e-" + UUID.randomUUID();
+        String confirmationBody = "{\"idempotencyKey\":\"" + idempotencyKey + "\",\"customerId\":\"" + customerId
+            + "\",\"priceListId\":null,\"lines\":[{\"productId\":\"" + productId
+            + "\",\"quantity\":2,\"lineDiscountPercent\":0,\"unitPriceOverride\":null}],\"orderDiscountPercent\":0,\"payments\":[],\"depotId\":null}";
+        MvcResult firstConfirmation = mockMvc.perform(post("/api/orders/confirm")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(confirmationBody))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.total").value(50))
+            .andExpect(jsonPath("$.creditLimitWarning.creditLimit").value(5))
+            .andReturn();
+        var firstJson = objectMapper.readTree(firstConfirmation.getResponse().getContentAsString());
+        UUID orderId = UUID.fromString(firstJson.path("orderId").asText());
+        UUID saleId = UUID.fromString(firstJson.path("saleId").asText());
+        orders.add(orderId);
+        sales.add(saleId);
+
+        mockMvc.perform(post("/api/orders/confirm")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(confirmationBody))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.orderId").value(orderId.toString()))
+            .andExpect(jsonPath("$.saleId").value(saleId.toString()));
+        assertThat(jdbc.queryForObject("select count(*) from orders.orders where idempotency_key = ?", Long.class, idempotencyKey)).isEqualTo(1L);
+
+        mockMvc.perform(get("/api/orders/{orderId}", orderId).header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.order.creditLimitExceeded").value(true))
+            .andExpect(jsonPath("$.items[0].productId").value(productId.toString()))
+            .andExpect(jsonPath("$.sale.balance").value(50));
+
+        mockMvc.perform(post("/api/orders/{id}/delivery-attempts", orderId)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"result\":\"DELIVERED\",\"observation\":\"E2E delivery\",\"payments\":[{\"method\":\"CASH\",\"amount\":10}],\"transferReference\":null}"))
+            .andExpect(status().isNoContent());
+
+        assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?", BigDecimal.class, productId))
+            .isEqualByComparingTo("8.0000");
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId))
+            .isEqualByComparingTo("40.0000");
+        assertThat(jdbc.queryForObject("select count(*) from orders.delivery_attempts where order_id = ?", Long.class, orderId)).isEqualTo(1L);
+        mockMvc.perform(get("/api/orders/{orderId}", orderId).header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.order.status").value("DELIVERED"))
+            .andExpect(jsonPath("$.order.customerBalance").value(40))
+            .andExpect(jsonPath("$.sale.paid").value(10))
+            .andExpect(jsonPath("$.sale.balance").value(40))
+            .andExpect(jsonPath("$.payments[0].amount").value(10))
+            .andExpect(jsonPath("$.deliveryAttempts[0].result").value("DELIVERED"))
+            .andExpect(jsonPath("$.deliveryAttempts[0].attemptNumber").value(1));
+        mockMvc.perform(get("/api/customers/{customerId}/debts?page=0&size=20", customerId)
+                .header("Authorization", "Bearer " + limitedToken))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/customers/{customerId}/debts?page=0&size=20", customerId)
+                .header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].saleId").value(saleId.toString()))
+            .andExpect(jsonPath("$.content[0].balance").value(40));
+        mockMvc.perform(get("/api/sales/{saleId}", saleId).header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sale.id").value(saleId.toString()))
+            .andExpect(jsonPath("$.items[0].productId").value(productId.toString()))
+            .andExpect(jsonPath("$.deliveryAttempts[0].result").value("DELIVERED"));
+        mockMvc.perform(get("/api/audit?page=0&size=100&search=DELIVERY_ATTEMPT")
+                .header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].operation").value("DELIVERY_ATTEMPT"));
+    }
+
+    @Test
     void productCategoryAndBrandReferencesPersistAndInactiveReferencesAreRejected() {
         UUID categoryId = createCategory();
         UUID brandId = createBrand();
         UUID productId = productCommandService.create(new ProductCommandService.ProductInput(
             "PG-" + UUID.randomUUID(), "PG integration product", "legacy", "unit", BigDecimal.ONE,
-            null, categoryId, brandId));
+            List.of(new ProductCommandService.ProductPriceInput(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"), BigDecimal.TEN)), categoryId, brandId));
         products.add(productId);
 
         assertThat(jdbc.queryForObject("select category_id from catalog.products where id = ?", UUID.class, productId)).isEqualTo(categoryId);
@@ -1168,7 +1323,8 @@ class PostgresBackendFixesIntegrationTest {
     private UUID createProduct(String suffix) {
         UUID id = productCommandService.create(new ProductCommandService.ProductInput(
             "PG-" + suffix + "-" + UUID.randomUUID().toString().substring(0, 8), "PG " + suffix,
-            "PG category", "unit", BigDecimal.ONE, null));
+            "PG category", "unit", BigDecimal.ONE, List.of(new ProductCommandService.ProductPriceInput(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"), BigDecimal.ONE))));
         products.add(id);
         return id;
     }

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DiscountRulesSection from './DiscountRulesSection'
 
@@ -18,7 +19,7 @@ const rules = page([{ id: 'rule-1', code: 'LINE10', description: 'Descuento hari
 function renderSection(authorities = ['ADMIN_ALL']) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sessionStorage.setItem('distribuidora.accessToken', token(authorities))
-  render(<QueryClientProvider client={queryClient}><DiscountRulesSection /></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter><DiscountRulesSection /></MemoryRouter></QueryClientProvider>)
   return queryClient
 }
 

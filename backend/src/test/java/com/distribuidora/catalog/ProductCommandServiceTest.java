@@ -173,12 +173,15 @@ class ProductCommandServiceTest {
     void createsProductWithActiveBrandAndCategoryReferences() {
         UUID categoryId = UUID.randomUUID();
         UUID brandId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(RowMapper.class), eq(categoryId))).thenReturn(List.of("Bebidas"));
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.brands"), eq(Boolean.class), eq(brandId)))
             .thenReturn(true);
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.price_lists"), eq(Boolean.class), eq(listId)))
+            .thenReturn(true);
 
         ProductInput input = new ProductInput("SKU-REF", "Producto", "Texto legado", "Unidad",
-            BigDecimal.TEN, List.of(), categoryId, brandId);
+            BigDecimal.TEN, List.of(new ProductPriceInput(listId, BigDecimal.valueOf(12))), categoryId, brandId);
         service.create(input);
 
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("category_id, brand_id"),
@@ -187,12 +190,48 @@ class ProductCommandServiceTest {
     }
 
     @Test
+    void rejectsCreateWithoutInitialPrices() {
+        ProductInput missing = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad", BigDecimal.TEN, null);
+        ProductInput empty = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad", BigDecimal.TEN, List.of());
+
+        assertThatThrownBy(() -> service.create(missing))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("al menos un precio");
+        assertThatThrownBy(() -> service.create(empty))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("al menos un precio");
+
+        org.mockito.Mockito.verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void rejectsInitialPriceForInactiveList() {
+        UUID listId = UUID.randomUUID();
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where sku = ?"), eq(Boolean.class), eq("SKU-REF")))
+            .thenReturn(false);
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.price_lists"), eq(Boolean.class), eq(listId)))
+            .thenReturn(false);
+
+        ProductInput input = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad", BigDecimal.TEN,
+            List.of(new ProductPriceInput(listId, BigDecimal.valueOf(12))));
+
+        assertThatThrownBy(() -> service.create(input))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("listas activas");
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never()).update(
+            org.mockito.ArgumentMatchers.contains("insert into catalog.products"), org.mockito.ArgumentMatchers.<Object>any());
+    }
+
+    @Test
     void rejectsInactiveOrMissingCategoryReference() {
         UUID categoryId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(RowMapper.class), eq(categoryId))).thenReturn(List.of());
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.price_lists"), eq(Boolean.class), eq(listId)))
+            .thenReturn(true);
 
         ProductInput input = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad",
-            BigDecimal.TEN, List.of(), categoryId, null);
+            BigDecimal.TEN, List.of(new ProductPriceInput(listId, BigDecimal.valueOf(12))), categoryId, null);
 
         assertThatThrownBy(() -> service.create(input))
             .isInstanceOf(IllegalArgumentException.class)
