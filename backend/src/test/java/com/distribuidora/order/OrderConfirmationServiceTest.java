@@ -7,6 +7,7 @@ import com.distribuidora.order.application.OrderCalculationService;
 import com.distribuidora.order.application.OrderConfirmationService;
 import com.distribuidora.pricing.application.PricingQueryService;
 import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
+import com.distribuidora.shared.security.CurrentUserAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -74,7 +75,7 @@ class OrderConfirmationServiceTest {
         verify(jdbc).queryForObject(contains("pg_advisory_xact_lock"), eq(Object.class), anyLong());
         var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("idempotency_fingerprint"), orderInsert.capture());
-        assertThat((String) orderInsert.getValue()[8]).hasSize(64);
+        assertThat((String) orderInsert.getValue()[9]).hasSize(64);
     }
 
     @Test
@@ -112,7 +113,7 @@ class OrderConfirmationServiceTest {
         var first = service.confirm(request);
         var fingerprint = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("idempotency_fingerprint"), fingerprint.capture());
-        storedFingerprint.set((String) fingerprint.getValue()[8]);
+        storedFingerprint.set((String) fingerprint.getValue()[9]);
         committed.set(first);
 
         var second = service.confirm(request);
@@ -125,6 +126,11 @@ class OrderConfirmationServiceTest {
             List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2"), BigDecimal.ZERO, null)),
             request.orderDiscountPercent(), request.payments());
         assertThatThrownBy(() -> service.confirm(changedRequest))
+            .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
+        var changedSellerRequest = new OrderConfirmationDtos.ConfirmationRequest(
+            request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(),
+            request.payments(), UUID.randomUUID());
+        assertThatThrownBy(() -> service.confirm(changedSellerRequest))
             .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
         verify(pricing, times(1)).resolve(customerId, productId, null);
     }
@@ -187,6 +193,134 @@ class OrderConfirmationServiceTest {
 
         assertThat(response.total()).isEqualByComparingTo("9.0250");
         verify(inventory).apply(eq(productId), any(), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
+    }
+
+    @Test
+    void administratorCanSelectAnExistingSellerForTheOrder() {
+        authenticate("ORDER_CREATE", "ADMIN_ALL");
+        UUID customerId = UUID.randomUUID();
+        UUID customerSellerId = UUID.randomUUID();
+        UUID selectedSellerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+            .thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "seller_id", customerSellerId));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(selectedSellerId)))
+            .thenReturn(true);
+        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
+            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+
+        service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "admin-selected-seller", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), selectedSellerId));
+
+        var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
+        assertThat(orderInsert.getValue()).contains(selectedSellerId);
+    }
+
+    @Test
+    void administratorDefaultsOrderSellerToCustomerAssignment() {
+        authenticate("ORDER_CREATE", "ADMIN_ALL");
+        UUID customerId = UUID.randomUUID();
+        UUID customerSellerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+            .thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "seller_id", customerSellerId));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(customerSellerId)))
+            .thenReturn(true);
+        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
+            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+
+        service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "admin-default-seller", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), null));
+
+        var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
+        assertThat(orderInsert.getValue()).contains(customerSellerId);
+    }
+
+    @Test
+    void rejectsMissingSelectedSellerBeforePricingOrInventoryWrites() {
+        authenticate("ORDER_CREATE", "ADMIN_ALL");
+        UUID customerId = UUID.randomUUID();
+        UUID selectedSellerId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+            .thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(selectedSellerId)))
+            .thenReturn(false);
+
+        assertThatThrownBy(() -> service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "missing-selected-seller", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), selectedSellerId)))
+            .isInstanceOf(org.springframework.dao.EmptyResultDataAccessException.class);
+
+        verifyNoInteractions(pricing, inventory);
+        verify(jdbc, never()).update(contains("insert into orders.orders"), any(Object[].class));
+    }
+
+    @Test
+    void nonAdminCannotOverrideAuthenticatedSellerProfile() {
+        CurrentUserAccess currentUser = mock(CurrentUserAccess.class);
+        OrderConfirmationService sellerService = new OrderConfirmationService(
+            jdbc, pricing, calculation, inventory, audit, currentUser);
+        UUID customerId = UUID.randomUUID();
+        UUID profileSellerId = UUID.randomUUID();
+        UUID requestedSellerId = UUID.randomUUID();
+        when(currentUser.isAdmin()).thenReturn(false);
+        when(currentUser.requireSellerProfile()).thenReturn(profileSellerId);
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+            .thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
+
+        assertThatThrownBy(() -> sellerService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "unauthorized-seller-override", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), requestedSellerId)))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+
+        verify(currentUser).requireSellerProfile();
+        verifyNoInteractions(pricing, inventory);
+    }
+
+    @Test
+    void nonAdminOrderUsesAuthenticatedSellerInsteadOfCustomerAssignment() {
+        CurrentUserAccess currentUser = mock(CurrentUserAccess.class);
+        OrderConfirmationService sellerService = new OrderConfirmationService(
+            jdbc, pricing, calculation, inventory, audit, currentUser);
+        UUID customerId = UUID.randomUUID();
+        UUID customerSellerId = UUID.randomUUID();
+        UUID profileSellerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(currentUser.isAdmin()).thenReturn(false);
+        when(currentUser.requireSellerProfile()).thenReturn(profileSellerId);
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+            .thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "seller_id", customerSellerId));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(profileSellerId)))
+            .thenReturn(true);
+        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
+            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+
+        sellerService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "authenticated-seller-default", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), null));
+
+        var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
+        assertThat(orderInsert.getValue()).contains(profileSellerId).doesNotContain(customerSellerId);
     }
 
     @Test

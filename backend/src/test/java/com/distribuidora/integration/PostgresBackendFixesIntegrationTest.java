@@ -438,6 +438,31 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void administratorSellerSelectionPersistsOnOrderWithoutReassigningCustomer() {
+        UUID customerSellerId = createSeller("order-customer");
+        UUID selectedSellerId = createSeller("order-selected");
+        UUID customerId = createCustomer(customerSellerId);
+        UUID productId = createProduct("selected-seller-order");
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", productId);
+        putGeneralPrice(productId, new BigDecimal("10.0000"));
+        UUID actorId = UUID.randomUUID();
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+
+        var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "selected-seller-order-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), selectedSellerId));
+        orders.add(result.orderId());
+        sales.add(result.saleId());
+
+        assertThat(orderSeller(result.orderId())).isEqualTo(selectedSellerId);
+        assertThat(jdbc.queryForObject("select seller_id from customer.customers where id = ?", UUID.class, customerId))
+            .isEqualTo(customerSellerId);
+    }
+
+    @Test
     void productCategoryAndBrandReferencesPersistAndInactiveReferencesAreRejected() {
         UUID categoryId = createCategory();
         UUID brandId = createBrand();
