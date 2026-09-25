@@ -22,12 +22,14 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<AuthDtos.LoginResponse> login(@Valid @RequestBody LoginPayload payload) {
-        return ResponseEntity.ok(authService.login(new AuthDtos.LoginRequest(payload.email(), payload.password())));
+        AuthService.LoginResult result = authService.login(new AuthDtos.LoginRequest(payload.email(), payload.password()));
+        return ResponseEntity.ok(toResponse(result));
     }
 
     @PostMapping("/refresh")
     public ResponseEntity<AuthDtos.LoginResponse> refresh(@Valid @RequestBody RefreshPayload payload) {
-        return ResponseEntity.ok(authService.refresh(new AuthDtos.RefreshRequest(payload.refreshToken())));
+        AuthService.LoginResult result = authService.refresh(new AuthDtos.RefreshRequest(payload.refreshToken()));
+        return ResponseEntity.ok(toResponse(result));
     }
 
     @PostMapping("/logout")
@@ -40,6 +42,11 @@ public class AuthController {
     public ResponseEntity<Void> activate(@Valid @RequestBody ActivatePayload payload) {
         authService.activate(new AuthDtos.ActivateUserRequest(payload.activationToken(), payload.password()));
         return ResponseEntity.noContent().build();
+    }
+
+    private static AuthDtos.LoginResponse toResponse(AuthService.LoginResult result) {
+        return new AuthDtos.LoginResponse(result.accessToken(), result.tokenType(), result.expiresInSeconds(),
+            result.refreshToken());
     }
 
     public record LoginPayload(@Email @NotBlank String email, @NotBlank String password) {

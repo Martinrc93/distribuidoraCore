@@ -104,19 +104,36 @@ incorporar almacenamiento externo o un segundo destino.
 - Actuator expone health/info/metrics; `http.server.requests` registra latencia
   e histogramas. Métricas outbox: pendientes, procesados, fallidos, agotados y
   duración de lote.
-- CI de backend con servicio PostgreSQL 16 y pruebas opt-in habilitadas.
+- CI de backend con servicio PostgreSQL 16 y pruebas opt-in habilitadas; primera
+  ejecución remota exitosa para `2d1decf` ([run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828), 2026-09-24).
 - Scripts PowerShell para backup custom cifrado AES-256-CBC + HMAC-SHA256,
   retención de dos días y doce cortes mensuales, tarea diaria y prueba de
   restauración/tamper en una base descartable.
 - Solicitudes terminales de notificación y eventos outbox se purgan luego de
   90 días por defecto; auditoría enmascarada se conserva.
-- El backup todavía requiere copia externa para proteger contra pérdida del
-  mismo host/disco. La restauración descifra temporalmente en `%TEMP%` bajo ACL
-  del usuario operativo y requiere que ese volumen tenga cifrado.
+- Se replicó un backup a la carpeta local de OneDrive; HMAC y restauración
+  desde esa copia pasaron. La tarea diaria de Task Scheduler se corrigió y quedó
+  habilitada tras una corrida de control con resultado `0`; el backup nuevo
+  también pasó restore/tamper en PostgreSQL descartable. Se corrigió la lectura
+  de Cloud Files: `0x00000009` es placeholder + `InSync`; el usuario confirmó
+  que ve en OneDrive el archivo de las 05:55:56. KeePassXC 2.7.12 portable se
+  instaló con firma/hash verificados. Tras corregir stdin en Windows PowerShell
+  5.1 y guardar la entrada en la raíz (sin depender del grupo inexistente
+  `Recovery`), el usuario confirmó `RESULT=OK`; la bóveda real existe, la entrada
+  se leyó de vuelta sin imprimir secretos y Cloud Files devolvió
+  `0x00000009` (`PLACEHOLDER` + `IN_SYNC`). La bóveda sincroniza con OneDrive;
+  la contraseña maestra queda bajo custodia del usuario fuera de OneDrive. La
+  restauración descifra temporalmente en
+  `%TEMP%` bajo ACL del usuario operativo y requiere volumen cifrado.
+- Nota histórica de revisión (2026-09-24): desde la sesión de verificación no
+  se obtuvo acceso al listado cloud; ese dato quedó superado por la confirmación
+  posterior del usuario de que el backup de las 05:55:56 aparece en OneDrive.
+  KeePassXC se instaló después para reemplazar la dependencia exclusiva de DPAPI.
 
 ## Pending decisions
 
-- Destino externo de backups.
+- Mantener la contraseña maestra de KeePassXC bajo custodia del usuario fuera
+  de OneDrive.
 - Frecuencia de pruebas de restauración.
 - Retención de auditoría.
 - Incorporación futura de métricas y logs centralizados.

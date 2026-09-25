@@ -3,14 +3,15 @@ package com.distribuidora.document;
 import com.distribuidora.document.application.SaleDocumentConflictException;
 import com.distribuidora.document.application.SaleDocumentNotFoundException;
 import com.distribuidora.document.application.SaleDocumentService;
+import com.distribuidora.document.api.DocumentExceptionHandler;
 import com.distribuidora.document.api.DocumentController;
 import com.distribuidora.document.rendering.OpenPdfA4Renderer;
 import com.distribuidora.document.rendering.OpenPdfTicketRenderer;
 import com.distribuidora.document.rendering.SaleDocumentModel;
+import com.distribuidora.identity.security.JwtAuthenticationFilter;
+import com.distribuidora.identity.security.JwtService;
 import com.distribuidora.identity.infrastructure.UserAccountRepository;
 import com.distribuidora.shared.error.ApiExceptionHandler;
-import com.distribuidora.shared.security.JwtAuthenticationFilter;
-import com.distribuidora.shared.security.JwtService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -44,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = DocumentController.class)
-@Import({DocumentController.class, DocumentControllerTest.TestSecurityConfiguration.class, ApiExceptionHandler.class, JwtAuthenticationFilter.class})
+@Import({DocumentController.class, DocumentControllerTest.TestSecurityConfiguration.class, ApiExceptionHandler.class, DocumentExceptionHandler.class, JwtAuthenticationFilter.class})
 class DocumentControllerTest {
     @Autowired
     private MockMvc mockMvc;

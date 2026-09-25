@@ -6,7 +6,6 @@ mezclarse con los flujos actuales.
 Diagramas recomendados:
 
 - `component-taxes-arca.md`: impuestos y facturacion electronica.
-- `component-multi-warehouse.md`: multiples depositos.
 - `flow-suppliers-purchases.md`: proveedores y compras.
 - `component-reports-dashboard.md`: reportes y dashboard.
 - `component-customer-portal.md`: portal de clientes.

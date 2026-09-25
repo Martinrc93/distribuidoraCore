@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
@@ -56,7 +58,18 @@ public class PricingCommandController {
         @PathVariable UUID productId,
         @Valid @NotNull @RequestBody ProductPriceRequest request
     ) {
-        service.setProductPrice(listId, productId, request.price());
+        service.setProductPrice(listId, productId, request.price(), request.effectiveOn());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{listId}/products/{productId}/history/{effectiveOn}")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<Void> cancelScheduledPrice(
+        @PathVariable UUID listId,
+        @PathVariable UUID productId,
+        @PathVariable LocalDate effectiveOn
+    ) {
+        service.cancelScheduledPrice(listId, productId, effectiveOn);
         return ResponseEntity.noContent().build();
     }
 
@@ -69,7 +82,12 @@ public class PricingCommandController {
 
     public record StatusRequest(@NotBlank String status) { }
 
-    public record ProductPriceRequest(@NotNull @DecimalMin("0.0000") @Digits(integer = 15, fraction = 4) BigDecimal price) { }
+    public record ProductPriceRequest(
+        @NotNull @DecimalMin("0.0000") @Digits(integer = 15, fraction = 4) BigDecimal price,
+        LocalDate effectiveOn
+    ) {
+        public ProductPriceRequest(BigDecimal price) { this(price, null); }
+    }
 
     public record IdResponse(UUID id) { }
 }

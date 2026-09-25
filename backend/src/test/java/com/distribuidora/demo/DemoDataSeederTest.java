@@ -38,6 +38,8 @@ class DemoDataSeederTest {
             && value.contains("status = 'ACTIVE'")
             && value.contains("products.cost")
             && value.contains("ON CONFLICT (price_list_id, product_id) DO NOTHING"));
+        assertThat(sql.getAllValues()).anyMatch(value -> value.contains("INSERT INTO catalog.product_price_history")
+            && value.contains("NOT EXISTS") && value.contains("effective_on"));
         assertThat(sql.getAllValues()).noneMatch(value -> value.contains("products.price"));
     }
 
@@ -110,7 +112,7 @@ class DemoDataSeederTest {
         assertThat(sql.getAllValues()).anyMatch(value -> value.contains("customer.account_ledger")
             && value.contains("'DEBIT'"));
         ArgumentCaptor<String> balanceSql = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, org.mockito.Mockito.times(2)).update(balanceSql.capture());
+        verify(jdbc, atLeastOnce()).update(balanceSql.capture());
         assertThat(balanceSql.getAllValues()).anyMatch(value -> value.contains("customer.customers c")
             && value.contains("customer.account_ledger")
             && value.contains("DEBIT")

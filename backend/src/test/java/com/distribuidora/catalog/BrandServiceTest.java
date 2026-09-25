@@ -174,13 +174,13 @@ class BrandServiceTest {
     @Test
     void getById_succeeds() {
         UUID brandId = UUID.randomUUID();
-        CatalogAdminDtos.BrandResponse response = new CatalogAdminDtos.BrandResponse(
+        BrandService.BrandView response = new BrandService.BrandView(
             brandId, "Coca Cola", "COCA-COLA", "ACTIVE", Instant.now(), 12L
         );
         when(jdbc.query(anyString(), any(RowMapper.class), eq(brandId)))
             .thenReturn(List.of(response));
 
-        CatalogAdminDtos.BrandResponse result = service.getById(brandId);
+        BrandService.BrandView result = service.getById(brandId);
         assertThat(result.id()).isEqualTo(brandId);
         assertThat(result.name()).isEqualTo("Coca Cola");
         assertThat(result.productCount()).isEqualTo(12L);
@@ -189,13 +189,13 @@ class BrandServiceTest {
     @Test
     void list_returnsResults() {
         UUID brandId = UUID.randomUUID();
-        CatalogAdminDtos.BrandResponse response = new CatalogAdminDtos.BrandResponse(
+        BrandService.BrandView response = new BrandService.BrandView(
             brandId, "Coca Cola", "COCA-COLA", "ACTIVE", Instant.now(), 12L
         );
         when(jdbc.query(anyString(), any(RowMapper.class), any(), any(), any()))
             .thenReturn(List.of(response));
 
-        List<CatalogAdminDtos.BrandResponse> results = service.list("coca", "ACTIVE");
+        List<BrandService.BrandView> results = service.list("coca", "ACTIVE");
         assertThat(results).hasSize(1);
     }
 }

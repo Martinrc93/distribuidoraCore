@@ -43,6 +43,8 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Resolucion por lista explicita, lista del cliente y fallback documentado.
 - [x] Eliminar el precio almacenado directamente en la tabla de productos (migración V11).
 - [x] Usar exclusivamente `catalog.product_prices` como fuente de precios (esquema, seed, comandos y lecturas migrados).
+- [x] Historial de precios y vigencias futuras con resolución por fecha comercial; migración V21.
+- [x] Reglas persistidas de descuentos de línea y pedido con prioridad, vigencia y snapshots; migración V22.
 - [x] Editar costo sin precio cuando no supera ninguna lista activa.
 - [x] Exigir nuevos precios para todas las listas afectadas cuando el costo las supera.
 - [x] Actualizar costo y precios afectados en una sola transaccion.
@@ -58,7 +60,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Reversión neta `SALE_CANCELLATION` al cancelar pedidos confirmados sin pagos, incluyendo movimientos compensatorios de ediciones anteriores.
 - [x] Devoluciones `RETURN` parciales con saldo por línea, lock por venta y reintegro de stock transaccional; ver [contrato de API](../api/sale-returns.md).
 - [x] Edición administrativa de pedido/venta `CONFIRMED` con reemplazo de snapshots, deltas compensatorios, pagos preservados y conciliación de ledger; ver [contrato de API](../api/order-edits.md).
-- [ ] Multi-deposito.
+- [x] Multi-depósito: administración, balances, ajustes y transferencias; pedido, devolución y cancelación conservan el depósito elegido. Contrato y diagramas en `docs/api/inventory.md` y `docs/diagrams/inventory/`.
 
 ### Pedidos, ventas, pagos y cuenta corriente
 
@@ -79,11 +81,17 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Ticket PDF de 80 mm generado desde snapshots persistidos, bajo demanda.
 - [x] Outbox transaccional para confirmaciones, worker con leases, backoff y despacho idempotente; ver `docs/architecture/integration-architecture.md`.
 - [x] Solicitudes idempotentes email/WhatsApp mediante webhooks configurables; auditoría de solicitud y cada intento.
+- [ ] Configurar URL y credenciales de los proveedores email/WhatsApp en cada entorno antes de activar envíos reales.
 - [x] Métricas HTTP/outbox, logs ECS JSON y propagación segura de request ID.
 - [x] Backup cifrado, retención definida, restauración automatizada y procedimiento de rollback documentado.
-- [~] Workflow CI PostgreSQL configurado; pendiente primera ejecución remota. Programación diaria y copia externa de backups requieren activación operativa.
+- [x] Endurecimiento operativo verificado: CI PostgreSQL 16 pasó en GitHub Actions para `2d1decf` ([run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828), 2026-09-24). La tarea diaria y el control programado terminaron con código `0`; restore/tamper pasó en PostgreSQL descartable. El usuario confirmó el backup de las 05:55:56 en OneDrive y el estado Cloud Files `0x00000009` (`PLACEHOLDER` + `InSync`). KeePassXC 2.7.12 guarda la clave DPAPI; el usuario confirmó `RESULT=OK` y la lectura de vuelta pasó.
 - [x] Purga de destinatarios de notificaciones y eventos terminales tras 90 días por defecto.
-- [ ] ArchUnit o Spring Modulith para validar límites modulares.
+- [x] ArchUnit valida cuatro límites de capas más la ausencia de ciclos entre slices de producción.
+- [x] Romper el ciclo identificado `audit → shared → catalog → audit` y desacoplar DTOs API de servicios de aplicación.
+- [x] Revisar y documentar el grafo completo, resolver los ciclos encontrados y activar la regla ArchUnit global.
+- [x] Ampliar cobertura HTTP con 14 casos `MockMvc` para siete controladores que solo tenían pruebas de invocación directa.
+- [x] Matriz real de seis casos HTTP: cubre `401`/`403`, authorities funcionales y rutas críticas; PostgreSQL valida login persistido, revocación del JWT anterior y permisos del nuevo login después de cambiar rol o permisos.
+- [x] Administración backend de usuarios/roles/permisos; ver `docs/api/identity-admin.md`.
 
 ## Frontend
 
@@ -125,6 +133,9 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Saldos y vista paginada de movimientos por producto.
 - [x] Formulario de ajuste manual.
 - [x] Permisos, confirmación y advertencia de saldo negativo.
+- [ ] Integrar administración de depósitos y balances por depósito con `ADMIN_ALL`.
+- [ ] Integrar transferencias entre depósitos con `STOCK_ADJUST`, validación visible del origen y feedback transaccional.
+- [ ] Seleccionar y enviar el depósito al confirmar un pedido; preservar la misma selección al reintentar.
 
 ### Pedidos y ventas
 
@@ -162,16 +173,32 @@ El detalle de funciones completas y ausencias de API se mantiene en
 3. [x] Configurar límite de crédito global y advertencias auditadas por exceso.
 4. [x] Crear outbox transaccional y worker con reintentos e idempotencia.
 5. [x] Añadir tickets y notificaciones configurables de WhatsApp/email con auditoría.
-6. [x] Implementar endurecimiento operativo: CI PostgreSQL, métricas/logs estructurados, backup/restauración, rollback y retención/purga. Falta activar la ejecución remota/programada y configurar réplica externa.
+6. [x] Implementar endurecimiento operativo: CI PostgreSQL, métricas/logs estructurados, backup/restauración, rollback, retención/purga y escrow KeePassXC sincronizado están verificados.
+7. [x] Implementar historial de precios y vigencias futuras (V21), con resolución temporal y snapshots históricos.
+8. [x] Implementar reglas de descuentos comerciales por línea y pedido (V22), aplicadas en confirmaciones y ediciones.
+9. [x] Implementar multi-depósito (V23), transferencias atómicas y selección/restauración del depósito en el ciclo comercial.
 
-Estado de verificación (2026-09-24): 301 tests, 0 fallos, 0 errores y 0
-omitidos; suite ejecutada con PostgreSQL 16.4 (Flyway V1–V20, 18 casos
-funcionales de integración). La restauración cifrada y el rechazo de alteración
-HMAC se comprobaron en una base descartable, eliminada al finalizar.
+Verificación PostgreSQL previa (2026-09-24): 314 tests, 0 fallos, 0 errores y 0
+omitidos; PostgreSQL 16.4 (Flyway V1–V20, 19 casos funcionales de integración).
+Suite final tras matriz de seguridad y PostgreSQL descartable
+(2026-09-24, previa al backlog de precios, descuentos y depósitos): 337 tests,
+0 fallos, 0 errores y 0 omitidos; los 21 casos
+PostgreSQL pasaron con PostgreSQL 16.4, Flyway V1–V20 y validación JPA. ArchUnit
+pasó con la regla global de ciclos. La restauración cifrada y el rechazo de
+alteración HMAC se comprobaron previamente en una base descartable, eliminada
+al finalizar.
+
+Verificación posterior a los tres ítems de backlog (2026-09-24): **350 tests,
+0 fallos, 0 errores y 0 omitidos**, incluidos 24 casos PostgreSQL 16.4 con
+Flyway V1–V23, validación JPA y ArchUnit global en una base descartable nueva.
 
 ### Próximas tareas backend
 
-- [ ] Confirmar primera ejecución de CI en GitHub Actions.
-- [ ] Activar la tarea diaria de backup y configurar copia externa.
-- [ ] Añadir ArchUnit o Spring Modulith.
-- [ ] Completar administración de roles/permisos y aumentar cobertura HTTP.
+- [x] Corregir Task Scheduler y activar la tarea diaria de backup; ejecución de control exitosa, siguiente corrida 2026-09-25 03:00.
+- [x] Completar la copia externa y su recuperación: backup confirmado en OneDrive, restore/HMAC validados y clave DPAPI guardada en la bóveda real de KeePassXC 2.7.12. El usuario confirmó `RESULT=OK`; Cloud Files reportó `0x00000009` (`PLACEHOLDER` + `InSync`) para la bóveda.
+- [x] Añadir ArchUnit y reglas incrementales de límites entre capas.
+- [x] Eliminar el ciclo identificado y las dependencias aplicación→DTOs API; revisar el grafo completo y protegerlo con la regla global sin ciclos.
+- [x] Ampliar cobertura HTTP/controller con 14 casos `MockMvc` en siete controladores.
+- [x] Ejecutar una matriz inicial con cadena de seguridad real (401/403/permitido) y repetir los flujos persistentes PostgreSQL opt-in sobre una base descartable.
+- [x] Ampliar la matriz HTTP a rutas críticas y permisos funcionales; recorrer login, cambios de rol/permisos y revocación JWT con PostgreSQL descartable.
+- [x] Revisar el grafo completo, resolver los ciclos encontrados, registrar los paquetes aislados (`demo`, `payment`) y habilitar la regla ArchUnit global.

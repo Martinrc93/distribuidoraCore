@@ -69,6 +69,9 @@ Estado actualizado: 2026-09-24
 - [x] Ocultar ajustes para usuarios sin `STOCK_ADJUST`.
 - [x] Confirmación antes de aplicar ajuste.
 - [x] Feedback de éxito e invalidación de consultas.
+- [ ] Selector/administración de depósitos y balances por depósito (`ADMIN_ALL`).
+- [ ] Transferencias entre depósitos (`STOCK_ADJUST`) con saldo de origen.
+- [ ] Elegir depósito al confirmar un pedido y mantenerlo al reintentar.
 
 ## Orders
 

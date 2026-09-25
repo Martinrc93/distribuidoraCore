@@ -1,11 +1,61 @@
 function Get-BackupKeyMaterial {
-    if ([string]::IsNullOrWhiteSpace($env:BACKUP_ENCRYPTION_KEY)) {
-        throw "Defina BACKUP_ENCRYPTION_KEY como Base64 de 64 bytes antes de operar backups."
+    $keyText = $env:BACKUP_ENCRYPTION_KEY
+    if ([string]::IsNullOrWhiteSpace($keyText)) {
+        $storePath = if ($env:BACKUP_KEY_STORE_PATH) {
+            $env:BACKUP_KEY_STORE_PATH
+        } else {
+            Join-Path $env:LOCALAPPDATA 'Distribuidora\postgres-backup-key.dpapi'
+        }
+        if (-not (Test-Path -LiteralPath $storePath -PathType Leaf)) {
+            throw "No existe la clave DPAPI de backup en $storePath. Ejecute scripts/initialize-backup-key.ps1 con la misma cuenta Windows."
+        }
+        try {
+            $protected = Get-Content -LiteralPath $storePath -Raw
+            $secure = ConvertTo-SecureString -String $protected
+            $keyText = [Net.NetworkCredential]::new('', $secure).Password
+        } catch {
+            throw "No se pudo desbloquear la clave DPAPI de backup para la cuenta Windows actual: $($_.Exception.Message)"
+        }
     }
-    try { $material = [Convert]::FromBase64String($env:BACKUP_ENCRYPTION_KEY) }
+    try { $material = [Convert]::FromBase64String($keyText) }
     catch { throw "BACKUP_ENCRYPTION_KEY no es Base64 válido." }
     if ($material.Length -ne 64) { throw "BACKUP_ENCRYPTION_KEY debe contener exactamente 64 bytes." }
     return ,$material
+}
+
+function Initialize-BackupEncryptionKeyStore {
+    param([string]$StorePath = (Join-Path $env:LOCALAPPDATA 'Distribuidora\postgres-backup-key.dpapi'))
+    if (Test-Path -LiteralPath $StorePath) {
+        throw "Ya existe un almacén de clave en $StorePath; no se reemplazará automáticamente."
+    }
+    $directory = Split-Path -Parent $StorePath
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $system = [Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+    foreach ($path in @($directory)) {
+        $acl = Get-Acl -LiteralPath $path
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.SetOwner($identity)
+        $inheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+        $propagation = [Security.AccessControl.PropagationFlags]::None
+        $allow = [Security.AccessControl.AccessControlType]::Allow
+        $acl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', $inheritance, $propagation, $allow))
+        $acl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new($system, 'FullControl', $inheritance, $propagation, $allow))
+        Set-Acl -LiteralPath $path -AclObject $acl
+    }
+    $material = [Security.Cryptography.RandomNumberGenerator]::GetBytes(64)
+    $keyText = [Convert]::ToBase64String($material)
+    $secure = ConvertTo-SecureString -String $keyText -AsPlainText -Force
+    $protected = ConvertFrom-SecureString -SecureString $secure
+    Set-Content -LiteralPath $StorePath -Value $protected -NoNewline -Encoding ASCII
+    $fileAcl = Get-Acl -LiteralPath $StorePath
+    $fileAcl.SetAccessRuleProtection($true, $false)
+    $fileAcl.SetOwner($identity)
+    $fileAcl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', $allow))
+    $fileAcl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new($system, 'FullControl', $allow))
+    Set-Acl -LiteralPath $StorePath -AclObject $fileAcl
+    $sha = [Security.Cryptography.SHA256]::HashData($material)
+    [pscustomobject]@{ Path = $StorePath; KeyId = [Convert]::ToHexString($sha[0..7]).ToLowerInvariant() }
 }
 
 function Protect-BackupArchive {
@@ -250,4 +300,4 @@ function Unprotect-BackupArchiveToStream {
 }
 
 Export-ModuleMember -Function Protect-BackupArchive, Protect-BackupProcessOutput, Unprotect-BackupArchive,
-    Test-BackupArchive, Unprotect-BackupArchiveToStream
+    Test-BackupArchive, Unprotect-BackupArchiveToStream, Initialize-BackupEncryptionKeyStore

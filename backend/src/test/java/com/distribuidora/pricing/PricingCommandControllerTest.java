@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standal
 import com.distribuidora.shared.error.ApiExceptionHandler;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,12 +60,12 @@ class PricingCommandControllerTest {
 
         verify(service).renameList(listId, "Nuevo");
         verify(service).setListStatus(listId, "ACTIVE");
-        verify(service).setProductPrice(listId, productId, new BigDecimal("10.2500"));
+        verify(service).setProductPrice(listId, productId, new BigDecimal("10.2500"), null);
     }
 
     @Test
     void protectsEveryMutationWithAdminAll() throws Exception {
-        for (String method : new String[]{"createList", "renameList", "setListStatus", "setProductPrice"}) {
+        for (String method : new String[]{"createList", "renameList", "setListStatus", "setProductPrice", "cancelScheduledPrice"}) {
             PreAuthorize annotation = PricingCommandController.class.getDeclaredMethod(
                 method, methodParameterTypes(method)).getAnnotation(PreAuthorize.class);
             assertThat(annotation).isNotNull();
@@ -111,6 +112,7 @@ class PricingCommandControllerTest {
             case "renameList" -> new Class<?>[]{UUID.class, PricingCommandController.RenameListRequest.class};
             case "setListStatus" -> new Class<?>[]{UUID.class, PricingCommandController.StatusRequest.class};
             case "setProductPrice" -> new Class<?>[]{UUID.class, UUID.class, PricingCommandController.ProductPriceRequest.class};
+            case "cancelScheduledPrice" -> new Class<?>[]{UUID.class, UUID.class, LocalDate.class};
             default -> throw new IllegalArgumentException(method);
         };
     }

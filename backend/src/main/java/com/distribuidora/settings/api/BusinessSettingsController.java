@@ -22,13 +22,18 @@ public class BusinessSettingsController {
     @GetMapping
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public BusinessSettingsDtos.CreditLimitResponse creditLimit() {
-        return service.creditLimit();
+        return toResponse(service.creditLimit());
     }
 
     @PutMapping
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<BusinessSettingsDtos.CreditLimitResponse> updateCreditLimit(
         @Valid @RequestBody BusinessSettingsDtos.CreditLimitRequest request) {
-        return ResponseEntity.ok(service.updateCreditLimit(request));
+        return ResponseEntity.ok(toResponse(service.updateCreditLimit(request)));
+    }
+
+    private static BusinessSettingsDtos.CreditLimitResponse toResponse(BusinessSettingsService.CreditLimitResult result) {
+        return new BusinessSettingsDtos.CreditLimitResponse(result.creditLimit(), result.enabled(),
+            result.updatedAt(), result.updatedBy());
     }
 }

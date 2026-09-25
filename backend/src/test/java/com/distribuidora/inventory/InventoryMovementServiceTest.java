@@ -24,41 +24,46 @@ class InventoryMovementServiceTest {
     void appliesSaleWithLockedBalanceAndReference() {
         UUID productId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
-        when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), eq(productId)))
-            .thenReturn("ACTIVE");
+        stubActive(productId);
         when(jdbc.queryForObject(
-            eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
-            eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("1.0"));
+            eq("select quantity from inventory.inventory_balances where depot_id = ? and product_id = ? for update"),
+            eq(BigDecimal.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId))).thenReturn(new BigDecimal("1.0"));
 
         service.apply(productId, new BigDecimal("-1.5"), "SALE", saleId, "Venta confirmada");
 
         verify(jdbc).update(
-            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
-            eq(new BigDecimal("-0.5")), any(), eq(productId));
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where depot_id = ? and product_id = ?"),
+            eq(new BigDecimal("-0.5")), any(), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId));
         verify(jdbc).update(
-            eq("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)"),
-            any(UUID.class), eq(productId), eq("SALE"), eq(new BigDecimal("-1.5")), eq("Venta confirmada"),
+            eq("insert into inventory.stock_movements(id, depot_id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+            any(UUID.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), eq("SALE"), eq(new BigDecimal("-1.5")), eq("Venta confirmada"),
             eq("SALE"), eq(saleId), any());
     }
 
     @Test
     void permitsSaleCancellationAndNegativeBalances() {
         UUID productId = UUID.randomUUID();
-        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
-        when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("-2.0"));
+        when(jdbc.queryForObject(eq("select status from inventory.depots where id = ?"), eq(String.class), any(UUID.class)))
+            .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId)))
+            .thenReturn(new BigDecimal("-2.0"));
 
         service.apply(productId, new BigDecimal("0.5"), "SALE_CANCELLATION", UUID.randomUUID(), "Cancelación");
 
         verify(jdbc).update(
-            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
-            eq(new BigDecimal("-1.5")), any(), eq(productId));
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where depot_id = ? and product_id = ?"),
+            eq(new BigDecimal("-1.5")), any(), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId));
     }
 
     @Test
     void permitsHistoricalSaleCancellationForInactiveProductButRejectsNewMovements() {
         UUID productId = UUID.randomUUID();
-        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("INACTIVE");
-        when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("-2.0"));
+        when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), eq(productId)))
+            .thenReturn("INACTIVE");
+        when(jdbc.queryForObject(eq("select status from inventory.depots where id = ?"), eq(String.class), any(UUID.class)))
+            .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(eq("select quantity from inventory.inventory_balances where depot_id = ? and product_id = ? for update"),
+            eq(BigDecimal.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId))).thenReturn(new BigDecimal("-2.0"));
 
         service.apply(productId, new BigDecimal("0.5"), "SALE_CANCELLATION", UUID.randomUUID(), "Cancelación histórica");
 
@@ -85,18 +90,27 @@ class InventoryMovementServiceTest {
     void appliesReturnToInactiveProductAndRecordsPositiveMovement() {
         UUID productId = UUID.randomUUID();
         UUID returnId = UUID.randomUUID();
+        when(jdbc.queryForObject(eq("select status from inventory.depots where id = ?"), eq(String.class), any(UUID.class)))
+            .thenReturn("ACTIVE");
         when(jdbc.queryForObject(
-            eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
-            eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("-1.0"));
+            eq("select quantity from inventory.inventory_balances where depot_id = ? and product_id = ? for update"),
+            eq(BigDecimal.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId))).thenReturn(new BigDecimal("-1.0"));
 
         service.apply(productId, new BigDecimal("0.5"), "RETURN", returnId, "Producto devuelto");
 
         verify(jdbc).update(
-            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
-            eq(new BigDecimal("-0.5")), any(), eq(productId));
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where depot_id = ? and product_id = ?"),
+            eq(new BigDecimal("-0.5")), any(), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId));
         verify(jdbc).update(
-            eq("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)"),
-            any(UUID.class), eq(productId), eq("RETURN"), eq(new BigDecimal("0.5")), eq("Producto devuelto"),
+            eq("insert into inventory.stock_movements(id, depot_id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+            any(UUID.class), eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), eq("RETURN"), eq(new BigDecimal("0.5")), eq("Producto devuelto"),
             eq("RETURN"), eq(returnId), any());
+    }
+
+    private void stubActive(UUID productId) {
+        when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), eq(productId)))
+            .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(eq("select status from inventory.depots where id = ?"), eq(String.class), any(UUID.class)))
+            .thenReturn("ACTIVE");
     }
 }

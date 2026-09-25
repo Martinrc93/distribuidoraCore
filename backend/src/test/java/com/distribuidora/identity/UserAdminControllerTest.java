@@ -5,6 +5,7 @@ import com.distribuidora.identity.api.UserAdminDtos;
 import com.distribuidora.identity.application.UserAdminService;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -14,8 +15,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
@@ -53,7 +56,7 @@ class UserAdminControllerTest {
         UUID newId = UUID.randomUUID();
         Instant expiresAt = Instant.now().plusSeconds(1800);
         when(service.invite(any())).thenReturn(
-            new UserAdminDtos.InviteUserResponse(newId, "invited@distribuidora.local", "token-xyz", expiresAt)
+            new UserAdminService.InviteUserResult(newId, "invited@distribuidora.local", "token-xyz", expiresAt)
         );
 
         mockMvc.perform(post("/api/users/invite")
@@ -115,5 +118,20 @@ class UserAdminControllerTest {
             .andExpect(status().isNoContent());
 
         verify(service).unblockUser(userId);
+    }
+
+    @Test
+    void changeRoleRequiresAdminAllAndReturns204() throws Exception {
+        UUID userId = UUID.randomUUID();
+
+        mockMvc.perform(put("/api/users/{id}/role", userId)
+                .contentType(APPLICATION_JSON)
+                .content("{\"role\":\"SELLER\"}"))
+            .andExpect(status().isNoContent());
+
+        verify(service).changeRole(userId, "SELLER");
+        assertEquals("hasAuthority('ADMIN_ALL')", UserAdminController.class
+            .getMethod("changeRole", UUID.class, UserAdminDtos.ChangeRoleRequest.class)
+            .getAnnotation(PreAuthorize.class).value());
     }
 }

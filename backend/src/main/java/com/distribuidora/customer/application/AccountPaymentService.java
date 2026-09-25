@@ -1,7 +1,6 @@
 package com.distribuidora.customer.application;
 
 import com.distribuidora.audit.application.AuditService;
-import com.distribuidora.customer.api.AccountPaymentDtos;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,6 +19,20 @@ import java.util.UUID;
 
 @Service
 public class AccountPaymentService {
+    public interface PaymentCommand {
+        BigDecimal amount();
+        String method();
+        String transferReference();
+        UUID saleId();
+    }
+
+    public record AllocationResult(UUID saleId, String saleNumber, UUID paymentId, BigDecimal amount) { }
+
+    public record PaymentResult(UUID customerId, BigDecimal received, BigDecimal balanceBefore,
+                                BigDecimal balanceAfter, String allocationMode, List<AllocationResult> allocations) {
+        public PaymentResult { allocations = List.copyOf(allocations); }
+    }
+
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4);
 
     private final JdbcTemplate jdbc;
@@ -33,7 +46,7 @@ public class AccountPaymentService {
     }
 
     @Transactional
-    public AccountPaymentDtos.PaymentResponse apply(UUID customerId, AccountPaymentDtos.PaymentRequest request) {
+    public PaymentResult apply(UUID customerId, PaymentCommand request) {
         validate(customerId, request);
         currentUser.requireCustomerAccess(customerId);
 
@@ -66,7 +79,7 @@ public class AccountPaymentService {
             }
         }
 
-        List<AccountPaymentDtos.Allocation> allocations = new ArrayList<>();
+        List<AllocationResult> allocations = new ArrayList<>();
         BigDecimal remaining = amount;
         Timestamp now = Timestamp.from(Instant.now());
         String transferReference = normalize(request.transferReference());
@@ -80,7 +93,7 @@ public class AccountPaymentService {
             jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'CREDIT', ?, ?)",
                 UUID.randomUUID(), customerId, saleDue.saleId(), applied, now);
             jdbc.update("update sale.sales set paid = paid + ? where id = ?", applied, saleDue.saleId());
-            allocations.add(new AccountPaymentDtos.Allocation(saleDue.saleId(), saleDue.saleNumber(), paymentId, applied));
+            allocations.add(new AllocationResult(saleDue.saleId(), saleDue.saleNumber(), paymentId, applied));
             remaining = remaining.subtract(applied).setScale(4);
         }
         if (remaining.signum() != 0) {
@@ -101,7 +114,7 @@ public class AccountPaymentService {
         if (transferReference != null) details.put("transferReference", transferReference);
         audit.recordWithinTransaction(actorId(), "ACCOUNT_PAYMENT_APPLY", "CUSTOMER", customerId.toString(), "SUCCESS", details);
 
-        return new AccountPaymentDtos.PaymentResponse(customerId, amount, balanceBefore,
+        return new PaymentResult(customerId, amount, balanceBefore,
             balanceAfter, allocationMode, allocations);
     }
 
@@ -121,7 +134,7 @@ public class AccountPaymentService {
             + "order by s.created_at, s.id for update of s", customerId);
     }
 
-    private void validate(UUID customerId, AccountPaymentDtos.PaymentRequest request) {
+    private void validate(UUID customerId, PaymentCommand request) {
         if (customerId == null || request == null || request.amount() == null || request.amount().signum() <= 0
             || request.amount().scale() > 4
             || (!"CASH".equals(request.method()) && !"BANK_TRANSFER".equals(request.method()))) {

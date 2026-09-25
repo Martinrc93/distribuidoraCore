@@ -2,6 +2,7 @@ package com.distribuidora.seller.api;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import com.distribuidora.seller.application.SellerCommandService;
 
 import java.time.Instant;
 import java.util.List;
@@ -14,12 +15,12 @@ public final class SellerDtos {
     public record CreateSellerRequest(
         @NotNull(message = "userId es obligatorio") UUID userId,
         @NotBlank(message = "displayName es obligatorio") String displayName
-    ) {
+    ) implements SellerCommandService.CreateSellerCommand {
     }
 
     public record UpdateSellerRequest(
         @NotBlank(message = "displayName es obligatorio") String displayName
-    ) {
+    ) implements SellerCommandService.UpdateSellerCommand {
     }
 
     public record SellerStatusRequest(
@@ -46,7 +47,7 @@ public final class SellerDtos {
         @NotNull(message = "targetSellerId es obligatorio") UUID targetSellerId,
         List<UUID> customerIds,
         Boolean reassignPendingOrders
-    ) {
+    ) implements SellerCommandService.ReassignCustomersCommand {
     }
 
     public record ReassignCustomersResponse(
@@ -61,7 +62,7 @@ public final class SellerDtos {
         @NotNull(message = "targetSellerId es obligatorio") UUID targetSellerId,
         @NotNull(message = "orderIds es obligatorio") List<UUID> orderIds,
         Boolean onlyPending
-    ) {
+    ) implements SellerCommandService.ReassignOrdersCommand {
     }
 
     public record ReassignOrdersResponse(

@@ -2,7 +2,6 @@ package com.distribuidora.order.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
-import com.distribuidora.order.api.DeliveryLifecycleDtos;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,6 +20,18 @@ import java.util.UUID;
 @Service
 public class DeliveryLifecycleService {
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4);
+
+    public interface DeliveryPaymentCommand {
+        String method();
+        BigDecimal amount();
+    }
+
+    public interface DeliveryAttemptCommand {
+        String result();
+        String observation();
+        List<? extends DeliveryPaymentCommand> payments();
+        String transferReference();
+    }
 
     private final JdbcTemplate jdbc;
     private final InventoryMovementService inventory;
@@ -41,7 +52,7 @@ public class DeliveryLifecycleService {
     }
 
     @Transactional
-    public void recordAttempt(UUID orderId, DeliveryLifecycleDtos.DeliveryAttemptRequest request) {
+    public void recordAttempt(UUID orderId, DeliveryAttemptCommand request) {
         validateAttempt(orderId, request);
         if (currentUser != null) currentUser.requireOrderAccess(orderId);
         Map<String, Object> lifecycle = lockOrderAndSale(orderId);
@@ -81,11 +92,11 @@ public class DeliveryLifecycleService {
     }
 
     private DeliveryPaymentResult collectDeliveryPayments(Map<String, Object> lifecycle,
-                                                           DeliveryLifecycleDtos.DeliveryAttemptRequest request,
+                                                           DeliveryAttemptCommand request,
                                                            Timestamp now) {
-        List<DeliveryLifecycleDtos.DeliveryPaymentRequest> payments = request.payments() == null
+        List<? extends DeliveryPaymentCommand> payments = request.payments() == null
             ? List.of() : request.payments();
-        BigDecimal received = payments.stream().map(DeliveryLifecycleDtos.DeliveryPaymentRequest::amount)
+        BigDecimal received = payments.stream().map(DeliveryPaymentCommand::amount)
             .reduce(ZERO, BigDecimal::add).setScale(4);
         BigDecimal paidBefore = decimal(lifecycle.get("paid")).setScale(4);
         BigDecimal total = decimal(lifecycle.get("total")).setScale(4);
@@ -103,7 +114,7 @@ public class DeliveryLifecycleService {
             }
 
             String transferReference = normalize(request.transferReference());
-            for (DeliveryLifecycleDtos.DeliveryPaymentRequest payment : payments) {
+            for (DeliveryPaymentCommand payment : payments) {
                 jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, transfer_reference, created_at) values (?, ?, ?, ?, ?, ?, ?)",
                     UUID.randomUUID(), saleId, customerId, payment.amount().setScale(4), payment.method(),
                     "BANK_TRANSFER".equals(payment.method()) ? transferReference : null, now);
@@ -153,13 +164,14 @@ public class DeliveryLifecycleService {
         // Confirmation historically used orderId, while demo/legacy rows may use saleId.
         // Reverse the net stock effect so previous order edits cannot cause over-restoration.
         List<Map<String, Object>> netMovements = jdbc.queryForList(
-            "select product_id, sum(quantity) as net_quantity from inventory.stock_movements "
+            "select depot_id, product_id, sum(quantity) as net_quantity from inventory.stock_movements "
                 + "where movement_type in ('SALE', 'SALE_CANCELLATION') and reference_id in (?, ?) "
-                + "group by product_id having sum(quantity) <> 0 order by product_id", new Object[]{orderId, saleId});
+                + "group by depot_id, product_id having sum(quantity) <> 0 order by depot_id, product_id", new Object[]{orderId, saleId});
         for (Map<String, Object> movement : netMovements) {
+            UUID depotId = uuid(movement, "depot_id");
             UUID productId = uuid(movement, "product_id");
             BigDecimal netQuantity = decimal(movement.get("net_quantity"));
-            inventory.apply(productId, netQuantity.negate(), "SALE_CANCELLATION", orderId, "Sale cancellation");
+            inventory.apply(depotId, productId, netQuantity.negate(), "SALE_CANCELLATION", orderId, "Sale cancellation");
         }
     }
 
@@ -178,7 +190,7 @@ public class DeliveryLifecycleService {
         }
     }
 
-    private void validateAttempt(UUID orderId, DeliveryLifecycleDtos.DeliveryAttemptRequest request) {
+    private void validateAttempt(UUID orderId, DeliveryAttemptCommand request) {
         if (orderId == null || request == null || request.result() == null
             || (!"DELIVERED".equals(request.result()) && !"FAILED".equals(request.result()))) {
             throw new IllegalArgumentException("result es inválido");
@@ -186,7 +198,7 @@ public class DeliveryLifecycleService {
         BigDecimal paymentTotal = ZERO;
         boolean hasBankTransfer = false;
         if (request.payments() != null) {
-            for (DeliveryLifecycleDtos.DeliveryPaymentRequest payment : request.payments()) {
+            for (DeliveryPaymentCommand payment : request.payments()) {
                 if (payment == null || payment.method() == null
                     || (!"CASH".equals(payment.method()) && !"BANK_TRANSFER".equals(payment.method()))
                     || payment.amount() == null || payment.amount().signum() <= 0 || payment.amount().scale() > 4) {

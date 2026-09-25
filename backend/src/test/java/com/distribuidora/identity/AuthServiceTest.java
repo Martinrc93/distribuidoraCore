@@ -9,7 +9,7 @@ import com.distribuidora.identity.domain.UserAccount;
 import com.distribuidora.identity.domain.UserStatus;
 import com.distribuidora.identity.infrastructure.RefreshTokenRepository;
 import com.distribuidora.identity.infrastructure.UserAccountRepository;
-import com.distribuidora.shared.security.JwtService;
+import com.distribuidora.identity.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -63,7 +63,7 @@ class AuthServiceTest {
         when(jwtService.issue(user, List.of("ADMIN_ALL", "ORDER_CREATE", "STOCK_ADJUST"))).thenReturn("access-token-123");
         when(jwtService.accessTokenSeconds()).thenReturn(900L);
 
-        AuthDtos.LoginResponse response = authService.login(new AuthDtos.LoginRequest("ADMIN@DISTRIBUIDORA.LOCAL", "Correct123"));
+        AuthService.LoginResult response = authService.login(new AuthDtos.LoginRequest("ADMIN@DISTRIBUIDORA.LOCAL", "Correct123"));
 
         verify(users).flush();
         assertThat(response.accessToken()).isEqualTo("access-token-123");
@@ -114,7 +114,7 @@ class AuthServiceTest {
         when(jwtService.issue(user, List.of("ORDER_CREATE"))).thenReturn("new-access-token");
         when(jwtService.accessTokenSeconds()).thenReturn(900L);
 
-        AuthDtos.LoginResponse response = authService.refresh(new AuthDtos.RefreshRequest(rawToken));
+        AuthService.LoginResult response = authService.refresh(new AuthDtos.RefreshRequest(rawToken));
 
         assertThat(response.accessToken()).isEqualTo("new-access-token");
         assertThat(response.refreshToken()).isNotBlank();

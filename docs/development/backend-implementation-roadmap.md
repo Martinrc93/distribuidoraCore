@@ -1,8 +1,9 @@
 # Roadmap de implementación del backend
 
-Este roadmap aplica los ADR de forma incremental. Cada fase debe dejar una
-vertical ejecutable, con migraciones Flyway, tests de aplicación y endpoints
-documentados antes de comenzar la siguiente.
+Este roadmap registra la secuencia de implementación aplicada a los ADR. Las
+fases y pendientes históricos se reconciliaron el 2026-09-24 con el estado
+actual; la checklist y el estado de funcionalidades son las referencias para
+consultar el trabajo backend abierto.
 
 ## Fase 0: Plataforma y límites
 
@@ -21,19 +22,19 @@ Criterios:
 
 ## Fase 1: Identity y seguridad
 
-Aplicados parcialmente:
+Aplicados:
 
 - ADR-004: usuario local, Argon2id, JWT stateless de 15 minutos y permisos en
   claims.
 - ADR-009: auditoría de login con correlation ID.
 
-Pendiente en esta fase:
-
-- Alta administrativa de usuarios `INVITED`.
-- Token de activación de un solo uso con expiración de 30 minutos.
-- Refresh token rotativo, revocable y almacenado como hash.
-- Bloqueo/desbloqueo administrativo y revocación de sesiones.
-- Permisos persistidos y autorización con `@PreAuthorize`.
+- Alta/invitación administrativa de usuarios, activación de un solo uso,
+  refresh tokens rotativos, bloqueo/desbloqueo y revocación de sesiones.
+- Consulta paginada de usuarios y cambio de roles con protección del último
+  administrador activo y coherencia con perfiles seller.
+- Consulta de roles/permisos y edición transaccional de permisos con protección
+  de `ADMIN_ALL`/`USER_MANAGE`, invalidación de sesiones y auditoría; ver
+  [`contrato de administración`](../api/identity-admin.md).
 
 Criterios:
 
@@ -42,10 +43,11 @@ Criterios:
 - Tres intentos inválidos bloquean al usuario.
 - Login exitoso y fallido generan eventos append-only.
 - Endpoints privados rechazan requests sin token válido.
+- La administración conserva siempre al menos un administrador activo.
 
 ## Fase 2: Seller y Customer
 
-Implementar:
+Implementado:
 
 - `seller.seller_profiles` asociado opcionalmente a `identity.users`.
 - `customer.customers` con vendedor asignado, estado y datos fiscales.
@@ -75,10 +77,14 @@ Aplicado:
   `GENERAL`; los cambios de precio tienen efecto inmediato.
 - Importes con `NUMERIC(19,4)` y `BigDecimal`.
 
-Pendiente explícitamente:
+Ampliaciones incorporadas y completadas (2026-09-24):
 
-- Historial de precios y vigencias futuras.
-- Descuentos y reglas de precio históricos fuera de la confirmación.
+- Historial de precios y vigencias futuras, con resolución por fecha comercial,
+  cancelación de programaciones y snapshots históricos; V21. Contrato y
+  verificación en `docs/api/pricing.md` y `docs/development/backend-checklist.md`.
+- Reglas persistidas de descuento de línea y pedido, aplicadas al confirmar y
+  editar, con prioridad, vigencia y snapshots; V22. Contrato en
+  `docs/api/pricing.md`.
 
 Criterios:
 
@@ -130,17 +136,25 @@ por precio faltante solo usa listas activas con identificador menor.
 
 ## Fase 4: Inventory
 
-Aplicados parcialmente:
+Implementado y ampliado:
 
 - `inventory.inventory_balances` con saldo actual.
 - `inventory.stock_movements` append-only.
 - Ajuste manual de stock mediante delta firmado.
 - Lock pesimista del balance dentro de la transacción.
 - Auditoría del ajuste manual con operación `STOCK_ADJUSTMENT`.
+- Depósitos con `CENTRAL` como predeterminado y migración V23 de saldos y
+  movimientos existentes.
+- Balances por depósito, ajustes y transferencias atómicas con locks ordenados.
+- Depósito persistido en pedidos/ventas y conservado por ediciones,
+  devoluciones y cancelaciones; lecturas agregadas mantienen el contrato
+  anterior.
 
-Pendiente explícitamente:
+Evolución completada:
 
-- Delta de stock por cancelación y edición.
+- Deltas de stock por edición/cancelación y flujos de devolución verificados;
+  contratos actuales en `docs/api/inventory.md`, `docs/api/order-edits.md` y
+  `docs/api/sale-returns.md`.
 
 Criterios:
 
@@ -173,9 +187,11 @@ Implementado:
 - Lectura de detalle por ID o número con totales de venta, pagos y cuenta.
 - Validación de `ORDER_CREATE` y overrides con `ADMIN_ALL`.
 
-Pendiente explícitamente:
+Completado:
 
-- Validaciones de permisos de vendedor específicas del pedido.
+- Las lecturas y operaciones del vendedor se limitan a clientes/pedidos
+  asignados; la autorización se aplica en rutas críticas y está cubierta por
+  pruebas HTTP y PostgreSQL. Ver `docs/development/backend-functionality-status.md`.
 
 Criterios:
 
@@ -361,8 +377,9 @@ Implementado:
   idempotentes desde outbox.
 - Auditoría de solicitud y de intentos, con consulta del estado.
 
-Pendiente: configurar URLs y credenciales de proveedores por entorno, y definir
-retención/purga de destinatarios.
+Pendiente de despliegue: configurar URLs y credenciales de proveedores por
+entorno. La purga de solicitudes y destinatarios terminales ya está implementada
+con retención predeterminada de 90 días.
 
 Criterios:
 
@@ -378,26 +395,77 @@ Implementado:
 - Logs ECS JSON con request ID seguro en MDC; métricas HTTP de latencia y
   métricas outbox de pendientes, éxito, fallo, agotamiento y duración.
 - Scripts PowerShell de backup custom cifrado con AES-256-CBC y HMAC-SHA256,
-  retención local, registro de tarea diaria y restauración con validación HMAC.
+  retención local y restauración con validación HMAC. La copia a carpeta local
+  OneDrive pasó SHA-256/HMAC y restauración. La tarea diaria se corrigió y quedó
+  habilitada tras una corrida programada de control con código `0`; la siguiente
+  ejecución está prevista para 2026-09-25 a las 03:00. Se corrigió la
+  interpretación de Cloud Files: `0x00000009` significa placeholder + `InSync`;
+  el usuario confirmó que ve el backup de las 05:55:56 en OneDrive. KeePassXC
+  2.7.12 portable se instaló con firma/hash oficiales verificados. Se corrigió
+  stdin para PowerShell 5.1 y se movió la entrada a la raíz porque el grupo
+  `Recovery` no existía. La base fallida se limpió y la prueba create/add/lectura
+  con datos ficticios pasó. El usuario confirmó `RESULT=OK` para la bóveda real;
+  la entrada se leyó de vuelta y Cloud Files reportó `0x00000009`
+  (`PLACEHOLDER` + `InSync`), confirmando la sincronización en OneDrive. La
+  contraseña maestra queda bajo custodia del usuario fuera de OneDrive.
 - Prueba de restauración/tamper ejecutada en una base PostgreSQL descartable.
 - Procedimiento de rollback y recuperación documentado.
+- ArchUnit valida que los controladores no accedan a infraestructura y que el
+  dominio no dependa de las capas API, aplicación o infraestructura.
+- [x] Romper la arista `shared → catalog` que cerraba `audit → shared → catalog →
+  audit`, sacar los DTOs de transporte de las dependencias de aplicación y
+  proteger ambas direcciones con reglas ArchUnit.
+- [x] Revisar y documentar el grafo intermodular completo; resolver los ciclos
+  restantes y activar la regla ArchUnit global de slices sin ciclos.
 - Purga a 90 días de solicitudes terminales y eventos outbox; se conserva la
   auditoría con destinatario enmascarado.
 
-Pendiente de activación o evolución:
+Estado de activación y evolución:
 
-- Confirmar primera ejecución del workflow en GitHub Actions.
-- Registrar/activar la tarea diaria en el host operativo y configurar réplica
-  externa de backups cifrados.
-- Incorporar ArchUnit o Spring Modulith.
+- [x] Primera ejecución del workflow CI PostgreSQL pasó en GitHub Actions para
+  `2d1decf` ([run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828), 2026-09-24).
+- [x] Corregir Task Scheduler y activar la tarea diaria en el host; la ejecución
+  programada de control y el restore/tamper pasaron.
+- [x] Crear y verificar el escrow de la clave DPAPI en KeePassXC y comprobar la
+  sincronización cloud de la bóveda. El backup de las 05:55:56 está confirmado
+  en OneDrive por el usuario; su mirror local pasó HMAC y la restauración está
+  verificada.
+- [x] El ciclo conocido `audit → shared → catalog → audit` se rompió al eliminar
+  `shared → catalog`; los servicios de aplicación ya no dependen de DTOs API.
+- [x] La revisión encontró dependencias desde `shared` hacia identidad,
+  documentos y pedidos. Los servicios JWT y los handlers específicos se
+  movieron a sus módulos; el grafo global de producción ya pasa la regla sin
+  ciclos.
+- [x] Purga de solicitudes de notificación y eventos outbox terminales con
+  retención predeterminada de 90 días; la auditoría enmascarada se conserva.
+
+No quedan tareas de implementación backend abiertas en esta fase. La activación
+real de webhooks requiere configurar URLs y credenciales de email/WhatsApp por
+entorno, como se indica en la Fase 6.
 
 Criterios:
 
-- Las dependencias entre módulos violatorias fallan en CI.
+- Las cuatro reglas ArchUnit de capas y la regla global de slices sin ciclos
+  protegen el backend en cada suite Maven.
 - Existe procedimiento de restauración probado.
 - Los eventos críticos pueden rastrearse desde request hasta auditoría.
 
-Verificación de cierre (2026-09-24): suite Maven completa **301 tests, 0
-fallos, 0 errores y 0 omitidos**; PostgreSQL 16.4, Flyway V1–V20 y 18 pruebas
-funcionales. La restauración/tamper se verificó por separado en una base
-descartable, que se eliminó al concluir.
+Verificación histórica de la fase (2026-09-24): suite Maven **301 tests** y 18
+pruebas PostgreSQL. Verificación PostgreSQL posterior a administración y
+ArchUnit (2026-09-24): **314 tests, 0 fallos, 0 errores ni omitidos**, incluidos
+19 casos PostgreSQL 16.4/Flyway V1–V20 en una base descartable eliminada al
+concluir. Verificación posterior a arquitectura y HTTP: **328 tests, 0 fallos,
+0 errores y 19 omitidos**. Verificación de la revisión completa del grafo
+(2026-09-24): **329 tests, 0 fallos, 0 errores y 19 omitidos**, con ArchUnit sin
+ciclos; esta última ejecución no tenía `POSTGRES_TEST_URL`.
+Verificación integrada final de seguridad y persistencia (2026-09-24): **337
+tests, 0 fallos, 0 errores y 0 omitidos**, incluidos 21 casos PostgreSQL
+16.4/Flyway V1–V20 y validación JPA en un cluster descartable. La matriz HTTP
+recorre las seis authorities actuales; dos flujos comprueban login desde roles
+persistidos, invalidación del JWT anterior y permisos del nuevo login tras
+cambios de rol o permisos.
+
+Verificación final posterior a los tres ítems de backlog (2026-09-24): **350
+tests, 0 fallos, 0 errores y 0 omitidos**. Incluye 24 casos PostgreSQL 16.4,
+Flyway V1–V23 y validación JPA sobre una base descartable nueva; la regla global
+ArchUnit y la matriz HTTP pasaron.

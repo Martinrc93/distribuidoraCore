@@ -1,6 +1,9 @@
 package com.distribuidora.integration;
 
 import com.distribuidora.catalog.application.ProductCommandService;
+import com.distribuidora.pricing.application.PricingCommandService;
+import com.distribuidora.pricing.application.PricingQueryService;
+import com.distribuidora.pricing.application.CommercialDiscountRuleCommandService;
 import com.distribuidora.dashboard.application.ReadQueryService;
 import com.distribuidora.customer.api.AccountPaymentDtos;
 import com.distribuidora.customer.application.AccountPaymentService;
@@ -8,9 +11,13 @@ import com.distribuidora.identity.api.AuthDtos;
 import com.distribuidora.identity.application.AuthService;
 import com.distribuidora.identity.application.InvalidRefreshTokenException;
 import com.distribuidora.identity.application.UserAdminService;
+import com.distribuidora.identity.application.RoleAdminService;
+import com.distribuidora.identity.security.JwtService;
 import com.distribuidora.identity.domain.RefreshToken;
 import com.distribuidora.identity.infrastructure.RefreshTokenRepository;
 import com.distribuidora.inventory.application.InventoryMovementService;
+import com.distribuidora.inventory.application.InventoryCommandService;
+import com.distribuidora.inventory.application.InventoryDepotService;
 import com.distribuidora.order.api.OrderConfirmationDtos;
 import com.distribuidora.order.api.OrderEditDtos;
 import com.distribuidora.order.application.DeliveryLifecycleService;
@@ -33,6 +40,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.PayloadApplicationEvent;
 import org.springframework.context.event.ApplicationEventMulticaster;
@@ -44,6 +53,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -51,8 +63,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -67,9 +81,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Opt-in verification of the recent backend fixes against a disposable PostgreSQL database. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 class PostgresBackendFixesIntegrationTest {
 
@@ -89,10 +109,19 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired RefreshTokenRepository refreshTokens;
     @Autowired AuthService authService;
+    @Autowired JwtService jwtService;
+    @Autowired MockMvc mockMvc;
+    @Autowired ObjectMapper objectMapper;
     @Autowired UserAdminService userAdminService;
+    @Autowired RoleAdminService roleAdminService;
     @Autowired SellerCommandService sellerCommandService;
     @Autowired ProductCommandService productCommandService;
+    @Autowired CommercialDiscountRuleCommandService discountRuleCommandService;
+    @Autowired PricingCommandService pricingCommandService;
+    @Autowired PricingQueryService pricingQueryService;
     @Autowired InventoryMovementService inventoryMovementService;
+    @Autowired InventoryCommandService inventoryCommandService;
+    @Autowired InventoryDepotService inventoryDepotService;
     @Autowired SaleReturnService saleReturnService;
     @Autowired OrderConfirmationService orderConfirmationService;
     @Autowired DeliveryLifecycleService deliveryLifecycleService;
@@ -110,15 +139,19 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired PlatformTransactionManager transactionManager;
 
     private final Set<UUID> users = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> roles = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> sellers = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> customers = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> orders = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> sales = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> saleItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> products = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> depots = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> discountRules = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> brands = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> categories = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> notificationRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<String> auditResources = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @AfterEach
     void cleanFixtures() {
@@ -135,16 +168,22 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from notification.outbox_events where aggregate_id in (%s)", notificationRequests);
         deleteIds("delete from notification.outbox_events where aggregate_id in (%s)", orders);
         deleteIds("delete from orders.orders where id in (%s)", orders);
+        deleteIds("delete from catalog.commercial_discount_rules where id in (%s)", discountRules);
         deleteIds("delete from customer.customers where id in (%s)", customers);
         deleteIds("delete from inventory.stock_movements where product_id in (%s)", products);
         deleteIds("delete from inventory.inventory_balances where product_id in (%s)", products);
+        deleteIds("delete from catalog.product_price_history where product_id in (%s)", products);
         deleteIds("delete from catalog.product_prices where product_id in (%s)", products);
         deleteIds("delete from catalog.products where id in (%s)", products);
+        deleteIds("delete from inventory.depots where id in (%s)", depots);
         deleteIds("delete from seller.seller_profiles where id in (%s)", sellers);
         deleteIds("delete from identity.refresh_tokens where user_id in (%s)", users);
         deleteIds("delete from identity.user_activation_tokens where user_id in (%s)", users);
         deleteIds("delete from identity.user_roles where user_id in (%s)", users);
         deleteIds("delete from identity.users where id in (%s)", users);
+        deleteIds("delete from identity.role_permissions where role_id in (%s)", roles);
+        deleteIds("delete from identity.roles where id in (%s)", roles);
+        deleteStringIds("delete from audit.audit_events where resource_id in (%s)", auditResources);
         deleteIds("delete from catalog.brands where id in (%s)", brands);
         deleteIds("delete from catalog.categories where id in (%s)", categories);
         List<UUID> resources = new ArrayList<>();
@@ -162,15 +201,19 @@ class PostgresBackendFixesIntegrationTest {
         }
         deleteIds("delete from audit.audit_events where actor_user_id in (%s)", users);
         users.clear();
+        roles.clear();
         sellers.clear();
         customers.clear();
         orders.clear();
         sales.clear();
         saleItems.clear();
         products.clear();
+        depots.clear();
+        discountRules.clear();
         brands.clear();
         categories.clear();
         notificationRequests.clear();
+        auditResources.clear();
     }
 
     @Test
@@ -214,8 +257,8 @@ class PostgresBackendFixesIntegrationTest {
     @Test
     void refreshReplayRevokesSessionsButLogoutRevocationDoesNot() {
         UUID replayUser = createUser("replay");
-        AuthDtos.LoginResponse login = authService.login(new AuthDtos.LoginRequest(email(replayUser), "Passw0rd!"));
-        AuthDtos.LoginResponse rotated = authService.refresh(new AuthDtos.RefreshRequest(login.refreshToken()));
+        AuthService.LoginResult login = authService.login(new AuthDtos.LoginRequest(email(replayUser), "Passw0rd!"));
+        AuthService.LoginResult rotated = authService.refresh(new AuthDtos.RefreshRequest(login.refreshToken()));
         assertThat(rotated.refreshToken()).isNotBlank().isNotEqualTo(login.refreshToken());
 
         assertThatThrownBy(() -> authService.refresh(new AuthDtos.RefreshRequest(login.refreshToken())))
@@ -224,8 +267,8 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from identity.refresh_tokens where user_id = ? and revoked_at is null", Long.class, replayUser)).isZero();
 
         UUID logoutUser = createUser("logout");
-        AuthDtos.LoginResponse logoutLogin = authService.login(new AuthDtos.LoginRequest(email(logoutUser), "Passw0rd!"));
-        AuthDtos.LoginResponse anotherSession = authService.login(new AuthDtos.LoginRequest(email(logoutUser), "Passw0rd!"));
+        AuthService.LoginResult logoutLogin = authService.login(new AuthDtos.LoginRequest(email(logoutUser), "Passw0rd!"));
+        AuthService.LoginResult anotherSession = authService.login(new AuthDtos.LoginRequest(email(logoutUser), "Passw0rd!"));
         authService.logout(new AuthDtos.LogoutRequest(logoutLogin.refreshToken()));
         assertThatThrownBy(() -> authService.refresh(new AuthDtos.RefreshRequest(logoutLogin.refreshToken())))
             .isInstanceOf(InvalidRefreshTokenException.class);
@@ -257,6 +300,129 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void roleAdministrationListsUsersAndInvalidatesSessionsWhenPermissionsChange() {
+        UUID actorId = createUser("role-admin-actor");
+        UUID targetId = createUser("role-admin-target");
+        UUID roleId = UUID.randomUUID();
+        roles.add(roleId);
+        String roleCode = "PG_ROLE_" + roleId.toString().substring(0, 8).toUpperCase();
+        auditResources.add(roleCode);
+        jdbc.update("insert into identity.roles(id, code, description) values (?, ?, ?)",
+            roleId, roleCode, "Role administration integration test");
+        jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", targetId, roleId);
+        refreshTokens.saveAndFlush(new RefreshToken(targetId, AuthService.hashToken("role-admin-token-" + targetId),
+            Instant.now().plusSeconds(600)));
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+
+        assertThat(readQueryService.users(0, 100, "").content()).anySatisfy(user -> {
+            assertThat(user.get("id")).isEqualTo(targetId);
+            assertThat(user.get("roles").toString()).contains(roleCode);
+        });
+        assertThat(roleAdminService.listPermissions()).extracting("code").contains("ADMIN_ALL", "ORDER_CREATE");
+
+        var updatedRole = roleAdminService.replacePermissions(roleCode, Set.of("ORDER_CREATE"));
+
+        assertThat(updatedRole.permissions()).containsExactly("ORDER_CREATE");
+        assertThat(jdbc.queryForObject("select version from identity.users where id = ?", Long.class, targetId)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("select count(*) from identity.refresh_tokens where user_id = ? and revoked_at is not null",
+            Long.class, targetId)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where actor_user_id = ? and operation = ? and resource_id = ?",
+            Long.class, actorId, "ROLE_PERMISSIONS_UPDATE", roleCode)).isEqualTo(1L);
+        assertThatThrownBy(() -> roleAdminService.replacePermissions(roleCode, Set.of("ADMIN_ALL")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("solo se pueden asignar al rol ADMIN");
+
+        userAdminService.changeRole(targetId, com.distribuidora.identity.api.UserAdminDtos.Role.ADMIN.name());
+        assertThat(jdbc.queryForList("""
+            select r.code from identity.user_roles ur join identity.roles r on r.id = ur.role_id
+            where ur.user_id = ?
+            """, String.class, targetId)).containsExactly("ADMIN");
+        assertThat(jdbc.queryForObject("select version from identity.users where id = ?", Long.class, targetId)).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where actor_user_id = ? and operation = ? and resource_id = ?",
+            Long.class, actorId, "USER_ROLE_CHANGE", targetId.toString())).isEqualTo(1L);
+        assertThatThrownBy(() -> userAdminService.blockUser(targetId))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("último administrador activo");
+        assertThat(jdbc.queryForObject("select status from identity.users where id = ?", String.class, targetId))
+            .isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void httpLoginLoadsPersistedAuthoritiesAndRoleChangeRejectsOldAccessToken() throws Exception {
+        UUID adminId = createUser("jwt-role-admin");
+        assignRole(adminId, "ADMIN");
+        UUID targetId = createUser("jwt-role-target");
+        String roleCode = createRoleWithPermission("ORDER_CREATE");
+        assignRole(targetId, roleCode);
+
+        String adminToken = loginHttp(email(adminId));
+        String oldTargetToken = loginHttp(email(targetId));
+        assertThat(jwtService.parse(oldTargetToken).get("authorities", List.class))
+            .containsExactly("ORDER_CREATE");
+
+        UUID missingOrderId = UUID.randomUUID();
+        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", missingOrderId)
+                .header("Authorization", "Bearer " + oldTargetToken))
+            .andExpect(status().isNotFound());
+
+        mockMvc.perform(put("/api/users/{id}/role", targetId)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"ADMIN\"}"))
+            .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", missingOrderId)
+                .header("Authorization", "Bearer " + oldTargetToken))
+            .andExpect(status().isUnauthorized());
+
+        String newTargetToken = loginHttp(email(targetId));
+        assertThat(jwtService.parse(newTargetToken).get("authorities", List.class)).contains("ADMIN_ALL");
+        mockMvc.perform(get("/api/permissions").header("Authorization", "Bearer " + newTargetToken))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void httpPermissionChangeRevokesOldJwtAndUpdatesNewLoginAuthorities() throws Exception {
+        UUID adminId = createUser("jwt-permission-admin");
+        assignRole(adminId, "ADMIN");
+        UUID targetId = createUser("jwt-permission-target");
+        String roleCode = createRoleWithPermission("ORDER_CREATE");
+        assignRole(targetId, roleCode);
+
+        String adminToken = loginHttp(email(adminId));
+        String oldTargetToken = loginHttp(email(targetId));
+        UUID missingOrderId = UUID.randomUUID();
+        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", missingOrderId)
+                .header("Authorization", "Bearer " + oldTargetToken))
+            .andExpect(status().isNotFound());
+
+        mockMvc.perform(put("/api/roles/{roleCode}/permissions", roleCode)
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"permissionCodes\":[\"SALE_DELIVER\"]}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.permissions[0]").value("SALE_DELIVER"));
+
+        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", missingOrderId)
+                .header("Authorization", "Bearer " + oldTargetToken))
+            .andExpect(status().isUnauthorized());
+
+        String newTargetToken = loginHttp(email(targetId));
+        assertThat(jwtService.parse(newTargetToken).get("authorities", List.class))
+            .containsExactly("SALE_DELIVER");
+        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", missingOrderId)
+                .header("Authorization", "Bearer " + newTargetToken))
+            .andExpect(status().isForbidden());
+        assertThat(jdbc.queryForList("""
+            select p.code from identity.role_permissions rp
+            join identity.permissions p on p.id = rp.permission_id
+            where rp.role_id = (select id from identity.roles where code = ?)
+            """, String.class, roleCode)).containsExactly("SALE_DELIVER");
+    }
+
+    @Test
     void sellerReassignmentChangesOnlyConfirmedOrders() {
         UUID sourceSeller = createSeller("source");
         UUID targetSeller = createSeller("target");
@@ -265,7 +431,7 @@ class PostgresBackendFixesIntegrationTest {
         UUID delivered = createOrder(customerId, sourceSeller, "DELIVERED");
         UUID cancelled = createOrder(customerId, sourceSeller, "CANCELLED");
 
-        SellerDtos.ReassignCustomersResponse result = sellerCommandService.reassignCustomers(
+        SellerCommandService.ReassignCustomersResult result = sellerCommandService.reassignCustomers(
             new SellerDtos.ReassignCustomersRequest(sourceSeller, targetSeller, List.of(customerId), true));
 
         assertThat(result.reassignedCustomersCount()).isEqualTo(1);
@@ -300,6 +466,199 @@ class PostgresBackendFixesIntegrationTest {
         assertThatThrownBy(() -> productCommandService.create(new ProductCommandService.ProductInput(
             "PG-" + UUID.randomUUID(), "Inactive category", "legacy", "unit", BigDecimal.ONE, null, categoryId, null)))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void priceHistoryResolvesCurrentAndFuturePricesAndCancelsScheduledChange() {
+        UUID productId = createProduct("price-history");
+        UUID customerId = createCustomer(null);
+        UUID generalListId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID actorId = UUID.randomUUID();
+        auditResources.add(generalListId + ":" + productId);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+
+        LocalDate today = jdbc.queryForObject(
+            "select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date", LocalDate.class);
+        LocalDate effectiveOn = today.plusDays(7);
+        pricingCommandService.setProductPrice(generalListId, productId, new BigDecimal("10.0000"));
+        assertThatThrownBy(() -> pricingCommandService.setProductPrice(
+            generalListId, productId, new BigDecimal("0.5000"), effectiveOn))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("menor al costo");
+        pricingCommandService.setProductPrice(generalListId, productId, new BigDecimal("12.5000"), effectiveOn);
+
+        assertThat(pricingQueryService.resolve(customerId, productId, generalListId))
+            .containsEntry("unitPrice", new BigDecimal("10.0000"));
+        Map<String, Object> futurePrice = pricingQueryService.resolveAsOf(
+            customerId, productId, generalListId, effectiveOn);
+        assertThat(futurePrice).containsEntry("unitPrice", new BigDecimal("12.5000"));
+        assertThat(futurePrice.get("effectiveOn").toString()).isEqualTo(effectiveOn.toString());
+        assertThat(pricingQueryService.history(generalListId, productId, 0, 20).content())
+            .anySatisfy(entry -> {
+                assertThat(entry.get("effectiveOn").toString()).isEqualTo(effectiveOn.toString());
+                assertThat(entry.get("scheduled")).isEqualTo(true);
+            });
+
+        pricingCommandService.cancelScheduledPrice(generalListId, productId, effectiveOn);
+
+        assertThat(pricingQueryService.resolveAsOf(customerId, productId, generalListId, effectiveOn))
+            .containsEntry("unitPrice", new BigDecimal("10.0000"));
+        assertThat(jdbc.queryForObject("select count(*) from catalog.product_price_history where price_list_id = ? and product_id = ? and effective_on = ?",
+            Long.class, generalListId, productId, effectiveOn)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where resource_id = ? and operation = ?",
+            Long.class, generalListId + ":" + productId, "PRODUCT_PRICE_SCHEDULE_CANCEL")).isEqualTo(1L);
+    }
+
+    @Test
+    void persistsScopedDiscountRulesAndSnapshotsAppliedRulesOnOrderAndSale() {
+        UUID customerId = createCustomer(null);
+        UUID productId = createProduct("discount-rule");
+        UUID generalListId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        putGeneralPrice(productId, new BigDecimal("100.0000"));
+        UUID actorId = UUID.randomUUID();
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        LocalDate businessToday = jdbc.queryForObject(
+            "select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date", LocalDate.class);
+
+        UUID generalLineRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
+            "PG-LINE-GENERAL-" + UUID.randomUUID().toString().substring(0, 8), "Producto 3%", "LINE",
+            new BigDecimal("3.0000"), null, null, productId, businessToday, null, 0));
+        UUID customerLineRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
+            "PG-LINE-CUSTOMER-" + UUID.randomUUID().toString().substring(0, 8), "Producto cliente 10%", "LINE",
+            new BigDecimal("10.0000"), customerId, null, productId, businessToday, null, 0));
+        UUID generalOrderRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
+            "PG-ORDER-GENERAL-" + UUID.randomUUID().toString().substring(0, 8), "Orden 2.5%", "ORDER",
+            new BigDecimal("2.5000"), null, null, null, businessToday, null, 0));
+        UUID customerOrderRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
+            "PG-ORDER-CUSTOMER-" + UUID.randomUUID().toString().substring(0, 8), "Orden cliente 5%", "ORDER",
+            new BigDecimal("5.0000"), customerId, null, null, businessToday, null, 0));
+
+        var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "discount-rules-" + UUID.randomUUID(), customerId, generalListId,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of()));
+        orders.add(result.orderId());
+        sales.add(result.saleId());
+
+        assertThat(result.total()).isEqualByComparingTo("85.5000");
+        Map<String, Object> detail = readQueryService.orderDetail(result.orderId());
+        Map<String, Object> orderSnapshot = (Map<String, Object>) detail.get("order");
+        assertThat(orderSnapshot).containsEntry("orderDiscountPercent", new BigDecimal("5.0000"))
+            .containsEntry("orderDiscountRuleId", customerOrderRule);
+        Map<String, Object> itemSnapshot = (Map<String, Object>) ((List<?>) detail.get("items")).getFirst();
+        assertThat(itemSnapshot).containsEntry("lineDiscountPercent", new BigDecimal("10.0000"))
+            .containsEntry("discountRuleId", customerLineRule);
+        Map<String, Object> saleSnapshot = (Map<String, Object>) detail.get("sale");
+        assertThat(saleSnapshot).containsEntry("orderDiscountPercent", new BigDecimal("5.0000"))
+            .containsEntry("orderDiscountRuleId", customerOrderRule);
+
+        discountRuleCommandService.setStatus(customerLineRule, "INACTIVE");
+        discountRuleCommandService.setStatus(customerOrderRule, "INACTIVE");
+        Map<String, Object> unchanged = readQueryService.orderDetail(result.orderId());
+        Map<String, Object> unchangedOrder = (Map<String, Object>) unchanged.get("order");
+        Map<String, Object> unchangedItem = (Map<String, Object>) ((List<?>) unchanged.get("items")).getFirst();
+        assertThat(unchangedOrder.get("orderDiscountRuleId")).isEqualTo(customerOrderRule);
+        assertThat(unchangedItem.get("discountRuleId")).isEqualTo(customerLineRule);
+        assertThat(List.of(generalLineRule, generalOrderRule)).allSatisfy(ruleId ->
+            assertThat(jdbc.queryForObject("select status from catalog.commercial_discount_rules where id = ?",
+                String.class, ruleId)).isEqualTo("ACTIVE"));
+    }
+
+    private UUID createDiscountRule(CommercialDiscountRuleCommandService.RuleInput input) {
+        UUID id = discountRuleCommandService.create(input);
+        discountRules.add(id);
+        auditResources.add(id.toString());
+        return id;
+    }
+
+    @Test
+    void stockTransfersAndOrderLifecyclePreserveSelectedDepot() {
+        UUID actorId = createUser("multi-depot");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customerId = createCustomer(null);
+        UUID productId = createProduct("multi-depot");
+        putGeneralPrice(productId, new BigDecimal("10.0000"));
+        UUID centralDepot = InventoryMovementService.DEFAULT_DEPOT_ID;
+        InventoryDepotService.Depot createdDepot = inventoryDepotService.create(
+            "NORTE-" + UUID.randomUUID().toString().substring(0, 8), "Depósito Norte");
+        UUID selectedDepot = createdDepot.id();
+        depots.add(selectedDepot);
+        auditResources.add(selectedDepot.toString());
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where depot_id = ? and product_id = ?",
+            centralDepot, productId);
+
+        UUID transferId = inventoryCommandService.transfer(centralDepot, selectedDepot, productId,
+            new BigDecimal("2.0"), "Reposición inicial");
+        auditResources.add(transferId.toString());
+        assertThat(stock(centralDepot, productId)).isEqualByComparingTo("8.0");
+        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("2.0");
+        assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where reference_id = ? "
+            + "and movement_type in ('TRANSFER_OUT', 'TRANSFER_IN')", Long.class, transferId)).isEqualTo(2L);
+
+        assertThatThrownBy(() -> inventoryCommandService.transfer(centralDepot, selectedDepot, productId,
+            new BigDecimal("100.0"), "No debe transferirse"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("stock suficiente");
+        assertThat(stock(centralDepot, productId)).isEqualByComparingTo("8.0");
+        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("2.0");
+
+        var firstSale = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "multi-depot-first-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), selectedDepot));
+        orders.add(firstSale.orderId());
+        sales.add(firstSale.saleId());
+        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("1.0");
+        assertThat(jdbc.queryForObject("select depot_id from orders.orders where id = ?", UUID.class, firstSale.orderId()))
+            .isEqualTo(selectedDepot);
+        assertThat(jdbc.queryForObject("select depot_id from sale.sales where id = ?", UUID.class, firstSale.saleId()))
+            .isEqualTo(selectedDepot);
+
+        UUID firstSaleItem = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, firstSale.saleId());
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbc.update("update orders.orders set status = 'DELIVERED', delivered_at = ? where id = ?", now, firstSale.orderId());
+        jdbc.update("update sale.sales set status = 'DELIVERED', delivered_at = ? where id = ?", now, firstSale.saleId());
+        inventoryDepotService.setActive(selectedDepot, false);
+        assertThatThrownBy(() -> inventoryCommandService.transfer(centralDepot, selectedDepot, productId,
+            new BigDecimal("0.5"), "No transfer to an inactive depot"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("no está activo");
+        saleReturnService.create(firstSale.saleId(), new SaleReturnDtos.ReturnRequest("Devolución al depósito original",
+            List.of(new SaleReturnDtos.ReturnItemRequest(firstSaleItem, new BigDecimal("0.5")))));
+        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("1.5");
+        inventoryDepotService.setActive(selectedDepot, true);
+
+        var secondSale = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "multi-depot-second-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("0.5"), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), selectedDepot));
+        orders.add(secondSale.orderId());
+        sales.add(secondSale.saleId());
+        deliveryLifecycleService.cancel(secondSale.orderId());
+        assertThat(stock(selectedDepot, productId)).isEqualByComparingTo("1.5");
+
+        assertThat(inventoryDepotService.balances(selectedDepot, 0, 100, "multi-depot").content())
+            .anySatisfy(balance -> assertThat(balance.get("stock")).isEqualTo(new BigDecimal("1.5000")));
+        assertThat(readQueryService.inventory(0, 100, "multi-depot").content())
+            .anySatisfy(balance -> assertThat(balance.get("stock")).isEqualTo(new BigDecimal("9.5000")));
+        assertThat(readQueryService.movements(productId, 0, 100).content())
+            .anySatisfy(movement -> assertThat(movement).containsEntry("depotId", selectedDepot));
+        assertThat(inventoryDepotService.list()).anySatisfy(depot ->
+            assertThat(depot).isEqualTo(createdDepot));
+        assertThatThrownBy(() -> inventoryDepotService.setActive(centralDepot, false))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("predeterminado");
+    }
+
+    private BigDecimal stock(UUID depotId, UUID productId) {
+        return jdbc.queryForObject("select quantity from inventory.inventory_balances where depot_id = ? and product_id = ?",
+            BigDecimal.class, depotId, productId);
     }
 
     @Test
@@ -377,7 +736,7 @@ class PostgresBackendFixesIntegrationTest {
         putGeneralPrice(fixture.productId(), new BigDecimal("20.0000"));
         putGeneralPrice(secondProduct, new BigDecimal("5.0000"));
 
-        OrderEditDtos.EditResponse result = orderConfirmationService.editConfirmed(fixture.orderId(),
+        OrderConfirmationService.EditResult result = orderConfirmationService.editConfirmed(fixture.orderId(),
             new OrderEditDtos.EditRequest(null, List.of(
                 new OrderConfirmationDtos.LineRequest(fixture.productId(), new BigDecimal("1.0"), BigDecimal.ZERO, null),
                 new OrderConfirmationDtos.LineRequest(secondProduct, BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO));
@@ -494,15 +853,15 @@ class PostgresBackendFixesIntegrationTest {
         AccountDebtSale older = createAccountDebtSale(customerId, new BigDecimal("30.0000"), 3600);
         AccountDebtSale newer = createAccountDebtSale(customerId, new BigDecimal("40.0000"), 1800);
 
-        AccountPaymentDtos.PaymentResponse fifo = accountPaymentService.apply(customerId,
+        AccountPaymentService.PaymentResult fifo = accountPaymentService.apply(customerId,
             new AccountPaymentDtos.PaymentRequest(new BigDecimal("35.0000"), "CASH", null, null));
         assertThat(fifo.allocationMode()).isEqualTo("FIFO");
-        assertThat(fifo.allocations()).extracting(AccountPaymentDtos.Allocation::saleId)
+        assertThat(fifo.allocations()).extracting(AccountPaymentService.AllocationResult::saleId)
             .containsExactly(older.saleId(), newer.saleId());
-        assertThat(fifo.allocations()).extracting(AccountPaymentDtos.Allocation::amount)
+        assertThat(fifo.allocations()).extracting(AccountPaymentService.AllocationResult::amount)
             .containsExactly(new BigDecimal("30.0000"), new BigDecimal("5.0000"));
 
-        AccountPaymentDtos.PaymentResponse specific = accountPaymentService.apply(customerId,
+        AccountPaymentService.PaymentResult specific = accountPaymentService.apply(customerId,
             new AccountPaymentDtos.PaymentRequest(new BigDecimal("10.0000"), "BANK_TRANSFER", "TR-ACCOUNT-123", newer.saleId()));
         assertThat(specific.allocationMode()).isEqualTo("SPECIFIC");
         assertThat(specific.allocations()).singleElement().satisfies(allocation -> {
@@ -735,6 +1094,36 @@ class PostgresBackendFixesIntegrationTest {
         return id;
     }
 
+    private String createRoleWithPermission(String permissionCode) {
+        UUID roleId = UUID.randomUUID();
+        roles.add(roleId);
+        String roleCode = "PG_JWT_" + roleId.toString().substring(0, 8).toUpperCase();
+        auditResources.add(roleCode);
+        jdbc.update("insert into identity.roles(id, code, description) values (?, ?, ?)",
+            roleId, roleCode, "JWT authorization integration test");
+        jdbc.update("""
+            insert into identity.role_permissions(role_id, permission_id)
+            select ?, id from identity.permissions where code = ?
+            """, roleId, permissionCode);
+        return roleCode;
+    }
+
+    private void assignRole(UUID userId, String roleCode) {
+        UUID roleId = jdbc.queryForObject("select id from identity.roles where code = ?", UUID.class, roleCode);
+        jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", userId, roleId);
+    }
+
+    private String loginHttp(String email) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(java.util.Map.of(
+                    "email", email,
+                    "password", "Passw0rd!"))))
+            .andExpect(status().isOk())
+            .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).path("accessToken").asText();
+    }
+
     private UUID createSeller(String suffix) {
         UUID userId = createUser("seller-" + suffix);
         UUID sellerId = UUID.randomUUID();
@@ -850,6 +1239,12 @@ class PostgresBackendFixesIntegrationTest {
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at) values (?, ?, ?, ?, ?) on conflict (price_list_id, product_id) do update set price = excluded.price, updated_at = excluded.updated_at",
             UUID.fromString("00000000-0000-0000-0000-000000000001"), productId, price, now, now);
+        jdbc.update("""
+            insert into catalog.product_price_history
+                (id, price_list_id, product_id, price, effective_on, created_at, updated_at)
+            values (?, ?, ?, ?, (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date, ?, ?)
+            """, UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000001"),
+            productId, price, now, now);
     }
 
     private UUID createSaleItem(UUID saleId, UUID productId, BigDecimal quantity) {
@@ -916,6 +1311,12 @@ class PostgresBackendFixesIntegrationTest {
     private record AccountDebtSale(UUID orderId, UUID saleId) { }
 
     private void deleteIds(String sqlTemplate, Set<UUID> ids) {
+        if (ids.isEmpty()) return;
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        jdbc.update(sqlTemplate.formatted(placeholders), ids.toArray());
+    }
+
+    private void deleteStringIds(String sqlTemplate, Set<String> ids) {
         if (ids.isEmpty()) return;
         String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
         jdbc.update(sqlTemplate.formatted(placeholders), ids.toArray());

@@ -3,9 +3,10 @@ package com.distribuidora.order.application;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.notification.application.OutboxService;
-import com.distribuidora.order.api.OrderConfirmationDtos;
-import com.distribuidora.order.api.OrderEditDtos;
+
+
 import com.distribuidora.pricing.application.PricingQueryService;
+import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,8 +36,55 @@ import java.util.Set;
 public class OrderConfirmationService {
     private static final BigDecimal ZERO = new BigDecimal("0.0000");
 
+    public interface LineCommand {
+        UUID productId();
+        BigDecimal quantity();
+        BigDecimal lineDiscountPercent();
+        BigDecimal unitPriceOverride();
+    }
+
+    public interface PaymentCommand {
+        String method();
+        BigDecimal amount();
+    }
+
+    public interface ConfirmationCommand {
+        String idempotencyKey();
+        UUID customerId();
+        UUID priceListId();
+        List<? extends LineCommand> lines();
+        BigDecimal orderDiscountPercent();
+        List<? extends PaymentCommand> payments();
+        default UUID depotId() { return null; }
+    }
+
+    public interface EditCommand {
+        UUID priceListId();
+        List<? extends LineCommand> lines();
+        BigDecimal orderDiscountPercent();
+    }
+
+    public record ConfirmationData(String idempotencyKey, UUID customerId, UUID priceListId,
+                                   List<? extends LineCommand> lines, BigDecimal orderDiscountPercent,
+                                   List<? extends PaymentCommand> payments, UUID depotId) implements ConfirmationCommand {
+        public ConfirmationData(String idempotencyKey, UUID customerId, UUID priceListId,
+                                List<? extends LineCommand> lines, BigDecimal orderDiscountPercent,
+                                List<? extends PaymentCommand> payments) {
+            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, null);
+        }
+    }
+
+    public record CreditLimitWarningResult(BigDecimal creditLimit, BigDecimal projectedBalance, BigDecimal exceededBy) { }
+
+    public record ConfirmationResult(UUID orderId, UUID saleId, String orderNumber, String saleNumber,
+                                     BigDecimal total, BigDecimal paid, BigDecimal balance,
+                                     CreditLimitWarningResult creditLimitWarning) { }
+
+    public record EditResult(UUID orderId, UUID saleId, BigDecimal total, BigDecimal paid, BigDecimal balance) { }
+
     private final JdbcTemplate jdbc;
     private final PricingQueryService pricing;
+    private final CommercialDiscountRuleQueryService discountRules;
     private final OrderCalculationService calculation;
     private final InventoryMovementService inventory;
     private final AuditService audit;
@@ -45,30 +93,41 @@ public class OrderConfirmationService {
 
     @Autowired
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
+                                    CommercialDiscountRuleQueryService discountRules,
                                     OrderCalculationService calculation, InventoryMovementService inventory,
                                     AuditService audit, OutboxService outbox, CurrentUserAccess currentUser) {
-        this(jdbc, pricing, calculation, inventory, audit, currentUser, outbox);
+        this(jdbc, pricing, discountRules, calculation, inventory, audit, currentUser, outbox);
     }
 
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
                                     OrderCalculationService calculation,
                                     InventoryMovementService inventory, AuditService audit,
                                     CurrentUserAccess currentUser) {
-        this(jdbc, pricing, calculation, inventory, audit, currentUser, null);
+        this(jdbc, pricing, null, calculation, inventory, audit, currentUser, null);
     }
 
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
                                     OrderCalculationService calculation,
                                     InventoryMovementService inventory, AuditService audit) {
-        this(jdbc, pricing, calculation, inventory, audit, (CurrentUserAccess) null, (OutboxService) null);
+        this(jdbc, pricing, null, calculation, inventory, audit, (CurrentUserAccess) null, (OutboxService) null);
+    }
+
+    public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
+                                    CommercialDiscountRuleQueryService discountRules,
+                                    OrderCalculationService calculation,
+                                    InventoryMovementService inventory, AuditService audit) {
+        this(jdbc, pricing, discountRules, calculation, inventory, audit,
+            (CurrentUserAccess) null, (OutboxService) null);
     }
 
     private OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
+                                     CommercialDiscountRuleQueryService discountRules,
                                      OrderCalculationService calculation,
                                      InventoryMovementService inventory, AuditService audit,
                                      CurrentUserAccess currentUser, OutboxService outbox) {
         this.jdbc = jdbc;
         this.pricing = pricing;
+        this.discountRules = discountRules;
         this.calculation = calculation;
         this.inventory = inventory;
         this.audit = audit;
@@ -77,12 +136,12 @@ public class OrderConfirmationService {
     }
 
     @Transactional
-    public OrderConfirmationDtos.ConfirmationResponse confirm(OrderConfirmationDtos.ConfirmationRequest request) {
+    public ConfirmationResult confirm(ConfirmationCommand request) {
         validateRequest(request);
         validateOverrides(request);
         String fingerprint = fingerprint(request);
         lockIdempotencyKey(request.idempotencyKey());
-        OrderConfirmationDtos.ConfirmationResponse existing = findExisting(request, fingerprint);
+        ConfirmationResult existing = findExisting(request, fingerprint);
         if (existing != null) {
             return existing;
         }
@@ -96,10 +155,11 @@ public class OrderConfirmationService {
         }
 
         List<ResolvedLine> resolved = resolveLines(request);
+        AppliedDiscount orderDiscount = resolveOrderDiscount(request);
         OrderCalculationService.OrderCalculation calculated = calculation.calculate(
             resolved.stream().map(line -> new OrderCalculationService.CalculatedLine(
                 line.productId(), line.quantity(), line.unitPrice(), line.discount())).toList(),
-            request.orderDiscountPercent(), request.payments());
+            orderDiscount.percent(), request.payments());
 
         BigDecimal monetaryPaid = monetaryPaid(request.payments());
         List<BigDecimal> accountDebits = accountDebits(request.payments(), calculated.total(), monetaryPaid);
@@ -108,38 +168,42 @@ public class OrderConfirmationService {
         BigDecimal creditLimit = jdbc.queryForObject(
             "select credit_limit from app.business_settings where id = 1", BigDecimal.class);
         boolean creditLimitExceeded = creditLimit != null && projectedBalance.compareTo(creditLimit) > 0;
-        OrderConfirmationDtos.CreditLimitWarning creditWarning = creditLimitExceeded
-            ? new OrderConfirmationDtos.CreditLimitWarning(creditLimit, projectedBalance,
+        CreditLimitWarningResult creditWarning = creditLimitExceeded
+            ? new CreditLimitWarningResult(creditLimit, projectedBalance,
                 projectedBalance.subtract(creditLimit).setScale(4)) : null;
 
         UUID orderId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
+        UUID depotId = request.depotId() == null ? InventoryMovementService.DEFAULT_DEPOT_ID : request.depotId();
             UUID sellerId = resolveSellerId(customer);
             resolved.stream().map(ResolvedLine::productId).distinct().sorted(Comparator.comparing(UUID::toString))
                 .forEach(productId -> {
                     BigDecimal quantity = resolved.stream().filter(line -> line.productId().equals(productId))
                         .map(ResolvedLine::quantity).reduce(ZERO, BigDecimal::add);
-                    inventory.apply(productId, quantity.negate(), "SALE", orderId, "Order confirmation");
+                    inventory.apply(depotId, productId, quantity.negate(), "SALE", orderId, "Order confirmation");
                 });
 
             Timestamp now = Timestamp.from(Instant.now());
             String orderNumber = number("ORD");
             String saleNumber = number("SAL");
             if (currentUser == null) {
-                jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot) values (?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id, depot_id) values (?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     orderId, orderNumber, customerId, calculated.subtotal(),
                     calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
-                    request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance);
+                    request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
+                    calculated.orderDiscountPercent(), orderDiscount.ruleId(), depotId);
             } else {
-                jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id, depot_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     orderId, orderNumber, customerId, sellerId, calculated.subtotal(),
                     calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
-                    request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance);
+                    request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
+                    calculated.orderDiscountPercent(), orderDiscount.ruleId(), depotId);
             }
             insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
-            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?)",
-                saleId, saleNumber, orderId, customerId, calculated.total(), monetaryPaid, now);
+            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent, order_discount_rule_id, depot_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?)",
+                saleId, saleNumber, orderId, customerId, calculated.total(), monetaryPaid, now,
+                calculated.orderDiscountPercent(), orderDiscount.ruleId(), depotId);
             insertItems("sale.sale_items", saleId, resolved, calculated.lines());
 
             insertPayments(saleId, customerId, request.payments());
@@ -152,7 +216,7 @@ public class OrderConfirmationService {
             }
 
             BigDecimal responsePaid = monetaryPaid(request.payments());
-            OrderConfirmationDtos.ConfirmationResponse response = new OrderConfirmationDtos.ConfirmationResponse(
+            ConfirmationResult response = new ConfirmationResult(
                 orderId, saleId, orderNumber, saleNumber, calculated.total(), responsePaid,
                 calculated.total().subtract(responsePaid).setScale(4), creditWarning);
             Map<String, Object> auditDetails = new HashMap<>();
@@ -163,6 +227,9 @@ public class OrderConfirmationService {
             auditDetails.put("creditLimit", creditLimit);
             auditDetails.put("projectedBalance", projectedBalance);
             auditDetails.put("creditLimitExceeded", creditLimitExceeded);
+            auditDetails.put("orderDiscountRuleId", orderDiscount.ruleId() == null ? null : orderDiscount.ruleId().toString());
+            auditDetails.put("lineDiscountRuleIds", resolved.stream().map(ResolvedLine::discountRuleId)
+                .filter(Objects::nonNull).map(UUID::toString).distinct().toList());
             audit.recordWithinTransaction(actorId(), "ORDER_CONFIRM", "ORDER", orderId.toString(), "SUCCESS", auditDetails);
             if (creditWarning != null) {
                 audit.recordWithinTransaction(actorId(), "CREDIT_LIMIT_WARNING", "CUSTOMER", customerId.toString(), "SUCCESS",
@@ -180,7 +247,7 @@ public class OrderConfirmationService {
     }
 
     @Transactional
-    public OrderEditDtos.EditResponse editConfirmed(UUID orderId, OrderEditDtos.EditRequest request) {
+    public EditResult editConfirmed(UUID orderId, EditCommand request) {
         if (!hasAuthority("ADMIN_ALL")) {
             throw new AccessDeniedException("ADMIN_ALL es requerido para editar pedidos confirmados");
         }
@@ -189,7 +256,7 @@ public class OrderConfirmationService {
             throw new IllegalArgumentException("Los campos obligatorios son inválidos");
         }
 
-        Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, "
+        Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, o.depot_id, "
             + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid "
             + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update of o, s", orderId);
         if (!"CONFIRMED".equals(lifecycle.get("order_status")) || !"CONFIRMED".equals(lifecycle.get("sale_status"))) {
@@ -199,15 +266,16 @@ public class OrderConfirmationService {
         UUID customerId = uuidOrNull(lifecycle.get("customer_id"));
         Map<String, Object> customer = jdbc.queryForMap(
             "select id, balance from customer.customers where id = ? for update", customerId);
-        OrderConfirmationDtos.ConfirmationRequest pricingRequest = new OrderConfirmationDtos.ConfirmationRequest(
+        ConfirmationCommand pricingRequest = new ConfirmationData(
             "confirmed-order-edit", customerId, request.priceListId(), request.lines(), request.orderDiscountPercent(), List.of());
         validateRequest(pricingRequest);
         validateOverrides(pricingRequest);
         List<ResolvedLine> resolved = resolveLines(pricingRequest);
+        AppliedDiscount orderDiscount = resolveOrderDiscount(pricingRequest);
         OrderCalculationService.OrderCalculation calculated = calculation.calculate(
             resolved.stream().map(line -> new OrderCalculationService.CalculatedLine(
                 line.productId(), line.quantity(), line.unitPrice(), line.discount())).toList(),
-            request.orderDiscountPercent());
+            orderDiscount.percent());
 
         UUID saleId = uuidOrNull(lifecycle.get("sale_id"));
         BigDecimal paid = decimal(lifecycle.get("paid")).setScale(4);
@@ -225,10 +293,10 @@ public class OrderConfirmationService {
             BigDecimal stockDelta = oldQuantities.getOrDefault(productId, ZERO)
                 .subtract(newQuantities.getOrDefault(productId, ZERO));
             if (stockDelta.signum() < 0) {
-                inventory.apply(productId, stockDelta, "SALE", orderId, "Confirmed order edit");
+                inventory.apply(uuidOrNull(lifecycle.get("depot_id")), productId, stockDelta, "SALE", orderId, "Confirmed order edit");
                 inventoryMovementsApplied++;
             } else if (stockDelta.signum() > 0) {
-                inventory.apply(productId, stockDelta, "SALE_CANCELLATION", orderId, "Confirmed order edit");
+                inventory.apply(uuidOrNull(lifecycle.get("depot_id")), productId, stockDelta, "SALE_CANCELLATION", orderId, "Confirmed order edit");
                 inventoryMovementsApplied++;
             }
         }
@@ -255,15 +323,17 @@ public class OrderConfirmationService {
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
         insertItems("sale.sale_items", saleId, resolved, calculated.lines());
         BigDecimal discount = calculated.lineDiscount().add(calculated.orderDiscount()).setScale(4);
-        jdbc.update("update orders.orders set subtotal = ?, discount = ?, total = ? where id = ?",
-            calculated.subtotal(), discount, calculated.total(), orderId);
-        jdbc.update("update sale.sales set total = ? where id = ?", calculated.total(), saleId);
+        jdbc.update("update orders.orders set subtotal = ?, discount = ?, total = ?, order_discount_percent = ?, order_discount_rule_id = ? where id = ?",
+            calculated.subtotal(), discount, calculated.total(), calculated.orderDiscountPercent(),
+            orderDiscount.ruleId(), orderId);
+        jdbc.update("update sale.sales set total = ?, order_discount_percent = ?, order_discount_rule_id = ? where id = ?",
+            calculated.total(), calculated.orderDiscountPercent(), orderDiscount.ruleId(), saleId);
 
         audit.recordWithinTransaction(actorId(), "ORDER_EDIT", "ORDER", orderId.toString(), "SUCCESS",
             Map.of("saleId", saleId.toString(), "previousTotal", decimal(lifecycle.get("sale_total")),
                 "total", calculated.total(), "paid", paid, "accountDebtAdjustment", ledgerAdjustment,
                 "inventoryMovementsApplied", inventoryMovementsApplied));
-        return new OrderEditDtos.EditResponse(orderId, saleId, calculated.total(), paid, targetAccountDebt);
+        return new EditResult(orderId, saleId, calculated.total(), paid, targetAccountDebt);
     }
 
     private Map<UUID, BigDecimal> quantities(String table, String parentColumn, UUID parentId) {
@@ -283,18 +353,37 @@ public class OrderConfirmationService {
         return value == null ? null : value instanceof UUID uuid ? uuid : UUID.fromString(String.valueOf(value));
     }
 
-    private List<ResolvedLine> resolveLines(OrderConfirmationDtos.ConfirmationRequest request) {
+    private List<ResolvedLine> resolveLines(ConfirmationCommand request) {
         List<ResolvedLine> lines = new ArrayList<>();
-        for (OrderConfirmationDtos.LineRequest line : request.lines()) {
+        for (LineCommand line : request.lines()) {
             Map<String, Object> price = pricing.resolve(request.customerId(), line.productId(), request.priceListId());
             BigDecimal unitPrice = line.unitPriceOverride() == null
                 ? decimal(price.get("unitPrice")) : line.unitPriceOverride();
+            BigDecimal discountPercent = line.lineDiscountPercent();
+            UUID discountRuleId = null;
+            if (discountPercent.signum() == 0 && discountRules != null) {
+                var rule = discountRules.lineDiscount(request.customerId(), line.productId(),
+                    (UUID) price.get("priceListId"));
+                if (rule.isPresent()) {
+                    discountPercent = rule.get().percent();
+                    discountRuleId = rule.get().ruleId();
+                }
+            }
             String productName = jdbc.queryForObject(
                 "select name from catalog.products where id = ?", String.class, line.productId());
             lines.add(new ResolvedLine(line.productId(), productName, line.quantity(), unitPrice,
-                line.lineDiscountPercent(), (UUID) price.get("priceListId"), String.valueOf(price.get("priceListCode"))));
+                discountPercent, discountRuleId, (UUID) price.get("priceListId"), String.valueOf(price.get("priceListCode"))));
         }
         return lines;
+    }
+
+    private AppliedDiscount resolveOrderDiscount(ConfirmationCommand request) {
+        if (request.orderDiscountPercent().signum() > 0 || discountRules == null) {
+            return new AppliedDiscount(request.orderDiscountPercent(), null);
+        }
+        return discountRules.orderDiscount(request.customerId(), request.priceListId())
+            .map(rule -> new AppliedDiscount(rule.percent(), rule.ruleId()))
+            .orElseGet(() -> new AppliedDiscount(request.orderDiscountPercent(), null));
     }
 
     private void insertItems(String table, UUID parentId, List<ResolvedLine> resolved,
@@ -303,13 +392,13 @@ public class OrderConfirmationService {
             ResolvedLine line = resolved.get(i);
             var result = calculated.get(i);
             jdbc.update("insert into " + table + "(id, " + (table.startsWith("orders") ? "order_id" : "sale_id")
-                    + ", product_id, product_name, quantity, unit_price, line_total, price_list_id, price_list_code, line_discount_percent) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    + ", product_id, product_name, quantity, unit_price, line_total, price_list_id, price_list_code, line_discount_percent, discount_rule_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID(), parentId, line.productId(), line.productName(), result.quantity(), result.unitPrice(),
-                result.lineTotal(), line.priceListId(), line.priceListCode(), result.lineDiscountPercent());
+                result.lineTotal(), line.priceListId(), line.priceListCode(), result.lineDiscountPercent(), line.discountRuleId());
         }
     }
 
-    private void insertPayments(UUID saleId, UUID customerId, List<OrderConfirmationDtos.PaymentRequest> payments) {
+    private void insertPayments(UUID saleId, UUID customerId, List<? extends PaymentCommand> payments) {
         if (payments == null) return;
         Timestamp now = Timestamp.from(Instant.now());
         for (var payment : payments) {
@@ -320,7 +409,7 @@ public class OrderConfirmationService {
         }
     }
 
-    private OrderConfirmationDtos.ConfirmationResponse findExisting(OrderConfirmationDtos.ConfirmationRequest request,
+    private ConfirmationResult findExisting(ConfirmationCommand request,
                                                                     String fingerprint) {
         List<ExistingOrder> rows = jdbc.query(
             "select o.id as order_id, s.id as sale_id, o.customer_id, o.order_number, s.sale_number, o.total, s.paid, "
@@ -336,14 +425,14 @@ public class OrderConfirmationService {
         if (!Objects.equals(existing.fingerprint(), fingerprint)) {
             throw new IdempotencyConflictException();
         }
-        OrderConfirmationDtos.CreditLimitWarning warning = existing.creditLimitExceeded()
-            ? new OrderConfirmationDtos.CreditLimitWarning(existing.creditLimit(), existing.projectedBalance(),
+        CreditLimitWarningResult warning = existing.creditLimitExceeded()
+            ? new CreditLimitWarningResult(existing.creditLimit(), existing.projectedBalance(),
                 existing.projectedBalance().subtract(existing.creditLimit()).setScale(4)) : null;
-        return new OrderConfirmationDtos.ConfirmationResponse(existing.orderId(), existing.saleId(), existing.orderNumber(),
+        return new ConfirmationResult(existing.orderId(), existing.saleId(), existing.orderNumber(),
             existing.saleNumber(), existing.total(), existing.paid(), existing.total().subtract(existing.paid()).setScale(4), warning);
     }
 
-    private void validateOverrides(OrderConfirmationDtos.ConfirmationRequest request) {
+    private void validateOverrides(ConfirmationCommand request) {
         boolean override = request.orderDiscountPercent().signum() != 0
             || request.lines().stream().anyMatch(line -> line.unitPriceOverride() != null
                 || line.lineDiscountPercent().signum() != 0);
@@ -352,7 +441,7 @@ public class OrderConfirmationService {
         }
     }
 
-    private void validateRequest(OrderConfirmationDtos.ConfirmationRequest request) {
+    private void validateRequest(ConfirmationCommand request) {
         if (request == null) {
             throw new IllegalArgumentException("request es obligatorio");
         }
@@ -362,7 +451,7 @@ public class OrderConfirmationService {
             throw new IllegalArgumentException("Los campos obligatorios son inválidos");
         }
         validatePercent(request.orderDiscountPercent(), "orderDiscountPercent");
-        for (OrderConfirmationDtos.LineRequest line : request.lines()) {
+        for (LineCommand line : request.lines()) {
             if (line == null || line.productId() == null || line.quantity() == null
                 || line.lineDiscountPercent() == null) {
                 throw new IllegalArgumentException("La línea contiene valores obligatorios inválidos");
@@ -380,7 +469,7 @@ public class OrderConfirmationService {
             }
         }
         if (request.payments() != null) {
-            for (OrderConfirmationDtos.PaymentRequest payment : request.payments()) {
+            for (PaymentCommand payment : request.payments()) {
                 if (payment == null || payment.method() == null || !Set.of("CASH", "BANK_TRANSFER", "CUSTOMER_ACCOUNT").contains(payment.method())) {
                     throw new IllegalArgumentException("method de pago inválido");
                 }
@@ -405,18 +494,18 @@ public class OrderConfirmationService {
         }
     }
 
-    private BigDecimal monetaryPaid(List<OrderConfirmationDtos.PaymentRequest> payments) {
+    private BigDecimal monetaryPaid(List<? extends PaymentCommand> payments) {
         if (payments == null) return ZERO;
         return payments.stream().filter(payment -> !"CUSTOMER_ACCOUNT".equals(payment.method()))
-            .map(OrderConfirmationDtos.PaymentRequest::amount).reduce(ZERO, BigDecimal::add).setScale(4);
+            .map(PaymentCommand::amount).reduce(ZERO, BigDecimal::add).setScale(4);
     }
 
-    private List<BigDecimal> accountDebits(List<OrderConfirmationDtos.PaymentRequest> payments,
+    private List<BigDecimal> accountDebits(List<? extends PaymentCommand> payments,
                                             BigDecimal total, BigDecimal monetaryPaid) {
         List<BigDecimal> debits = new ArrayList<>();
         BigDecimal explicitAccountTotal = ZERO;
         if (payments != null) {
-            for (OrderConfirmationDtos.PaymentRequest payment : payments) {
+            for (PaymentCommand payment : payments) {
                 if ("CUSTOMER_ACCOUNT".equals(payment.method())) {
                     BigDecimal amount = payment.amount().setScale(4);
                     debits.add(amount);
@@ -452,11 +541,12 @@ public class OrderConfirmationService {
         return ByteBuffer.wrap(digest).getLong();
     }
 
-    private String fingerprint(OrderConfirmationDtos.ConfirmationRequest request) {
+    private String fingerprint(ConfirmationCommand request) {
         StringBuilder canonical = new StringBuilder();
         append(canonical, request.idempotencyKey());
         append(canonical, request.customerId());
         append(canonical, request.priceListId());
+        append(canonical, request.depotId());
         append(canonical, request.orderDiscountPercent());
         append(canonical, request.lines() == null ? null : request.lines().size());
         if (request.lines() != null) {
@@ -513,7 +603,9 @@ public class OrderConfirmationService {
     }
 
     private record ResolvedLine(UUID productId, String productName, BigDecimal quantity, BigDecimal unitPrice,
-                                BigDecimal discount, UUID priceListId, String priceListCode) { }
+                                BigDecimal discount, UUID discountRuleId, UUID priceListId, String priceListCode) { }
+
+    private record AppliedDiscount(BigDecimal percent, UUID ruleId) { }
 
     private record ExistingOrder(UUID orderId, UUID saleId, UUID customerId, String orderNumber, String saleNumber,
                                  BigDecimal total, BigDecimal paid, String fingerprint, boolean creditLimitExceeded,

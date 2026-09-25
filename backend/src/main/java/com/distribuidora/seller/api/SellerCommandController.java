@@ -63,15 +63,17 @@ public class SellerCommandController {
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<SellerDtos.ReassignCustomersResponse> reassignCustomers(
             @Valid @RequestBody SellerDtos.ReassignCustomersRequest request) {
-        SellerDtos.ReassignCustomersResponse response = service.reassignCustomers(request);
-        return ResponseEntity.ok(response);
+        SellerCommandService.ReassignCustomersResult result = service.reassignCustomers(request);
+        return ResponseEntity.ok(new SellerDtos.ReassignCustomersResponse(result.sourceSellerId(),
+            result.targetSellerId(), result.reassignedCustomersCount(), result.reassignedOrdersCount()));
     }
 
     @PostMapping("/reassign-orders")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<SellerDtos.ReassignOrdersResponse> reassignOrders(
             @Valid @RequestBody SellerDtos.ReassignOrdersRequest request) {
-        SellerDtos.ReassignOrdersResponse response = service.reassignOrders(request);
-        return ResponseEntity.ok(response);
+        SellerCommandService.ReassignOrdersResult result = service.reassignOrders(request);
+        return ResponseEntity.ok(new SellerDtos.ReassignOrdersResponse(result.targetSellerId(),
+            result.reassignedOrdersCount()));
     }
 }
