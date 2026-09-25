@@ -179,12 +179,15 @@ describen por sí solos el estado de esa punta.
 
 ### Próximo ciclo, por prioridad y dependencias
 
-1. [~] **P0, CI:** el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
+1. [x] **P0, CI:** el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
    falló al inicializar Spring: el log muestra dos beans `jwtAuthenticationFilter`
    (`shared.security.JwtAuthenticationFilter` e
    `identity.security.JwtAuthenticationFilter`). El job reutilizaba clases
    compiladas sin limpiar; el workflow ahora corre `mvn clean test` y escucha
-   pushes/PR a `main`. Falta el run remoto verde del candidato de esta rama.
+   pushes/PR a `main`. El [run 36103255055](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36103255055)
+   pasó en el PR #1 a `main` para HEAD `9753eafe19fa5580164db6365bb112327d232898`
+   (job PostgreSQL, 1m14s; 0 fallos). Emitió avisos no bloqueantes por versiones
+   de actions y futura migración de `ubuntu-latest`.
 2. [x] **P0, contrato de producto:** exigir en backend que el alta incluya
    al menos un precio para una lista activa, como pide
    [`functionalities.md`](../domain/functionalities.md). Hoy

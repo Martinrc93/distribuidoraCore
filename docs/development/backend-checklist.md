@@ -117,7 +117,7 @@ Estado actualizado: 2026-09-25
 - [x] Todos los tests `*ControllerTest` ejercitan rutas mediante `MockMvc`; se agregaron 14 casos para marcas, categorías, pagos, entregas, devoluciones, vendedores y límite de crédito.
 - [x] Matriz de cadena real: seis casos para las authorities actuales (`ADMIN_ALL`, `USER_MANAGE`, `ORDER_CREATE`, `SALE_PAYMENT`, `SALE_DELIVER`, `STOCK_ADJUST`) y límites entre rutas críticas.
 - [x] Workflow CI de PostgreSQL 16 ejecutado en GitHub Actions; [run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828) terminó correctamente para commit `2d1decf` (2026-09-24).
-- [~] CI del candidato `f92c40841b8b61c1c02dbb1e32991c2883666410`: el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320) registró `ConflictingBeanDefinitionException` para los beans `jwtAuthenticationFilter` de `shared.security` e `identity.security`. El job corría `mvn test` sin limpiar clases compiladas obsoletas; el workflow ahora escucha `main` en push/PR y ejecuta `mvn clean test`. Run remoto del candidato pendiente.
+- [x] CI PostgreSQL: el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320), sobre `0bf06c6`, registró `ConflictingBeanDefinitionException` para los beans `jwtAuthenticationFilter` de `shared.security` e `identity.security`. El job corría `mvn test` sin limpiar clases compiladas obsoletas; el workflow ahora escucha `main` en push/PR y ejecuta `mvn clean test`. El [run 36103255055](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36103255055) pasó para PR #1 a `main`, HEAD `9753eafe19fa5580164db6365bb112327d232898` (job PostgreSQL, 1m14s).
 - [x] Validar que el alta de producto exige al menos un precio en una lista activa, según `docs/domain/functionalities.md`; el alta ausente/vacía devuelve 400 y deja cero productos, el alta válida persiste su precio. Pruebas HTTP/PostgreSQL en `PostgresBackendFixesIntegrationTest`.
 - [x] Flujo comercial PostgreSQL HTTP: login, permisos `403`, alta de cliente/producto, inventario, confirmación idempotente, warning de crédito, detalle, deuda específica y entrega/cobro; repetición devuelve los mismos IDs, saldo `40`, stock `8`.
 - [x] Verificación de `f92c40841b8b61c1c02dbb1e32991c2883666410`: PostgreSQL 16.4, Flyway V1–V23, **355 tests; 0 fallos/errores/omitidos; 26 casos PostgreSQL**.
@@ -184,7 +184,8 @@ lote quedaron cerrados. La configuración operativa de URLs y credenciales
 reales del proveedor de notificaciones sigue pendiente; no se habilitaron
 envíos externos sin esos datos. La verificación del 2026-09-25 agregó dos
 pendientes nuevos: recuperar el CI de la punta integrada y exigir precio por
-lista activa al crear productos.
+lista activa al crear productos. Ambos pendientes quedaron cerrados en la rama
+`codex/integration-followup-docs`; ver evidencia del ciclo integrado arriba.
 
 ## Criterio De Cierre Backend
 

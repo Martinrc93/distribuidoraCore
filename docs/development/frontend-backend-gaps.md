@@ -78,8 +78,9 @@ de usuario final. La interfaz no simula respuestas faltantes.
   `f92c408`. El [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
   falló por una definición duplicada de `jwtAuthenticationFilter`, causada por
   clases compiladas obsoletas. `.github/workflows/backend-postgres.yml` ahora
-  ejecuta `clean test` y escucha `main` en push y pull request. Falta confirmar
-  el resultado de Actions sobre esta rama/PR.
+  ejecuta `clean test` y escucha `main` en push y pull request. El [run
+  36103255055](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36103255055)
+  pasó para el PR #1 a `main`, HEAD `9753eafe19fa5580164db6365bb112327d232898`.
 - Backups programados, copia externa y ArchUnit constan como verificados en
   `backend-checklist.md`; repetirlos solo si el entorno o el código relevante
   cambian.
