@@ -11,6 +11,7 @@ import { Panel } from '../../shared/components/Panel'
 type Customer = { id: string; name: string; priceListId?: string | null; balance?: number }
 type Product = { id: string; sku: string; name: string; presentation: string; stock?: number; status?: string }
 type PriceList = { id: string; code: string; name: string; status: string }
+type Depot = { id: string; code: string; name: string; status: string; isDefault: boolean }
 type PriceResolution = { productId: string; priceListId: string; priceListCode: string; unitPrice: number }
 type DraftLine = { productId: string; quantity: string; lineDiscountPercent: string; unitPriceOverride: string }
 type DraftPayment = { method: 'CASH' | 'BANK_TRANSFER' | 'CUSTOMER_ACCOUNT'; amount: string }
@@ -18,6 +19,7 @@ type ConfirmationRequest = {
   idempotencyKey: string
   customerId: string
   priceListId: string
+  depotId?: string
   lines: Array<{ productId: string; quantity: number; lineDiscountPercent: number; unitPriceOverride?: number }>
   orderDiscountPercent: number
   payments: Array<{ method: DraftPayment['method']; amount: number }>
@@ -36,6 +38,7 @@ type ConfirmationResponse = {
 const CUSTOMER_KEY = ['/api/customers?page=0&size=20']
 const PRODUCT_KEY = ['/api/products?page=0&size=20']
 const PRICE_LIST_KEY = ['/api/pricing/lists?page=0&size=20']
+const DEPOTS_KEY = ['/api/inventory/depots']
 
 function money(value: number) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
@@ -62,11 +65,14 @@ export default function OrderCreatePage() {
   const customersQuery = useQuery({ queryKey: CUSTOMER_KEY, queryFn: () => apiGet<ApiPage<Customer>>('/api/customers?page=0&size=20') })
   const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGet<ApiPage<Product>>('/api/products?page=0&size=20') })
   const listsQuery = useQuery({ queryKey: PRICE_LIST_KEY, queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20') })
+  const depotsQuery = useQuery({ queryKey: DEPOTS_KEY, queryFn: () => apiGet<Depot[]>('/api/inventory/depots'), enabled: isAdmin })
   const customers = customersQuery.data?.content ?? []
   const products = productsQuery.data?.content ?? []
   const activeLists = (listsQuery.data?.content ?? []).filter((list) => list.status === 'ACTIVE')
+  const activeDepots = (depotsQuery.data ?? []).filter((depot) => depot.status === 'ACTIVE')
   const [customerId, setCustomerId] = useState('')
   const [explicitListId, setExplicitListId] = useState('')
+  const [depotId, setDepotId] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([])
   const [selectedProductId, setSelectedProductId] = useState('')
   const [payments, setPayments] = useState<DraftPayment[]>([{ method: 'CASH', amount: '' }])
@@ -98,6 +104,13 @@ export default function OrderCreatePage() {
   const previewDiscount = isAdmin ? previewSubtotal * (Number(orderDiscountPercent || 0) / 100) : 0
   const previewTotal = Math.max(0, previewSubtotal - previewDiscount)
   const hasUnsavedDraft = Boolean(customerId || lines.length || payments.some((payment) => payment.amount.trim()))
+
+  useEffect(() => {
+    if (!isAdmin || !activeDepots.length) return
+    if (depotId && activeDepots.some((depot) => depot.id === depotId)) return
+    const defaultDepot = activeDepots.find((depot) => depot.isDefault) ?? activeDepots[0]
+    setDepotId(defaultDepot.id)
+  }, [activeDepots, depotId, isAdmin])
 
   useEffect(() => {
     if (!hasUnsavedDraft || responseData) return
@@ -140,6 +153,7 @@ export default function OrderCreatePage() {
   function buildPayload(): ConfirmationRequest | undefined {
     if (!customerId) { setError('Seleccioná un cliente.'); return undefined }
     if (!resolvedListId) { setError('Seleccioná una lista de precios.'); return undefined }
+    if (isAdmin && !depotId) { setError('Seleccioná un depósito para el pedido.'); return undefined }
     if (lines.length === 0) { setError('Agregá al menos un producto al pedido.'); return undefined }
     if (resolutions.some((resolution) => resolution.isLoading)) { setError('Esperá a que se resuelvan los precios antes de confirmar.'); return undefined }
     if (resolutions.some((resolution) => resolution.isError || !resolution.data)) { setError('No se pudo resolver el precio de una línea. Revisá la lista y los productos.'); return undefined }
@@ -165,7 +179,7 @@ export default function OrderCreatePage() {
     }
     const discount = isAdmin ? Number(orderDiscountPercent || 0) : 0
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento general debe estar entre 0 y 100%.'); return undefined }
-    return { idempotencyKey: newKey(), customerId, priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, payments: payloadPayments }
+    return { idempotencyKey: newKey(), customerId, priceListId: resolvedListId, ...(isAdmin && depotId ? { depotId } : {}), lines: payloadLines, orderDiscountPercent: discount, payments: payloadPayments }
   }
 
   async function confirm(event: FormEvent) {
@@ -185,6 +199,9 @@ export default function OrderCreatePage() {
         queryClient.invalidateQueries({ queryKey: ['/api/sales'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/payments'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({
+          predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('/api/inventory'),
+        }),
       ])
     } catch (cause) {
       setError(message(cause))
@@ -202,8 +219,8 @@ export default function OrderCreatePage() {
     </Panel>
   </>
 
-  const readError = customersQuery.error ?? productsQuery.error ?? listsQuery.error
-  const readLoading = customersQuery.isLoading || productsQuery.isLoading || listsQuery.isLoading
+  const readError = customersQuery.error ?? productsQuery.error ?? listsQuery.error ?? (isAdmin ? depotsQuery.error : null)
+  const readLoading = customersQuery.isLoading || productsQuery.isLoading || listsQuery.isLoading || (isAdmin && depotsQuery.isLoading)
 
   return <>
     <PageHeader eyebrow="Operación" title="Nuevo pedido" description="Elegí un cliente, revisá los precios de su lista y confirmá el pedido." actions={<Button variant="secondary" href="/orders">Cancelar</Button>} />
@@ -217,10 +234,11 @@ export default function OrderCreatePage() {
                 <div className="form-grid">
                   <label className="field"><span>Cliente</span><select className="select" value={customerId} onChange={(event) => { draftChanged(); setCustomerId(event.target.value); setExplicitListId('') }} required><option value="">Seleccionar cliente...</option>{customers.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
                   <label className="field"><span>Lista de precios</span><select className="select" value={resolvedListId} onChange={(event) => { draftChanged(); setExplicitListId(event.target.value) }} required><option value="">Seleccionar lista...</option>{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select></label>
+                  {isAdmin && <label className="field"><span>Depósito para el pedido</span><select className="select" aria-label="Depósito para el pedido" value={depotId} onChange={(event) => { draftChanged(); setDepotId(event.target.value) }} required><option value="">Seleccionar depósito...</option>{activeDepots.map((depot) => <option value={depot.id} key={depot.id}>{depot.code} · {depot.name}{depot.isDefault ? ' · Predeterminado' : ''}</option>)}</select></label>}
                 </div>
                 {customer && <p className="helper-text">Saldo de cuenta corriente actual: {money(Number(customer.balance ?? 0))}</p>}
                 <div className="section-heading"><div><h3>Productos</h3><p>Los precios se resuelven para el cliente y la lista seleccionada.</p></div></div>
-                <div className="product-picker"><label className="field"><span>Producto</span><select className="select" value={selectedProductId} onChange={(event) => { setSelectedProductId(event.target.value); setSelectedProductPriceOverride('') }} disabled={!customerId || !resolvedListId}><option value="">Seleccionar producto...</option>{products.filter((item) => item.status === 'ACTIVE').map((item) => <option value={item.id} key={item.id}>{item.name} · {item.sku} · stock {item.stock ?? 0}</option>)}</select></label>{isAdmin && <label className="field"><span>Precio manual para el producto</span><input className="input" type="text" inputMode="decimal" value={selectedProductPriceOverride} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} disabled={!selectedProductId} /></label>}<Button type="button" variant="secondary" onClick={addProduct} disabled={!selectedProductId}>Agregar producto</Button></div>
+                <div className="product-picker"><label className="field"><span>Producto</span><select className="select" value={selectedProductId} onChange={(event) => { setSelectedProductId(event.target.value); setSelectedProductPriceOverride('') }} disabled={!customerId || !resolvedListId}><option value="">Seleccionar producto...</option>{products.filter((item) => item.status === 'ACTIVE').map((item) => <option value={item.id} key={item.id}>{item.name} · {item.sku} · stock total {item.stock ?? 0}</option>)}</select></label>{isAdmin && <label className="field"><span>Precio manual para el producto</span><input className="input" type="text" inputMode="decimal" value={selectedProductPriceOverride} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} disabled={!selectedProductId} /></label>}<Button type="button" variant="secondary" onClick={addProduct} disabled={!selectedProductId}>Agregar producto</Button></div>
                 {lines.length === 0 ? <EmptyState title="Todavía no agregaste productos" description="Elegí un producto para consultar su precio en la lista seleccionada." /> : <div className="order-lines">{lines.map((line, index) => {
                   const product = productsById.get(line.productId)
                   const resolution = resolutions[index]
@@ -229,7 +247,7 @@ export default function OrderCreatePage() {
                   const discount = isAdmin ? Number(line.lineDiscountPercent || 0) : 0
                   const lineTotal = unitPrice * quantity * (1 - discount / 100)
                   return <article className="order-line" key={line.productId}>
-                    <div className="order-line-heading"><div><strong>{product?.name}</strong><small>{product?.sku} · {product?.presentation} · {product?.stock ?? 0} disponibles</small></div><Button variant="link" type="button" onClick={() => removeLine(line.productId)}>Quitar</Button></div>
+                     <div className="order-line-heading"><div><strong>{product?.name}</strong><small>{product?.sku} · {product?.presentation} · stock total {product?.stock ?? 0}</small></div><Button variant="link" type="button" onClick={() => removeLine(line.productId)}>Quitar</Button></div>
                     <div className="order-line-fields">
                       <label className="field"><span>Cantidad de {product?.name}</span><input className="input" type="text" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(line.productId, 'quantity', event.target.value)} /></label>
                       <div className="field"><span>Precio de {resolution?.data?.priceListCode ?? selectedList?.code ?? 'lista'}</span><strong>{resolution?.isLoading ? 'Resolviendo...' : resolution?.isError ? 'No disponible' : money(unitPrice)}</strong></div>

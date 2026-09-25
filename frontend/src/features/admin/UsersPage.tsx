@@ -10,7 +10,7 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 
-type User = { id: string; email: string; name: string; status: string }
+type User = { id: string; email: string; name: string; status: string; roles?: string | null }
 type UserAction = { user: User; action: 'block' | 'unblock' | 'revoke-sessions' }
 type Row = Record<string, string>
 const USERS_PATH = '/api/users?page=0&size=20'
@@ -18,6 +18,10 @@ const USERS_KEY = [USERS_PATH]
 
 function statusName(value: string) {
   return value === 'ACTIVE' ? 'Activo' : value === 'BLOCKED' ? 'Bloqueado' : value === 'INVITED' ? 'Invitado' : value
+}
+
+function roleName(value: string) {
+  return value === 'ADMIN' ? 'Administrador' : value === 'SELLER' ? 'Vendedor' : value
 }
 
 function errorMessage(cause: unknown) {
@@ -92,10 +96,14 @@ export function UsersPage() {
   }
 
   const filtered = (query.data?.content ?? []).filter((user) => `${user.email} ${user.name}`.toLowerCase().includes(search.trim().toLowerCase()))
-  const rows: Row[] = filtered.map((user) => ({ id: user.id, email: user.email, name: user.name, status: user.status }))
+  const rows: Row[] = filtered.map((user) => ({ id: user.id, email: user.email, name: user.name, status: user.status, roles: user.roles ?? '' }))
   const columns: TableColumn[] = [
     { key: 'name', label: 'Usuario', emphasis: true },
     { key: 'email', label: 'Email' },
+    { key: 'roles', label: 'Roles', render: (value) => {
+      const roles = value.split(',').map((role) => role.trim()).filter(Boolean)
+      return roles.length ? <div className="page-actions" aria-label={`Roles: ${roles.map(roleName).join(', ')}`}>{roles.map((role) => <Badge key={role} tone="soft">{roleName(role)}</Badge>)}</div> : <span>—</span>
+    } },
     { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'ACTIVE' ? 'strong' : 'muted'}>{statusName(value)}</Badge> },
     ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Row) => {
       const item = filtered.find((user) => user.id === row.id)

@@ -1,8 +1,20 @@
 # Funcionalidades frontend pendientes por soporte/API
 
-Estado actualizado: 2026-09-24. Este documento distingue funciones ya conectadas,
+Estado actualizado: 2026-09-25. Este documento distingue funciones ya conectadas,
 funciones con comandos pero sin una lectura suficiente y operaciones que no son
 de usuario final. La interfaz no simula respuestas faltantes.
+
+## Nuevas capacidades conectadas al frontend
+
+- Programación de vigencias de precios, historial paginado y cancelación de
+  precios futuros por lista/producto.
+- Administración `ADMIN_ALL` de reglas de descuentos por línea/pedido, incluyendo
+  alcance, fechas y prioridad. El backend resuelve el descuento al confirmar.
+- Administración de depósitos, balances por depósito, ajustes y transferencias
+  con saldo de origen visible; los movimientos identifican el depósito.
+- Selección de depósito en pedidos para usuarios que pueden consultar depósitos;
+  el ID queda en el intento idempotente. Los demás pedidos usan `CENTRAL`.
+- Roles de usuarios visibles como datos de solo lectura.
 
 ## Falta una proyección de lectura adecuada
 
@@ -21,14 +33,11 @@ de usuario final. La interfaz no simula respuestas faltantes.
 - **Historial de intentos de entrega:** la UI puede registrar `DELIVERED`/`FAILED`
   y cobros, pero `/api/orders/{id}` no devuelve los intentos anteriores. El estado
   final sí aparece en el detalle.
-- **Edición de pedidos con descuentos/listas múltiples:** el comando existe, pero
-  el detalle no expone el porcentaje de descuento general original ni un
-  `priceListId` de cabecera. La UI limita la edición a pedidos confirmados sin
-  descuentos guardados y con una sola lista para no borrar snapshots/reglas sin
-  que el usuario lo advierta.
-- **Rol actual del usuario:** `GET /api/users` no incluye rol ni autoridades
-  asignadas; se puede invitar/crear seleccionando `ADMIN` o `SELLER`, pero la UI
-  no inventa un rol al listar usuarios.
+- **Edición de pedidos con descuentos/listas múltiples:** el detalle ya expone el
+  porcentaje/regla de descuento general y los descuentos/reglas por línea, pero
+  la UI todavía limita la edición a pedidos confirmados sin descuentos y con una
+  sola lista entre líneas. Falta diseñar cómo preservar y volver a resolver reglas
+  automáticas al editar; el detalle tampoco expone una lista de precios de cabecera.
 - **Reasignación selectiva de clientes a un vendedor:** el comando acepta
   `customerIds`, pero no existe filtro de clientes por `sellerId`. La UI sí puede
   reasignar todos los clientes de un vendedor y opcionalmente sus pedidos
@@ -37,20 +46,24 @@ de usuario final. La interfaz no simula respuestas faltantes.
 - **Dashboard de vendedor:** `/api/dashboard` requiere `ADMIN_ALL`; vendedores se
   dirigen al listado de pedidos, ya que no existe proyección de dashboard con
   alcance vendedor.
-- **Ajuste de inventario para `STOCK_ADJUST` sin `ADMIN_ALL`:** el comando de
-  ajuste acepta `STOCK_ADJUST`, pero los GET de inventario y movimientos requieren
-  `ADMIN_ALL`; un usuario solo con `STOCK_ADJUST` no puede abrir la página para
-  completar el ajuste.
+## Capacidades soportadas que siguen pendientes o limitadas en frontend
+
+- **Reasignación de roles y edición de permisos:** el backend ofrece estos
+  comandos, pero la UI solo muestra los roles actuales. La edición quedó aplazada
+  por decisión del usuario.
+- **Selección de depósito para usuarios no administradores:** `GET
+  /api/inventory/depots` requiere `ADMIN_ALL`; los pedidos de otros usuarios usan
+  el depósito predeterminado `CENTRAL` hasta que exista una lectura autorizada.
+- **Ajustes para usuario solo con `STOCK_ADJUST`:** las lecturas de inventario y
+  depósitos requieren `ADMIN_ALL`, por lo que esos usuarios no pueden abrir la
+  pantalla frontend aunque el comando permita `STOCK_ADJUST`.
 
 ## No existe soporte backend suficiente
 
 - **Lectura de auditoría:** no hay endpoint de consulta de eventos.
-- **CRUD de roles/permisos y su asignación:** no hay API; los roles disponibles
-  en creación/invitación son `ADMIN` y `SELLER`.
 - **Dashboard global de outbox/worker:** solo se puede consultar el estado de una
   solicitud de notificación individual.
 - **Corrección o reversión de pagos:** no existe comando de pago correctivo.
-- **Multi-depósito:** sigue pendiente en backend.
 - **Configuración de proveedor Email/WhatsApp:** URLs/tokens se cargan como
   variables del entorno; la UI puede solicitar y consultar envíos, pero no
   gestionar credenciales/configuración.

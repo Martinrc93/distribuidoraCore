@@ -1,6 +1,6 @@
 # Checklist de implementacion
 
-Estado de referencia: 2026-09-24.
+Estado de referencia: 2026-09-25.
 
 Este documento separa el avance funcional del backend y del frontend. Una
 funcionalidad se marca como implementada solo cuando esta verificada en la capa
@@ -111,6 +111,8 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Asignacion de vendedor y lista de precios.
 - [x] Baja logica y reactivacion.
 - [x] Invitación/creación de usuarios, activación, bloqueo, desbloqueo y revocación de sesiones.
+- [x] Mostrar roles devueltos por API en modo de solo lectura.
+- [ ] Reasignación de roles y edición de permisos (API disponible; aplazado por decisión del usuario).
 - [x] CRUD de vendedores y reasignación masiva de clientes/pedidos.
 - [ ] Detalle de cliente con ventas, pagos y cuenta corriente (falta consulta dedicada por cliente).
 
@@ -126,6 +128,8 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Enviar costo y precios afectados en la misma operación.
 - [x] Mostrar errores de listas faltantes o precios menores al costo.
 - [x] Pantalla de administración de listas, marcas y categorías.
+- [x] Programar vigencias de precios; consultar historial paginado y cancelar precios futuros.
+- [x] Administrar reglas de descuentos por línea/pedido con vigencia, alcance y prioridad (`ADMIN_ALL`).
 
 ### Inventario
 
@@ -133,20 +137,21 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Saldos y vista paginada de movimientos por producto.
 - [x] Formulario de ajuste manual.
 - [x] Permisos, confirmación y advertencia de saldo negativo.
-- [ ] Integrar administración de depósitos y balances por depósito con `ADMIN_ALL`.
-- [ ] Integrar transferencias entre depósitos con `STOCK_ADJUST`, validación visible del origen y feedback transaccional.
-- [ ] Seleccionar y enviar el depósito al confirmar un pedido; preservar la misma selección al reintentar.
+- [x] Integrar administración de depósitos y balances paginados por depósito con `ADMIN_ALL`.
+- [x] Integrar transferencias entre depósitos con `STOCK_ADJUST`, saldo de origen visible, validación y feedback transaccional.
+- [x] Ajustar stock en depósito seleccionado e identificar el depósito en movimientos.
 
 ### Pedidos y ventas
 
 - [x] Listados reales de pedidos, ventas y pagos.
 - [x] Nuevo pedido con cliente/lista/productos, stock, precios y confirmación en `/api/orders/confirm`.
+- [x] Seleccionar depósito para administradores; preservar `depotId` en retry exacto; omitirlo para usuarios que usan `CENTRAL` por defecto.
 - [x] Preview de descuentos sin reemplazar el backend; solo `ADMIN_ALL` ve controles de descuento/precio manual.
 - [x] Idempotency key, bloqueo de doble envío y retry seguro con el mismo payload.
 - [x] Detalle de pedido/venta con snapshots, pagos y ledger por venta.
 - [x] Registrar pagos parciales/combinados y cobros durante la entrega.
 - [x] Imputación FIFO de pagos de cuenta corriente.
-- [~] Edición administrativa solo para pedidos sin descuentos guardados y con una sola lista (falta porcentaje original en la lectura).
+- [~] Edición administrativa solo para pedidos sin descuentos guardados y con una sola lista; falta diseñar preservación/reaplicación de reglas automáticas.
 - [ ] Imputación de pago a deuda específica (falta consulta por cliente).
 - [ ] Devolución UI (falta lectura de líneas por `saleId`).
 
