@@ -1,6 +1,6 @@
 # Backend Development Checklist
 
-Estado actualizado: 2026-09-24
+Estado actualizado: 2026-09-25
 
 ## Cómo Leerlo
 
@@ -71,6 +71,7 @@ Estado actualizado: 2026-09-24
 ## Order, Sale, Payment Y Cuenta Corriente
 
 - [x] Confirmación atómica `POST /api/orders/confirm`.
+- [x] Atribución de vendedor al confirmar: admin puede enviar `sellerId` opcional o usar el asignado al cliente por defecto; el servidor fuerza el perfil autenticado para no-admin. Se persiste en `orders.orders.seller_id` sin modificar la asignación del cliente.
 - [x] No se persisten borradores.
 - [x] Snapshots de producto, lista, precio y descuentos.
 - [x] Descuentos de línea y descuento total con `BigDecimal`.
@@ -111,6 +112,7 @@ Estado actualizado: 2026-09-24
 - [x] Reglas de descuentos (2026-09-24): 31 tests dirigidos pasaron; 23 casos de integración pasaron en PostgreSQL 16.4, Flyway V1–V22 y `ddl-auto=validate` sobre base nueva del cluster TEMP verificado.
 - [x] Multi-depósito (2026-09-24, histórico anterior a V24): 56 tests dirigidos y 24 casos de integración pasaron con Flyway V1–V23; V24 retiró después esa funcionalidad.
 - [x] Suite completa de cierre del backlog (2026-09-24): **350 tests, 0 fallos, 0 errores y 0 omitidos**, incluidos 24 casos PostgreSQL 16.4/Flyway V1–V23 y validación JPA en una base descartable nueva; ArchUnit global pasó.
+- [x] Verificación Task 3 seller-selection (2026-09-25): `mvn test`: **358 tests, 0 fallos, 0 errores, 25 omitidos**; `PostgresBackendFixesIntegrationTest`: **25 tests, 0 fallos, 0 errores, 0 omitidos** en PostgreSQL 16.15 descartable con Flyway V1–V24 y validación JPA. Frontend: **88 tests pasaron** y `npm run build` finalizó correctamente.
 - [x] Verificación de migraciones V1–V20 en PostgreSQL descartable.
 - [x] Todos los tests `*ControllerTest` ejercitan rutas mediante `MockMvc`; se agregaron 14 casos para marcas, categorías, pagos, entregas, devoluciones, vendedores y límite de crédito.
 - [x] Matriz de cadena real: seis casos para las authorities actuales (`ADMIN_ALL`, `USER_MANAGE`, `ORDER_CREATE`, `SALE_PAYMENT`, `SALE_DELIVER`, `STOCK_ADJUST`) y límites entre rutas críticas.

@@ -1,6 +1,6 @@
 # Estado De Funcionalidades Del Backend
 
-Estado relevado: 2026-09-24.
+Estado relevado: 2026-09-25.
 
 Este documento resume el estado real del backend según los módulos, migraciones,
 controllers y tests existentes. `[x]` significa implementado y verificado;
@@ -98,6 +98,7 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 ### Pedidos, ventas, pagos y cuenta corriente
 
 - [x] Confirmar pedidos con `POST /api/orders/confirm`.
+- [x] Permitir a `ADMIN_ALL` indicar `sellerId` opcional al confirmar; por omisión se usa el vendedor del cliente y el resultado se persiste en `orders.orders.seller_id`. Los usuarios no administradores quedan atribuidos al perfil seller autenticado; cambiar el pedido no reasigna al cliente.
 - [x] Ejecutar confirmación, venta, stock y pago en una transacción.
 - [x] No persistir borradores.
 - [x] Guardar snapshots de producto, lista, precio y descuentos.
@@ -146,6 +147,7 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Verificación incremental de descuentos (2026-09-24): 31 tests dirigidos y 23 casos PostgreSQL pasaron; Flyway V1–V22 y validación JPA en PostgreSQL 16.4 descartable.
 - [x] Verificación histórica de multi-depósito (2026-09-24, antes de V24): 56 tests dirigidos y 24 casos PostgreSQL pasaron; esa funcionalidad fue retirada posteriormente por la regla de stock único.
 - [x] Suite completa tras los tres ítems de backlog (2026-09-24, antes de V24): **350 tests, 0 fallos, 0 errores y 0 omitidos**; 24 casos PostgreSQL 16.4, Flyway V1–V23, validación JPA y ArchUnit global pasaron en esa verificación histórica.
+- [x] Verificación Task 3 de selección de vendedor (2026-09-25): `mvn test` ejecutó **358 tests, 0 fallos, 0 errores y 25 omitidos** (PostgreSQL opt-in); los **25 casos** de `PostgresBackendFixesIntegrationTest` pasaron aparte en PostgreSQL 16.15 descartable, Flyway V1–V24 y validación JPA. Frontend: **88 tests en 19 archivos** y `npm run build` correcto. Detalle en `docs/development/testing-strategy.md`.
 
 ## Parcial o requiere endurecimiento
 

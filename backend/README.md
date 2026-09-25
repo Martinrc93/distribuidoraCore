@@ -246,6 +246,7 @@ Request de confirmación:
 {
   "idempotencyKey": "checkout-2026-0001",
   "customerId": "<customer-uuid>",
+  "sellerId": "<optional-seller-uuid>",
   "priceListId": "<optional-price-list-uuid>",
   "lines": [{
     "productId": "<product-uuid>",
@@ -257,6 +258,13 @@ Request de confirmación:
   "payments": [{"method": "CASH", "amount": 18.0000}]
 }
 ```
+
+`sellerId` es opcional y solo permite elegir vendedor a un administrador con
+`ADMIN_ALL`. Si el administrador lo omite, el pedido toma el vendedor asignado
+al cliente. El vendedor resuelto se guarda en `orders.orders.seller_id`; cambiar
+el vendedor del pedido no modifica `customer.customers.seller_id`. Para usuarios
+no administradores, el servidor siempre atribuye el pedido al perfil seller del
+usuario autenticado y rechaza un `sellerId` que intente reemplazarlo.
 
 `payments` puede combinar `CASH`, `BANK_TRANSFER` y `CUSTOMER_ACCOUNT`. Si se
 omite o está vacío, el total completo genera un débito en cuenta corriente.

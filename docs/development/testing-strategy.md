@@ -91,6 +91,12 @@ permisos por los endpoints administrativos, rechazo del JWT anterior con `401`
 y verificación del acceso y authorities del nuevo login. Se usa un rol temporal
 único por test para no mutar los permisos semilla de `ADMIN` o `SELLER`.
 
+La misma clase verifica que una confirmación administrativa persista el vendedor
+elegido en `orders.orders.seller_id` sin cambiar el vendedor asignado al cliente.
+Esta prueba y el resto de los casos de esa clase se ejecutan contra una base
+PostgreSQL 16 descartable, con `POSTGRES_TEST_URL`, `POSTGRES_TEST_USERNAME` y
+`POSTGRES_TEST_PASSWORD` definidos.
+
 Verificación del 2026-09-24 tras revisar el grafo modular: **329 tests, 0
 fallos, 0 errores y 19 omitidos**. ArchUnit pasó, incluida la regla global de
 ciclos. Los omitidos son los casos PostgreSQL opt-in; esta ejecución no tenía
@@ -128,6 +134,22 @@ pasaron en PostgreSQL 16.15 con Flyway V1–V24 y `ddl-auto=validate`. La prueba
 Testcontainers de V24 confirmó la suma de balances y la conservación de
 movimientos/pedidos/ventas. Frontend: **85 tests pasaron** y `npm run build`
 terminó correctamente.
+
+Verificación final de Task 3 (2026-09-25):
+
+- `mvn test`: `Tests run: 358, Failures: 0, Errors: 0, Skipped: 25`; `BUILD
+  SUCCESS`. Los 25 omitidos son los casos opt-in de
+  `PostgresBackendFixesIntegrationTest`, ejecutados a continuación con PostgreSQL.
+- `mvn -Dtest=PostgresBackendFixesIntegrationTest test`, con
+  `POSTGRES_TEST_URL=jdbc:postgresql://localhost:62417/distribuidora`, usuario
+  `distribuidora` y una contraseña de base descartable: `Tests run: 25, Failures:
+  0, Errors: 0, Skipped: 0`; `BUILD SUCCESS`. PostgreSQL 16.15 descartable,
+  Flyway validó y aplicó V1–V24 y JPA inicializó con validación. Incluye
+  persistencia del vendedor escogido y confirma que la asignación del cliente no
+  cambia.
+- `npm run test`: **19 archivos y 88 tests pasaron**.
+- `npm run build`: `tsc -b` pasó; Vite transformó 110 módulos y terminó con
+  `✓ built in 1.87s`.
 
 Verificación completa de cierre (2026-09-24): **350 tests, 0 fallos, 0 errores
 y 0 omitidos**, incluidos los 24 casos PostgreSQL en PostgreSQL 16.4 con Flyway
