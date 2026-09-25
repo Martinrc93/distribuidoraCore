@@ -70,9 +70,14 @@ de usuario final. La interfaz no simula respuestas faltantes.
 
 ## Operación, no interfaz de usuario
 
-- Confirmar primera ejecución del workflow de CI PostgreSQL.
-- Activar backups programados y copia externa.
-- Añadir verificación ArchUnit/Spring Modulith.
+- El backend `0bf06c6` ya es ancestro del `main` remoto `03586fd` (verificado el
+  2026-09-25). El run PostgreSQL de `2d1decf` pasó, pero el
+  [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
+  de `0bf06c6` falló en `mvn test`. Diagnosticar el log y exigir un run verde
+  sobre `main`; el workflow aún solo escucha `feature/backend`.
+- Backups programados, copia externa y ArchUnit constan como verificados en
+  `backend-checklist.md`; repetirlos solo si el entorno o el código relevante
+  cambian.
 - Operar el proveedor webhook y sus secretos en el despliegue.
 
 ## Cobertura frontend aún incompleta

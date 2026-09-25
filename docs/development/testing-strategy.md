@@ -127,6 +127,22 @@ y 0 omitidos**, incluidos los 24 casos PostgreSQL en PostgreSQL 16.4 con Flyway
 V1–V23 y validación JPA sobre una base descartable nueva. ArchUnit pasó incluida
 la regla global de ciclos entre módulos.
 
+## Gate pendiente para la punta integrada (2026-09-25)
+
+`main` remoto (`03586fd`) contiene el backend `0bf06c6` y la nueva UI. El
+[run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
+de PostgreSQL para `0bf06c6` falló en el paso `mvn test`; su log detallado
+devolvió `403` desde el entorno de auditoría. El éxito anterior de `2d1decf`
+y la suite local documentada de 350 tests no prueban esta punta integrada.
+Diagnosticar el fallo y ejecutar la suite sobre `main` con una base PostgreSQL
+descartable (`POSTGRES_TEST_URL`), Flyway, JPA y ArchUnit. Registrar SHA y
+conteos. El workflow debe cubrir pushes y PR de `main`.
+
+Después, automatizar un E2E con datos reales de prueba: login, cliente, producto
+con precio por lista, confirmación de pedido, detalle de venta y cobro/entrega.
+Incluir reintento idempotente, permisos, saldo y stock. Ejecutarlo en un
+checkout limpio; no reutilizar artefactos modificados de `backend/target`.
+
 ## Frontend
 
 - Vitest para funciones puras.

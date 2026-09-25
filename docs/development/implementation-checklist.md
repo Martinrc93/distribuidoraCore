@@ -169,6 +169,47 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [ ] Tests E2E login -> crear cliente -> pedido -> confirmar -> ver venta.
 - [~] Responsive aplicado; pruebas automatizadas mobile pendientes.
 
+## Seguimiento de integración en `main` (2026-09-25)
+
+Referencias remotas verificadas: `origin/main` está en `03586fd` y contiene
+`0bf06c6` de `feature/backend`; `origin/feature/frontend` está en `88aa97a`.
+La integración de backend y los cambios posteriores de frontend ya llegaron a
+`main`. Las ramas locales antiguas y los resultados de pruebas anteriores no
+describen por sí solos el estado de esa punta.
+
+### Próximo ciclo, por prioridad y dependencias
+
+1. [ ] **P0, CI:** diagnosticar el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
+   de `0bf06c6`: el job `backend-postgres` falló en `mvn test`. El log detallado
+   devolvió `403` desde este entorno; no atribuir la causa sin leerlo. Corregir
+   el fallo y hacer que el workflow PostgreSQL se ejecute también en pushes/PR
+   dirigidos a `main`. Cierre: run verde sobre el commit candidato de `main`,
+   con SHA, número de tests, casos PostgreSQL y migración máxima registrados.
+2. [ ] **P0, contrato de producto:** exigir en backend que el alta incluya
+   al menos un precio para una lista activa, como pide
+   [`functionalities.md`](../domain/functionalities.md). Hoy
+   `ProductPayload.prices` puede omitirse y `ProductCommandService.create`
+   persiste un producto sin precios. Cierre: payload ausente/vacío rechazado
+   sin insertar producto; tests HTTP y PostgreSQL; alta válida desde la UI.
+3. [ ] **P0, E2E integrado:** en un checkout limpio y una base PostgreSQL
+   descartable, probar login → alta de cliente → producto con precio por lista
+   → confirmación idempotente de pedido → detalle de venta → cobro/entrega.
+   Cierre: prueba reproducible sobre `main`, con saldos, stock, permisos,
+   warning de crédito y reintento verificados; sin usar `backend/target` del
+   checkout de trabajo anterior.
+4. [ ] **P1, proyecciones y UI comercial:** seguir las dependencias de
+   [`frontend-backend-gaps.md`](frontend-backend-gaps.md): deudas por
+   `customerId` antes de pago a deuda específica; líneas por `saleId` antes
+   de devolución; intentos de entrega antes del historial; lectura de auditoría
+   antes de su pantalla. Cierre: DTOs, permisos, errores, invalidación de
+   queries y pruebas de cada flujo.
+5. [ ] **P2, calidad frontend:** filtros y paginación reales en URL,
+   pruebas mobile y E2E, y revisión de accesibilidad. Cierre: navegación y
+   formularios verificables en desktop y mobile, sin botones inertes.
+
+La edición de roles/permisos desde la UI sigue aplazada por decisión del usuario;
+no incluirla en este ciclo sin una nueva indicación.
+
 ## Orden sugerido
 
 El detalle de funciones completas y ausencias de API se mantiene en

@@ -152,6 +152,15 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] La matriz HTTP cubre las seis authorities funcionales actuales en rutas críticas; los flujos PostgreSQL de login/cambio de rol y permisos prueban la invalidación inmediata del JWT anterior y las authorities efectivas del nuevo login.
 - [x] Administración backend de usuarios/roles/permisos: consulta paginada, cambio de rol, catálogo de permisos y reemplazo de permisos por rol. Se protege al último ADMIN activo, se revocan sesiones y se auditan cambios. Contrato en `docs/api/identity-admin.md`.
 - [x] Workflow CI PostgreSQL 16 ejecutado correctamente en GitHub Actions para `2d1decf` ([run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828), 2026-09-24).
+
+**Actualización de integración (2026-09-25):** `origin/main` (`03586fd`)
+contiene `0bf06c6`. El [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
+para `0bf06c6` terminó en `failure` en `mvn test`; el log detallado no estuvo
+disponible para esta auditoría (`403`). Los 350 tests anteriores son una
+verificación local documentada, no un CI verde de la punta integrada. El
+diagnóstico, la cobertura del workflow en `main` y la validación de creación
+de productos con precio en lista activa figuran en
+[`backend-checklist.md`](backend-checklist.md).
 - [x] Logs ECS JSON con request ID en MDC, métricas HTTP de latencia e histogramas y métricas operativas del outbox.
 - [x] Scripts de backup cifrado AES-256-CBC/HMAC-SHA256, retención local, restauración/tamper y escrow externo verificados. La tarea diaria quedó habilitada tras una corrida programada de control con código `0`; el backup nuevo pasó HMAC y restore en PostgreSQL descartable (Flyway V7). El usuario confirmó el backup de las 05:55:56 en OneDrive. KeePassXC 2.7.12 guarda la clave DPAPI en la bóveda real; el usuario confirmó `RESULT=OK`, la lectura de vuelta pasó y Cloud Files devolvió `0x00000009` (`PLACEHOLDER` + `InSync`) para esa bóveda.
 - [x] Procedimiento de rollback de aplicación y recuperación de PostgreSQL documentado.

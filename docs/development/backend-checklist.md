@@ -116,6 +116,8 @@ Estado actualizado: 2026-09-24
 - [x] Todos los tests `*ControllerTest` ejercitan rutas mediante `MockMvc`; se agregaron 14 casos para marcas, categorías, pagos, entregas, devoluciones, vendedores y límite de crédito.
 - [x] Matriz de cadena real: seis casos para las authorities actuales (`ADMIN_ALL`, `USER_MANAGE`, `ORDER_CREATE`, `SALE_PAYMENT`, `SALE_DELIVER`, `STOCK_ADJUST`) y límites entre rutas críticas.
 - [x] Workflow CI de PostgreSQL 16 ejecutado en GitHub Actions; [run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828) terminó correctamente para commit `2d1decf` (2026-09-24).
+- [ ] Restablecer CI PostgreSQL en la punta integrada: el [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320) de `0bf06c6` terminó en `failure` durante `mvn test`. El log detallado no fue accesible (`403`) desde el entorno de auditoría; diagnosticar antes de asignar causa. El workflow actual solo escucha `feature/backend`; extenderlo a `main` y cerrar con un run verde sobre el commit candidato de `main`.
+- [ ] Validar que el alta de producto exige al menos un precio en una lista activa. `ProductPayload.prices` puede omitirse y `ProductCommandService.create` acepta la lista vacía, en contradicción con `docs/domain/functionalities.md`. Cerrar con rechazo HTTP y prueba PostgreSQL sin inserción parcial, además de conservar el alta válida con precios por lista.
 - [x] ArchUnit protege cuatro límites de capas y aplica una quinta regla (`ModuleBoundaryTest`) para mantener acíclicos los slices de producción.
 - [x] Se eliminó `shared → catalog`, que cerraba el ciclo identificado `audit → shared → catalog → audit`, y se desacoplaron los servicios de aplicación de DTOs API.
 - [x] Revisar/documentar el grafo completo y resolver los ciclos que involucraban identidad, documentos y pedidos; `shared` quedó sin dependencias salientes hacia módulos de negocio.
@@ -175,9 +177,11 @@ Estado del backlog autorizado (2026-09-24): historial/vigencias de precios,
 reglas de descuentos persistidas y multi-depósito completados, probados y
 documentados. Los tres ítems de este lote están cerrados. La verificación
 completa final pasó con 350 tests. Los tres ítems de implementación de este
-lote quedaron cerrados. La única casilla backend abierta es configuración
-operativa: cargar la URL y las credenciales reales del proveedor de
-notificaciones por entorno; no se habilitaron envíos externos sin esos datos.
+lote quedaron cerrados. La configuración operativa de URLs y credenciales
+reales del proveedor de notificaciones sigue pendiente; no se habilitaron
+envíos externos sin esos datos. La verificación del 2026-09-25 agregó dos
+pendientes nuevos: recuperar el CI de la punta integrada y exigir precio por
+lista activa al crear productos.
 
 ## Criterio De Cierre Backend
 
