@@ -41,6 +41,17 @@ management:
       probes:
         enabled: true
       show-details: when_authorized
+  metrics:
+    tags:
+      application: distribuidora-backend
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+logging:
+  structured:
+    format:
+      console: ecs
 
 app:
   security:
@@ -51,6 +62,24 @@ app:
     bootstrap-admin-password: ${ADMIN_PASSWORD:}
   seed-demo: ${SEED_DEMO:false}
   demo-password: ${DEMO_PASSWORD:}
+  outbox:
+    retention:
+      days: ${OUTBOX_RETENTION_DAYS:90}
+    worker:
+      enabled: ${OUTBOX_WORKER_ENABLED:true}
+      poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
+  notifications:
+    timeout-ms: ${NOTIFICATION_PROVIDER_TIMEOUT_MS:10000}
+    retention:
+      enabled: ${NOTIFICATION_RETENTION_ENABLED:true}
+      days: ${NOTIFICATION_RETENTION_DAYS:90}
+      cron: ${NOTIFICATION_RETENTION_CRON:0 30 3 * * *}
+    email:
+      webhook-url: ${EMAIL_WEBHOOK_URL:}
+      webhook-token: ${EMAIL_WEBHOOK_TOKEN:}
+    whatsapp:
+      webhook-url: ${WHATSAPP_WEBHOOK_URL:}
+      webhook-token: ${WHATSAPP_WEBHOOK_TOKEN:}
 
 info:
   app:
