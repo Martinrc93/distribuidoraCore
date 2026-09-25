@@ -1,16 +1,21 @@
-# Calculo de descuentos
+# Cálculo de descuentos comerciales
 
-> La configuracion o aplicacion de descuentos por producto o generales requiere autorizacion administrativa. Por el momento solo `ADMIN` puede realizarla.
+> Configurar reglas comerciales o enviar overrides manuales requiere `ADMIN_ALL`. Las reglas persistidas vigentes se aplican automáticamente durante la confirmación/edición del pedido y el backend conserva sus snapshots.
 
 ```mermaid
 flowchart TD
-    A[Precio de lista] --> B{Usuario tiene permiso ADMIN?}
-    B -->|No| C[Rechazar configuracion o aplicacion de descuento]
-    B -->|Si| D{Descuento por producto o general?}
-    D -->|Producto| E[Aplicar descuento por linea]
-    D -->|General| F[Aplicar descuento total]
-    E --> G[Calcular subtotal]
-    G --> F
-    F --> H[Calcular total final]
-    H --> I[Guardar snapshot]
+    A[Resolver precio y lista efectiva] --> B{Override manual de descuento?}
+    B -->|Sí, ADMIN_ALL| C[Usar porcentaje manual]
+    B -->|No, cero| D[Buscar regla LINE vigente]
+    D --> E[Elegir prioridad y alcance más específico]
+    C --> F[Aplicar descuento de línea]
+    E --> F
+    F --> G[Sumar líneas después del descuento]
+    G --> H{Override manual de orden?}
+    H -->|Sí, ADMIN_ALL| I[Usar porcentaje manual]
+    H -->|No, cero| J[Buscar regla ORDER vigente]
+    J --> K[Elegir prioridad y alcance más específico]
+    I --> L[Aplicar descuento al subtotal restante]
+    K --> L
+    L --> M[Guardar porcentaje e ID en snapshots]
 ```

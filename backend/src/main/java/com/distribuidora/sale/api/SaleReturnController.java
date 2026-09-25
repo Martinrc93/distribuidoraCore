@@ -27,6 +27,10 @@ public class SaleReturnController {
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public SaleReturnDtos.ReturnResponse create(@PathVariable UUID saleId,
                                                 @Valid @RequestBody SaleReturnDtos.ReturnRequest request) {
-        return service.create(saleId, request);
+        SaleReturnService.ReturnResult result = service.create(saleId, request);
+        var items = result.items().stream()
+            .map(item -> new SaleReturnDtos.ReturnItemResponse(item.saleItemId(), item.productId(), item.quantity()))
+            .toList();
+        return new SaleReturnDtos.ReturnResponse(result.returnId(), result.saleId(), result.reason(), items);
     }
 }

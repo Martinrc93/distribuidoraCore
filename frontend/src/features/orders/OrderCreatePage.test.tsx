@@ -16,6 +16,10 @@ function response(body: unknown, status = 200) {
 const customers = { content: [{ id: 'customer-1', name: 'Almacén Norte', priceListId: 'list-1', sellerId: 'seller-1', balance: 0 }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const products = { content: [{ id: 'product-1', sku: 'SKU-1', name: 'Harina', presentation: 'Bolsa', stock: 12, status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const lists = { content: [{ id: 'list-1', code: 'MAYORISTA', name: 'Mayorista', status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
+const depots = [
+  { id: 'depot-central', code: 'CENTRAL', name: 'Depósito Central', status: 'ACTIVE', isDefault: true },
+  { id: 'depot-north', code: 'NORTE', name: 'Depósito Norte', status: 'ACTIVE', isDefault: false },
+]
 
 function renderPage(authorities = ['ORDER_CREATE']) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -26,6 +30,7 @@ function renderPage(authorities = ['ORDER_CREATE']) {
 
 function catalogResponse(input: RequestInfo | URL) {
   const path = String(input)
+  if (path === '/api/inventory/depots') return response(depots)
   if (path.startsWith('/api/customers')) return response(customers)
   if (path.startsWith('/api/products')) return response(products)
   if (path.startsWith('/api/pricing/lists')) return response(lists)
@@ -45,7 +50,8 @@ describe('OrderCreatePage', () => {
       }, 201)
       return catalogResponse(input)
     })
-    renderPage()
+    const queryClient = renderPage()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
     await user.selectOptions(screen.getByLabelText('Lista de precios'), 'list-1')
@@ -68,6 +74,8 @@ describe('OrderCreatePage', () => {
       lines: [{ productId: 'product-1', quantity: 2, lineDiscountPercent: 0 }],
       payments: [{ method: 'CASH', amount: 100 }],
     })
+    expect(request).not.toHaveProperty('depotId')
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('PED-001')).toBeInTheDocument()
     expect(screen.getByText('VEN-001')).toBeInTheDocument()
     expect(screen.getByText(/saldo pendiente/i)).toBeInTheDocument()
@@ -86,8 +94,9 @@ describe('OrderCreatePage', () => {
       }
       return catalogResponse(input)
     })
-    renderPage()
+    renderPage(['ADMIN_ALL', 'ORDER_CREATE'])
 
+    await user.selectOptions(await screen.findByLabelText('Depósito para el pedido'), 'depot-north')
     await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
     await user.selectOptions(screen.getByLabelText('Lista de precios'), 'list-1')
     await user.selectOptions(screen.getByLabelText('Producto'), 'product-1')
@@ -100,6 +109,38 @@ describe('OrderCreatePage', () => {
     await waitFor(() => expect(attempts).toBe(2))
     expect(attempts).toBe(2)
     expect(sentBodies[1]).toBe(sentBodies[0])
+    expect(JSON.parse(sentBodies[0]).depotId).toBe('depot-north')
+  })
+
+  it('creates a new confirmation attempt if the selected depot changes after failure', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    const sentBodies: string[] = []
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/orders/confirm' && init?.method === 'POST') {
+        attempts += 1
+        sentBodies.push(String(init.body))
+        return Promise.reject(new Error(`Error de conexión ${attempts}`))
+      }
+      return catalogResponse(input)
+    })
+    renderPage(['ADMIN_ALL', 'ORDER_CREATE'])
+
+    await user.selectOptions(await screen.findByLabelText('Depósito para el pedido'), 'depot-central')
+    await user.selectOptions(screen.getByLabelText('Cliente'), 'customer-1')
+    await user.selectOptions(screen.getByLabelText('Lista de precios'), 'list-1')
+    await user.selectOptions(screen.getByLabelText('Producto'), 'product-1')
+    await user.click(screen.getByRole('button', { name: /agregar producto/i }))
+    await user.click(screen.getByRole('button', { name: /confirmar pedido/i }))
+    await screen.findByText('Error de conexión 1')
+    await user.selectOptions(screen.getByLabelText('Depósito para el pedido'), 'depot-north')
+    await user.click(screen.getByRole('button', { name: /confirmar pedido/i }))
+    await screen.findByText('Error de conexión 2')
+
+    expect(attempts).toBe(2)
+    expect(JSON.parse(sentBodies[0]).depotId).toBe('depot-central')
+    expect(JSON.parse(sentBodies[1]).depotId).toBe('depot-north')
+    expect(JSON.parse(sentBodies[0]).idempotencyKey).not.toBe(JSON.parse(sentBodies[1]).idempotencyKey)
   })
 
   it('shows price discounts only to admins', async () => {

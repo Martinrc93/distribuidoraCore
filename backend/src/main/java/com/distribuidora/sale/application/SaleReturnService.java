@@ -2,7 +2,6 @@ package com.distribuidora.sale.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
-import com.distribuidora.sale.api.SaleReturnDtos;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -21,6 +20,22 @@ import java.util.UUID;
 
 @Service
 public class SaleReturnService {
+    public interface ReturnCommand {
+        String reason();
+        List<? extends ReturnItemCommand> items();
+    }
+
+    public interface ReturnItemCommand {
+        UUID saleItemId();
+        BigDecimal quantity();
+    }
+
+    public record ReturnItemResult(UUID saleItemId, UUID productId, BigDecimal quantity) { }
+
+    public record ReturnResult(UUID returnId, UUID saleId, String reason, List<ReturnItemResult> items) {
+        public ReturnResult { items = List.copyOf(items); }
+    }
+
     private static final BigDecimal HALF = new BigDecimal("0.5");
 
     private final JdbcTemplate jdbc;
@@ -34,12 +49,12 @@ public class SaleReturnService {
     }
 
     @Transactional
-    public SaleReturnDtos.ReturnResponse create(UUID saleId, SaleReturnDtos.ReturnRequest request) {
+    public ReturnResult create(UUID saleId, ReturnCommand request) {
         UUID actorId = actorId();
         validate(saleId, request);
 
         Map<String, Object> sale = jdbc.queryForMap("""
-            select s.id, s.status as sale_status, o.status as order_status
+            select s.id, s.depot_id, s.status as sale_status, o.status as order_status
             from sale.sales s
             join orders.orders o on o.id = s.order_id
             where s.id = ?
@@ -50,7 +65,7 @@ public class SaleReturnService {
         }
 
         Set<UUID> requestedIds = new HashSet<>();
-        for (SaleReturnDtos.ReturnItemRequest item : request.items()) {
+        for (ReturnItemCommand item : request.items()) {
             if (item.saleItemId() == null || !requestedIds.add(item.saleItemId())) {
                 throw new IllegalArgumentException("Cada línea de venta debe aparecer una sola vez en la devolución");
             }
@@ -59,8 +74,8 @@ public class SaleReturnService {
             }
         }
 
-        List<SaleReturnDtos.ReturnItemResponse> resolved = new ArrayList<>();
-        for (SaleReturnDtos.ReturnItemRequest item : request.items()) {
+        List<ReturnItemResult> resolved = new ArrayList<>();
+        for (ReturnItemCommand item : request.items()) {
             List<Map<String, Object>> lines = jdbc.queryForList(
                 "select id, product_id, quantity from sale.sale_items where id = ? and sale_id = ?",
                 item.saleItemId(), saleId);
@@ -78,7 +93,7 @@ public class SaleReturnService {
             if (previouslyReturned.add(item.quantity()).compareTo(sold) > 0) {
                 throw new IllegalStateException("La cantidad solicitada supera la cantidad aún disponible para devolución");
             }
-            resolved.add(new SaleReturnDtos.ReturnItemResponse(
+            resolved.add(new ReturnItemResult(
                 item.saleItemId(), uuid(line.get("product_id")), item.quantity().setScale(4)));
         }
 
@@ -87,15 +102,15 @@ public class SaleReturnService {
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("insert into sale.returns(id, sale_id, returned_by, reason, created_at) values (?, ?, ?, ?, ?)",
             returnId, saleId, actorId, reason, now);
-        for (SaleReturnDtos.ReturnItemResponse item : resolved) {
+        for (ReturnItemResult item : resolved) {
             jdbc.update("insert into sale.return_items(id, return_id, sale_id, sale_item_id, product_id, quantity) values (?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID(), returnId, saleId, item.saleItemId(), item.productId(), item.quantity());
-            inventory.apply(item.productId(), item.quantity(), "RETURN", returnId, reason);
+            inventory.apply(uuid(sale.get("depot_id")), item.productId(), item.quantity(), "RETURN", returnId, reason);
         }
 
         audit.recordWithinTransaction(actorId, "SALE_RETURN", "SALE", saleId.toString(), "SUCCESS",
             Map.of("returnId", returnId.toString(), "itemCount", resolved.size(), "reason", reason));
-        return new SaleReturnDtos.ReturnResponse(returnId, saleId, reason, List.copyOf(resolved));
+        return new ReturnResult(returnId, saleId, reason, resolved);
     }
 
     private UUID actorId() {
@@ -110,7 +125,7 @@ public class SaleReturnService {
         }
     }
 
-    private void validate(UUID saleId, SaleReturnDtos.ReturnRequest request) {
+    private void validate(UUID saleId, ReturnCommand request) {
         if (saleId == null || request == null || request.reason() == null || request.reason().isBlank()
             || request.reason().length() > 500 || request.items() == null || request.items().isEmpty()) {
             throw new IllegalArgumentException("La venta, el motivo y al menos una línea son obligatorios");

@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,7 +31,9 @@ public class UserAdminController {
     @PostMapping("/invite")
     @PreAuthorize("hasAnyAuthority('USER_MANAGE', 'ADMIN_ALL')")
     public ResponseEntity<UserAdminDtos.InviteUserResponse> invite(@Valid @RequestBody UserAdminDtos.InviteUserRequest request) {
-        return ResponseEntity.status(201).body(service.invite(request));
+        UserAdminService.InviteUserResult result = service.invite(request);
+        return ResponseEntity.status(201).body(new UserAdminDtos.InviteUserResponse(
+            result.userId(), result.email(), result.activationToken(), result.expiresAt()));
     }
 
     @PostMapping("/{id}/revoke-sessions")
@@ -51,6 +54,14 @@ public class UserAdminController {
     @PreAuthorize("hasAnyAuthority('USER_MANAGE', 'ADMIN_ALL')")
     public ResponseEntity<Void> unblock(@PathVariable UUID id) {
         service.unblockUser(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/role")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<Void> changeRole(@PathVariable UUID id,
+                                           @Valid @RequestBody UserAdminDtos.ChangeRoleRequest request) {
+        service.changeRole(id, request.role().name());
         return ResponseEntity.noContent().build();
     }
 

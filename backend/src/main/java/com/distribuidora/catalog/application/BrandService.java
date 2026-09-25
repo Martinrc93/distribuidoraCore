@@ -1,7 +1,6 @@
 package com.distribuidora.catalog.application;
 
 import com.distribuidora.audit.application.AuditService;
-import com.distribuidora.catalog.api.CatalogAdminDtos;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,6 +16,13 @@ import java.util.UUID;
 
 @Service
 public class BrandService {
+    public interface BrandCommand {
+        String name();
+        String code();
+    }
+
+    public record BrandView(UUID id, String name, String code, String status, Instant createdAt, long productCount) { }
+
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
@@ -28,7 +34,7 @@ public class BrandService {
     }
 
     @Transactional
-    public UUID create(CatalogAdminDtos.CreateBrandRequest request) {
+    public UUID create(BrandCommand request) {
         if (request == null || request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("name es obligatorio");
         }
@@ -63,7 +69,7 @@ public class BrandService {
     }
 
     @Transactional
-    public void update(UUID id, CatalogAdminDtos.UpdateBrandRequest request) {
+    public void update(UUID id, BrandCommand request) {
         if (request == null || request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("name es obligatorio");
         }
@@ -122,14 +128,14 @@ public class BrandService {
         setStatus(id, "INACTIVE");
     }
 
-    public CatalogAdminDtos.BrandResponse getById(UUID id) {
-        List<CatalogAdminDtos.BrandResponse> list = jdbc.query("""
+    public BrandView getById(UUID id) {
+        List<BrandView> list = jdbc.query("""
             select b.id, b.name, b.code, b.status, b.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.brand_id = b.id) as "productCount"
             from catalog.brands b
             where b.id = ?
             """,
-            (rs, i) -> new CatalogAdminDtos.BrandResponse(
+            (rs, i) -> new BrandView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
                 rs.getString("code"),
@@ -145,7 +151,7 @@ public class BrandService {
         return list.getFirst();
     }
 
-    public List<CatalogAdminDtos.BrandResponse> list(String search, String status) {
+    public List<BrandView> list(String search, String status) {
         String term = "%" + (search == null ? "" : search.trim().toLowerCase(Locale.ROOT)) + "%";
         String state = status == null || status.isBlank() ? "%" : status.trim();
 
@@ -157,7 +163,7 @@ public class BrandService {
               and b.status like ?
             order by b.name
             """,
-            (rs, i) -> new CatalogAdminDtos.BrandResponse(
+            (rs, i) -> new BrandView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
                 rs.getString("code"),

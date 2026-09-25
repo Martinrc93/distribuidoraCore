@@ -10,6 +10,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
@@ -122,8 +123,7 @@ class PricingCommandServiceTest {
         UUID productId = UUID.randomUUID();
         UUID actorId = authenticate();
         BigDecimal price = new BigDecimal("10.2500");
-        when(jdbc.queryForObject(anyString(), eq(String.class), eq(listId))).thenReturn("ACTIVE");
-        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
+        stubActivePriceTarget(listId, productId);
 
         service.setProductPrice(listId, productId, price);
 
@@ -131,7 +131,33 @@ class PricingCommandServiceTest {
             eq("insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at) values (?, ?, ?, ?, ?) on conflict (price_list_id, product_id) do update set price = excluded.price, updated_at = excluded.updated_at"),
             eq(listId), eq(productId), eq(price), any(), any());
         verify(audit).record(eq(actorId), eq("PRODUCT_PRICE_UPDATE"), eq("PRODUCT_PRICE"),
-            eq(listId + ":" + productId), eq("SUCCESS"), eq(Map.of("price", price)));
+            eq(listId + ":" + productId), eq("SUCCESS"),
+            eq(Map.of("price", price, "effectiveOn", LocalDate.now().toString(), "scheduled", false)));
+    }
+
+    @Test
+    void schedulesAndAuditsFuturePrice() {
+        UUID listId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID actorId = authenticate();
+        LocalDate today = LocalDate.of(2026, 9, 24);
+        LocalDate effectiveOn = today.plusDays(10);
+        BigDecimal price = new BigDecimal("12.5000");
+        stubActivePriceTarget(listId, productId);
+        when(jdbc.queryForObject(eq("select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date"),
+            eq(LocalDate.class))).thenReturn(today);
+        when(jdbc.queryForList(anyString(), eq(UUID.class), eq(listId), eq(productId), eq(effectiveOn)))
+            .thenReturn(java.util.List.of());
+
+        service.setProductPrice(listId, productId, price, effectiveOn);
+
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("insert into catalog.product_price_history"),
+            any(), eq(listId), eq(productId), eq(price), eq(effectiveOn), any(), any());
+        verify(jdbc, org.mockito.Mockito.never()).update(org.mockito.ArgumentMatchers.contains("catalog.product_prices"),
+            org.mockito.ArgumentMatchers.<Object[]>any());
+        verify(audit).record(eq(actorId), eq("PRODUCT_PRICE_UPDATE"), eq("PRODUCT_PRICE"),
+            eq(listId + ":" + productId), eq("SUCCESS"),
+            eq(Map.of("price", price, "effectiveOn", effectiveOn.toString(), "scheduled", true)));
     }
 
     @Test
@@ -166,11 +192,24 @@ class PricingCommandServiceTest {
 
         when(jdbc.queryForObject(anyString(), eq(String.class), eq(listId))).thenReturn("ACTIVE");
         when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
+        when(jdbc.queryForObject(anyString(), eq(UUID.class), eq(productId))).thenReturn(productId);
+        when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(productId))).thenReturn(BigDecimal.ZERO);
+        when(jdbc.queryForObject(eq("select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date"),
+            eq(LocalDate.class))).thenReturn(LocalDate.now());
         service.setProductPrice(listId, productId, new BigDecimal("999999999999999.9999"));
 
         verify(jdbc).update(
             eq("insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at) values (?, ?, ?, ?, ?) on conflict (price_list_id, product_id) do update set price = excluded.price, updated_at = excluded.updated_at"),
             eq(listId), eq(productId), eq(new BigDecimal("999999999999999.9999")), any(), any());
+    }
+
+    private void stubActivePriceTarget(UUID listId, UUID productId) {
+        when(jdbc.queryForObject(anyString(), eq(UUID.class), eq(productId))).thenReturn(productId);
+        when(jdbc.queryForObject(anyString(), eq(String.class), eq(listId))).thenReturn("ACTIVE");
+        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
+        when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(productId))).thenReturn(BigDecimal.ZERO);
+        when(jdbc.queryForObject(eq("select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date"),
+            eq(LocalDate.class))).thenReturn(LocalDate.now());
     }
 
     private UUID authenticate() {

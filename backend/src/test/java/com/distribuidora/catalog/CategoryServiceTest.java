@@ -174,13 +174,13 @@ class CategoryServiceTest {
     @Test
     void getById_succeeds() {
         UUID categoryId = UUID.randomUUID();
-        CatalogAdminDtos.CategoryResponse response = new CatalogAdminDtos.CategoryResponse(
+        CategoryService.CategoryView response = new CategoryService.CategoryView(
             categoryId, "Bebidas", "BEBIDAS", "ACTIVE", Instant.now(), 25L
         );
         when(jdbc.query(anyString(), any(RowMapper.class), eq(categoryId)))
             .thenReturn(List.of(response));
 
-        CatalogAdminDtos.CategoryResponse result = service.getById(categoryId);
+        CategoryService.CategoryView result = service.getById(categoryId);
         assertThat(result.id()).isEqualTo(categoryId);
         assertThat(result.name()).isEqualTo("Bebidas");
         assertThat(result.productCount()).isEqualTo(25L);
@@ -189,13 +189,13 @@ class CategoryServiceTest {
     @Test
     void list_returnsResults() {
         UUID categoryId = UUID.randomUUID();
-        CatalogAdminDtos.CategoryResponse response = new CatalogAdminDtos.CategoryResponse(
+        CategoryService.CategoryView response = new CategoryService.CategoryView(
             categoryId, "Bebidas", "BEBIDAS", "ACTIVE", Instant.now(), 25L
         );
         when(jdbc.query(anyString(), any(RowMapper.class), any(), any(), any()))
             .thenReturn(List.of(response));
 
-        List<CatalogAdminDtos.CategoryResponse> results = service.list("beb", "ACTIVE");
+        List<CategoryService.CategoryView> results = service.list("beb", "ACTIVE");
         assertThat(results).hasSize(1);
     }
 }

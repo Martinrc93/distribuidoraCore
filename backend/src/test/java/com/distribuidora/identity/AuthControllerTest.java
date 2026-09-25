@@ -4,6 +4,7 @@ import com.distribuidora.identity.api.AuthController;
 import com.distribuidora.identity.api.AuthDtos;
 import com.distribuidora.identity.application.AuthService;
 import com.distribuidora.identity.application.InvalidRefreshTokenException;
+import com.distribuidora.identity.api.IdentityExceptionHandler;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,13 +24,13 @@ class AuthControllerTest {
     private final AuthService authService = mock(AuthService.class);
     private final AuthController controller = new AuthController(authService);
     private final MockMvc mockMvc = standaloneSetup(controller)
-        .setControllerAdvice(new ApiExceptionHandler())
+        .setControllerAdvice(new IdentityExceptionHandler(), new ApiExceptionHandler())
         .build();
 
     @Test
     void loginReturnsAccessTokenAndRefreshToken() throws Exception {
         when(authService.login(any())).thenReturn(
-            new AuthDtos.LoginResponse("access-123", "Bearer", 900L, "refresh-456")
+            new AuthService.LoginResult("access-123", "Bearer", 900L, "refresh-456")
         );
 
         mockMvc.perform(post("/api/auth/login")
@@ -52,7 +53,7 @@ class AuthControllerTest {
     @Test
     void refreshReturnsNewTokens() throws Exception {
         when(authService.refresh(any())).thenReturn(
-            new AuthDtos.LoginResponse("new-access-789", "Bearer", 900L, "new-refresh-999")
+            new AuthService.LoginResult("new-access-789", "Bearer", 900L, "new-refresh-999")
         );
 
         mockMvc.perform(post("/api/auth/refresh")

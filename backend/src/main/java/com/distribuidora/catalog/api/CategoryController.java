@@ -22,12 +22,12 @@ public class CategoryController {
     public ResponseEntity<List<CatalogAdminDtos.CategoryResponse>> list(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status) {
-        return ResponseEntity.ok(service.list(search, status));
+        return ResponseEntity.ok(service.list(search, status).stream().map(CategoryController::toResponse).toList());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<CatalogAdminDtos.CategoryResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(service.getById(id));
+        return ResponseEntity.ok(toResponse(service.getById(id)));
     }
 
     @PostMapping
@@ -56,5 +56,10 @@ public class CategoryController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.deactivate(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private static CatalogAdminDtos.CategoryResponse toResponse(CategoryService.CategoryView view) {
+        return new CatalogAdminDtos.CategoryResponse(view.id(), view.name(), view.code(), view.status(),
+            view.createdAt(), view.productCount());
     }
 }

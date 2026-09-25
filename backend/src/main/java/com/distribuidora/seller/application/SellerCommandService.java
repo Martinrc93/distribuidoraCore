@@ -1,7 +1,6 @@
 package com.distribuidora.seller.application;
 
 import com.distribuidora.audit.application.AuditService;
-import com.distribuidora.seller.api.SellerDtos;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,6 +16,26 @@ import java.util.UUID;
 
 @Service
 public class SellerCommandService {
+    public interface CreateSellerCommand { UUID userId(); String displayName(); }
+    public interface UpdateSellerCommand { String displayName(); }
+    public interface ReassignCustomersCommand {
+        UUID sourceSellerId();
+        UUID targetSellerId();
+        List<UUID> customerIds();
+        Boolean reassignPendingOrders();
+    }
+    public interface ReassignOrdersCommand {
+        UUID targetSellerId();
+        List<UUID> orderIds();
+        Boolean onlyPending();
+    }
+
+    public record SellerView(UUID id, UUID userId, String displayName, String email, String status,
+                             Instant createdAt, long assignedCustomersCount) { }
+    public record ReassignCustomersResult(UUID sourceSellerId, UUID targetSellerId,
+                                         int reassignedCustomersCount, int reassignedOrdersCount) { }
+    public record ReassignOrdersResult(UUID targetSellerId, int reassignedOrdersCount) { }
+
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
@@ -28,7 +47,7 @@ public class SellerCommandService {
     }
 
     @Transactional
-    public UUID create(SellerDtos.CreateSellerRequest request) {
+    public UUID create(CreateSellerCommand request) {
         if (request == null || request.userId() == null || request.displayName() == null || request.displayName().isBlank()) {
             throw new IllegalArgumentException("userId y displayName son obligatorios");
         }
@@ -81,7 +100,7 @@ public class SellerCommandService {
     }
 
     @Transactional
-    public void update(UUID id, SellerDtos.UpdateSellerRequest request) {
+    public void update(UUID id, UpdateSellerCommand request) {
         if (request == null || request.displayName() == null || request.displayName().isBlank()) {
             throw new IllegalArgumentException("displayName es obligatorio");
         }
@@ -146,8 +165,8 @@ public class SellerCommandService {
         return ids.isEmpty() ? Optional.empty() : Optional.of(ids.getFirst());
     }
 
-    public Optional<SellerDtos.SellerResponse> findSellerById(UUID id) {
-        List<SellerDtos.SellerResponse> sellers = jdbc.query("""
+    public Optional<SellerView> findSellerById(UUID id) {
+        List<SellerView> sellers = jdbc.query("""
             select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
                    u.email, sp.status, sp.created_at as "createdAt",
                    (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
@@ -155,7 +174,7 @@ public class SellerCommandService {
             join identity.users u on u.id = sp.user_id
             where sp.id = ?
             """,
-            (rs, i) -> new SellerDtos.SellerResponse(
+            (rs, i) -> new SellerView(
                 rs.getObject("id", UUID.class),
                 rs.getObject("userId", UUID.class),
                 rs.getString("displayName"),
@@ -170,7 +189,7 @@ public class SellerCommandService {
     }
 
     @Transactional
-    public SellerDtos.ReassignCustomersResponse reassignCustomers(SellerDtos.ReassignCustomersRequest request) {
+    public ReassignCustomersResult reassignCustomers(ReassignCustomersCommand request) {
         if (request == null || request.sourceSellerId() == null || request.targetSellerId() == null) {
             throw new IllegalArgumentException("sourceSellerId y targetSellerId son obligatorios");
         }
@@ -250,7 +269,7 @@ public class SellerCommandService {
             )
         );
 
-        return new SellerDtos.ReassignCustomersResponse(
+        return new ReassignCustomersResult(
             request.sourceSellerId(),
             request.targetSellerId(),
             reassignedCustomers,
@@ -259,7 +278,7 @@ public class SellerCommandService {
     }
 
     @Transactional
-    public SellerDtos.ReassignOrdersResponse reassignOrders(SellerDtos.ReassignOrdersRequest request) {
+    public ReassignOrdersResult reassignOrders(ReassignOrdersCommand request) {
         if (request == null || request.targetSellerId() == null || request.orderIds() == null || request.orderIds().isEmpty()) {
             throw new IllegalArgumentException("targetSellerId y orderIds son obligatorios");
         }
@@ -301,7 +320,7 @@ public class SellerCommandService {
             )
         );
 
-        return new SellerDtos.ReassignOrdersResponse(
+        return new ReassignOrdersResult(
             request.targetSellerId(),
             reassignedOrders
         );

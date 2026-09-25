@@ -20,6 +20,17 @@ describe('UsersPage', () => {
   afterEach(() => { cleanup(); sessionStorage.clear() })
   beforeEach(() => vi.restoreAllMocks())
 
+  it('shows returned roles as read-only labels and preserves unknown role codes', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/users?')
+      ? response({ ...users, content: [{ ...users.content[0], roles: 'SELLER,UNKNOWN_ROLE' }] })
+      : response({}))
+    renderUsers()
+
+    expect(await screen.findByText('Vendedor')).toBeInTheDocument()
+    expect(screen.getByText('UNKNOWN_ROLE')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /cambiar rol|permisos/i })).not.toBeInTheDocument()
+  })
+
   it('invites a user with role and provides an activation link', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {

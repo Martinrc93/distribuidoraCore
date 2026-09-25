@@ -286,7 +286,7 @@ class SellerCommandServiceTest {
         when(jdbc.update(eq("update orders.orders set seller_id = ? where seller_id = ? and status = 'CONFIRMED'"), eq(target), eq(source)))
             .thenReturn(3);
 
-        SellerDtos.ReassignCustomersResponse response = service.reassignCustomers(
+        SellerCommandService.ReassignCustomersResult response = service.reassignCustomers(
             new SellerDtos.ReassignCustomersRequest(source, target, null, true)
         );
 
@@ -314,7 +314,7 @@ class SellerCommandServiceTest {
 
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(2);
 
-        SellerDtos.ReassignCustomersResponse response = service.reassignCustomers(
+        SellerCommandService.ReassignCustomersResult response = service.reassignCustomers(
             new SellerDtos.ReassignCustomersRequest(source, target, List.of(c1, c2), false)
         );
 
@@ -345,7 +345,7 @@ class SellerCommandServiceTest {
             .thenReturn("ACTIVE");
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(2);
 
-        SellerDtos.ReassignOrdersResponse response = service.reassignOrders(
+        SellerCommandService.ReassignOrdersResult response = service.reassignOrders(
             new SellerDtos.ReassignOrdersRequest(target, List.of(o1, o2), true)
         );
 

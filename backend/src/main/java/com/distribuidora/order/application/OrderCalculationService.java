@@ -1,6 +1,5 @@
 package com.distribuidora.order.application;
 
-import com.distribuidora.order.api.OrderConfirmationDtos;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -50,13 +49,13 @@ public class OrderCalculationService {
     public OrderCalculation calculate(
         List<CalculatedLine> lines,
         BigDecimal orderDiscountPercent,
-        List<OrderConfirmationDtos.PaymentRequest> payments
+        List<? extends OrderConfirmationService.PaymentCommand> payments
     ) {
         OrderCalculation calculation = calculate(lines, orderDiscountPercent);
         BigDecimal paid = zero();
         BigDecimal paymentTotal = zero();
         if (payments != null) {
-            for (OrderConfirmationDtos.PaymentRequest payment : payments) {
+            for (OrderConfirmationService.PaymentCommand payment : payments) {
                 if (payment == null || payment.amount() == null || payment.amount().signum() <= 0) {
                     throw new IllegalArgumentException("El importe del pago debe ser positivo");
                 }

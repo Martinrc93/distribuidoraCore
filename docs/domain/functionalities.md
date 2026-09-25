@@ -29,8 +29,8 @@ El sistema es una aplicación para una empresa por instancia. Incluye:
 - Auditoría de operaciones.
 
 No se implementan actualmente impuestos, facturación electrónica, proveedores,
-compras, múltiples depósitos, reportes, dashboard, notificaciones generales ni
-portal de clientes.
+compras, reportes analíticos avanzados, notificaciones generales ni portal de
+clientes. El dashboard operativo básico sí está disponible.
 
 ## Módulos funcionales
 
@@ -163,7 +163,7 @@ Reglas:
   cuenta corriente se ajusta por el cambio de total. No se permite reducir el
   total por debajo del importe pagado.
 
-Tipos iniciales de movimiento:
+Tipos de movimiento:
 
 ```text
 SALE
@@ -171,10 +171,15 @@ SALE_CANCELLATION
 MANUAL_ENTRY
 MANUAL_ADJUSTMENT
 RETURN
+TRANSFER_OUT
+TRANSFER_IN
 ```
 
-La estructura debe permitir incorporar depósitos en el futuro, pero no se
-implementa multi-depósito actualmente.
+Cada saldo pertenece a un depósito y producto. `CENTRAL` es el predeterminado;
+V23 migró allí los saldos y operaciones existentes. Los pedidos guardan el
+depósito seleccionado, las transferencias crean movimientos pareados bajo lock
+de ambos saldos y las devoluciones/cancelaciones reponen el stock donde se
+descontó. El contrato está en [`docs/api/inventory.md`](../api/inventory.md).
 
 ### Order
 
@@ -447,7 +452,6 @@ Quedan fuera del alcance actual, pero no deben bloquearse arquitectónicamente:
 - Impuestos y facturación electrónica ARCA.
 - Reportes y dashboard.
 - Notificaciones generales.
-- Múltiples depósitos.
 - Proveedores y compras.
 - Medios de pago adicionales.
 - Portal de clientes.

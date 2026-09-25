@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,7 +61,7 @@ class UserAdminServiceTest {
             "Vendedor Uno"
         );
 
-        UserAdminDtos.InviteUserResponse response = service.invite(request);
+        UserAdminService.InviteUserResult response = service.invite(request);
 
         assertThat(response.userId()).isNotNull();
         assertThat(response.email()).isEqualTo("seller@distribuidora.local");
@@ -78,6 +79,41 @@ class UserAdminServiceTest {
         // Verify audit
         verify(audit).recordWithinTransaction(eq(currentAdminId), eq("USER_INVITE"), eq("USER"),
             eq(response.userId().toString()), eq("SUCCESS"), any());
+    }
+
+    @Test
+    void roleChangeCannotRemoveTheLastActiveAdministrator() {
+        UUID userId = UUID.randomUUID();
+        when(jdbc.queryForObject("select id from identity.roles where code = 'ADMIN' for update", UUID.class))
+            .thenReturn(UUID.randomUUID());
+        when(jdbc.queryForObject("select status from identity.users where id = ? for update", String.class, userId))
+            .thenReturn("ACTIVE");
+        when(jdbc.queryForList(anyString(), eq(String.class), eq(userId)))
+            .thenReturn(List.of("ADMIN"), List.of("ACTIVE"));
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(userId))).thenReturn(0L);
+
+        assertThatThrownBy(() -> service.changeRole(userId, UserAdminDtos.Role.SELLER.name()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("último administrador activo");
+
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void lastActiveAdministratorCannotBeBlocked() {
+        UUID userId = UUID.randomUUID();
+        when(jdbc.queryForObject("select id from identity.roles where code = 'ADMIN' for update", UUID.class))
+            .thenReturn(UUID.randomUUID());
+        when(jdbc.queryForObject("select status from identity.users where id = ? for update", String.class, userId))
+            .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(userId))).thenReturn(true);
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(userId))).thenReturn(0L);
+
+        assertThatThrownBy(() -> service.blockUser(userId))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("último administrador activo");
+
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never()).update(anyString(), any(Object[].class));
     }
 
     @Test
@@ -115,8 +151,11 @@ class UserAdminServiceTest {
     @Test
     void blockUserUpdatesStatusAndRevokesSessions() {
         UUID targetUserId = UUID.randomUUID();
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(targetUserId)))
-            .thenReturn(true);
+        when(jdbc.queryForObject("select id from identity.roles where code = 'ADMIN' for update", UUID.class))
+            .thenReturn(UUID.randomUUID());
+        when(jdbc.queryForObject("select status from identity.users where id = ? for update", String.class, targetUserId))
+            .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(targetUserId))).thenReturn(false);
 
         service.blockUser(targetUserId);
 

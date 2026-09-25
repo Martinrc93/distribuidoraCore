@@ -21,7 +21,7 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 }
 ```
 
-`priceListId` es opcional. Si se omite, cada precio se resuelve con la lista asignada al cliente o `GENERAL`; también aplica el fallback de listas ya definido por pricing. El override de precio y los descuentos por línea/orden requieren `ADMIN_ALL`. Las cantidades deben ser positivas y múltiplos de `0.5`; una solicitud vacía no está permitida.
+`priceListId` es opcional. Si se omite, cada precio se resuelve con la lista asignada al cliente o `GENERAL`; también aplica el fallback de listas ya definido por pricing. Si los porcentajes por línea y orden son cero, la edición usa las reglas persistidas vigentes definidas en [`pricing.md`](pricing.md). Un porcentaje manual mayor que cero o un override de precio requiere `ADMIN_ALL`. Las cantidades deben ser positivas y múltiplos de `0.5`; una solicitud vacía no está permitida.
 
 ## Reglas comerciales
 
@@ -30,8 +30,10 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 - Se reemplazan los snapshots de líneas de pedido y venta con los precios y descuentos calculados para esta edición.
 - El ledger de la venta se ajusta por la diferencia entre el total nuevo y el total anterior con un asiento append-only `DEBIT` o `CREDIT`; así se conservan pagos a cuenta previamente imputados. El balance agregado del cliente se ajusta por el mismo delta.
 - La diferencia de cantidades por producto genera movimientos compensatorios: más unidades vendidas crea `SALE` negativo; reducción o eliminación de unidades crea `SALE_CANCELLATION` positivo.
+- El depósito elegido al confirmar el pedido se conserva; la edición aplica esos deltas en el mismo depósito y no permite cambiarlo.
 - Todos los cambios de líneas, stock, ledger, balance y auditoría `ORDER_EDIT` ocurren en una transacción. Si falla una parte, no persisten cambios parciales.
 - La cancelación posterior revierte el efecto neto por producto de movimientos `SALE` y `SALE_CANCELLATION`, incluso si el pedido tuvo ediciones previas.
+- La reversión agrupa los movimientos por depósito y producto, para reponer exactamente donde se descontó.
 
 Respuesta `200 OK`:
 

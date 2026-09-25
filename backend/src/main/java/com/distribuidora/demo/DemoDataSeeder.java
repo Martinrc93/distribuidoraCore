@@ -84,6 +84,18 @@ public class DemoDataSeeder implements ApplicationRunner {
             WHERE price_lists.status = 'ACTIVE'
             ON CONFLICT (price_list_id, product_id) DO NOTHING
             """);
+        jdbc.update("""
+            INSERT INTO catalog.product_price_history
+                (id, price_list_id, product_id, price, effective_on, created_at, updated_at)
+            SELECT gen_random_uuid(), pp.price_list_id, pp.product_id, pp.price,
+                   (CURRENT_TIMESTAMP AT TIME ZONE 'America/Argentina/Buenos_Aires')::date,
+                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM catalog.product_prices pp
+            WHERE NOT EXISTS (
+                SELECT 1 FROM catalog.product_price_history h
+                WHERE h.price_list_id = pp.price_list_id AND h.product_id = pp.product_id
+            )
+            """);
     }
 
     private List<SeedUser> insertUsers(String hash, String prefix, int count) {
@@ -142,7 +154,8 @@ public class DemoDataSeeder implements ApplicationRunner {
                 """, id, "SKU-%04d".formatted(index), "Producto Demo %03d".formatted(index),
                 categories[index % categories.length], "Unidad", cost, timestamp(Instant.now()));
             BigDecimal stock = BigDecimal.valueOf(20 + (index % 80));
-            jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, ?, ?)", id, stock, timestamp(Instant.now()));
+            jdbc.update("insert into inventory.inventory_balances(depot_id, product_id, quantity, updated_at) values (?, ?, ?, ?)",
+                com.distribuidora.inventory.application.InventoryMovementService.DEFAULT_DEPOT_ID, id, stock, timestamp(Instant.now()));
             jdbc.update("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, created_at) values (?, ?, 'MANUAL_ENTRY', ?, ?, 'DEMO_SEED', ?)",
                 UUID.randomUUID(), id, stock, "Carga inicial demo", timestamp(Instant.now()));
         }
@@ -178,11 +191,18 @@ public class DemoDataSeeder implements ApplicationRunner {
             for (int line = 0; line < lineCount; line++) {
                 UUID productId = products.get(random.nextInt(products.size()));
                 Map<String, Object> product = jdbc.queryForMap("""
-                    select p.name, pp.price
+                    select p.name, current_price.price
                     from catalog.products p
-                    join catalog.product_prices pp on pp.product_id = p.id
-                    where p.id = ? and pp.price_list_id = ?
-                    """, productId, generalPriceListId);
+                    join lateral (
+                        select h.price
+                        from catalog.product_price_history h
+                        where h.product_id = p.id and h.price_list_id = ?
+                          and h.effective_on <= (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date
+                        order by h.effective_on desc, h.created_at desc, h.id desc
+                        limit 1
+                    ) current_price on true
+                    where p.id = ?
+                    """, generalPriceListId, productId);
                 BigDecimal quantity = BigDecimal.valueOf(1 + random.nextInt(8));
                 BigDecimal price = (BigDecimal) product.get("price");
                 BigDecimal lineTotal = price.multiply(quantity).setScale(4);
@@ -199,7 +219,8 @@ public class DemoDataSeeder implements ApplicationRunner {
                     UUID.randomUUID(), orderId, line.productId(), line.name(), line.quantity(), line.price(), line.total(), generalPriceListId, "GENERAL", BigDecimal.ZERO.setScale(4));
                 jdbc.update("insert into sale.sale_items(id, sale_id, product_id, product_name, quantity, unit_price, line_total, price_list_id, price_list_code, line_discount_percent) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     UUID.randomUUID(), saleId, line.productId(), line.name(), line.quantity(), line.price(), line.total(), generalPriceListId, "GENERAL", BigDecimal.ZERO.setScale(4));
-                jdbc.update("update inventory.inventory_balances set quantity = quantity - ?, updated_at = ? where product_id = ?", line.quantity(), timestamp(Instant.now()), line.productId());
+                jdbc.update("update inventory.inventory_balances set quantity = quantity - ?, updated_at = ? where depot_id = ? and product_id = ?",
+                    line.quantity(), timestamp(Instant.now()), com.distribuidora.inventory.application.InventoryMovementService.DEFAULT_DEPOT_ID, line.productId());
                 jdbc.update("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, 'SALE', ?, ?, 'SALE', ?, ?)",
                     UUID.randomUUID(), line.productId(), line.quantity().negate(), "Venta demo", saleId, timestamp(createdAt));
             }

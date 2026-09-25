@@ -1,4 +1,4 @@
-package com.distribuidora.shared.security;
+package com.distribuidora.identity.security;
 
 import com.distribuidora.identity.domain.UserAccount;
 import io.jsonwebtoken.Claims;

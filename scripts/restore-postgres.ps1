@@ -10,9 +10,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $BackupPath -PathType Leaf)) { throw "No existe el backup: $BackupPath" }
-if ([string]::IsNullOrWhiteSpace($env:DB_PASSWORD) -and [string]::IsNullOrWhiteSpace($env:POSTGRES_PASSWORD)) {
-    throw 'Defina DB_PASSWORD o POSTGRES_PASSWORD; la contraseña no se pasa por argumentos.'
-}
 $dbPassword = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } else { $env:POSTGRES_PASSWORD }
 $pgBin = $env:PG_BIN
 $pgRestore = if ($pgBin) { Join-Path $pgBin 'pg_restore.exe' } else { (Get-Command pg_restore -ErrorAction Stop).Source }
@@ -25,7 +22,8 @@ try {
     $resolvedBackup = (Resolve-Path -LiteralPath $BackupPath).Path
     $null = Test-BackupArchive -InputPath $resolvedBackup
     Unprotect-BackupArchive -InputPath $resolvedBackup -OutputPath $plainDump
-    $env:PGPASSWORD = $dbPassword
+    if ($dbPassword) { $env:PGPASSWORD = $dbPassword }
+    else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
     $list = & $pgRestore --list $plainDump 2>&1
     if ($LASTEXITCODE -ne 0 -or -not ($list -match 'TABLE')) { throw 'pg_restore rechazó el backup o no encontró objetos restaurables.' }
     $action = "Restaurar backup sobre PostgreSQL $PgHost`:$Port/$TargetDatabase (reemplaza objetos existentes)"

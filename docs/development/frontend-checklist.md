@@ -1,6 +1,6 @@
 # Frontend Development Checklist
 
-Estado actualizado: 2026-09-24
+Estado actualizado: 2026-09-25
 
 ## Cómo Leerlo
 
@@ -58,6 +58,8 @@ Estado actualizado: 2026-09-24
 - [x] Quitar el precio general del producto; gestionar precios por lista.
 - [x] Editar costo y solicitar reemplazo solo para listas activas afectadas.
 - [x] Administrar marcas/categorías y asociarlas opcionalmente al producto.
+- [x] Programar vigencias de precios por fecha efectiva; consultar historial paginado y cancelar vigencias futuras.
+- [x] Administrar reglas de descuento por línea/pedido, alcance, vigencia y prioridad (`ADMIN_ALL`).
 - [x] Manejar `403`, `404` y `409` con mensajes accionables.
 
 ## Inventory
@@ -69,6 +71,10 @@ Estado actualizado: 2026-09-24
 - [x] Ocultar ajustes para usuarios sin `STOCK_ADJUST`.
 - [x] Confirmación antes de aplicar ajuste.
 - [x] Feedback de éxito e invalidación de consultas.
+- [x] Selector y administración de depósitos, búsqueda y balances paginados por depósito (`ADMIN_ALL`).
+- [x] Ajustar inventario en el depósito seleccionado y mostrar el saldo correspondiente.
+- [x] Transferir entre depósitos activos con saldo de origen, validación previa, motivo y confirmación (`STOCK_ADJUST`).
+- [x] Identificar el depósito en movimientos y refrescar balances tras ajustes/transferencias.
 
 ## Orders
 
@@ -78,9 +84,10 @@ Estado actualizado: 2026-09-24
 - [x] Preview de líneas/descuentos sin sustituir el backend.
 - [x] Mostrar descuentos y precios manuales solo a `ADMIN_ALL`.
 - [x] `idempotencyKey` por intento, bloqueo de doble envío y retry con clave/payload iguales.
+- [x] Seleccionar depósito para administradores; conservar `depotId` en retry e invalidar el intento al cambiar depósito. Otros usuarios usan `CENTRAL` del backend.
 - [x] Confirmación contra `/api/orders/confirm`; render de números, total, cobrado, saldo y warning de crédito.
 - [x] Detalle de pedido/venta con snapshots, pagos y ledger asociado a la venta.
-- [~] Edición administrativa disponible si no hay descuentos guardados y se usa una sola lista; GET no expone el porcentaje de descuento general original.
+- [~] Edición administrativa disponible si no hay descuentos guardados y se usa una sola lista; el detalle ya expone descuento/regla general, pero la UI aún no preserva reglas automáticas al editar.
 - [~] Advertencia antes de abandonar cubre navegación del navegador, no toda navegación interna.
 
 ## Sales, Payments Y Cuenta Corriente
@@ -93,6 +100,11 @@ Estado actualizado: 2026-09-24
 - [ ] Aplicar pago a una deuda específica (falta consulta de deudas por `customerId`).
 - [ ] Devolver venta desde la UI (falta lectura de líneas por `saleId`).
 - [ ] Corregir/revertir pago (no existe endpoint de comando).
+
+## Administración De Usuarios
+
+- [x] Mostrar roles devueltos por API como etiquetas de solo lectura, conservando códigos desconocidos.
+- [ ] Reasignar roles y editar permisos (API disponible, funcionalidad aplazada por decisión del usuario).
 
 ## Delivery, Documents Y Notifications
 
@@ -124,7 +136,9 @@ Estado actualizado: 2026-09-24
 3. [x] Completar edición/baja de productos y ajustes de inventario.
 4. [~] Completar ventas/pagos y cuenta corriente; faltan deuda específica y devoluciones con líneas.
 5. [~] Implementar entrega, cancelación, documentos y notificaciones; falta historial de intentos.
-6. [~] Tests Vitest de API client y flujos principales; E2E aún pendiente.
+6. [x] Conectar vigencias/reglas de precio y flujos de inventario multi-depósito al frontend.
+7. [x] Mostrar rol actual en usuarios; conservar edición de roles/permisos como pendiente aplazado.
+8. [~] Tests Vitest de API client y flujos principales; E2E aún pendiente.
 
 ## Criterio De Cierre Frontend
 

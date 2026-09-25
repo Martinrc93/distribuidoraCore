@@ -24,12 +24,15 @@ public class NotificationController {
     @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
     public NotificationDtos.CreateResponse create(@PathVariable UUID orderId,
                                                    @RequestBody NotificationDtos.CreateRequest request) {
-        return service.request(orderId, request);
+        NotificationRequestService.CreateNotificationResult result = service.request(orderId, request);
+        return new NotificationDtos.CreateResponse(result.requestId(), result.status());
     }
 
     @GetMapping("/{requestId}")
     @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
     public NotificationDtos.StatusResponse status(@PathVariable UUID orderId, @PathVariable UUID requestId) {
-        return service.status(orderId, requestId);
+        NotificationRequestService.NotificationStatus result = service.status(orderId, requestId);
+        return new NotificationDtos.StatusResponse(result.requestId(), result.status(), result.attemptCount(),
+            result.requestedAt(), result.sentAt(), result.lastError());
     }
 }

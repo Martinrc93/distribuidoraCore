@@ -25,6 +25,12 @@ public class AccountPaymentController {
     @PreAuthorize("hasAnyAuthority('SALE_PAYMENT', 'ADMIN_ALL')")
     public ResponseEntity<AccountPaymentDtos.PaymentResponse> apply(
         @PathVariable UUID customerId, @Valid @RequestBody AccountPaymentDtos.PaymentRequest request) {
-        return ResponseEntity.status(201).body(service.apply(customerId, request));
+        AccountPaymentService.PaymentResult result = service.apply(customerId, request);
+        var allocations = result.allocations().stream()
+            .map(item -> new AccountPaymentDtos.Allocation(item.saleId(), item.saleNumber(), item.paymentId(), item.amount()))
+            .toList();
+        return ResponseEntity.status(201).body(new AccountPaymentDtos.PaymentResponse(
+            result.customerId(), result.received(), result.balanceBefore(), result.balanceAfter(),
+            result.allocationMode(), allocations));
     }
 }

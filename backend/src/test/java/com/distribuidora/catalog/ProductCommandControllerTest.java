@@ -5,6 +5,7 @@ import com.distribuidora.catalog.application.ProductCommandService;
 import com.distribuidora.catalog.application.ProductCommandService.ProductInput;
 import com.distribuidora.catalog.application.ProductPriceValidationException;
 import com.distribuidora.catalog.application.ProductPriceValidationException.AffectedPriceList;
+import com.distribuidora.catalog.api.CatalogExceptionHandler;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -35,7 +36,7 @@ class ProductCommandControllerTest {
     private final ProductCommandService service = mock(ProductCommandService.class);
     private final ProductCommandController controller = new ProductCommandController(service);
     private final MockMvc mockMvc = standaloneSetup(controller)
-        .setControllerAdvice(new ApiExceptionHandler())
+        .setControllerAdvice(new CatalogExceptionHandler(), new ApiExceptionHandler())
         .build();
 
     @Test

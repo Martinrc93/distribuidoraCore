@@ -11,6 +11,8 @@ function response(body: unknown, status = 200) {
 }
 const inventory = { content: [{ id: 'product-1', product: 'Harina', stock: 0.25, lastMovement: 'PURCHASE', updated: '2026-09-24T10:00:00Z' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const movements = { content: [{ id: 'movement-1', movementType: 'SALE', quantity: -1, reason: 'Pedido PED-001', referenceType: 'ORDER', referenceId: 'order-1', date: '2026-09-24T10:00:00Z' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
+const depots = [{ id: 'depot-central', code: 'CENTRAL', name: 'Depósito Central', status: 'ACTIVE', isDefault: true }]
+const depotBalances = { content: [{ productId: 'product-1', sku: 'SKU-1', product: 'Harina', stock: 0.25 }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
 function renderPage(authorities = ['ADMIN_ALL', 'STOCK_ADJUST']) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -36,6 +38,8 @@ describe('InventoryPage', () => {
   it('requires half-unit adjustment, confirms negative balance and refreshes inventory', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/inventory/depots') return response(depots)
+      if (String(input).startsWith('/api/inventory/depots/') && String(input).includes('/balances?')) return response(depotBalances)
       if (String(input) === '/api/inventory?page=0&size=20' && !init?.method) return response(inventory)
       if (String(input) === '/api/inventory/product-1/adjustments' && init?.method === 'POST') return response({}, 204)
       if (String(input).includes('/movements')) return response(movements)
@@ -56,9 +60,10 @@ describe('InventoryPage', () => {
     expect(screen.getByText(/el saldo quedará negativo/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar ajuste/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/inventory/product-1/adjustments', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ quantity: -0.5, reason: 'Corrección de conteo' }),
+      method: 'POST', body: JSON.stringify({ quantity: -0.5, reason: 'Corrección de conteo', depotId: 'depot-central' }),
     })))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/inventory?page=0&size=20'] })
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('Ajuste de inventario registrado.')).toBeInTheDocument()
   })
 

@@ -58,8 +58,8 @@ class PricingQueryServiceTest {
         assertThat(response.totalElements()).isEqualTo(4);
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).queryForList(sql.capture(), any(Object[].class));
-        assertThat(sql.getValue()).contains("pp.created_at as \"createdAt\"")
-            .contains("pp.updated_at as \"updatedAt\"");
+        assertThat(sql.getValue()).contains("\"effectiveOn\"")
+            .contains("catalog.product_price_history");
     }
 
     @Test
@@ -141,7 +141,7 @@ class PricingQueryServiceTest {
         customer.put("price_list_id", listId);
         when(jdbc.queryForMap(anyString(), any(Object[].class)))
             .thenReturn(customer, Map.of("id", listId, "code", "LISTA_3", "status", "ACTIVE"));
-        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("product_prices"), any(Object[].class)))
+        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("product_price_history"), any(Object[].class)))
             .thenThrow(new EmptyResultDataAccessException(1))
             .thenReturn(Map.of("priceListId", previousListId, "priceListCode", "LISTA_2",
                 "productId", productId, "unitPrice", new BigDecimal("11.0000")));

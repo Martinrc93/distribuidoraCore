@@ -99,7 +99,7 @@ más antiguo. El límite global solo genera advertencias y no bloquea la venta.
 
 ## Estado del dominio
 
-Los impuestos, ARCA, compras, proveedores, múltiples depósitos, reportes,
-dashboard, portal de clientes y layouts configurables de
-impresión quedan fuera del alcance inicial. El historial de costos ha sido
+Los impuestos, ARCA, compras, proveedores, reportes analíticos avanzados,
+portal de clientes y layouts configurables de impresión quedan fuera del
+alcance inicial. El dashboard operativo básico está implementado. El historial de costos ha sido
 eliminado del alcance funcional del sistema.

@@ -1,7 +1,6 @@
 package com.distribuidora.settings.application;
 
 import com.distribuidora.audit.application.AuditService;
-import com.distribuidora.settings.api.BusinessSettingsDtos;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -18,6 +17,12 @@ import java.util.UUID;
 
 @Service
 public class BusinessSettingsService {
+    public interface CreditLimitCommand {
+        BigDecimal creditLimit();
+    }
+
+    public record CreditLimitResult(BigDecimal creditLimit, boolean enabled, Instant updatedAt, UUID updatedBy) { }
+
     private final JdbcTemplate jdbc;
     private final AuditService audit;
 
@@ -26,20 +31,20 @@ public class BusinessSettingsService {
         this.audit = audit;
     }
 
-    public BusinessSettingsDtos.CreditLimitResponse creditLimit() {
+    public CreditLimitResult creditLimit() {
         requireAdmin();
         Map<String, Object> row = jdbc.queryForMap(
             "select credit_limit, updated_at, updated_by from app.business_settings where id = 1");
         BigDecimal limit = (BigDecimal) row.get("credit_limit");
         Object updatedAt = row.get("updated_at");
         Object updatedBy = row.get("updated_by");
-        return new BusinessSettingsDtos.CreditLimitResponse(limit, limit != null,
+        return new CreditLimitResult(limit, limit != null,
             updatedAt instanceof Timestamp timestamp ? timestamp.toInstant() : null,
             updatedBy instanceof UUID uuid ? uuid : updatedBy == null ? null : UUID.fromString(String.valueOf(updatedBy)));
     }
 
     @Transactional
-    public BusinessSettingsDtos.CreditLimitResponse updateCreditLimit(BusinessSettingsDtos.CreditLimitRequest request) {
+    public CreditLimitResult updateCreditLimit(CreditLimitCommand request) {
         requireAdmin();
         if (request == null || request.creditLimit() != null
             && (request.creditLimit().signum() < 0 || request.creditLimit().scale() > 4)) {
@@ -56,7 +61,7 @@ public class BusinessSettingsService {
         details.put("creditLimit", request.creditLimit());
         details.put("enabled", request.creditLimit() != null);
         audit.recordWithinTransaction(actor, "GLOBAL_CREDIT_LIMIT_UPDATE", "BUSINESS_SETTINGS", "1", "SUCCESS", details);
-        return new BusinessSettingsDtos.CreditLimitResponse(request.creditLimit(), request.creditLimit() != null,
+        return new CreditLimitResult(request.creditLimit(), request.creditLimit() != null,
             now.toInstant(), actor);
     }
 

@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import com.distribuidora.sale.application.SaleReturnService;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,12 +19,12 @@ public final class SaleReturnDtos {
     public record ReturnRequest(
         @NotBlank @Size(max = 500) String reason,
         @NotEmpty List<@NotNull @Valid ReturnItemRequest> items
-    ) { }
+    ) implements SaleReturnService.ReturnCommand { }
 
     public record ReturnItemRequest(
         @NotNull UUID saleItemId,
         @NotNull @DecimalMin(value = "0", inclusive = false) BigDecimal quantity
-    ) { }
+    ) implements SaleReturnService.ReturnItemCommand { }
 
     public record ReturnItemResponse(UUID saleItemId, UUID productId, BigDecimal quantity) { }
 

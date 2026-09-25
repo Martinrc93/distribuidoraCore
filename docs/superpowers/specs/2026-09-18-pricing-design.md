@@ -17,7 +17,12 @@ Incluye:
 - Fallback a `GENERAL` cuando el cliente no tiene lista asignada.
 - Auditoría de mutaciones.
 
-No incluye todavía:
+La decisión inicial de no incluir vigencias ni descuentos persistidos quedó
+reemplazada el 2026-09-24: V21 incorpora historial/vigencias y V22 reglas
+comerciales `LINE`/`ORDER`. El contrato vigente está en
+[`docs/api/pricing.md`](../../api/pricing.md).
+
+El alcance original no incluía:
 
 - Vigencias futuras o historial bitemporal de precios.
 - Descuentos comerciales.
@@ -48,6 +53,18 @@ Debe existir exactamente una lista general activa. La lista `GENERAL` no puede d
 - Clave primaria compuesta `(price_list_id, product_id)`.
 - `price >= 0`.
 
+### `catalog.product_price_history` (vigente desde V21)
+
+- `id UUID PRIMARY KEY`, precio y sus timestamps de registro.
+- `price_list_id` y `product_id` referencian sus entidades de catálogo.
+- `effective_on DATE` determina desde qué fecha comercial aplica el precio.
+- La migración crea una versión inicial por precio existente, fechada según
+  `America/Argentina/Buenos_Aires`; no reconstruye historial anterior a V21.
+- Las lecturas comerciales resuelven la versión efectiva más reciente. Los
+  cambios futuros no requieren una tarea programada para activarse.
+- La tabla V5 `product_prices` permanece por compatibilidad, no es la fuente de
+  verdad para lecturas actuales ni futuras.
+
 ### `customer.customers`
 
 Agregar `price_list_id UUID NULL REFERENCES catalog.price_lists`. La relación es opcional; quitarla activa el fallback a `GENERAL`.
@@ -70,7 +87,14 @@ inactivas.
 - La lista default debe ser `GENERAL` en esta fase.
 - Un precio ausente prueba las listas activas anteriores por identificador; si
   no encuentra precio, la resolución devuelve `404`.
-- Los cambios de precio tienen efecto inmediato.
+- Solo `ADMIN_ALL` puede registrar o cancelar precios.
+- Si no se envía fecha, el cambio rige la fecha actual de Buenos Aires. Las
+  fechas pasadas se rechazan; modificar una programación futura reemplaza el
+  valor de esa fecha.
+- Precio actual y futuro no pueden quedar debajo del costo del producto.
+- Al subir el costo, las programaciones activas incompatibles deben ajustarse o
+  cancelarse antes.
+- Los snapshots de pedidos/ventas existentes no cambian por una nueva vigencia.
 
 ## API
 
@@ -84,7 +108,12 @@ inactivas.
 ### Precios
 
 - `GET /api/pricing/lists/{listId}/prices?page=0&size=20`: lista precios.
-- `PUT /api/pricing/lists/{listId}/products/{productId}`: crea o actualiza precio y devuelve `204`.
+- `PUT /api/pricing/lists/{listId}/products/{productId}`: crea/actualiza un
+  precio actual o futuro y devuelve `204`.
+- `GET /api/pricing/lists/{listId}/products/{productId}/history`: consulta
+  historial y programaciones futuras.
+- `DELETE /api/pricing/lists/{listId}/products/{productId}/history/{effectiveOn}`:
+  cancela una programación futura y devuelve `204`.
 
 ### Asignación a clientes
 
@@ -94,6 +123,8 @@ inactivas.
 
 - `GET /api/pricing/resolve?customerId={id}&productId={id}`: usa lista del cliente o `GENERAL`.
 - `GET /api/pricing/resolve?customerId={id}&productId={id}&priceListId={id}`: usa la lista explícita.
+- `asOf=YYYY-MM-DD` opcional consulta el precio aplicable en una fecha histórica
+  o futura.
 
 La respuesta de resolución incluye `priceListId`, `priceListCode`, `productId` y `unitPrice`.
 
@@ -121,3 +152,5 @@ Las operaciones `PRICELIST_CREATE`, `PRICELIST_UPDATE`, `PRICELIST_STATUS`, `PRO
   un precio.
 - Permiso `ADMIN_ALL`, respuestas HTTP y auditoría.
 - Verificación de que cambiar un precio no modifica todavía pedidos históricos.
+- Crear, consultar, resolver y cancelar una vigencia futura sobre PostgreSQL;
+  rechazar fecha pasada y precio inferior al costo.

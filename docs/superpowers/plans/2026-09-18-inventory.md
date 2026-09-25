@@ -8,6 +8,11 @@
 
 **Tech Stack:** Spring Boot 3.5.16, Java 21, Spring JDBC, Spring Security method security, PostgreSQL 16, Flyway, JUnit 5, Mockito, Docker Compose.
 
+> Estado actualizado (2026-09-24): el alcance de abajo es el plan inicial. Los
+> movimientos de venta/devolución/cancelación y el soporte multi-depósito se
+> completaron después; V23 y el contrato vigente están en
+> [`docs/api/inventory.md`](../../api/inventory.md).
+
 ## Global Constraints
 
 - El stock negativo está permitido.
@@ -17,7 +22,7 @@
 - Todos los ajustes requieren JWT y auditoría append-only.
 - El endpoint de ajuste recibe un delta firmado; positivo suma y negativo resta.
 - El motivo del ajuste es obligatorio.
-- No se implementan todavía movimientos automáticos por ventas ni múltiples depósitos.
+- Alcance inicial del plan (2026-09-18): no incluía movimientos automáticos por ventas ni múltiples depósitos; ambos se completaron después (V23 para multi-depósito).
 
 ---
 

@@ -50,6 +50,20 @@ class ReadQueryServiceTest {
     }
 
     @Test
+    void userAdministrationProjectionIncludesRolesAndSellerProfile() {
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForObject(anyString(), eq(Number.class), any(Object[].class))).thenReturn(0);
+
+        service.users(0, 20, "mateo");
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).queryForList(sql.capture(), parameters.capture());
+        assertThat(sql.getValue()).contains("string_agg(r.code", "sellerDisplayName", "identity.user_roles");
+        assertThat(parameters.getValue()[0]).isEqualTo("%mateo%");
+    }
+
+    @Test
     void returnsPagedMovementsForProductOrderedByNewest() {
         UUID productId = UUID.randomUUID();
         Map<String, Object> movement = new HashMap<>();

@@ -2,6 +2,7 @@ package com.distribuidora.settings.api;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
+import com.distribuidora.settings.application.BusinessSettingsService;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -12,7 +13,7 @@ public final class BusinessSettingsDtos {
 
     public record CreditLimitRequest(
         @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal creditLimit
-    ) { }
+    ) implements BusinessSettingsService.CreditLimitCommand { }
 
     public record CreditLimitResponse(BigDecimal creditLimit, boolean enabled, Instant updatedAt, UUID updatedBy) { }
 }

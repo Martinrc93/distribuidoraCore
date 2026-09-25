@@ -77,7 +77,7 @@ public class ReadQueryService {
                        coalesce(ib.quantity, 0) as stock, p.status
                 from catalog.products p
                 left join catalog.categories cat on cat.id = p.category_id
-                left join inventory.inventory_balances ib on ib.product_id = p.id
+                left join (select product_id, sum(quantity) as quantity from inventory.inventory_balances group by product_id) ib on ib.product_id = p.id
                 where lower(p.name) like ? or lower(p.sku) like ? order by p.name
                 """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
                 page, size, term, term);
@@ -88,7 +88,7 @@ public class ReadQueryService {
                    coalesce(ib.quantity, 0) as stock, p.status
             from catalog.products p
             left join catalog.categories cat on cat.id = p.category_id
-            left join inventory.inventory_balances ib on ib.product_id = p.id
+            left join (select product_id, sum(quantity) as quantity from inventory.inventory_balances group by product_id) ib on ib.product_id = p.id
             where lower(p.name) like ? or lower(p.sku) like ?
             order by p.name
             """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
@@ -98,11 +98,12 @@ public class ReadQueryService {
     public PageResponse<Map<String, Object>> inventory(int page, int size, String search) {
         String term = like(search);
         return page("""
-            select p.id, p.name as product, ib.quantity as stock,
-                   sm.movement_type as "lastMovement", ib.updated_at as updated
-            from inventory.inventory_balances ib
-            join catalog.products p on p.id = ib.product_id
-            left join lateral (select movement_type from inventory.stock_movements
+            select p.id, p.name as product,
+                   coalesce((select sum(b.quantity) from inventory.inventory_balances b where b.product_id = p.id), 0) as stock,
+                   sm.movement_type as "lastMovement", sm.depot_id as "lastMovementDepotId",
+                   sm.created_at as updated
+            from catalog.products p
+            left join lateral (select movement_type, depot_id, created_at from inventory.stock_movements
                 where product_id = p.id order by created_at desc limit 1) sm on true
             where lower(p.name) like ?
             order by p.name
@@ -112,10 +113,12 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> movements(UUID productId, int page, int size) {
         return page("""
-            select sm.id, sm.movement_type as "movementType", sm.quantity, sm.reason,
+            select sm.id, sm.depot_id as "depotId", d.code as "depotCode",
+                   sm.movement_type as "movementType", sm.quantity, sm.reason,
                    sm.reference_type as "referenceType", sm.reference_id as "referenceId",
                    sm.created_at as date
             from inventory.stock_movements sm
+            join inventory.depots d on d.id = sm.depot_id
             where sm.product_id = ?
             order by sm.created_at desc
             """, "select count(*) from inventory.stock_movements where product_id = ?",
@@ -161,7 +164,9 @@ public class ReadQueryService {
         if (sellerScoped()) currentUser.requireOrderAccess(orderId);
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
+                   c.business_name as customer, o.depot_id as "depotId", o.status, o.subtotal, o.discount, o.total,
+                   o.order_discount_percent as "orderDiscountPercent",
+                   o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    c.balance as "customerBalance", o.created_at as date
@@ -175,7 +180,9 @@ public class ReadQueryService {
     public Map<String, Object> orderDetailByNumber(String orderNumber) {
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
+                   c.business_name as customer, o.depot_id as "depotId", o.status, o.subtotal, o.discount, o.total,
+                   o.order_discount_percent as "orderDiscountPercent",
+                   o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    c.balance as "customerBalance", o.created_at as date
@@ -191,6 +198,8 @@ public class ReadQueryService {
         UUID customerId = (UUID) order.get("customerId");
         Map<String, Object> sale = jdbc.queryForMap("""
             select s.id, s.sale_number as number, s.status, s.total, s.paid,
+                   s.order_discount_percent as "orderDiscountPercent",
+                   s.order_discount_rule_id as "orderDiscountRuleId",
                    (s.total - s.paid) as balance, s.created_at as date
             from sale.sales s where s.order_id = ?
             """, orderId);
@@ -208,7 +217,8 @@ public class ReadQueryService {
                 select oi.product_id as "productId", oi.product_name as "productName",
                        oi.quantity, oi.unit_price as "unitPrice", oi.line_total as "lineTotal",
                        oi.price_list_id as "priceListId", oi.price_list_code as "priceListCode",
-                       oi.line_discount_percent as "lineDiscountPercent"
+                       oi.line_discount_percent as "lineDiscountPercent",
+                       oi.discount_rule_id as "discountRuleId"
                 from orders.order_items oi where oi.order_id = ? order by oi.id
                 """, orderId),
             "sale", sale,
@@ -282,9 +292,15 @@ public class ReadQueryService {
     public PageResponse<Map<String, Object>> users(int page, int size, String search) {
         String term = like(search);
         return page("""
-            select id, email, email as name, status
-            from identity.users where lower(email) like ? order by email
-            """, "select count(*) from identity.users where lower(email) like ?",
+            select u.id, u.email, u.email as name, u.status,
+                   coalesce((select string_agg(r.code, ',' order by r.code)
+                       from identity.user_roles ur join identity.roles r on r.id = ur.role_id
+                       where ur.user_id = u.id), '') as roles,
+                   sp.display_name as "sellerDisplayName"
+            from identity.users u
+            left join seller.seller_profiles sp on sp.user_id = u.id
+            where lower(u.email) like ? order by lower(u.email)
+            """, "select count(*) from identity.users u where lower(u.email) like ?",
              page, size, term);
     }
 

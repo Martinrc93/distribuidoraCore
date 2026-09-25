@@ -3,8 +3,9 @@
 ## Alcance
 
 El producto conservará únicamente su costo. No tendrá un precio general ni
-historial de costos. Todos los precios comerciales se almacenarán por producto
-y lista en `catalog.product_prices`.
+historial de costos. Los precios comerciales se almacenan por producto y lista
+en `catalog.product_price_history`; `catalog.product_prices` queda como tabla
+de compatibilidad para escrituras inmediatas antiguas.
 
 Este cambio cubre el alta y edición de productos, la consulta de productos, la
 edición de precios por lista y las pantallas y diagramas relacionados. No
@@ -14,11 +15,18 @@ dependencia del precio general del producto.
 ## Modelo de datos
 
 - `catalog.products` mantiene `cost` y elimina `price`.
-- `catalog.product_prices` es la única fuente de precios de venta.
+- `catalog.product_price_history` resuelve el precio de venta efectivo por
+  fecha comercial.
+- Las programaciones futuras se consideran al validar aumentos de costo.
 - Cada precio pertenece a una combinación única de `price_list_id` y
   `product_id`.
 - No se crea una tabla ni evento de historial de costos.
 - Las listas activas son las que participan en la validación del costo.
+
+Ampliación implementada el 2026-09-24: el historial y las vigencias se
+introdujeron en V21. Las fechas se interpretan en
+`America/Argentina/Buenos_Aires`; el contrato HTTP actual está en
+[`docs/api/pricing.md`](../../api/pricing.md).
 
 ## Alta de producto
 

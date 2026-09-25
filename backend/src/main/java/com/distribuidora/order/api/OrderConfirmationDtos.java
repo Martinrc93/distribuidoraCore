@@ -1,5 +1,6 @@
 package com.distribuidora.order.api;
 
+import com.distribuidora.order.application.OrderConfirmationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -24,8 +25,14 @@ public final class OrderConfirmationDtos {
         @NotNull @Size(min = 1) List<@NotNull @Valid LineRequest> lines,
         @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 4)
         BigDecimal orderDiscountPercent,
-        List<@NotNull @Valid PaymentRequest> payments
-    ) {
+        List<@NotNull @Valid PaymentRequest> payments,
+        UUID depotId
+    ) implements OrderConfirmationService.ConfirmationCommand {
+        public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
+                                   List<LineRequest> lines, BigDecimal orderDiscountPercent,
+                                   List<PaymentRequest> payments) {
+            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, null);
+        }
     }
 
     public record LineRequest(
@@ -35,14 +42,14 @@ public final class OrderConfirmationDtos {
         @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 4)
         BigDecimal lineDiscountPercent,
         @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal unitPriceOverride
-    ) {
+    ) implements OrderConfirmationService.LineCommand {
     }
 
     public record PaymentRequest(
         @NotBlank @Pattern(regexp = "CASH|BANK_TRANSFER|CUSTOMER_ACCOUNT") String method,
         @NotNull @DecimalMin(value = "0.0000", inclusive = false) @Digits(integer = 15, fraction = 4)
         BigDecimal amount
-    ) {
+    ) implements OrderConfirmationService.PaymentCommand {
     }
 
     public record ConfirmationResponse(

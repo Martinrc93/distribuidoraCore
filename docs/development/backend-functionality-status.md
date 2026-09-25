@@ -67,6 +67,13 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Mantener listas iniciales `GENERAL`, `LISTA_2` y `LISTA_3`.
 - [x] Limitar a diez listas y proteger la lista `GENERAL`.
 - [x] Crear y editar precios por producto/lista.
+- [x] Historial y vigencias actuales/futuras por fecha comercial; consulta y
+  cancelación de programaciones. Contrato en `docs/api/pricing.md`.
+- [x] La resolución comercial usa el historial efectivo en fecha de Buenos
+  Aires; V21 agrega la línea base sin alterar snapshots existentes.
+- [x] Reglas persistidas `LINE`/`ORDER`, vigencias, prioridad y scopes por
+  cliente/lista/producto. La confirmación y edición usan reglas vigentes; los
+  porcentajes e IDs aplicados quedan en snapshots de pedido y venta.
 - [x] Resolver precio explícito, asignado al cliente o fallback `GENERAL`.
 - [x] Autorizar mutaciones de catálogo/pricing con `ADMIN_ALL`.
 - [x] CRUD administrativo de marcas y categorías y referencias activas opcionales desde productos.
@@ -83,6 +90,10 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Auditar ajustes y referencias de movimientos.
 - [x] Restringir ajustes manuales mediante `STOCK_ADJUST`.
 - [x] Registrar devoluciones `RETURN` parciales con límite por cantidad vendida, bajo lock y con actualización transaccional del stock.
+- [x] Administrar depósitos y balances `(depot_id, product_id)` con `CENTRAL` predeterminado; V23 conserva y asigna los datos existentes.
+- [x] Ajustar stock por depósito y transferir cantidades con locks ordenados, validación de saldo disponible, movimientos pareados y auditoría atómica.
+- [x] Seleccionar depósito al confirmar; mantenerlo en pedido/venta y reponerlo en devoluciones, ediciones y cancelaciones.
+- [x] Consultar balances por depósito y stock agregado; contrato en `docs/api/inventory.md`.
 
 ### Pedidos, ventas, pagos y cuenta corriente
 
@@ -126,25 +137,40 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Auditoría append-only con actor, operación y request ID.
 - [x] Tests unitarios de servicios y reglas de negocio.
 - [x] Tests de controllers y migraciones principales.
-- [x] PostgreSQL 16.4 real: Flyway V1–V20, validación JPA y pruebas funcionales opt-in de sesiones, catálogo, devoluciones, edición/cancelación, cobros durante la entrega, imputación FIFO/específica, límites de crédito, outbox y notificaciones.
-- [x] Suite Maven ejecutada con PostgreSQL opt-in: 301 tests, 0 fallos, 0 errores y 0 omitidos; PostgreSQL 16.4 en V1–V20, con 18 casos funcionales de integración.
+- [x] PostgreSQL 16.4 real: Flyway V1–V23, validación JPA y pruebas funcionales opt-in de sesiones, catálogo, precios/descuentos, depósitos/transferencias, ventas, devoluciones, edición/cancelación, cobros, imputación FIFO/específica, límites de crédito, outbox y notificaciones.
+- [x] Verificación PostgreSQL opt-in previa (2026-09-24): 314 tests, 0 fallos, 0 errores ni omitidos; PostgreSQL 16.4, Flyway V1–V20 y 19 casos funcionales de integración.
+- [x] Verificación posterior a los cambios de arquitectura, HTTP y revisión global del grafo (2026-09-24): suite Maven con 329 tests, 0 fallos, 0 errores y 19 omitidos porque `POSTGRES_TEST_URL` no estaba configurado en esa ejecución; las reglas ArchUnit, incluida la global de ciclos, pasaron.
+- [x] Matriz enfocada de cadena de seguridad de producción: 6 casos pasan con `SecurityConfig`, filtro JWT y tokens firmados; cubre `401`, `403` y permisos `ADMIN_ALL`, `USER_MANAGE`, `ORDER_CREATE`, `SALE_PAYMENT`, `SALE_DELIVER` y `STOCK_ADJUST` en rutas críticas.
+- [x] Verificación completa PostgreSQL (2026-09-24): 337 tests, 0 fallos, 0 errores ni omitidos; 21 casos de integración pasaron en PostgreSQL 16.4 con Flyway V1–V20 y `ddl-auto=validate` sobre un cluster descartable, incluyendo login HTTP y revocación de JWT tras cambios de rol/permisos.
+- [x] Verificación incremental de precios (2026-09-24): 31 tests dirigidos y 22 casos PostgreSQL pasaron; Flyway V1–V21 y validación JPA en PostgreSQL 16.4 descartable.
+- [x] Verificación incremental de descuentos (2026-09-24): 31 tests dirigidos y 23 casos PostgreSQL pasaron; Flyway V1–V22 y validación JPA en PostgreSQL 16.4 descartable.
+- [x] Verificación incremental multi-depósito (2026-09-24): 56 tests dirigidos, incluidos permisos HTTP, y 24 casos PostgreSQL pasaron; Flyway V1–V23 y validación JPA en PostgreSQL 16.4 descartable.
+- [x] Suite completa tras los tres ítems de backlog (2026-09-24): **350 tests, 0 fallos, 0 errores y 0 omitidos**; 24 casos PostgreSQL 16.4, Flyway V1–V23, validación JPA y ArchUnit global pasaron en la verificación final.
 
 ## Parcial o requiere endurecimiento
 
-- [~] La cobertura HTTP es menor que la cobertura de servicios en algunos módulos.
-- [~] El endpoint de usuarios existe, pero todavía no ofrece administración completa de roles/permisos y estados.
-- [~] Workflow CI PostgreSQL 16 configurado; falta confirmar primera ejecución remota.
+- [x] La matriz HTTP cubre las seis authorities funcionales actuales en rutas críticas; los flujos PostgreSQL de login/cambio de rol y permisos prueban la invalidación inmediata del JWT anterior y las authorities efectivas del nuevo login.
+- [x] Administración backend de usuarios/roles/permisos: consulta paginada, cambio de rol, catálogo de permisos y reemplazo de permisos por rol. Se protege al último ADMIN activo, se revocan sesiones y se auditan cambios. Contrato en `docs/api/identity-admin.md`.
+- [x] Workflow CI PostgreSQL 16 ejecutado correctamente en GitHub Actions para `2d1decf` ([run 35957213828](https://github.com/Martinrc93/distribuidoraCore/actions/runs/35957213828), 2026-09-24).
 - [x] Logs ECS JSON con request ID en MDC, métricas HTTP de latencia e histogramas y métricas operativas del outbox.
-- [x] Scripts de backup cifrado AES-256-CBC/HMAC-SHA256, retención local configurada, registro de tarea diaria y prueba de restauración/tamper en base descartable.
+- [x] Scripts de backup cifrado AES-256-CBC/HMAC-SHA256, retención local, restauración/tamper y escrow externo verificados. La tarea diaria quedó habilitada tras una corrida programada de control con código `0`; el backup nuevo pasó HMAC y restore en PostgreSQL descartable (Flyway V7). El usuario confirmó el backup de las 05:55:56 en OneDrive. KeePassXC 2.7.12 guarda la clave DPAPI en la bóveda real; el usuario confirmó `RESULT=OK`, la lectura de vuelta pasó y Cloud Files devolvió `0x00000009` (`PLACEHOLDER` + `InSync`) para esa bóveda.
 - [x] Procedimiento de rollback de aplicación y recuperación de PostgreSQL documentado.
+- [x] Cuatro reglas ArchUnit protegen API→infraestructura, dominio→capas de entrega, `shared`↛`catalog` y `application`↛`api`; la quinta regla exige slices de producción sin ciclos.
+- [x] Se eliminó la arista `shared → catalog` que cerraba el ciclo conocido `audit → shared → catalog → audit`, y las dependencias `application → DTOs API`.
+- [x] Se revisó y documentó el grafo completo. Los ciclos con identidad, documentos y pedidos se resolvieron moviendo servicios de seguridad y handlers de errores al módulo propietario; la regla ArchUnit global pasa.
 - [x] Purga por defecto a 90 días de solicitudes terminales y eventos outbox; auditoría enmascarada se conserva.
 
-## Pendiente
+## Complementos incorporados después de la línea base
+
+Los puntos de esta sección se añadieron al documento después de la primera
+implementación; todos están completados y verificados. La configuración de
+proveedores externos por entorno se mantiene como requisito de despliegue en el
+roadmap, no como funcionalidad backend pendiente.
 
 ### Identidad y sesiones
 
 - [x] Alta administrativa con estado `INVITED` y token de activación de un solo uso (30 minutos).
-- [ ] Administración completa de roles y permisos desde endpoints dedicados.
+- [x] Endpoints dedicados `GET /api/roles`, `GET /api/permissions` y `PUT /api/roles/{roleCode}/permissions`; `ADMIN_ALL`/`USER_MANAGE` protegidos contra asignación a otros roles.
 
 ### Vendedores
 
@@ -152,15 +178,14 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 
 ### Catálogo y pricing
 
-- [ ] Historial de precios.
-- [ ] Vigencias futuras de precios.
-- [ ] Reglas de descuentos comerciales persistidas fuera de la confirmación.
+- [x] Historial de precios y vigencias futuras implementados y verificados en PostgreSQL; contrato en `docs/api/pricing.md`.
+- [x] Reglas de descuentos comerciales persistidas, aplicadas en confirmación/edición y visibles en snapshots; contrato en `docs/api/pricing.md`.
 
 ### Inventario y modificaciones comerciales
 
 - [x] Editar pedidos confirmados solo para administradores, recalcular precios/snapshots y preservar pagos; no permitir un nuevo total inferior al importe cobrado.
 - [x] Recalcular deltas `SALE`/`SALE_CANCELLATION` y conciliar ledger/saldo de cuenta corriente dentro de la transacción.
-- [ ] Flujos multi-depósito, si salen del alcance actual.
+- [x] Flujos multi-depósito implementados: CRUD de depósitos, balances, ajustes, transferencia atómica, selección en pedidos y restitución en devoluciones/cancelaciones. Ver `docs/api/inventory.md`.
 
 ### Pagos y cuenta corriente
 
@@ -179,11 +204,12 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 
 ### Operación y entrega
 
-- [~] Primera ejecución del workflow CI PostgreSQL en remoto.
-- [ ] ArchUnit o Spring Modulith para validar límites modulares.
-- [ ] Activar la tarea diaria de backup en el host operativo.
-- [ ] Configurar y verificar copia externa de los backups.
-- [ ] Aumentar cobertura HTTP/controller y completar administración de roles/permisos.
+- [x] ArchUnit valida cuatro límites de capas y que los slices de producción estén libres de ciclos.
+- [x] La arista que cerraba `audit → shared → catalog → audit` y las dependencias aplicación→DTOs API se eliminaron.
+- [x] El grafo intermodular completo está documentado en `docs/architecture/module-boundaries.md`; identidad, documentos y pedidos ya no generan ciclos desde `shared`.
+- [x] Corregir Task Scheduler y activar la tarea diaria; ejecución programada de control: resultado `0`. El canal Operational sigue deshabilitado y Windows denegó su activación/consulta; se diagnosticó mediante tareas temporales y log por ejecución.
+- [x] Completar protección externa: backup en OneDrive confirmado por el usuario, restauración/HMAC probadas y clave DPAPI guardada y leída desde KeePassXC 2.7.12; Cloud Files confirmó la bóveda sincronizada (`0x00000009`, `PLACEHOLDER` + `InSync`). La contraseña maestra queda bajo custodia del usuario fuera de OneDrive.
+- [x] Cobertura HTTP representativa de controllers y matriz de seguridad para las seis authorities actuales en rutas críticas, más login/cambio de permisos con PostgreSQL real. La matriz no pretende probar exhaustivamente cada método de cada controller.
 
 ## Próxima prioridad sugerida
 
@@ -192,4 +218,4 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 3. [x] Límite de crédito global y advertencias auditadas.
 4. [x] Outbox transaccional y worker con reintentos.
 5. [x] Tickets y notificaciones configurables con auditoría.
-6. [x] Endurecimiento operativo implementado; pendiente activación del CI remoto y operación diaria/externa de backups.
+6. [x] Endurecimiento operativo: CI, backup/restore, tarea diaria, presencia del backup en OneDrive y escrow KeePassXC sincronizado están verificados.

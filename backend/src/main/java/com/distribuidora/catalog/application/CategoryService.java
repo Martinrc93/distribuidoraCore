@@ -1,7 +1,6 @@
 package com.distribuidora.catalog.application;
 
 import com.distribuidora.audit.application.AuditService;
-import com.distribuidora.catalog.api.CatalogAdminDtos;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,6 +16,13 @@ import java.util.UUID;
 
 @Service
 public class CategoryService {
+    public interface CategoryCommand {
+        String name();
+        String code();
+    }
+
+    public record CategoryView(UUID id, String name, String code, String status, Instant createdAt, long productCount) { }
+
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
@@ -28,7 +34,7 @@ public class CategoryService {
     }
 
     @Transactional
-    public UUID create(CatalogAdminDtos.CreateCategoryRequest request) {
+    public UUID create(CategoryCommand request) {
         if (request == null || request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("name es obligatorio");
         }
@@ -65,7 +71,7 @@ public class CategoryService {
     }
 
     @Transactional
-    public void update(UUID id, CatalogAdminDtos.UpdateCategoryRequest request) {
+    public void update(UUID id, CategoryCommand request) {
         if (request == null || request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("name es obligatorio");
         }
@@ -124,14 +130,14 @@ public class CategoryService {
         setStatus(id, "INACTIVE");
     }
 
-    public CatalogAdminDtos.CategoryResponse getById(UUID id) {
-        List<CatalogAdminDtos.CategoryResponse> list = jdbc.query("""
+    public CategoryView getById(UUID id) {
+        List<CategoryView> list = jdbc.query("""
             select c.id, c.name, c.code, c.status, c.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.category_id = c.id or lower(p.category) = lower(c.name)) as "productCount"
             from catalog.categories c
             where c.id = ?
             """,
-            (rs, i) -> new CatalogAdminDtos.CategoryResponse(
+            (rs, i) -> new CategoryView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
                 rs.getString("code"),
@@ -147,7 +153,7 @@ public class CategoryService {
         return list.getFirst();
     }
 
-    public List<CatalogAdminDtos.CategoryResponse> list(String search, String status) {
+    public List<CategoryView> list(String search, String status) {
         String term = "%" + (search == null ? "" : search.trim().toLowerCase(Locale.ROOT)) + "%";
         String state = status == null || status.isBlank() ? "%" : status.trim();
 
@@ -159,7 +165,7 @@ public class CategoryService {
               and c.status like ?
             order by c.name
             """,
-            (rs, i) -> new CatalogAdminDtos.CategoryResponse(
+            (rs, i) -> new CategoryView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
                 rs.getString("code"),

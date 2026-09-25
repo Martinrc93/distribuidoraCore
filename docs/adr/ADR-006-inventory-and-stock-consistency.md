@@ -4,6 +4,12 @@
 
 Accepted
 
+Actualización (2026-09-24): la extensión multi-depósito prevista inicialmente
+se implementó con V23. `inventory_balances` ahora se identifica por
+`(depot_id, product_id)` y los saldos existentes se asignaron al depósito
+predeterminado `CENTRAL`. El contrato vigente está en
+[`docs/api/inventory.md`](../api/inventory.md).
+
 ## Context
 
 El stock requiere trazabilidad completa, permite valores negativos y puede ser
@@ -30,6 +36,8 @@ SALE_CANCELLATION
 MANUAL_ENTRY
 MANUAL_ADJUSTMENT
 RETURN
+TRANSFER_OUT
+TRANSFER_IN
 ```
 
 Reglas:
@@ -46,7 +54,7 @@ Reglas:
 Para actualizar un saldo se utilizará locking pesimista de la fila de balance,
 equivalente a `SELECT ... FOR UPDATE`, dentro de la transacción de negocio.
 
-La estructura quedará preparada para evolucionar de:
+La decisión inicial preparaba la evolución de:
 
 ```text
 productId
@@ -58,7 +66,9 @@ a:
 warehouseId + productId
 ```
 
-sin incorporar depósitos antes de necesitarlos.
+La extensión ya está implementada: las transferencias validan saldo disponible
+y persisten salida/entrada atómicas; pedido y venta conservan el depósito usado.
+El detalle actual está en la migración V23.
 
 ## Alternatives considered
 
@@ -83,7 +93,7 @@ para salidas concurrentes del mismo producto.
 - Trazabilidad completa.
 - Stock negativo explícito y auditable.
 - Correcciones sin reescribir historia.
-- Preparación para múltiples depósitos.
+- Saldos independientes por depósito y producto, con transferencias trazables.
 
 ### Negativas
 

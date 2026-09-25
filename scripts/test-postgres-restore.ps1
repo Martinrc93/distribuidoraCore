@@ -1,15 +1,13 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$SourceDatabase,
+    [string]$SourceDatabase,
+    [string]$BackupPath,
     [string]$PgHost = $(if ($env:DB_HOST) { $env:DB_HOST } else { '127.0.0.1' }),
     [int]$Port = $(if ($env:DB_PORT) { [int]$env:DB_PORT } else { 5432 }),
     [string]$Username = $(if ($env:DB_USERNAME) { $env:DB_USERNAME } elseif ($env:POSTGRES_USER) { $env:POSTGRES_USER } else { 'distribuidora' })
 )
 
 $ErrorActionPreference = 'Stop'
-if ([string]::IsNullOrWhiteSpace($env:DB_PASSWORD) -and [string]::IsNullOrWhiteSpace($env:POSTGRES_PASSWORD)) {
-    throw 'Defina DB_PASSWORD o POSTGRES_PASSWORD.'
-}
 $dbPassword = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } else { $env:POSTGRES_PASSWORD }
 $pgBin = $env:PG_BIN
 $createdb = if ($pgBin) { Join-Path $pgBin 'createdb.exe' } else { (Get-Command createdb -ErrorAction Stop).Source }
@@ -24,8 +22,16 @@ $tampered = Join-Path $temp 'tampered.dcbak'
 $previousPassword = $env:PGPASSWORD
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
-    $env:PGPASSWORD = $dbPassword
-    & (Join-Path $PSScriptRoot 'backup-postgres.ps1') -Database $SourceDatabase -PgHost $PgHost -Port $Port -Username $Username -OutputPath $archive -SkipRetention
+    if ([string]::IsNullOrWhiteSpace($SourceDatabase) -eq [string]::IsNullOrWhiteSpace($BackupPath)) {
+        throw 'Indique exactamente uno de -SourceDatabase o -BackupPath.'
+    }
+    if ($dbPassword) { $env:PGPASSWORD = $dbPassword }
+    else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
+    if ($BackupPath) {
+        Copy-Item -LiteralPath $BackupPath -Destination $archive
+    } else {
+        & (Join-Path $PSScriptRoot 'backup-postgres.ps1') -Database $SourceDatabase -PgHost $PgHost -Port $Port -Username $Username -OutputPath $archive -SkipRetention
+    }
     if (-not (Test-Path -LiteralPath $archive)) { throw 'La generación del backup de prueba falló.' }
     & $createdb --no-password "--host=$PgHost" "--port=$Port" "--username=$Username" "--owner=$Username" $target
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear la base descartable para restauración.' }
@@ -47,8 +53,10 @@ try {
     & (Join-Path $PSScriptRoot 'restore-postgres.ps1') -BackupPath $archive -TargetDatabase $target -PgHost $PgHost -Port $Port -Username $Username -Force
     $latest = & $psql --no-password -At "--host=$PgHost" "--port=$Port" "--username=$Username" "--dbname=$target" -c "select max(version::integer) from public.flyway_schema_history where success"
     if ($LASTEXITCODE -ne 0 -or [int]$latest -lt 1) { throw 'La base restaurada no contiene historial Flyway válido.' }
-    $notificationTable = & $psql --no-password -At "--host=$PgHost" "--port=$Port" "--username=$Username" "--dbname=$target" -c "select to_regclass('notification.delivery_requests') is not null"
-    if ($LASTEXITCODE -ne 0 -or $notificationTable.Trim() -ne 't') { throw 'La base restaurada no contiene el esquema de notificaciones esperado.' }
+    if ([int]$latest -ge 20) {
+        $notificationTable = & $psql --no-password -At "--host=$PgHost" "--port=$Port" "--username=$Username" "--dbname=$target" -c "select to_regclass('notification.delivery_requests') is not null"
+        if ($LASTEXITCODE -ne 0 -or $notificationTable.Trim() -ne 't') { throw 'La base restaurada tiene Flyway V20 o superior, pero no contiene la tabla notification.delivery_requests.' }
+    }
     Write-Output "Restauración verificada en la base descartable $target (Flyway V$latest)."
 } finally {
     if ($previousPassword) { $env:PGPASSWORD = $previousPassword } else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
