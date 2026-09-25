@@ -28,36 +28,12 @@ public class InventoryCommandController {
     @PostMapping("/{productId}/adjustments")
     @PreAuthorize("hasAuthority('STOCK_ADJUST')")
     public ResponseEntity<Void> adjust(@PathVariable UUID productId, @Valid @RequestBody AdjustmentRequest request) {
-        service.adjust(request.depotId(), productId, request.quantity(), request.reason());
+        service.adjust(productId, request.quantity(), request.reason());
         return ResponseEntity.noContent().build();
-    }
-
-    @PostMapping("/transfers")
-    @PreAuthorize("hasAuthority('STOCK_ADJUST')")
-    public ResponseEntity<TransferResponse> transfer(@Valid @RequestBody TransferRequest request) {
-        UUID transferId = service.transfer(request.fromDepotId(), request.toDepotId(), request.productId(),
-            request.quantity(), request.reason());
-        return ResponseEntity.status(201).body(new TransferResponse(transferId));
     }
 
     public record AdjustmentRequest(
         @NotNull BigDecimal quantity,
-        @NotBlank @Size(max = 500) String reason,
-        UUID depotId
-    ) {
-        public AdjustmentRequest(BigDecimal quantity, String reason) {
-            this(quantity, reason, null);
-        }
-    }
-
-    public record TransferRequest(
-        @NotNull UUID fromDepotId,
-        @NotNull UUID toDepotId,
-        @NotNull UUID productId,
-        @NotNull @jakarta.validation.constraints.DecimalMin(value = "0.0001", inclusive = true)
-            @jakarta.validation.constraints.Digits(integer = 15, fraction = 4) BigDecimal quantity,
         @NotBlank @Size(max = 500) String reason
     ) { }
-
-    public record TransferResponse(UUID transferId) { }
 }

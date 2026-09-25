@@ -55,7 +55,6 @@ public class OrderConfirmationService {
         List<? extends LineCommand> lines();
         BigDecimal orderDiscountPercent();
         List<? extends PaymentCommand> payments();
-        default UUID depotId() { return null; }
     }
 
     public interface EditCommand {
@@ -66,13 +65,7 @@ public class OrderConfirmationService {
 
     public record ConfirmationData(String idempotencyKey, UUID customerId, UUID priceListId,
                                    List<? extends LineCommand> lines, BigDecimal orderDiscountPercent,
-                                   List<? extends PaymentCommand> payments, UUID depotId) implements ConfirmationCommand {
-        public ConfirmationData(String idempotencyKey, UUID customerId, UUID priceListId,
-                                List<? extends LineCommand> lines, BigDecimal orderDiscountPercent,
-                                List<? extends PaymentCommand> payments) {
-            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, null);
-        }
-    }
+                                   List<? extends PaymentCommand> payments) implements ConfirmationCommand { }
 
     public record CreditLimitWarningResult(BigDecimal creditLimit, BigDecimal projectedBalance, BigDecimal exceededBy) { }
 
@@ -174,36 +167,35 @@ public class OrderConfirmationService {
 
         UUID orderId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
-        UUID depotId = request.depotId() == null ? InventoryMovementService.DEFAULT_DEPOT_ID : request.depotId();
-            UUID sellerId = resolveSellerId(customer);
-            resolved.stream().map(ResolvedLine::productId).distinct().sorted(Comparator.comparing(UUID::toString))
-                .forEach(productId -> {
-                    BigDecimal quantity = resolved.stream().filter(line -> line.productId().equals(productId))
-                        .map(ResolvedLine::quantity).reduce(ZERO, BigDecimal::add);
-                    inventory.apply(depotId, productId, quantity.negate(), "SALE", orderId, "Order confirmation");
-                });
+        UUID sellerId = resolveSellerId(customer);
+        resolved.stream().map(ResolvedLine::productId).distinct().sorted(Comparator.comparing(UUID::toString))
+            .forEach(productId -> {
+                BigDecimal quantity = resolved.stream().filter(line -> line.productId().equals(productId))
+                    .map(ResolvedLine::quantity).reduce(ZERO, BigDecimal::add);
+                inventory.apply(productId, quantity.negate(), "SALE", orderId, "Order confirmation");
+            });
 
-            Timestamp now = Timestamp.from(Instant.now());
-            String orderNumber = number("ORD");
-            String saleNumber = number("SAL");
-            if (currentUser == null) {
-                jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id, depot_id) values (?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        Timestamp now = Timestamp.from(Instant.now());
+        String orderNumber = number("ORD");
+        String saleNumber = number("SAL");
+        if (currentUser == null) {
+                jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id) values (?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     orderId, orderNumber, customerId, calculated.subtotal(),
                     calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
                     request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
-                    calculated.orderDiscountPercent(), orderDiscount.ruleId(), depotId);
+                    calculated.orderDiscountPercent(), orderDiscount.ruleId());
             } else {
-                jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id, depot_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     orderId, orderNumber, customerId, sellerId, calculated.subtotal(),
                     calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
                     request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
-                    calculated.orderDiscountPercent(), orderDiscount.ruleId(), depotId);
+                    calculated.orderDiscountPercent(), orderDiscount.ruleId());
             }
             insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
-            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent, order_discount_rule_id, depot_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?)",
+            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent, order_discount_rule_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?)",
                 saleId, saleNumber, orderId, customerId, calculated.total(), monetaryPaid, now,
-                calculated.orderDiscountPercent(), orderDiscount.ruleId(), depotId);
+                calculated.orderDiscountPercent(), orderDiscount.ruleId());
             insertItems("sale.sale_items", saleId, resolved, calculated.lines());
 
             insertPayments(saleId, customerId, request.payments());
@@ -256,7 +248,7 @@ public class OrderConfirmationService {
             throw new IllegalArgumentException("Los campos obligatorios son inválidos");
         }
 
-        Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, o.depot_id, "
+        Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, "
             + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid "
             + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update of o, s", orderId);
         if (!"CONFIRMED".equals(lifecycle.get("order_status")) || !"CONFIRMED".equals(lifecycle.get("sale_status"))) {
@@ -293,10 +285,10 @@ public class OrderConfirmationService {
             BigDecimal stockDelta = oldQuantities.getOrDefault(productId, ZERO)
                 .subtract(newQuantities.getOrDefault(productId, ZERO));
             if (stockDelta.signum() < 0) {
-                inventory.apply(uuidOrNull(lifecycle.get("depot_id")), productId, stockDelta, "SALE", orderId, "Confirmed order edit");
+                inventory.apply(productId, stockDelta, "SALE", orderId, "Confirmed order edit");
                 inventoryMovementsApplied++;
             } else if (stockDelta.signum() > 0) {
-                inventory.apply(uuidOrNull(lifecycle.get("depot_id")), productId, stockDelta, "SALE_CANCELLATION", orderId, "Confirmed order edit");
+                inventory.apply(productId, stockDelta, "SALE_CANCELLATION", orderId, "Confirmed order edit");
                 inventoryMovementsApplied++;
             }
         }
@@ -546,7 +538,6 @@ public class OrderConfirmationService {
         append(canonical, request.idempotencyKey());
         append(canonical, request.customerId());
         append(canonical, request.priceListId());
-        append(canonical, request.depotId());
         append(canonical, request.orderDiscountPercent());
         append(canonical, request.lines() == null ? null : request.lines().size());
         if (request.lines() != null) {

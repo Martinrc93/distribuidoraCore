@@ -4,12 +4,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
@@ -98,6 +100,19 @@ class ApiExceptionHandlerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(400);
         assertThat(problem).isNotNull();
         assertThat(problem.getProperties()).containsEntry("code", "INVALID_REQUEST");
+    }
+
+    @Test
+    void mapsUnknownRouteToNotFoundProblemDetail() throws Exception {
+        NoResourceFoundException exception = new NoResourceFoundException(HttpMethod.POST, "/api/inventory/transfers");
+
+        ResponseEntity<?> response = invoke(exception, "/api/inventory/transfers");
+        ProblemDetail problem = (ProblemDetail) response.getBody();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
+        assertThat(problem).isNotNull();
+        assertThat(problem.getTitle()).isEqualTo("Not found");
+        assertThat(problem.getProperties()).containsEntry("code", "NOT_FOUND");
     }
 
     @Test

@@ -90,10 +90,10 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Auditar ajustes y referencias de movimientos.
 - [x] Restringir ajustes manuales mediante `STOCK_ADJUST`.
 - [x] Registrar devoluciones `RETURN` parciales con límite por cantidad vendida, bajo lock y con actualización transaccional del stock.
-- [x] Administrar depósitos y balances `(depot_id, product_id)` con `CENTRAL` predeterminado; V23 conserva y asigna los datos existentes.
-- [x] Ajustar stock por depósito y transferir cantidades con locks ordenados, validación de saldo disponible, movimientos pareados y auditoría atómica.
-- [x] Seleccionar depósito al confirmar; mantenerlo en pedido/venta y reponerlo en devoluciones, ediciones y cancelaciones.
-- [x] Consultar balances por depósito y stock agregado; contrato en `docs/api/inventory.md`.
+- [x] Mantener un saldo único por producto y movimientos de stock sin ubicación.
+- [x] V24 consolidar los saldos V23 sumando cantidades por producto; conservar movimientos/pedidos/ventas y eliminar su atribución histórica a depósitos.
+- [x] Confirmar, editar, devolver y cancelar pedidos directamente contra el saldo único.
+- [x] Consultar y ajustar el stock único; ya no existen endpoints de depósitos ni transferencias. Contrato en `docs/api/inventory.md`.
 
 ### Pedidos, ventas, pagos y cuenta corriente
 
@@ -137,15 +137,15 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Auditoría append-only con actor, operación y request ID.
 - [x] Tests unitarios de servicios y reglas de negocio.
 - [x] Tests de controllers y migraciones principales.
-- [x] PostgreSQL 16.4 real: Flyway V1–V23, validación JPA y pruebas funcionales opt-in de sesiones, catálogo, precios/descuentos, depósitos/transferencias, ventas, devoluciones, edición/cancelación, cobros, imputación FIFO/específica, límites de crédito, outbox y notificaciones.
+- [x] PostgreSQL 16.4 real: Flyway V1–V24, validación JPA y pruebas funcionales opt-in de sesiones, catálogo, precios/descuentos, inventario único, ventas, devoluciones, edición/cancelación, cobros, imputación FIFO/específica, límites de crédito, outbox y notificaciones.
 - [x] Verificación PostgreSQL opt-in previa (2026-09-24): 314 tests, 0 fallos, 0 errores ni omitidos; PostgreSQL 16.4, Flyway V1–V20 y 19 casos funcionales de integración.
 - [x] Verificación posterior a los cambios de arquitectura, HTTP y revisión global del grafo (2026-09-24): suite Maven con 329 tests, 0 fallos, 0 errores y 19 omitidos porque `POSTGRES_TEST_URL` no estaba configurado en esa ejecución; las reglas ArchUnit, incluida la global de ciclos, pasaron.
 - [x] Matriz enfocada de cadena de seguridad de producción: 6 casos pasan con `SecurityConfig`, filtro JWT y tokens firmados; cubre `401`, `403` y permisos `ADMIN_ALL`, `USER_MANAGE`, `ORDER_CREATE`, `SALE_PAYMENT`, `SALE_DELIVER` y `STOCK_ADJUST` en rutas críticas.
 - [x] Verificación completa PostgreSQL (2026-09-24): 337 tests, 0 fallos, 0 errores ni omitidos; 21 casos de integración pasaron en PostgreSQL 16.4 con Flyway V1–V20 y `ddl-auto=validate` sobre un cluster descartable, incluyendo login HTTP y revocación de JWT tras cambios de rol/permisos.
 - [x] Verificación incremental de precios (2026-09-24): 31 tests dirigidos y 22 casos PostgreSQL pasaron; Flyway V1–V21 y validación JPA en PostgreSQL 16.4 descartable.
 - [x] Verificación incremental de descuentos (2026-09-24): 31 tests dirigidos y 23 casos PostgreSQL pasaron; Flyway V1–V22 y validación JPA en PostgreSQL 16.4 descartable.
-- [x] Verificación incremental multi-depósito (2026-09-24): 56 tests dirigidos, incluidos permisos HTTP, y 24 casos PostgreSQL pasaron; Flyway V1–V23 y validación JPA en PostgreSQL 16.4 descartable.
-- [x] Suite completa tras los tres ítems de backlog (2026-09-24): **350 tests, 0 fallos, 0 errores y 0 omitidos**; 24 casos PostgreSQL 16.4, Flyway V1–V23, validación JPA y ArchUnit global pasaron en la verificación final.
+- [x] Verificación histórica de multi-depósito (2026-09-24, antes de V24): 56 tests dirigidos y 24 casos PostgreSQL pasaron; esa funcionalidad fue retirada posteriormente por la regla de stock único.
+- [x] Suite completa tras los tres ítems de backlog (2026-09-24, antes de V24): **350 tests, 0 fallos, 0 errores y 0 omitidos**; 24 casos PostgreSQL 16.4, Flyway V1–V23, validación JPA y ArchUnit global pasaron en esa verificación histórica.
 
 ## Parcial o requiere endurecimiento
 
@@ -185,7 +185,7 @@ roadmap, no como funcionalidad backend pendiente.
 
 - [x] Editar pedidos confirmados solo para administradores, recalcular precios/snapshots y preservar pagos; no permitir un nuevo total inferior al importe cobrado.
 - [x] Recalcular deltas `SALE`/`SALE_CANCELLATION` y conciliar ledger/saldo de cuenta corriente dentro de la transacción.
-- [x] Flujos multi-depósito implementados: CRUD de depósitos, balances, ajustes, transferencia atómica, selección en pedidos y restitución en devoluciones/cancelaciones. Ver `docs/api/inventory.md`.
+- [x] Inventario de depósito único implementado: V24 suma balances existentes por producto y pedidos/ventas modifican directamente el stock único. Ver `docs/api/inventory.md`.
 
 ### Pagos y cuenta corriente
 

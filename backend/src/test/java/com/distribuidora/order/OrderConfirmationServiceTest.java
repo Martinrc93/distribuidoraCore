@@ -66,7 +66,7 @@ class OrderConfirmationServiceTest {
         assertThat(response.saleId()).isNotNull();
         assertThat(response.total()).isEqualByComparingTo("20.0000");
         assertThat(response.paid()).isEqualByComparingTo("20.0000");
-        verify(inventory).apply(eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), argThat(value -> value.compareTo(new BigDecimal("-2.0")) == 0),
+        verify(inventory).apply(eq(productId), argThat(value -> value.compareTo(new BigDecimal("-2.0")) == 0),
             eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
         verify(jdbc).update(contains("payment.payments"), any(Object[].class));
         verify(jdbc, never()).update(contains("account_ledger"), any(Object[].class));
@@ -125,11 +125,6 @@ class OrderConfirmationServiceTest {
             List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2"), BigDecimal.ZERO, null)),
             request.orderDiscountPercent(), request.payments());
         assertThatThrownBy(() -> service.confirm(changedRequest))
-            .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
-        var changedDepotRequest = new OrderConfirmationDtos.ConfirmationRequest(
-            request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(),
-            request.payments(), UUID.randomUUID());
-        assertThatThrownBy(() -> service.confirm(changedDepotRequest))
             .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
         verify(pricing, times(1)).resolve(customerId, productId, null);
     }
@@ -191,7 +186,7 @@ class OrderConfirmationServiceTest {
             new BigDecimal("5.00"), List.of()));
 
         assertThat(response.total()).isEqualByComparingTo("9.0250");
-        verify(inventory).apply(eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), any(), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
+        verify(inventory).apply(eq(productId), any(), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
     }
 
     @Test

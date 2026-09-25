@@ -18,9 +18,7 @@ import com.distribuidora.identity.infrastructure.UserAccountRepository;
 import com.distribuidora.identity.security.JwtAuthenticationFilter;
 import com.distribuidora.identity.security.JwtService;
 import com.distribuidora.inventory.api.InventoryCommandController;
-import com.distribuidora.inventory.api.InventoryDepotController;
 import com.distribuidora.inventory.application.InventoryCommandService;
-import com.distribuidora.inventory.application.InventoryDepotService;
 import com.distribuidora.order.api.DeliveryLifecycleController;
 import com.distribuidora.order.application.DeliveryLifecycleService;
 import org.junit.jupiter.api.Test;
@@ -56,7 +54,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     AccountPaymentController.class,
     DeliveryLifecycleController.class,
     InventoryCommandController.class,
-    InventoryDepotController.class,
     UserAdminController.class,
     com.distribuidora.identity.api.RoleAdminController.class
 })
@@ -96,9 +93,6 @@ class SecurityChainAuthorizationTest {
 
     @MockitoBean
     private InventoryCommandService inventoryCommandService;
-
-    @MockitoBean
-    private InventoryDepotService inventoryDepotService;
 
     @MockitoBean
     private UserAdminService userAdminService;
@@ -205,23 +199,15 @@ class SecurityChainAuthorizationTest {
                 .content("{\"quantity\":1,\"reason\":\"Conteo\"}"))
             .andExpect(status().isNoContent());
 
-        UUID fromDepotId = UUID.randomUUID();
-        UUID toDepotId = UUID.randomUUID();
-        UUID transferId = UUID.randomUUID();
-        when(inventoryCommandService.transfer(eq(fromDepotId), eq(toDepotId), eq(productId), any(), eq("Transferencia")))
-            .thenReturn(transferId);
         mockMvc.perform(post("/api/inventory/transfers")
                 .header("Authorization", bearer(inventoryUser, "STOCK_ADJUST"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"fromDepotId\":\"" + fromDepotId + "\",\"toDepotId\":\"" + toDepotId
-                    + "\",\"productId\":\"" + productId + "\",\"quantity\":1.5,\"reason\":\"Transferencia\"}"))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.transferId").value(transferId.toString()));
+                .content("{}"))
+            .andExpect(status().isNotFound());
 
-        when(inventoryDepotService.list()).thenReturn(List.of());
         mockMvc.perform(get("/api/inventory/depots")
                 .header("Authorization", bearer(administrator, "ADMIN_ALL")))
-            .andExpect(status().isOk());
+            .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/users/{id}/block", managedUserId)
                 .header("Authorization", bearer(userManager, "USER_MANAGE")))
@@ -239,8 +225,7 @@ class SecurityChainAuthorizationTest {
 
         verify(accountPaymentService).apply(any(), any());
         verify(deliveryLifecycleService).recordAttempt(any(), any());
-        verify(inventoryCommandService).adjust(eq((UUID) null), eq(productId), any(), eq("Conteo"));
-        verify(inventoryCommandService).transfer(eq(fromDepotId), eq(toDepotId), eq(productId), any(), eq("Transferencia"));
+        verify(inventoryCommandService).adjust(eq(productId), any(), eq("Conteo"));
         verify(userAdminService).blockUser(managedUserId);
         verify(userAdminService).blockUser(adminTargetId);
         verify(userAdminService).changeRole(adminTargetId, "ADMIN");
@@ -273,12 +258,11 @@ class SecurityChainAuthorizationTest {
         mockMvc.perform(post("/api/inventory/transfers")
                 .header("Authorization", bearer(seller, "ORDER_CREATE"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"fromDepotId\":\"" + UUID.randomUUID() + "\",\"toDepotId\":\"" + UUID.randomUUID()
-                    + "\",\"productId\":\"" + productId + "\",\"quantity\":1,\"reason\":\"Transferencia\"}"))
-            .andExpect(status().isForbidden());
+                .content("{}"))
+            .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/inventory/depots")
                 .header("Authorization", bearer(seller, "ORDER_CREATE")))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isNotFound());
         mockMvc.perform(post("/api/users/{id}/block", targetUserId)
                 .header("Authorization", bearer(seller, "ORDER_CREATE")))
             .andExpect(status().isForbidden());
@@ -290,7 +274,7 @@ class SecurityChainAuthorizationTest {
             .andExpect(status().isForbidden());
 
         verifyNoInteractions(accountPaymentService, deliveryLifecycleService,
-            inventoryCommandService, inventoryDepotService, userAdminService, roleAdminService);
+            inventoryCommandService, userAdminService, roleAdminService);
     }
 
     private String bearer(UserAccount user, String authority) {

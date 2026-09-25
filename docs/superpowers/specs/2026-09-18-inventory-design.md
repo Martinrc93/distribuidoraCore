@@ -1,9 +1,11 @@
 # Diseño: Inventario transaccional
 
-> Estado actualizado (2026-09-24): este documento registra el alcance inicial.
+> Estado actualizado (2026-09-25): este documento registra el alcance inicial.
 > Los movimientos automáticos de venta/cancelación y el soporte multi-depósito
-> se implementaron posteriormente. El diseño vigente del inventario se describe
-> en [`docs/api/inventory.md`](../../api/inventory.md) y la migración V23.
+> se implementaron posteriormente; V24 reemplazó el modelo multi-depósito por
+> un saldo único por producto. El contrato vigente está en
+> [`docs/api/inventory.md`](../../api/inventory.md) y el diseño en
+> [`2026-09-25-single-inventory-no-depots-design.md`](2026-09-25-single-inventory-no-depots-design.md).
 
 ## Objetivo
 

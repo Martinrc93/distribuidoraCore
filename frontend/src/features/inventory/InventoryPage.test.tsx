@@ -11,8 +11,6 @@ function response(body: unknown, status = 200) {
 }
 const inventory = { content: [{ id: 'product-1', product: 'Harina', stock: 0.25, lastMovement: 'PURCHASE', updated: '2026-09-24T10:00:00Z' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const movements = { content: [{ id: 'movement-1', movementType: 'SALE', quantity: -1, reason: 'Pedido PED-001', referenceType: 'ORDER', referenceId: 'order-1', date: '2026-09-24T10:00:00Z' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
-const depots = [{ id: 'depot-central', code: 'CENTRAL', name: 'Depósito Central', status: 'ACTIVE', isDefault: true }]
-const depotBalances = { content: [{ productId: 'product-1', sku: 'SKU-1', product: 'Harina', stock: 0.25 }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
 function renderPage(authorities = ['ADMIN_ALL', 'STOCK_ADJUST']) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -30,17 +28,18 @@ describe('InventoryPage', () => {
     renderPage()
 
     expect(await screen.findByText('Harina')).toBeInTheDocument()
+    expect(screen.getAllByText('Harina')).toHaveLength(1)
+    expect(screen.queryByText('Depósito')).not.toBeInTheDocument()
     await userEvent.setup().click(screen.getByRole('button', { name: /ver movimientos de harina/i }))
     expect(await screen.findByText('Pedido PED-001')).toBeInTheDocument()
+    expect(screen.queryByText('Depósito')).not.toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith('/api/inventory/product-1/movements?page=0&size=20', expect.anything())
   })
 
   it('requires half-unit adjustment, confirms negative balance and refreshes inventory', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
-      if (String(input) === '/api/inventory/depots') return response(depots)
-      if (String(input).startsWith('/api/inventory/depots/') && String(input).includes('/balances?')) return response(depotBalances)
-      if (String(input) === '/api/inventory?page=0&size=20' && !init?.method) return response(inventory)
+      if (String(input).startsWith('/api/inventory?page=0&size=20') && !init?.method) return response(inventory)
       if (String(input) === '/api/inventory/product-1/adjustments' && init?.method === 'POST') return response({}, 204)
       if (String(input).includes('/movements')) return response(movements)
       return response(inventory)
@@ -48,6 +47,7 @@ describe('InventoryPage', () => {
     const queryClient = renderPage()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
+    await user.click(await screen.findByRole('button', { name: /ver movimientos de harina/i }))
     await user.click(await screen.findByRole('button', { name: /ajustar stock de harina/i }))
     await user.type(screen.getByLabelText('Cantidad de ajuste'), '-0.25')
     await user.type(screen.getByLabelText('Motivo'), 'Corrección de conteo')
@@ -60,10 +60,10 @@ describe('InventoryPage', () => {
     expect(screen.getByText(/el saldo quedará negativo/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar ajuste/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/inventory/product-1/adjustments', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ quantity: -0.5, reason: 'Corrección de conteo', depotId: 'depot-central' }),
+      method: 'POST', body: JSON.stringify({ quantity: -0.5, reason: 'Corrección de conteo' }),
     })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/inventory?page=0&size=20'] })
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/inventory/product-1/movements?page=0&size=20'] })
     expect(await screen.findByText('Ajuste de inventario registrado.')).toBeInTheDocument()
   })
 
@@ -73,5 +73,21 @@ describe('InventoryPage', () => {
 
     expect(await screen.findByText('Harina')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /ajustar stock/i })).not.toBeInTheDocument()
+  })
+
+  it('searches and pages the unified product-stock list', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const path = String(input)
+      if (path.startsWith('/api/inventory?')) return response({ ...inventory, page: Number(new URL(path, 'http://localhost').searchParams.get('page')), totalElements: 21, totalPages: 2 })
+      return response(movements)
+    })
+    renderPage()
+
+    await screen.findByText('Harina')
+    await user.type(screen.getByRole('textbox', { name: 'Buscar productos' }), 'harina')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/inventory?page=0&size=20&search=harina', expect.anything()))
+    await user.click(screen.getByRole('button', { name: 'Siguiente' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/inventory?page=1&size=20&search=harina', expect.anything()))
   })
 })

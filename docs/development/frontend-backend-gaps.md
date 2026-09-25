@@ -10,10 +10,8 @@ de usuario final. La interfaz no simula respuestas faltantes.
   precios futuros por lista/producto.
 - Administración `ADMIN_ALL` de reglas de descuentos por línea/pedido, incluyendo
   alcance, fechas y prioridad. El backend resuelve el descuento al confirmar.
-- Administración de depósitos, balances por depósito, ajustes y transferencias
-  con saldo de origen visible; los movimientos identifican el depósito.
-- Selección de depósito en pedidos para usuarios que pueden consultar depósitos;
-  el ID queda en el intento idempotente. Los demás pedidos usan `CENTRAL`.
+- Inventario de producto único conectado a lecturas, ajustes y movimientos.
+- Pedidos conectados al stock único; el contrato no recibe ubicación.
 - Roles de usuarios visibles como datos de solo lectura.
 
 ## Falta una proyección de lectura adecuada
@@ -51,11 +49,8 @@ de usuario final. La interfaz no simula respuestas faltantes.
 - **Reasignación de roles y edición de permisos:** el backend ofrece estos
   comandos, pero la UI solo muestra los roles actuales. La edición quedó aplazada
   por decisión del usuario.
-- **Selección de depósito para usuarios no administradores:** `GET
-  /api/inventory/depots` requiere `ADMIN_ALL`; los pedidos de otros usuarios usan
-  el depósito predeterminado `CENTRAL` hasta que exista una lectura autorizada.
 - **Ajustes para usuario solo con `STOCK_ADJUST`:** las lecturas de inventario y
-  depósitos requieren `ADMIN_ALL`, por lo que esos usuarios no pueden abrir la
+  los permisos de página actuales limitan el acceso, por lo que esos usuarios no pueden abrir la
   pantalla frontend aunque el comando permita `STOCK_ADJUST`.
 
 ## No existe soporte backend suficiente

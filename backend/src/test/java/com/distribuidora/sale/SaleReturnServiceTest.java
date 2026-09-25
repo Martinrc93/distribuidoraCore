@@ -42,8 +42,7 @@ class SaleReturnServiceTest {
         UUID saleId = UUID.randomUUID();
         UUID saleItemId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
-        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("sale_status", "DELIVERED", "order_status", "DELIVERED",
-            "depot_id", InventoryMovementService.DEFAULT_DEPOT_ID));
+        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("sale_status", "DELIVERED", "order_status", "DELIVERED"));
         when(jdbc.queryForList(anyString(), eq(saleItemId), eq(saleId))).thenReturn(List.of(
             Map.of("id", saleItemId, "product_id", productId, "quantity", new BigDecimal("2.0000"))));
         when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(saleId), eq(saleItemId))).thenReturn(new BigDecimal("0.5000"));
@@ -54,7 +53,7 @@ class SaleReturnServiceTest {
         assertThat(response.saleId()).isEqualTo(saleId);
         assertThat(response.reason()).isEqualTo("Envase dañado");
         assertThat(response.items()).containsExactly(new SaleReturnService.ReturnItemResult(saleItemId, productId, new BigDecimal("0.5000")));
-        verify(inventory).apply(eq(InventoryMovementService.DEFAULT_DEPOT_ID), eq(productId), eq(new BigDecimal("0.5000")),
+        verify(inventory).apply(eq(productId), eq(new BigDecimal("0.5000")),
             eq("RETURN"), eq(response.returnId()), eq("Envase dañado"));
         verify(audit).recordWithinTransaction(eq(actorId), eq("SALE_RETURN"), eq("SALE"), eq(saleId.toString()), eq("SUCCESS"), any());
     }

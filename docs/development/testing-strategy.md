@@ -116,11 +116,18 @@ dirigidos** y **23 casos PostgreSQL** pasaron con Flyway V1–V22 y
 y alcance, aplicación al confirmar y persistencia de snapshots tras desactivar
 la regla.
 
-Verificación incremental multi-depósito del 2026-09-24: **56 tests dirigidos**
-(incluida la matriz HTTP de permisos) y **24 casos PostgreSQL** pasaron con
-Flyway V1–V23 y `ddl-auto=validate`. Se cubrieron migración de saldos existentes,
-transferencia atómica, saldo insuficiente, pedido, devolución y cancelación en
-el depósito seleccionado, consultas agregadas y autorización de rutas.
+Verificación histórica multi-depósito del 2026-09-24 (previa a V24): **56 tests
+dirigidos** (incluida la matriz HTTP de permisos) y **24 casos PostgreSQL**
+pasaron con Flyway V1–V23 y `ddl-auto=validate`. La funcionalidad fue sustituida
+por inventario de stock único; la migración V24 cuenta con prueba PostgreSQL que
+verifica consolidación y conservación de los registros de negocio.
+
+Verificación de inventario único (2026-09-25): `mvn test` pasó con **352 tests,
+0 fallos y 0 errores**; 24 casos PostgreSQL opt-in se ejecutaron por separado y
+pasaron en PostgreSQL 16.15 con Flyway V1–V24 y `ddl-auto=validate`. La prueba
+Testcontainers de V24 confirmó la suma de balances y la conservación de
+movimientos/pedidos/ventas. Frontend: **85 tests pasaron** y `npm run build`
+terminó correctamente.
 
 Verificación completa de cierre (2026-09-24): **350 tests, 0 fallos, 0 errores
 y 0 omitidos**, incluidos los 24 casos PostgreSQL en PostgreSQL 16.4 con Flyway

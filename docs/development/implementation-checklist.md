@@ -61,7 +61,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Reversión neta `SALE_CANCELLATION` al cancelar pedidos confirmados sin pagos, incluyendo movimientos compensatorios de ediciones anteriores.
 - [x] Devoluciones `RETURN` parciales con saldo por línea, lock por venta y reintegro de stock transaccional; ver [contrato de API](../api/sale-returns.md).
 - [x] Edición administrativa de pedido/venta `CONFIRMED` con reemplazo de snapshots, deltas compensatorios, pagos preservados y conciliación de ledger; ver [contrato de API](../api/order-edits.md).
-- [x] Multi-depósito: administración, balances, ajustes y transferencias; pedido, devolución y cancelación conservan el depósito elegido. Contrato y diagramas en `docs/api/inventory.md` y `docs/diagrams/inventory/`.
+- [x] Stock único por producto: V24 consolida los balances anteriores y quita ubicación de movimientos, pedidos y ventas. Confirmaciones, devoluciones, ediciones, cancelaciones y ajustes afectan el mismo saldo.
 
 ### Pedidos, ventas, pagos y cuenta corriente
 
@@ -138,15 +138,14 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Saldos y vista paginada de movimientos por producto.
 - [x] Formulario de ajuste manual.
 - [x] Permisos, confirmación y advertencia de saldo negativo.
-- [x] Integrar administración de depósitos y balances paginados por depósito con `ADMIN_ALL`.
-- [x] Integrar transferencias entre depósitos con `STOCK_ADJUST`, saldo de origen visible, validación y feedback transaccional.
-- [x] Ajustar stock en depósito seleccionado e identificar el depósito en movimientos.
+- [x] Integrar lista única de saldos de stock buscable y paginada.
+- [x] Ajustar inventario sin campo de ubicación e identificar movimientos por producto.
 
 ### Pedidos y ventas
 
 - [x] Listados reales de pedidos, ventas y pagos.
 - [x] Nuevo pedido con cliente/lista/productos, stock, precios y confirmación en `/api/orders/confirm`.
-- [x] Seleccionar depósito para administradores; preservar `depotId` en retry exacto; omitirlo para usuarios que usan `CENTRAL` por defecto.
+- [x] Crear pedidos sin campo de depósito; preservar el payload de confirmación e idempotencia en retries.
 - [x] Preview de descuentos sin reemplazar el backend; solo `ADMIN_ALL` ve controles de descuento/precio manual.
 - [x] Idempotency key, bloqueo de doble envío y retry seguro con el mismo payload.
 - [x] Detalle de pedido/venta con snapshots, pagos y ledger por venta.
@@ -182,7 +181,7 @@ El detalle de funciones completas y ausencias de API se mantiene en
 6. [x] Implementar endurecimiento operativo: CI PostgreSQL, métricas/logs estructurados, backup/restauración, rollback, retención/purga y escrow KeePassXC sincronizado están verificados.
 7. [x] Implementar historial de precios y vigencias futuras (V21), con resolución temporal y snapshots históricos.
 8. [x] Implementar reglas de descuentos comerciales por línea y pedido (V22), aplicadas en confirmaciones y ediciones.
-9. [x] Implementar multi-depósito (V23), transferencias atómicas y selección/restauración del depósito en el ciclo comercial.
+9. [x] V24 reemplaza el modelo multi-depósito de V23 por stock único consolidado por producto.
 
 Verificación PostgreSQL previa (2026-09-24): 314 tests, 0 fallos, 0 errores y 0
 omitidos; PostgreSQL 16.4 (Flyway V1–V20, 19 casos funcionales de integración).

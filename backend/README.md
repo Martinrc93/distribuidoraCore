@@ -65,8 +65,14 @@ GET /swagger-ui.html
 
 ## Inventario
 
+El stock se mantiene como un único saldo por producto. Los pedidos y ajustes
+modifican ese saldo directamente; no hay depósitos ni transferencias de stock.
+
 Los endpoints de inventario requieren un JWT. Los ajustes requieren además la
 autoridad `STOCK_ADJUST`; el token de un administrador la incluye.
+Los reintentos de pedidos son idempotentes bajo el contrato actual; un intento
+iniciado antes de V24 puede requerir reconciliarse si vuelve a enviarse después
+de la migración.
 
 Login de ejemplo:
 

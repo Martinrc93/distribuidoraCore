@@ -18,7 +18,7 @@
 | `seller` | perfil comercial y estado del vendedor | duplicar usuarios o administrar passwords |
 | `customer` | datos del cliente, dirección y asignaciones | calcular stock o guardar pagos |
 | `catalog` | productos, marcas, categorías y listas | modificar saldo de inventario |
-| `inventory` | depósitos, balances compuestos por depósito/producto y movimientos de stock | conocer entidades internas de pedidos |
+| `inventory` | saldo único por producto y movimientos de stock | conocer entidades internas de pedidos |
 | `order` | pedido, líneas y confirmación | escribir tablas internas de stock |
 | `sale` | venta derivada, snapshots y estado comercial | crear pedidos independientes |
 | `payment` | pagos, ledger y aplicaciones de deuda | modificar ventas sin un caso de uso |
@@ -74,17 +74,15 @@ responsabilidad de validar su propio dominio:
 - `customer` valida el cliente.
 - `seller` valida el vendedor si existe asignación.
 - `inventory` registra movimientos y controla concurrencia.
-- `order` elige el depósito al confirmar, conserva su ID y solicita movimientos a
-  la fachada pública de `inventory`; no escribe las tablas de inventario.
+- `order` solicita movimientos de stock por producto a la fachada pública de
+  `inventory`; no escribe las tablas de inventario ni recibe ubicación.
 - `sale` crea la venta y sus snapshots.
 - `payment` registra pagos o deuda.
 - `audit` registra la operación.
 
-Las transferencias entre depósitos pertenecen a `inventory`: bloquean ambos
-saldos en orden determinista y crean las salidas/entradas como una única
-operación. `sale` devuelve stock al depósito guardado por la venta; la
-cancelación del pedido revierte los movimientos agrupados por depósito y
-producto.
+Confirmaciones, ediciones, devoluciones y cancelaciones bloquean y actualizan el
+saldo único por producto dentro de sus transacciones. No hay operaciones de
+transferencia entre depósitos.
 
 ## Contratos compartidos
 
