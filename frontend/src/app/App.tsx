@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
-import { apiGet, clearAccessToken, getAccessToken, login, type ApiPage } from '../shared/api/client'
+import { apiGet, getAccessToken, login, logout } from '../shared/api/client'
+import { hasAuthority } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
 import { Badge, type BadgeTone } from '../shared/components/Badge'
 import { DataTable, type TableColumn } from '../shared/components/DataTable'
@@ -11,6 +12,17 @@ import { Panel } from '../shared/components/Panel'
 import { StatCard } from '../shared/components/StatCard'
 import CustomersPage from '../features/customers/CustomersPage'
 import ProductsPage from '../features/products/ProductsPage'
+import PriceListsPage from '../features/pricing/PriceListsPage'
+import CatalogAdminPage from '../features/catalog/CatalogAdminPage'
+import OrderCreatePage from '../features/orders/OrderCreatePage'
+import OrdersPage from '../features/orders/OrdersPage'
+import OrderDetailPage from '../features/orders/OrderDetailPage'
+import InventoryPage from '../features/inventory/InventoryPage'
+import SalesPage from '../features/sales/SalesPage'
+import PaymentsPage from '../features/payments/PaymentsPage'
+import SellersPage from '../features/admin/SellersPage'
+import CreditLimitPage from '../features/admin/CreditLimitPage'
+import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
 
 type Row = Record<string, string>
 
@@ -24,14 +36,6 @@ type DashboardData = {
 
 function money(value: unknown) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value ?? 0))
-}
-
-function formatDate(value: unknown) {
-  return value ? new Intl.DateTimeFormat('es-AR').format(new Date(String(value))) : '-'
-}
-
-function useApiPage<T>(path: string) {
-  return useQuery({ queryKey: [path], queryFn: () => apiGet<ApiPage<T>>(path) })
 }
 
 function LoadState({ error }: { error?: Error | null }) {
@@ -82,6 +86,7 @@ const menuGroups = [
     label: 'Catálogo',
     links: [
       ['Productos', '/products'],
+      ['Marcas y categorías', '/catalog'],
       ['Inventario', '/inventory'],
       ['Listas de precios', '/price-lists'],
     ],
@@ -91,13 +96,20 @@ const menuGroups = [
     links: [
       ['Usuarios', '/admin/users'],
       ['Vendedores', '/admin/sellers'],
-      ['Auditoría', '/admin/audit'],
       ['Configuración', '/admin/settings'],
     ],
   },
 ]
 
 function AppShell() {
+  const navigate = useNavigate()
+  const isAdmin = hasAuthority('ADMIN_ALL')
+
+  async function signOut() {
+    await logout().catch(() => undefined)
+    navigate('/login', { replace: true })
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -110,10 +122,10 @@ function AppShell() {
         </div>
 
         <nav className="main-nav" aria-label="Navegación principal">
-          {menuGroups.map((group) => (
+          {menuGroups.filter((group) => group.label !== 'Administración' || isAdmin).map((group) => (
             <div className="nav-group" key={group.label}>
               <span className="nav-group-label">{group.label}</span>
-              {group.links.map(([label, href]) => (
+              {group.links.filter(([, href]) => (href !== '/inventory' || isAdmin) && (href !== '/dashboard' || isAdmin)).map(([label, href]) => (
                 <NavLink
                   className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                   key={href}
@@ -129,13 +141,13 @@ function AppShell() {
 
         <div className="sidebar-footer">
           <div className="user-chip">
-            <span className="avatar">AM</span>
+            <span className="avatar" aria-hidden="true">D</span>
             <span>
-              <strong>Admin Martín</strong>
-              <small>Administrador</small>
+              <strong>Sesión activa</strong>
+              <small>{isAdmin ? 'Administrador' : 'Usuario'}</small>
             </span>
           </div>
-           <Button variant="ghost" fullWidth onClick={() => { clearAccessToken(); window.location.href = '/login' }}>Salir</Button>
+          <Button variant="ghost" fullWidth onClick={signOut}>Salir</Button>
         </div>
       </aside>
 
@@ -183,7 +195,7 @@ function DashboardPage() {
             <Button href="/orders/new" fullWidth>Crear pedido</Button>
             <Button href="/customers" variant="secondary" fullWidth>Buscar cliente</Button>
             <Button href="/payments" variant="secondary" fullWidth>Registrar pago</Button>
-            <Button href="/inventory" variant="secondary" fullWidth>Revisar stock</Button>
+            {hasAuthority('ADMIN_ALL') && <Button href="/inventory" variant="secondary" fullWidth>Revisar stock</Button>}
           </div>
         </Panel>
       </div>
@@ -198,90 +210,6 @@ const orderColumns: TableColumn[] = [
   { key: 'total', label: 'Total', align: 'right' },
   { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
 ]
-
-function OrdersPage() {
-  const query = useApiPage<Record<string, unknown>>('/api/orders?page=0&size=20')
-  const rows: Row[] = (query.data?.content ?? []).map((order) => ({ id: String(order.number), customer: String(order.customer), seller: String(order.seller), total: money(order.total), status: String(order.status) }))
-
-  return (
-    <>
-      <PageHeader eyebrow="Operación" title="Pedidos" description="Consultá, confirmá y seguí el estado de los pedidos." actions={<Button href="/orders/new">+ Nuevo pedido</Button>} />
-      <Panel>
-        <div className="toolbar">
-          <input className="input search-input" placeholder="Buscar por cliente o número..." aria-label="Buscar pedidos" />
-          <select className="select" aria-label="Filtrar por estado"><option>Todos los estados</option><option>Confirmado</option><option>Entregado</option><option>Cancelado</option></select>
-          <Button variant="secondary">Filtrar</Button>
-        </div>
-         {query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={orderColumns} rows={rows} onRowClick={() => undefined} /><Pagination total={query.data?.totalElements} /></>}
-      </Panel>
-    </>
-  )
-}
-
-function OrderCreatePage() {
-  const productsQuery = useApiPage<Record<string, unknown>>('/api/products?page=0&size=2')
-  const orderItems: Row[] = (productsQuery.data?.content ?? []).map((product) => ({ product: String(product.name), presentation: String(product.presentation), quantity: '1', price: money(product.price), total: money(product.price) }))
-  return (
-    <>
-      <PageHeader eyebrow="Nuevo pedido" title="Crear pedido" description="El pedido se guarda cuando se confirma." actions={<Button variant="secondary" href="/orders">Cancelar</Button>} />
-      <div className="content-grid two-thirds">
-        <Panel title="Datos del pedido" description="Seleccioná el cliente y agregá los productos.">
-          <div className="form-grid">
-            <label className="field"><span>Cliente</span><select className="select"><option>Seleccionar cliente...</option><option>Almacén La Esquina</option><option>Despensa Central</option></select></label>
-            <label className="field"><span>Vendedor asignado</span><input className="input" value="Lucía Gómez" readOnly /></label>
-          </div>
-          <div className="section-heading"><div><h3>Productos</h3><p>El precio se toma de la lista del cliente.</p></div><Button variant="secondary">+ Agregar producto</Button></div>
-          {productsQuery.isLoading || productsQuery.isError ? <LoadState error={productsQuery.error} /> : <DataTable columns={orderItemColumns} rows={orderItems} />}
-          <div className="order-totals"><span>Subtotal</span><strong>$ 184.500</strong><span>Descuento total</span><strong>$ 0</strong><span className="total-label">Total</span><strong className="total-value">$ 184.500</strong></div>
-        </Panel>
-        <Panel title="Cobro" description="Podés registrar pagos parciales o dejar saldo en cuenta corriente.">
-          <div className="payment-options"><label className="radio-row"><input type="checkbox" /> Efectivo</label><label className="radio-row"><input type="checkbox" /> Transferencia</label><label className="radio-row"><input type="checkbox" /> Cuenta corriente</label></div>
-          <label className="field"><span>Importe a cobrar</span><input className="input" placeholder="$ 0,00" /></label>
-          <Button fullWidth>Confirmar pedido</Button>
-          <p className="helper-text">El backend validará stock, precios, descuentos y límite de crédito.</p>
-        </Panel>
-      </div>
-    </>
-  )
-}
-
-const orderItemColumns: TableColumn[] = [
-  { key: 'product', label: 'Producto', emphasis: true },
-  { key: 'presentation', label: 'Presentación' },
-  { key: 'quantity', label: 'Cantidad', align: 'right' },
-  { key: 'price', label: 'Precio unitario', align: 'right' },
-  { key: 'total', label: 'Total', align: 'right' },
-]
-
-function SalesPage() {
-  const query = useApiPage<Record<string, unknown>>('/api/sales?page=0&size=20')
-  const rows: Row[] = (query.data?.content ?? []).map((sale) => ({ id: String(sale.number), customer: String(sale.customer), date: formatDate(sale.date), total: money(sale.total), payment: Number(sale.balance) > 0 ? 'Cuenta corriente' : 'Pagada', status: String(sale.status) }))
-  const columns: TableColumn[] = [
-    { key: 'id', label: 'Venta', emphasis: true }, { key: 'customer', label: 'Cliente' }, { key: 'date', label: 'Fecha' }, { key: 'total', label: 'Total', align: 'right' }, { key: 'payment', label: 'Pago' }, { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
-  ]
-  return <><PageHeader eyebrow="Operación" title="Ventas" description="Consultá ventas, pagos y documentos." /><Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar ventas..." aria-label="Buscar ventas" /><Button variant="secondary">Filtrar</Button></div>{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
-}
-
-function InventoryPage() {
-  const query = useApiPage<Record<string, unknown>>('/api/inventory?page=0&size=20')
-  const rows: Row[] = (query.data?.content ?? []).map((item) => ({ product: String(item.product), stock: String(item.stock), lastMovement: String(item.lastMovement ?? '-'), updated: formatDate(item.updated) }))
-  const columns: TableColumn[] = [{ key: 'product', label: 'Producto', emphasis: true }, { key: 'stock', label: 'Saldo actual', align: 'right', render: (value) => <span className={Number(value) < 0 ? 'negative-number' : ''}>{value}</span> }, { key: 'lastMovement', label: 'Último movimiento' }, { key: 'updated', label: 'Actualizado' }]
-  return <><PageHeader eyebrow="Catálogo" title="Inventario" description="Saldos actuales y movimientos de stock." actions={<Button>+ Ajustar stock</Button>} /><Panel title="Saldos por producto">{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
-}
-
-function PaymentsPage() {
-  const query = useApiPage<Record<string, unknown>>('/api/payments?page=0&size=20')
-  const rows: Row[] = (query.data?.content ?? []).map((payment) => ({ customer: String(payment.customer), sale: String(payment.sale), amount: money(payment.amount), method: String(payment.method), date: formatDate(payment.date), status: 'Registrado' }))
-  const columns: TableColumn[] = [{ key: 'customer', label: 'Cliente', emphasis: true }, { key: 'sale', label: 'Venta' }, { key: 'amount', label: 'Importe', align: 'right' }, { key: 'method', label: 'Método' }, { key: 'date', label: 'Fecha' }, { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> }]
-  return <><PageHeader eyebrow="Operación" title="Pagos y cuenta corriente" description="Registrá pagos parciales y consultá saldos pendientes." actions={<Button>+ Registrar pago</Button>} /><Panel><div className="toolbar"><input className="input search-input" placeholder="Buscar cliente..." aria-label="Buscar pagos" /><Button variant="secondary">Ver cuenta de cliente</Button></div>{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
-}
-
-function AdminUsersPage() {
-  const query = useApiPage<Record<string, unknown>>('/api/users?page=0&size=20')
-  const rows: Row[] = (query.data?.content ?? []).map((user) => ({ name: String(user.name), email: String(user.email), role: String(user.email).startsWith('admin') ? 'Administrador' : 'Vendedor', status: String(user.status) }))
-  const columns: TableColumn[] = [{ key: 'name', label: 'Usuario', emphasis: true }, { key: 'email', label: 'Email' }, { key: 'role', label: 'Rol' }, { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> }, { key: 'actions', label: '', render: () => <Button variant="link">Ver detalle</Button> }]
-  return <><PageHeader eyebrow="Administración" title="Usuarios" description="Usuarios, acceso, bloqueo y sesiones." actions={<Button>+ Nuevo usuario</Button>} /><Panel>{query.isLoading || query.isError ? <LoadState error={query.error} /> : <><DataTable columns={columns} rows={rows} /><Pagination total={query.data?.totalElements} /></>}</Panel></>
-}
 
 function PlaceholderPage({ title, description, action }: { title: string; description: string; action?: string }) {
   return <><PageHeader eyebrow="Módulo" title={title} description={description} actions={action ? <Button>{action}</Button> : undefined} /><Panel><EmptyState title="Vista preparada" description="La distribución de contenido está lista para conectar con la API." action={<Button variant="secondary">Configurar vista</Button>} /></Panel></>
@@ -300,22 +228,24 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/activate" element={<ActivateUserPage />} />
       <Route element={<RequireAuth />}>
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/dashboard" element={hasAuthority('ADMIN_ALL') ? <DashboardPage /> : <Navigate to="/orders" replace />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/orders/new" element={<OrderCreatePage />} />
+        <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/catalog" element={<CatalogAdminPage />} />
+        <Route path="/price-lists" element={<PriceListsPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/payments" element={<PaymentsPage />} />
-        <Route path="/price-lists" element={<PlaceholderPage title="Listas de precios" description="Administrá las listas y sus precios." action="+ Nueva lista" />} />
-        <Route path="/admin/users" element={<AdminUsersPage />} />
-        <Route path="/admin/sellers" element={<PlaceholderPage title="Vendedores" description="Perfiles comerciales y asignaciones." action="+ Nuevo vendedor" />} />
-        <Route path="/admin/audit" element={<PlaceholderPage title="Auditoría" description="Historial de operaciones sensibles del sistema." />} />
-        <Route path="/admin/settings" element={<PlaceholderPage title="Configuración" description="Parámetros globales de la operación." />} />
+        <Route path="/admin/users" element={<UsersPage />} />
+        <Route path="/admin/sellers" element={<SellersPage />} />
+        <Route path="/admin/settings" element={<CreditLimitPage />} />
         <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." action="Volver al resumen" />} />
       </Route>
       </Route>

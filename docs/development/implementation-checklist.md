@@ -93,62 +93,69 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Cliente HTTP autenticado y shell protegido.
 - [x] Layout responsive desktop/mobile.
 - [x] Estados de carga, vacio y error principales.
-- [~] Manejo de sesion expirada sin refresh/revocacion completa.
-- [ ] Ocultar acciones segun permisos actuales.
-- [ ] Accesibilidad completa de foco, labels y teclado.
+- [x] Manejo de sesión expirada con refresh rotativo/revocación.
+- [x] Ocultar rutas/acciones según permisos actuales; backend autoriza los comandos.
+- [~] Foco visible, labels y controles etiquetados en módulos nuevos; auditoría completa pendiente.
 
 ### Usuarios, vendedores y clientes
 
 - [x] Listado, alta y edicion de clientes.
 - [x] Asignacion de vendedor y lista de precios.
 - [x] Baja logica y reactivacion.
-- [ ] Administracion completa de usuarios y vendedores.
-- [ ] Detalle de cliente con ventas, pagos y cuenta corriente.
+- [x] Invitación/creación de usuarios, activación, bloqueo, desbloqueo y revocación de sesiones.
+- [x] CRUD de vendedores y reasignación masiva de clientes/pedidos.
+- [ ] Detalle de cliente con ventas, pagos y cuenta corriente (falta consulta dedicada por cliente).
 
 ### Catalogo y precios
 
 - [x] Listado, alta, edicion y baja logica de productos.
 - [x] Validacion local de datos basicos y mensajes HTTP.
-- [ ] Quitar el campo y la columna de precio general del producto.
-- [ ] Mostrar precios exclusivamente por lista.
-- [ ] Crear y editar precios por producto/lista.
-- [ ] Editar costo sin pedir precios cuando no hay listas afectadas.
-- [ ] Mostrar automaticamente las listas afectadas cuando el nuevo costo las supera.
-- [ ] Enviar costo y nuevos precios afectados en la misma operacion.
-- [ ] Mostrar errores de listas faltantes o precios menores al costo.
-- [ ] Pantalla completa de administracion de listas.
+- [x] Quitar el campo y la columna de precio general del producto.
+- [x] Mostrar precios exclusivamente por lista.
+- [x] Crear y editar precios por producto/lista.
+- [x] Editar costo sin pedir precios cuando no hay listas afectadas.
+- [x] Mostrar automáticamente listas afectadas cuando el nuevo costo las supera.
+- [x] Enviar costo y precios afectados en la misma operación.
+- [x] Mostrar errores de listas faltantes o precios menores al costo.
+- [x] Pantalla de administración de listas, marcas y categorías.
 
 ### Inventario
 
 - [x] Consulta de saldos.
-- [~] Consulta de movimientos sin vista de detalle completa.
-- [ ] Formulario de ajuste manual.
-- [ ] Permisos, confirmacion y advertencia de saldo negativo.
+- [x] Saldos y vista paginada de movimientos por producto.
+- [x] Formulario de ajuste manual.
+- [x] Permisos, confirmación y advertencia de saldo negativo.
 
 ### Pedidos y ventas
 
-- [~] Listados reales de pedidos, ventas y pagos.
-- [ ] Conectar nuevo pedido con `/api/orders/confirm`.
-- [ ] Seleccionar cliente, lista y productos con stock.
-- [ ] Preview de descuentos y totales sin reemplazar el backend.
-- [ ] Idempotency key, bloqueo de doble envio y reintento seguro.
-- [ ] Detalle de venta con snapshots, pagos y saldo.
-- [ ] Registrar pagos parciales y combinados.
+- [x] Listados reales de pedidos, ventas y pagos.
+- [x] Nuevo pedido con cliente/lista/productos, stock, precios y confirmación en `/api/orders/confirm`.
+- [x] Preview de descuentos sin reemplazar el backend; solo `ADMIN_ALL` ve controles de descuento/precio manual.
+- [x] Idempotency key, bloqueo de doble envío y retry seguro con el mismo payload.
+- [x] Detalle de pedido/venta con snapshots, pagos y ledger por venta.
+- [x] Registrar pagos parciales/combinados y cobros durante la entrega.
+- [x] Imputación FIFO de pagos de cuenta corriente.
+- [~] Edición administrativa solo para pedidos sin descuentos guardados y con una sola lista (falta porcentaje original en la lectura).
+- [ ] Imputación de pago a deuda específica (falta consulta por cliente).
+- [ ] Devolución UI (falta lectura de líneas por `saleId`).
 
 ### Entrega, documentos y calidad
 
-- [ ] Marcar pedido/venta como entregado.
-- [ ] Registrar intentos fallidos y observaciones.
-- [ ] Cobrar durante la entrega con efectivo o transferencia.
-- [ ] Capturar numero opcional de transferencia.
-- [ ] Descargar e imprimir documentos desde la interfaz.
-- [ ] Compartir comprobantes por WhatsApp/link configurable.
+- [x] Marcar pedido como entregado y registrar intentos fallidos/observaciones.
+- [x] Cobrar durante entrega con efectivo/transferencia y referencia opcional.
+- [x] Cancelar pedidos con confirmación/permisos y descargar PDF A4/ticket.
+- [x] Solicitar notificaciones Email/WhatsApp y consultar estado individual.
+- [ ] Historial de intentos de entrega (no está en la lectura de detalle).
+- [ ] Panel de outbox completo (no existe endpoint operativo).
 - [x] Build y proxy `/api` funcionando.
-- [~] Tests de componentes parciales.
-- [ ] Tests de API client y flujos E2E.
-- [ ] Verificacion mobile de formularios y tablas.
+- [x] Tests Vitest de API client, componentes y flujos implementados.
+- [ ] Tests E2E login -> crear cliente -> pedido -> confirmar -> ver venta.
+- [~] Responsive aplicado; pruebas automatizadas mobile pendientes.
 
 ## Orden sugerido
+
+El detalle de funciones completas y ausencias de API se mantiene en
+[`frontend-backend-gaps.md`](frontend-backend-gaps.md).
 
 1. [x] Completar cobros durante la entrega: método, referencia opcional de transferencia y resto a cuenta corriente.
 2. [x] Imputar pagos a una deuda específica o mediante FIFO.

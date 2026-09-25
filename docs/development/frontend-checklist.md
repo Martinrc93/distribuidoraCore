@@ -1,6 +1,6 @@
 # Frontend Development Checklist
 
-Estado actualizado: 2026-09-19
+Estado actualizado: 2026-09-24
 
 ## Cómo Leerlo
 
@@ -16,22 +16,22 @@ Estado actualizado: 2026-09-19
 - [x] TanStack Query para server state.
 - [x] Cliente HTTP autenticado con token en `sessionStorage`.
 - [x] Login real contra `/api/auth/login`.
-- [~] Manejo de sesión expirada: limpia token en `401`, falta redirección/refresh explícito.
-- [ ] Mostrar permisos actuales desde claims/usuario y ocultar acciones por permiso.
-- [ ] Refresh/revocación de sesión cuando el backend esté disponible.
+- [x] Manejo de sesión expirada: una renovación compartida por solicitudes concurrentes, un retry y limpieza de tokens si refresh falla.
+- [x] Mostrar acciones administrativas según autoridades del JWT y dejar la autorización final al backend.
+- [x] Refresh/revocación de sesión con `/api/auth/refresh` y `/api/auth/logout`.
 
 ## Componentes Y UX Transversal
 
 - [x] Layout responsive desktop/mobile.
-- [x] Tablas paginadas y transformadas a cards en mobile.
+- [~] Tablas transformadas a cards en mobile; varios listados muestran el primer bloque de 20 sin controles de página activos.
 - [x] Estados de carga y error para consultas principales.
 - [x] Componentes reutilizables de botones, paneles, badges, tablas y paginación.
-- [~] Feedback de mutaciones: existe feedback de error en formularios, falta feedback global de éxito.
-- [ ] Confirmación explícita para bajas lógicas y acciones irreversibles.
+- [x] Feedback de mutaciones con mensajes de éxito y errores accionables en flujos implementados.
+- [x] Confirmación explícita para bajas lógicas, cancelaciones y acciones irreversibles implementadas.
 - [ ] Filtros y paginación persistidos en URL.
-- [ ] Estados vacíos específicos por módulo.
+- [~] Estados vacíos específicos en los módulos conectados; completar en las vistas pendientes.
 - [ ] Accesibilidad: foco, labels, navegación de teclado y mensajes para lectores.
-- [ ] Tests de componentes, mutaciones y navegación con React Testing Library.
+- [~] Tests de componentes, mutaciones y navegación con React Testing Library; no incluye aún todos los módulos ni E2E.
 - [ ] Tests E2E con Playwright para login y flujos comerciales.
 
 ## Customers
@@ -43,7 +43,7 @@ Estado actualizado: 2026-09-19
 - [x] Asignación de vendedor.
 - [x] Asignación de lista de precios.
 - [x] Baja lógica/reactivación desde la UI.
-- [ ] Vista de detalle de cliente con ventas, pagos y cuenta corriente.
+- [ ] Vista de detalle de cliente con ventas, pagos y cuenta corriente (falta consulta dedicada por `customerId`).
 
 ## Catalog Y Pricing
 
@@ -51,79 +51,80 @@ Estado actualizado: 2026-09-19
 - [x] Alta básica de producto.
 - [x] Edición de producto.
 - [x] Baja/reactivación de producto.
-- [ ] Pantalla de listas de precios.
-- [ ] Crear/renombrar/activar/desactivar lista.
-- [ ] Editar precios por producto dentro de una lista.
-- [ ] Resolver y mostrar lista/precio seleccionado para un cliente.
+- [x] Pantalla de listas de precios.
+- [x] Crear/renombrar/activar/desactivar lista.
+- [x] Editar precios por producto dentro de una lista.
+- [x] Resolver y mostrar lista/precio seleccionado para un cliente en el flujo de pedidos.
+- [x] Quitar el precio general del producto; gestionar precios por lista.
+- [x] Editar costo y solicitar reemplazo solo para listas activas afectadas.
+- [x] Administrar marcas/categorías y asociarlas opcionalmente al producto.
 - [x] Manejar `403`, `404` y `409` con mensajes accionables.
 
 ## Inventory
 
 - [x] Consulta real de saldos e inventario.
-- [~] Historial de movimientos: endpoint backend disponible, vista de detalle pendiente.
-- [ ] Formulario de ajuste manual con cantidad en múltiplos de `0.5`.
-- [ ] Mostrar advertencia de saldo negativo.
-- [ ] Ocultar ajuste manual para usuarios sin `STOCK_ADJUST`.
-- [ ] Confirmación antes de aplicar ajuste.
-- [ ] Feedback de éxito y actualización inmediata de la query.
+- [x] Historial de movimientos por producto.
+- [x] Formulario de ajuste manual con cantidades en múltiplos de `0.5` y motivo.
+- [x] Advertencia de saldo negativo.
+- [x] Ocultar ajustes para usuarios sin `STOCK_ADJUST`.
+- [x] Confirmación antes de aplicar ajuste.
+- [x] Feedback de éxito e invalidación de consultas.
 
 ## Orders
 
-- [~] Listado de pedidos real.
-- [~] Pantalla "Nuevo pedido" visual: falta conectar al comando real.
-- [ ] Formulario local sin borrador persistido.
-- [ ] Selección de cliente y vendedor asignado.
-- [ ] Selección explícita de lista de precios.
-- [ ] Búsqueda de productos y stock disponible.
-- [ ] Cálculo visual de líneas/descuentos como preview, sin reemplazar backend.
-- [ ] Campo `idempotencyKey` generado por cada intento de confirmación.
-- [ ] Confirmación contra `/api/orders/confirm`.
-- [ ] Prevenir doble click mientras confirma.
-- [ ] Mostrar respuesta con número de pedido, venta, pagado y saldo.
-- [ ] Reintentar la misma confirmación usando la misma clave.
-- [ ] Mostrar errores de stock, precio, permisos y conflicto de idempotencia.
-- [ ] Advertir al abandonar un pedido con cambios no confirmados.
+- [x] Listado real de pedidos con búsqueda y estado.
+- [x] Formulario local sin borrador persistido y selección de cliente/lista/productos.
+- [x] Mostrar stock disponible y resolver precios con `/api/pricing/resolve`.
+- [x] Preview de líneas/descuentos sin sustituir el backend.
+- [x] Mostrar descuentos y precios manuales solo a `ADMIN_ALL`.
+- [x] `idempotencyKey` por intento, bloqueo de doble envío y retry con clave/payload iguales.
+- [x] Confirmación contra `/api/orders/confirm`; render de números, total, cobrado, saldo y warning de crédito.
+- [x] Detalle de pedido/venta con snapshots, pagos y ledger asociado a la venta.
+- [~] Edición administrativa disponible si no hay descuentos guardados y se usa una sola lista; GET no expone el porcentaje de descuento general original.
+- [~] Advertencia antes de abandonar cubre navegación del navegador, no toda navegación interna.
 
 ## Sales, Payments Y Cuenta Corriente
 
-- [~] Listado real de ventas.
-- [~] Listado real de pagos.
-- [ ] Detalle de venta con snapshots, pagos y saldo.
-- [ ] Registrar pago parcial o combinado.
-- [ ] Seleccionar `CASH`, `BANK_TRANSFER` o `CUSTOMER_ACCOUNT`.
-- [ ] Mostrar deuda y saldo actualizado del cliente.
-- [ ] Preparar UI para aplicación FIFO cuando el backend lo implemente.
+- [x] Listado real de ventas con total, cobrado, saldo y estado.
+- [x] Listado real de pagos con referencia opcional de transferencia.
+- [x] Cobros parciales/combinados al confirmar pedido o durante la entrega.
+- [x] Pagos `CASH`/`BANK_TRANSFER` a cuenta corriente con imputación FIFO.
+- [x] Mostrar resultado de imputación y saldos anterior/actualizado.
+- [ ] Aplicar pago a una deuda específica (falta consulta de deudas por `customerId`).
+- [ ] Devolver venta desde la UI (falta lectura de líneas por `saleId`).
+- [ ] Corregir/revertir pago (no existe endpoint de comando).
 
 ## Delivery, Documents Y Notifications
 
-- [ ] Marcar pedido/venta como `DELIVERED`.
-- [ ] Registrar intentos de entrega y observaciones.
-- [ ] Cancelar venta con confirmación y permisos.
-- [ ] Verificar reversión de stock después de cancelación.
-- [ ] Descargar/imprimir documentos bajo demanda.
-- [ ] Compartir comprobante mediante WhatsApp/link configurable.
-- [ ] Mostrar estado de outbox/reintentos cuando exista backend.
+- [x] Marcar pedido como `DELIVERED` y registrar cobros opcionales durante entrega.
+- [x] Registrar intentos fallidos con observaciones.
+- [x] Cancelar pedido confirmado con confirmación y permiso administrativo.
+- [~] Cancelación ejecutada por backend; el detalle no expone movimientos para verificar rollback de stock.
+- [x] Descargar PDF A4 y ticket bajo demanda.
+- [x] Solicitar notificación Email/WhatsApp y consultar estado individual.
+- [ ] Ver historial de intentos de entrega (no está en la respuesta de detalle).
+- [ ] Mostrar estado global de outbox/worker (no existe endpoint operativo).
 
 ## Calidad Y Entrega
 
 - [x] `npm run build` funcional.
 - [x] Frontend servido por Nginx en Compose.
 - [x] Proxy `/api` hacia backend.
-- [~] Tests unitarios: existen tests de app/componentes, falta cobertura de API client y flujos.
-- [ ] Contratos TypeScript/Zod alineados con DTOs backend.
+- [x] Tests unitarios de API client, formularios y flujos implementados.
+- [~] Contratos TypeScript alineados con flujos implementados; sin Zod.
 - [ ] Validación de formularios con React Hook Form + Zod según la arquitectura documentada.
 - [ ] E2E login -> crear cliente -> crear pedido -> confirmar -> ver venta.
-- [ ] Pruebas mobile de navegación, tablas y formularios.
-- [ ] Auditoría visual de estados de error/autorización.
+- [~] Diseño responsive actualizado; faltan pruebas automatizadas mobile.
+- [~] Errores/permisos cubiertos en pruebas de componente; falta auditoría visual completa.
 
 ## Siguiente Orden Recomendado
 
-1. Conectar `Nuevo pedido` al endpoint de confirmación atómica.
-2. Crear UI de Pricing y asignación de lista a cliente.
-3. Completar edición/baja de productos y ajustes de inventario.
-4. Completar detalle de venta, pagos y cuenta corriente.
-5. Implementar entrega, cancelación y documentos.
-6. Agregar tests de API client y E2E.
+1. [x] Conectar `Nuevo pedido` al endpoint de confirmación atómica.
+2. [x] Crear UI de Pricing, marcas/categorías y precios por lista.
+3. [x] Completar edición/baja de productos y ajustes de inventario.
+4. [~] Completar ventas/pagos y cuenta corriente; faltan deuda específica y devoluciones con líneas.
+5. [~] Implementar entrega, cancelación, documentos y notificaciones; falta historial de intentos.
+6. [~] Tests Vitest de API client y flujos principales; E2E aún pendiente.
 
 ## Criterio De Cierre Frontend
 
