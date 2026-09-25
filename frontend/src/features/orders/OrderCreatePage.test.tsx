@@ -13,7 +13,14 @@ function response(body: unknown, status = 200) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 }
 
-const customers = { content: [{ id: 'customer-1', name: 'Almacén Norte', priceListId: 'list-1', sellerId: 'seller-1', balance: 0 }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
+const customers = { content: [
+  { id: 'customer-1', name: 'Almacén Norte', priceListId: 'list-1', sellerId: 'seller-1', seller: 'Lucía', balance: 0 },
+  { id: 'customer-2', name: 'Almacén Sur', priceListId: 'list-1', sellerId: 'seller-1', seller: 'Lucía', balance: 0 },
+], page: 0, size: 20, totalElements: 2, totalPages: 1 }
+const sellers = { content: [
+  { id: 'seller-1', displayName: 'Lucía', email: 'lucia@example.test' },
+  { id: 'seller-2', displayName: 'Martín', email: 'martin@example.test' },
+], page: 0, size: 100, totalElements: 2, totalPages: 1 }
 const products = { content: [{ id: 'product-1', sku: 'SKU-1', name: 'Harina', presentation: 'Bolsa', stock: 12, status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const lists = { content: [{ id: 'list-1', code: 'MAYORISTA', name: 'Mayorista', status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
@@ -27,6 +34,7 @@ function renderPage(authorities = ['ORDER_CREATE']) {
 function catalogResponse(input: RequestInfo | URL) {
   const path = String(input)
   if (path.startsWith('/api/customers')) return response(customers)
+  if (path.startsWith('/api/sellers')) return response(sellers)
   if (path.startsWith('/api/products')) return response(products)
   if (path.startsWith('/api/pricing/lists')) return response(lists)
   if (path.startsWith('/api/pricing/resolve')) return response({ priceListId: 'list-1', priceListCode: 'MAYORISTA', productId: 'product-1', unitPrice: 150.5 })
@@ -36,6 +44,48 @@ function catalogResponse(input: RequestInfo | URL) {
 describe('OrderCreatePage', () => {
   afterEach(() => { cleanup(); sessionStorage.clear() })
   beforeEach(() => { vi.restoreAllMocks() })
+
+  it('loads admin sellers and places Seller between Customer and Price List in the approved grid', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => catalogResponse(input))
+    renderPage(['ADMIN_ALL', 'ORDER_CREATE'])
+
+    await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
+
+    const customerField = screen.getByLabelText('Cliente')
+    const sellerField = screen.getByLabelText('Vendedor')
+    const priceListField = screen.getByLabelText('Lista de precios')
+    expect(sellerField).toHaveValue('seller-1')
+    expect(customerField.compareDocumentPosition(sellerField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(sellerField.compareDocumentPosition(priceListField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(customerField.closest('.order-customer-grid')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/sellers?page=0&size=100', expect.anything())
+  })
+
+  it('shows a non-admin the selected customer seller without requesting sellers', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => catalogResponse(input))
+    renderPage(['ORDER_CREATE'])
+
+    await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
+
+    expect(screen.getByText('Lucía')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Vendedor' })).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/sellers?page=0&size=100', expect.anything())
+  })
+
+  it('allows an admin to override the seller and resets it when the customer changes', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(global, 'fetch').mockImplementation((input) => catalogResponse(input))
+    renderPage(['ADMIN_ALL', 'ORDER_CREATE'])
+
+    await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
+    await user.selectOptions(screen.getByLabelText('Vendedor'), 'seller-2')
+    expect(screen.getByLabelText('Vendedor')).toHaveValue('seller-2')
+
+    await user.selectOptions(screen.getByLabelText('Cliente'), 'customer-2')
+    expect(screen.getByLabelText('Vendedor')).toHaveValue('seller-1')
+  })
 
   it('confirms an order using resolved list prices and a stable idempotency key', async () => {
     const user = userEvent.setup()
@@ -72,6 +122,7 @@ describe('OrderCreatePage', () => {
       payments: [{ method: 'CASH', amount: 100 }],
     })
     expect(request).not.toHaveProperty('depotId')
+    expect(request).not.toHaveProperty('sellerId')
     expect(fetchMock).not.toHaveBeenCalledWith('/api/inventory/depots', expect.anything())
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('PED-001')).toBeInTheDocument()
@@ -95,6 +146,7 @@ describe('OrderCreatePage', () => {
     renderPage(['ADMIN_ALL', 'ORDER_CREATE'])
 
     await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
+    await user.selectOptions(screen.getByLabelText('Vendedor'), 'seller-2')
     await user.selectOptions(screen.getByLabelText('Lista de precios'), 'list-1')
     await user.selectOptions(screen.getByLabelText('Producto'), 'product-1')
     await user.click(screen.getByRole('button', { name: /agregar producto/i }))
@@ -106,6 +158,7 @@ describe('OrderCreatePage', () => {
     await waitFor(() => expect(attempts).toBe(2))
     expect(attempts).toBe(2)
     expect(sentBodies[1]).toBe(sentBodies[0])
+    expect(JSON.parse(sentBodies[0])).toHaveProperty('sellerId', 'seller-2')
     expect(JSON.parse(sentBodies[0])).not.toHaveProperty('depotId')
     expect(fetchMock).not.toHaveBeenCalledWith('/api/inventory/depots', expect.anything())
   })

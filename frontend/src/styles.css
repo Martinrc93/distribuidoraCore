@@ -107,8 +107,10 @@ h3 { font-size: 14px; margin-bottom: 5px; }
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
 .pagination div { display: flex; gap: 7px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 25px; }
+.order-customer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 14px; margin-bottom: 25px; }
 .field { display: grid; gap: 7px; color: #62625d; font-size: 11px; font-weight: 700; }
 .field .input, .field .select { color: var(--ink); font-weight: 400; }
+.read-only-field { display: flex; min-height: 39px; align-items: center; color: var(--ink); font-size: 13px; font-weight: 400; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
 .order-totals { display: grid; grid-template-columns: 1fr auto; gap: 9px 18px; max-width: 300px; margin: 20px 0 20px auto; color: var(--muted); font-size: 12px; }
 .order-totals dd { margin: 0; color: var(--ink); text-align: right; }
@@ -185,6 +187,7 @@ h3 { font-size: 14px; margin-bottom: 5px; }
   .order-summary { position: static; }
   .product-picker { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
+  .order-customer-grid { grid-template-columns: 1fr; }
   .stats-grid, .stats-grid.compact { grid-template-columns: 1fr 1fr; }
   .panel { padding: 15px; }
 }
