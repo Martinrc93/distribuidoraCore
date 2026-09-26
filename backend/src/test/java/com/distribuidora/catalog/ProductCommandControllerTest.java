@@ -43,20 +43,19 @@ class ProductCommandControllerTest {
     void returnsCreatedIdForProductCreation() throws Exception {
         UUID id = UUID.randomUUID();
         UUID priceListId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
         when(service.create(any())).thenReturn(id);
 
         mockMvc.perform(post("/api/products")
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "sku": "SKU-TEST",
                         "name": "Producto Test",
-                        "category": "Bebidas",
-                        "presentation": "Unidad",
+                        "categoryId": "%s",
                         "cost": 100.00,
                         "prices": [{"priceListId":"%s","price":125.00}]
                     }
-                    """.formatted(priceListId)))
+                    """.formatted(categoryId, priceListId)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(id.toString()));
 
@@ -71,16 +70,16 @@ class ProductCommandControllerTest {
         mockMvc.perform(post("/api/products")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"sku":"SKU-MISSING","name":"Producto","category":"Bebidas","presentation":"Unidad","cost":100}
-                    """))
+                    {"name":"Producto","categoryId":"%s","cost":100}
+                    """.formatted(UUID.randomUUID())))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         mockMvc.perform(post("/api/products")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"sku":"SKU-EMPTY","name":"Producto","category":"Bebidas","presentation":"Unidad","cost":100,"prices":[]}
-                    """))
+                    {"name":"Producto","categoryId":"%s","cost":100,"prices":[]}
+                    """.formatted(UUID.randomUUID())))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
@@ -93,14 +92,12 @@ class ProductCommandControllerTest {
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "sku": "SKU-TEST",
                         "name": "Producto Actualizado",
-                        "category": "Bebidas",
-                        "presentation": "Pack x6",
+                        "categoryId": "%s",
                         "cost": 150.00,
                         "prices": []
                     }
-                    """))
+                    """.formatted(UUID.randomUUID())))
             .andExpect(status().isNoContent());
 
         verify(service).update(eq(id), any());
@@ -117,12 +114,9 @@ class ProductCommandControllerTest {
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "sku": "SKU-REF",
                         "name": "Producto",
-                        "category": "Bebidas",
                         "categoryId": "%s",
                         "brandId": "%s",
-                        "presentation": "Unidad",
                         "cost": 100
                     }
                     """.formatted(categoryId, brandId)))
@@ -147,13 +141,11 @@ class ProductCommandControllerTest {
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "sku": "SKU-TEST",
                         "name": "Producto Test",
-                        "category": "Bebidas",
-                        "presentation": "Unidad",
+                        "categoryId": "%s",
                         "cost": 120.00
                     }
-                    """))
+                    """.formatted(UUID.randomUUID())))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_PRODUCT_PRICES"))
             .andExpect(jsonPath("$.affectedPriceLists[0].code").value("GENERAL"))

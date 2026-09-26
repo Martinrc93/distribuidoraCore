@@ -77,22 +77,18 @@ describe('ProductsPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /nuevo producto/i }))
-    await user.type(screen.getByLabelText('SKU'), 'SKU-2')
     await user.type(screen.getByLabelText('Nombre'), 'Arroz')
     await user.clear(screen.getByLabelText('Costo'))
     await user.type(screen.getByLabelText('Costo'), '12.5')
     await user.clear(screen.getByLabelText('Precio para MAYORISTA'))
     await user.type(screen.getByLabelText('Precio para MAYORISTA'), '20.75')
-    await user.selectOptions(screen.getByLabelText('Asociar categoría'), 'category-1')
+    await user.selectOptions(screen.getByLabelText('Categoría'), 'category-1')
     await user.selectOptions(screen.getByLabelText('Marca'), 'brand-1')
     await user.click(screen.getByRole('button', { name: /guardar producto/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({
-        sku: 'SKU-2', name: 'Arroz', category: 'Almacén', presentation: 'Unidad', cost: 12.5,
-        prices: [{ priceListId: 'list-1', price: 20.75 }], categoryId: 'category-1', brandId: 'brand-1',
-      }),
+      body: JSON.stringify({ name: 'Arroz', cost: 12.5, prices: [{ priceListId: 'list-1', price: 20.75 }], categoryId: 'category-1', brandId: 'brand-1' }),
     })))
     expect(await screen.findByText('Producto creado correctamente.')).toBeInTheDocument()
   })
@@ -113,7 +109,7 @@ describe('ProductsPage', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({
       method: 'PUT',
-      body: JSON.stringify({ sku: 'SKU-1', name: 'Harina', category: 'Almacén', presentation: 'Bolsa', cost: 110, categoryId: 'category-1', brandId: 'brand-1' }),
+      body: JSON.stringify({ name: 'Harina', cost: 110, categoryId: 'category-1', brandId: 'brand-1' }),
     })))
     expect(await screen.findByText('Producto actualizado correctamente.')).toBeInTheDocument()
   })
@@ -152,7 +148,7 @@ describe('ProductsPage', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({
       method: 'PUT',
-      body: JSON.stringify({ sku: 'SKU-1', name: 'Harina', category: 'Almacén', presentation: 'Bolsa', cost: 130, prices: [{ priceListId: 'list-1', price: 140 }], categoryId: 'category-1', brandId: 'brand-1' }),
+      body: JSON.stringify({ name: 'Harina', cost: 130, prices: [{ priceListId: 'list-1', price: 140 }], categoryId: 'category-1', brandId: 'brand-1' }),
     })))
     expect(await screen.findByText('Producto actualizado correctamente.')).toBeInTheDocument()
   })
@@ -166,9 +162,8 @@ describe('ProductsPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /nuevo producto/i }))
-    await user.type(screen.getByLabelText('SKU'), 'SKU-2')
     await user.type(screen.getByLabelText('Nombre'), 'Arroz')
-    await user.type(screen.getByLabelText('Categoría'), 'Almacén')
+    await user.selectOptions(screen.getByLabelText('Categoría'), 'category-1')
     await user.clear(screen.getByLabelText('Costo'))
     await user.type(screen.getByLabelText('Costo'), '10')
     await user.clear(screen.getByLabelText('Precio para MAYORISTA'))

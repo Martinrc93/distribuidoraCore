@@ -43,13 +43,13 @@ public class ProductCommandController {
     ) { }
 
     public record ProductPayload(
-        @NotBlank String sku,
+        String sku,
         @NotBlank String name,
-        @NotBlank String category,
-        @NotBlank String presentation,
+        String category,
+        String presentation,
         @NotNull @DecimalMin("0") BigDecimal cost,
         @Valid List<ProductPricePayload> prices,
-        UUID categoryId,
+        @NotNull UUID categoryId,
         UUID brandId
     ) {
         public ProductCommandService.ProductInput input() {

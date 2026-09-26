@@ -12,12 +12,12 @@ import { useUrlListState } from '../../shared/useUrlListState'
 
 type Product = {
   id: string
-  sku: string
+  sku?: string | null
   name: string
   category: string
   categoryId?: string | null
   brandId?: string | null
-  presentation: string
+  presentation?: string | null
   cost?: number
   stock?: number
   status?: string
@@ -26,12 +26,9 @@ type Product = {
 type PriceList = { id: string; code: string; name: string; status: string }
 type CatalogOption = { id: string; name: string; status: string }
 type ProductFormValues = {
-  sku: string
   name: string
-  category: string
   categoryId: string
   brandId: string
-  presentation: string
   cost: string
   prices: Record<string, string>
 }
@@ -42,12 +39,9 @@ const BRANDS_QUERY_KEY = ['/api/brands']
 
 function initialFormValues(initial?: Product): ProductFormValues {
   return {
-    sku: initial?.sku ?? '',
     name: initial?.name ?? '',
-    category: initial?.category ?? '',
     categoryId: initial?.categoryId ?? '',
     brandId: initial?.brandId ?? '',
-    presentation: initial?.presentation ?? 'Unidad',
     cost: initial?.cost === undefined ? '' : String(initial.cost),
     prices: {},
   }
@@ -64,12 +58,12 @@ function errorMessage(cause: unknown, fallback: string) {
     if (status === 400) return message || 'Revisá los datos ingresados.'
     if (status === 403) return 'No tenés permisos para realizar esta operación.'
     if (status === 404) return 'El producto ya no existe o no está disponible.'
-    if (status === 409) return message || 'El SKU ya existe.'
+    if (status === 409) return message || 'El producto ya existe.'
     return message || fallback
   }
   if (/403|forbidden|permiso/i.test(message)) return 'No tenés permisos para realizar esta operación.'
   if (/404|not found|no existe/i.test(message)) return 'El producto ya no existe o no está disponible.'
-  if (/409|conflict|ya existe|duplic/i.test(message)) return message || 'El SKU ya existe.'
+  if (/409|conflict|ya existe|duplic/i.test(message)) return message || 'El producto ya existe.'
   if (/400|invalid|inválid/i.test(message)) return message || 'Revisá los datos ingresados.'
   return message || fallback
 }
@@ -118,7 +112,6 @@ function ProductForm({
     setForm((current) => ({
       ...current,
       [field]: value,
-      ...(field === 'category' ? { categoryId: '' } : {}),
     }))
   }
 
@@ -134,8 +127,8 @@ function ProductForm({
     event.preventDefault()
     if (saving) return
     const cost = Number(form.cost)
-    if (!form.sku.trim() || !form.name.trim() || !form.category.trim() || !form.presentation.trim()) {
-      setError('Completá SKU, nombre, categoría y presentación.')
+    if (!form.name.trim() || !form.categoryId) {
+      setError('Completá el nombre y seleccioná una categoría.')
       return
     }
     if (!form.cost.trim() || !Number.isFinite(cost) || cost < 0) {
@@ -166,10 +159,7 @@ function ProductForm({
     setError('')
     try {
       const body = {
-        sku: form.sku.trim(),
         name: form.name.trim(),
-        category: form.category.trim(),
-        presentation: form.presentation.trim(),
         cost,
         ...(prices.length > 0 ? { prices } : {}),
         categoryId: form.categoryId || null,
@@ -197,19 +187,13 @@ function ProductForm({
 
   return <Panel title={initial ? 'Editar producto' : 'Nuevo producto'}>
     <form className="form-grid" onSubmit={submit}>
-      <label className="field"><span>SKU</span><input className="input" value={form.sku} onChange={(event) => change('sku', event.target.value)} required disabled={saving} /></label>
       <label className="field"><span>Nombre</span><input className="input" value={form.name} onChange={(event) => change('name', event.target.value)} required disabled={saving} /></label>
-      <label className="field"><span>Categoría</span><input className="input" value={form.category} onChange={(event) => change('category', event.target.value)} required disabled={saving} /></label>
-      <label className="field"><span>Asociar categoría</span><select className="select" value={form.categoryId} onChange={(event) => {
-        const category = categories.find((item) => item.id === event.target.value)
-        setForm((current) => ({ ...current, categoryId: event.target.value, ...(category ? { category: category.name } : {}) }))
-      }} disabled={saving || optionsLoading}>
-        <option value="">Sin asociación</option>{categoryOptions.map((category) => <option value={category.id} key={category.id}>{category.name}{category.status !== 'ACTIVE' ? ' · Inactiva' : ''}</option>)}
+      <label className="field"><span>Categoría</span><select className="select" value={form.categoryId} onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))} required disabled={saving || optionsLoading}>
+        <option value="">Seleccionar categoría...</option>{categoryOptions.map((category) => <option value={category.id} key={category.id}>{category.name}{category.status !== 'ACTIVE' ? ' · Inactiva' : ''}</option>)}
       </select></label>
       <label className="field"><span>Marca</span><select className="select" value={form.brandId} onChange={(event) => change('brandId', event.target.value)} disabled={saving || optionsLoading}>
         <option value="">Sin marca</option>{brandOptions.map((brand) => <option value={brand.id} key={brand.id}>{brand.name}{brand.status !== 'ACTIVE' ? ' · Inactiva' : ''}</option>)}
       </select></label>
-      <label className="field"><span>Presentación</span><input className="input" value={form.presentation} onChange={(event) => change('presentation', event.target.value)} required disabled={saving} /></label>
       <label className="field"><span>Costo</span><input className="input" type="text" inputMode="decimal" value={form.cost} onChange={(event) => change('cost', event.target.value)} required disabled={saving} /></label>
       {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}</span><input className="input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required disabled={saving} /></label>)}
       {optionsError && <p className="error-text" role="alert">No se pudieron cargar las listas, marcas o categorías activas.</p>}
@@ -267,20 +251,16 @@ export default function ProductsPage() {
   const rows = products.map((product) => ({
     id: product.id,
     name: product.name,
-    sku: product.sku,
     category: product.category,
     brand: product.brandId ? brandNames.get(product.brandId) ?? '—' : '—',
-    presentation: product.presentation,
     cost: money(product.cost),
     stock: String(product.stock ?? 0),
     status: product.status ?? 'ACTIVE',
   }))
   const columns: TableColumn[] = [
     { key: 'name', label: 'Producto', emphasis: true },
-    { key: 'sku', label: 'SKU' },
     { key: 'category', label: 'Categoría' },
     { key: 'brand', label: 'Marca' },
-    { key: 'presentation', label: 'Presentación' },
     ...(isAdmin ? [{ key: 'cost', label: 'Costo', align: 'right' as const }] : []),
     { key: 'stock', label: 'Stock', align: 'right', render: (value) => <span className={Number(value) < 0 ? 'negative-number' : ''}>{value}</span> },
     { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
@@ -293,7 +273,7 @@ export default function ProductsPage() {
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
     {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} activeLists={activeLists} categories={categories} brands={brands} optionsLoading={optionsLoading} optionsError={optionsError} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} />}
     <Panel>
-      <div className="toolbar"><label className="field"><span>Buscar productos</span><input className="input search-input" aria-label="Buscar productos" placeholder="Nombre o SKU" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
+      <div className="toolbar"><label className="field"><span>Buscar productos</span><input className="input search-input" aria-label="Buscar productos" placeholder="Nombre o categoría" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
       {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title={search ? 'No hay productos para mostrar' : 'Todavía no hay productos'} description={search ? 'Probá otra búsqueda.' : 'Creá el primer producto para comenzar a gestionar el catálogo.'} action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)} disabled={mutating || formSaving}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating || formSaving}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}

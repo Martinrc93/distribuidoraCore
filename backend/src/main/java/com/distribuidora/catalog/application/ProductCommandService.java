@@ -48,8 +48,8 @@ public class ProductCommandService {
     public record ActiveListPrice(UUID priceListId, String code, BigDecimal price) { }
 
     public static void validate(ProductInput input) {
-        if (input == null || blank(input.sku()) || blank(input.name()) || blank(input.category()) || blank(input.presentation())) {
-            throw new IllegalArgumentException("sku, name, category y presentation son obligatorios");
+        if (input == null || blank(input.name()) || (input.categoryId() == null && blank(input.category()))) {
+            throw new IllegalArgumentException("name y categoryId son obligatorios");
         }
         if (input.cost() == null || input.cost().signum() < 0) {
             throw new IllegalArgumentException("cost no puede ser negativo");
@@ -79,14 +79,14 @@ public class ProductCommandService {
         validateCreatePrices(input.prices());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
         validateActive("catalog.brands", input.brandId());
-        if (exists("select exists(select 1 from catalog.products where sku = ?)", input.sku())) {
+        if (!blank(input.sku()) && exists("select exists(select 1 from catalog.products where sku = ?)", input.sku())) {
             throw new IllegalStateException("Ya existe un producto con ese SKU");
         }
         UUID id = UUID.randomUUID();
         jdbc.update("""
             insert into catalog.products(id, sku, name, category, presentation, cost, status, created_at, category_id, brand_id)
             values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
-            """, id, input.sku().trim(), input.name().trim(), categoryName.trim(), input.presentation().trim(),
+            """, id, nullable(input.sku()), input.name().trim(), categoryName.trim(), nullable(input.presentation()),
             input.cost(), timestamp(), input.categoryId(), input.brandId());
         jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, 0, ?)", id, timestamp());
 
@@ -96,7 +96,7 @@ public class ProductCommandService {
             }
         }
 
-        audit.record(actorId(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS", Map.of("sku", input.sku()));
+        audit.record(actorId(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS", Map.of("name", input.name()));
         return id;
     }
 
@@ -107,7 +107,7 @@ public class ProductCommandService {
         validateActive("catalog.brands", input.brandId());
         if (!exists("select exists(select 1 from catalog.products where id = ?)", id)) throw new EmptyResultDataAccessException(1);
         jdbc.queryForObject("select id from catalog.products where id = ? for update", UUID.class, id);
-        if (exists("select exists(select 1 from catalog.products where sku = ? and id <> ?)", input.sku(), id)) {
+        if (!blank(input.sku()) && exists("select exists(select 1 from catalog.products where sku = ? and id <> ?)", input.sku(), id)) {
             throw new IllegalStateException("Ya existe un producto con ese SKU");
         }
 
@@ -167,10 +167,10 @@ public class ProductCommandService {
 
         if (input.categoryId() == null && input.brandId() == null) {
             jdbc.update("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ? where id = ?",
-                input.sku().trim(), input.name().trim(), categoryName.trim(), input.presentation().trim(), input.cost(), id);
+                nullable(input.sku()), input.name().trim(), categoryName.trim(), nullable(input.presentation()), input.cost(), id);
         } else {
             jdbc.update("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ?, category_id = coalesce(?, category_id), brand_id = coalesce(?, brand_id) where id = ?",
-                input.sku().trim(), input.name().trim(), categoryName.trim(), input.presentation().trim(),
+                nullable(input.sku()), input.name().trim(), categoryName.trim(), nullable(input.presentation()),
                 input.cost(), input.categoryId(), input.brandId(), id);
         }
 
@@ -231,4 +231,5 @@ public class ProductCommandService {
     private UUID actorId() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch (Exception ignored) { return null; } }
     private Timestamp timestamp() { return Timestamp.from(Instant.now()); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
+    private static String nullable(String value) { return blank(value) ? null : value.trim(); }
 }

@@ -4,7 +4,6 @@ test('admin can create a customer, price a product, confirm an order and open it
   const suffix = `${testInfo.project.name}-${Date.now()}`
   const customerName = `E2E ${suffix}`
   const productName = `000 E2E product ${suffix}`
-  const sku = `E2E-${suffix.replaceAll(/[^A-Za-z0-9]/g, '').slice(-24)}`
 
   await page.goto('/login')
   await page.keyboard.press('Tab')
@@ -24,10 +23,8 @@ test('admin can create a customer, price a product, confirm an order and open it
 
   await page.goto('/products')
   await page.getByRole('button', { name: '+ Nuevo producto' }).first().click()
-  await page.getByLabel('SKU').fill(sku)
   await page.getByLabel('Nombre', { exact: true }).fill(productName)
-  await page.getByLabel('Categoría', { exact: true }).fill('Almacén')
-  await page.getByLabel('Presentación').fill('Unidad')
+  await page.getByLabel('Categoría', { exact: true }).selectOption({ label: 'Almacén' })
   await page.getByLabel('Costo').fill('5')
   const initialPrices = page.getByLabel(/^Precio para /)
   await expect(initialPrices.first()).toBeVisible()
