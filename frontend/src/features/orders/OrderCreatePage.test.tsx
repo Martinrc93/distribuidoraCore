@@ -56,6 +56,7 @@ describe('OrderCreatePage', () => {
     const sellerField = screen.getByLabelText('Vendedor')
     const priceListField = screen.getByLabelText('Lista de precios')
     expect(sellerField).toHaveValue('seller-1')
+    expect(priceListField).toHaveValue('list-1')
     expect(customerField.compareDocumentPosition(sellerField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(sellerField.compareDocumentPosition(priceListField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(customerField.closest('.order-customer-grid')).toBeInTheDocument()
@@ -122,7 +123,6 @@ describe('OrderCreatePage', () => {
     expect(screen.queryByLabelText('Depósito para el pedido')).not.toBeInTheDocument()
 
     await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
-    await user.selectOptions(screen.getByLabelText('Lista de precios'), 'list-1')
     await user.selectOptions(screen.getByLabelText('Producto'), 'product-1')
     await user.click(screen.getByRole('button', { name: /agregar producto/i }))
     await screen.findAllByText(/150,50/)
@@ -168,7 +168,6 @@ describe('OrderCreatePage', () => {
 
     await user.selectOptions(await screen.findByLabelText('Cliente'), 'customer-1')
     await user.selectOptions(screen.getByLabelText('Vendedor'), 'seller-2')
-    await user.selectOptions(screen.getByLabelText('Lista de precios'), 'list-1')
     await user.selectOptions(screen.getByLabelText('Producto'), 'product-1')
     await user.click(screen.getByRole('button', { name: /agregar producto/i }))
     await user.click(screen.getByRole('button', { name: /confirmar pedido/i }))

@@ -119,6 +119,14 @@ export default function OrderCreatePage() {
     setError('')
   }
 
+  function selectCustomer(selectedCustomerId: string) {
+    const selectedCustomer = customers.find((item) => item.id === selectedCustomerId)
+    draftChanged()
+    setCustomerId(selectedCustomerId)
+    setSellerId(selectedCustomer?.sellerId ?? '')
+    setExplicitListId(selectedCustomer?.priceListId ?? '')
+  }
+
   function addProduct() {
     if (!selectedProductId || lines.some((line) => line.productId === selectedProductId)) return
     draftChanged()
@@ -223,7 +231,7 @@ export default function OrderCreatePage() {
             <div className="order-main">
               <Panel title="Datos del pedido">
                 <div className="order-customer-grid">
-                  <label className="field"><span>Cliente</span><select className="select" value={customerId} onChange={(event) => { const selectedCustomerId = event.target.value; draftChanged(); setCustomerId(selectedCustomerId); setSellerId(customers.find((item) => item.id === selectedCustomerId)?.sellerId ?? ''); setExplicitListId('') }} required><option value="">Seleccionar cliente...</option>{customers.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+                  <label className="field"><span>Cliente</span><select className="select" value={customerId} onChange={(event) => selectCustomer(event.target.value)} required><option value="">Seleccionar cliente...</option>{customers.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
                   {isAdmin
                     ? <label className="field"><span>Vendedor</span><select className="select" aria-label="Vendedor" value={sellerId} onChange={(event) => { draftChanged(); setSellerId(event.target.value) }}><option value="">Usar vendedor del cliente</option>{(sellersQuery.data?.content ?? []).map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>
                     : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>}
