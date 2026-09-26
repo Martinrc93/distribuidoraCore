@@ -23,7 +23,7 @@ public class CustomerCommandService {
         this.audit = audit;
     }
 
-    public record CustomerInput(String businessName, String cuitId, UUID sellerId) { }
+    public record CustomerInput(String businessName, String cuitId, String email, String phone, String address, String zone, UUID sellerId, UUID priceListId) { }
 
     public static void validate(CustomerInput input) {
         if (input == null || blank(input.businessName())) {
@@ -40,9 +40,10 @@ public class CustomerCommandService {
         }
         UUID id = UUID.randomUUID();
         jdbc.update("""
-            insert into customer.customers(id, business_name, tax_id, seller_id, balance, status, created_at)
-            values (?, ?, ?, ?, 0, 'ACTIVE', ?)
-            """, id, input.businessName().trim(), cuitId, input.sellerId(), timestamp());
+            insert into customer.customers(id, business_name, tax_id, email, phone, address, zone, seller_id, balance, status, created_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, 0, 'ACTIVE', ?)
+            """, id, input.businessName().trim(), cuitId, normalize(input.email()), normalize(input.phone()),
+            normalize(input.address()), normalize(input.zone()), input.sellerId(), timestamp());
         Map<String, Object> details = new HashMap<>();
         details.put("cuitId", cuitId);
         audit.record(actorId(), "CUSTOMER_CREATE", "CUSTOMER", id.toString(), "SUCCESS", details);
@@ -59,8 +60,10 @@ public class CustomerCommandService {
         if (cuitId != null && exists("select exists(select 1 from customer.customers where tax_id = ? and id <> ?)", cuitId, id)) {
             throw new IllegalStateException("Ya existe un cliente con esa identificación");
         }
-        jdbc.update("update customer.customers set business_name = ?, tax_id = ?, seller_id = ? where id = ?",
-            input.businessName().trim(), cuitId, input.sellerId(), id);
+        validatePriceList(input.priceListId());
+        jdbc.update("update customer.customers set business_name = ?, tax_id = ?, email = ?, phone = ?, address = ?, zone = ?, seller_id = ?, price_list_id = ? where id = ?",
+            input.businessName().trim(), cuitId, normalize(input.email()), normalize(input.phone()),
+            normalize(input.address()), normalize(input.zone()), input.sellerId(), input.priceListId(), id);
         audit.record(actorId(), "CUSTOMER_UPDATE", "CUSTOMER", id.toString(), "SUCCESS", Map.of());
     }
 
@@ -80,13 +83,7 @@ public class CustomerCommandService {
         if (!exists("select exists(select 1 from customer.customers where id = ?)", customerId)) {
             throw new EmptyResultDataAccessException(1);
         }
-        if (priceListId != null) {
-            String status = jdbc.queryForObject(
-                "select status from catalog.price_lists where id = ?", String.class, priceListId);
-            if (!"ACTIVE".equals(status)) {
-                throw new IllegalStateException("La lista de precios no está activa");
-            }
-        }
+        validatePriceList(priceListId);
         jdbc.update("update customer.customers set price_list_id = ? where id = ?", priceListId, customerId);
         Map<String, Object> details = new HashMap<>();
         details.put("priceListId", priceListId);
@@ -95,6 +92,13 @@ public class CustomerCommandService {
 
     private boolean exists(String sql, Object... args) {
         return Boolean.TRUE.equals(jdbc.queryForObject(sql, Boolean.class, args));
+    }
+
+    private void validatePriceList(UUID priceListId) {
+        if (priceListId == null) return;
+        String status = jdbc.queryForObject(
+            "select status from catalog.price_lists where id = ?", String.class, priceListId);
+        if (!"ACTIVE".equals(status)) throw new IllegalStateException("La lista de precios no está activa");
     }
 
     private UUID actorId() {

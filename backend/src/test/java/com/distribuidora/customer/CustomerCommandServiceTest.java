@@ -38,13 +38,13 @@ class CustomerCommandServiceTest {
     @Test
     void rejectsBlankBusinessName() {
         assertThatThrownBy(() -> CustomerCommandService.validate(
-            new CustomerCommandService.CustomerInput("", "30-71234567-1", null)))
+            new CustomerCommandService.CustomerInput("", "30-71234567-1", null, null, null, null, null, null)))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void allowsMissingTaxId() {
-        CustomerCommandService.validate(new CustomerCommandService.CustomerInput("Cliente sin identificacion", null, null));
+        CustomerCommandService.validate(new CustomerCommandService.CustomerInput("Cliente sin identificacion", null, null, null, null, null, null, null));
     }
 
     @Test

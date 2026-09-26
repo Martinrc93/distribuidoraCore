@@ -17,7 +17,6 @@ import CatalogAdminPage from '../features/catalog/CatalogAdminPage'
 import OrderCreatePage from '../features/orders/OrderCreatePage'
 import OrdersPage from '../features/orders/OrdersPage'
 import OrderDetailPage from '../features/orders/OrderDetailPage'
-import InventoryPage from '../features/inventory/InventoryPage'
 import SalesPage from '../features/sales/SalesPage'
 import PaymentsPage from '../features/payments/PaymentsPage'
 import SellersPage from '../features/admin/SellersPage'
@@ -88,7 +87,6 @@ const menuGroups = [
     links: [
       ['Productos', '/products'],
       ['Marcas y categorías', '/catalog'],
-      ['Inventario', '/inventory'],
       ['Listas de precios', '/price-lists'],
     ],
   },
@@ -127,7 +125,7 @@ function AppShell() {
           {menuGroups.filter((group) => group.label !== 'Administración' || isAdmin).map((group) => (
             <div className="nav-group" key={group.label}>
               <span className="nav-group-label">{group.label}</span>
-              {group.links.filter(([, href]) => (href !== '/inventory' || isAdmin) && (href !== '/dashboard' || isAdmin)).map(([label, href]) => (
+              {group.links.filter(([, href]) => href !== '/dashboard' || isAdmin).map(([label, href]) => (
                 <NavLink
                   className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                   key={href}
@@ -196,7 +194,6 @@ function DashboardPage() {
             <Button href="/orders/new" fullWidth>Crear pedido</Button>
             <Button href="/customers" variant="secondary" fullWidth>Buscar cliente</Button>
             <Button href="/payments" variant="secondary" fullWidth>Registrar pago</Button>
-            {hasAuthority('ADMIN_ALL') && <Button href="/inventory" variant="secondary" fullWidth>Revisar stock</Button>}
           </div>
         </Panel>
       </div>
@@ -238,7 +235,6 @@ export default function App() {
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/catalog" element={<CatalogAdminPage />} />
         <Route path="/price-lists" element={<PriceListsPage />} />
-        <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/sellers" element={<SellersPage />} />

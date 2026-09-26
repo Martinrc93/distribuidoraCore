@@ -22,7 +22,7 @@ persistencia deben utilizar PostgreSQL mediante Testcontainers.
 Configurar:
 
 ```text
-DB_URL=jdbc:postgresql://localhost:5432/distribuidora
+DB_URL=jdbc:postgresql://localhost:5433/distribuidora
 DB_USERNAME=distribuidora
 DB_PASSWORD=distribuidora
 ```
@@ -47,7 +47,7 @@ Servicios:
 - Backend: `http://localhost:8080`
 - Health: `http://localhost:8080/actuator/health`
 - Swagger: `http://localhost:8080/swagger-ui.html`
-- PostgreSQL: `localhost:5432`
+- PostgreSQL: `localhost:5433` (host port for the Docker Compose database)
 
 El backend recibe `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET` y
 `JWT_ISSUER` desde Compose. Para crear un administrador local inicial sin

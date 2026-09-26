@@ -46,8 +46,8 @@ public class CustomerCommandController {
         return ResponseEntity.noContent().build();
     }
 
-    public record CustomerPayload(@NotBlank String businessName, String cuitId, UUID sellerId) {
-        CustomerCommandService.CustomerInput input() { return new CustomerCommandService.CustomerInput(businessName, cuitId, sellerId); }
+    public record CustomerPayload(@NotBlank String businessName, String cuitId, String email, String phone, String address, String zone, UUID sellerId, UUID priceListId) {
+        CustomerCommandService.CustomerInput input() { return new CustomerCommandService.CustomerInput(businessName, cuitId, email, phone, address, zone, sellerId, priceListId); }
     }
     public record StatusPayload(String status) { }
     public record PriceListPayload(UUID priceListId) { }

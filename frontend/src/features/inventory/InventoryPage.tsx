@@ -91,13 +91,13 @@ export default function InventoryPage() {
       const item = query.data?.content.find((candidate) => candidate.id === row.id)
       if (!item) return null
       return <div className="page-actions">
-        <Button variant="link" onClick={() => setSelectedProduct(item)}>Ver movimientos de {item.product}</Button>
+        <Button variant="link" onClick={() => setSelectedProduct(item)}>Ver movimientos</Button>
         {canAdjust && <Button variant="link" onClick={() => {
           setAdjustmentProduct(item)
           setQuantity('')
           setReason('')
           setAdjustmentError('')
-        }}>Ajustar stock de {item.product}</Button>}
+        }}>Ajustar stock</Button>}
       </div>
     } },
   ]
@@ -130,7 +130,7 @@ export default function InventoryPage() {
       {query.isLoading ? <EmptyState title="Cargando inventario" description="Consultando saldos actuales." /> : query.isError ? <EmptyState title="No se pudo cargar el inventario" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay saldos" description="No hay productos que coincidan con la búsqueda." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Mostrando {rows.length} de {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage((current) => current + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {selectedProduct && <Panel title={`Movimientos · ${selectedProduct.product}`} action={<Button variant="link" onClick={() => setSelectedProduct(undefined)}>Cerrar detalle</Button>}>
-      {movementsQuery.isLoading ? <EmptyState title="Cargando movimientos" description="Consultando el historial de stock." /> : movementsQuery.isError ? <EmptyState title="No se pudieron cargar los movimientos" description={movementsQuery.error.message} /> : movementRows.length === 0 ? <EmptyState title="Sin movimientos" description="Este producto todavía no registra movimientos de stock." /> : <DataTable columns={movementColumns} rows={movementRows} />}
+      {movementsQuery.isLoading ? <EmptyState title="Cargando movimientos" description="Consultando el historial de stock." /> : movementsQuery.isError ? <EmptyState title="No se pudieron cargar los movimientos" description={movementsQuery.error.message} /> : movementRows.length === 0 ? <EmptyState title="Sin movimientos" description="No hay movimientos registrados para este producto." /> : <DataTable columns={movementColumns} rows={movementRows} />}
     </Panel>}
     {adjustmentProduct && <div role="dialog" aria-modal="true" aria-labelledby="adjustment-title" className="modal-backdrop"><Panel title="Ajustar inventario"><form className="form-grid" onSubmit={submitAdjustment}>
       <h2 id="adjustment-title">{adjustmentProduct.product} · stock actual {adjustmentProduct.stock}</h2>

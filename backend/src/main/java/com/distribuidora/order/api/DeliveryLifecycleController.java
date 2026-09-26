@@ -35,4 +35,11 @@ public class DeliveryLifecycleController {
         service.cancel(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/reactivate")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id) {
+        service.reactivate(id);
+        return ResponseEntity.noContent().build();
+    }
 }

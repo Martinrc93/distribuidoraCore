@@ -11,6 +11,16 @@ conservan los principios de movimientos append-only y modificación transacciona
 de stock. El contrato vigente está en
 [`docs/api/inventory.md`](../api/inventory.md).
 
+### Reevaluación pendiente
+
+Se debe evaluar si conviene retirar inventario por completo del sistema. La
+evaluación debe cubrir el módulo y su API, los saldos y movimientos persistidos,
+los ajustes manuales, la auditoría asociada y los vínculos con pedidos,
+cancelaciones, devoluciones e informes. Hasta que se tome y documente esa
+decisión, se conserva el comportamiento vigente. La pantalla de gestión de
+stock y movimientos está integrada en Productos; esto no implica que el dominio
+ni sus dependencias hayan sido eliminados.
+
 ## Context
 
 El stock requiere trazabilidad completa, permite valores negativos y puede ser

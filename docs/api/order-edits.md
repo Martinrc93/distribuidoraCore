@@ -35,6 +35,19 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 - La cancelación posterior revierte el efecto neto por producto de movimientos `SALE` y `SALE_CANCELLATION`, incluso si el pedido tuvo ediciones previas.
 - La reversión agrupa los movimientos por producto para restaurar el saldo único sin sobre-restaurar ediciones anteriores.
 
+## Reactivar un pedido cancelado
+
+`POST /api/orders/{orderId}/reactivate` requiere `ADMIN_ALL` y reactiva el pedido
+y su venta de `CANCELLED` a `CONFIRMED`. En el detalle del pedido aparece la
+acción **Reactivar pedido** para administradores.
+
+La reactivación exige que no existan pagos asociados. En una transacción vuelve
+a descontar del stock las cantidades guardadas en el pedido, agrega un débito
+por el total de la venta al ledger y aumenta el saldo del cliente. Los
+movimientos y asientos anteriores se conservan como historial append-only. La
+respuesta es `204 No Content`; si los estados no son ambos `CANCELLED` o hay
+pagos registrados, responde `409 CONFLICT`.
+
 Respuesta `200 OK`:
 
 ```json

@@ -64,7 +64,7 @@ describe('CustomersPage', () => {
     await user.selectOptions(screen.getByLabelText(/vendedor/i), 'seller-1')
     await user.click(screen.getByRole('button', { name: /guardar cliente/i }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Despensa Centro', cuitId: '30-456', sellerId: 'seller-1' }) })))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Despensa Centro', cuitId: '30-456', email: null, phone: null, address: null, zone: null, sellerId: 'seller-1' }) })))
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('Cliente creado correctamente.')).toBeInTheDocument()
   })
@@ -86,7 +86,7 @@ describe('CustomersPage', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ businessName: 'Cliente Eventual', cuitId: null, sellerId: undefined }),
+      body: JSON.stringify({ businessName: 'Cliente Eventual', cuitId: null, email: null, phone: null, address: null, zone: null, sellerId: undefined }),
     })))
   })
 
@@ -106,15 +106,13 @@ describe('CustomersPage', () => {
     await user.clear(screen.getByLabelText(/razón social/i))
     await user.type(screen.getByLabelText(/razón social/i), 'Almacén Sur')
     await user.selectOptions(await screen.findByLabelText(/lista de precios/i), 'list-2')
-    await user.click(screen.getByRole('button', { name: /asignar lista/i }))
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
     await waitFor(() => expect(screen.queryByRole('button', { name: /guardar cambios/i })).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: /desactivar cliente/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar/i }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ businessName: 'Almacén Sur', cuitId: '30-123', sellerId: undefined }) })))
-    expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/price-list', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ priceListId: 'list-2' }) }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ businessName: 'Almacén Sur', cuitId: '30-123', email: null, phone: null, address: null, zone: null, sellerId: undefined, priceListId: 'list-2' }) })))
     expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/status', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ status: 'INACTIVE' }) }))
     expect(await screen.findByText('Cliente desactivado correctamente.')).toBeInTheDocument()
   })

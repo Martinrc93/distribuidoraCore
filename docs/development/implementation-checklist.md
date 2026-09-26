@@ -62,6 +62,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Devoluciones `RETURN` parciales con saldo por línea, lock por venta y reintegro de stock transaccional; ver [contrato de API](../api/sale-returns.md).
 - [x] Edición administrativa de pedido/venta `CONFIRMED` con reemplazo de snapshots, deltas compensatorios, pagos preservados y conciliación de ledger; ver [contrato de API](../api/order-edits.md).
 - [x] Stock único por producto: V24 consolida los balances anteriores y quita ubicación de movimientos, pedidos y ventas. Confirmaciones, devoluciones, ediciones, cancelaciones y ajustes afectan el mismo saldo.
+- [ ] Evaluar si se retira inventario por completo, incluyendo API, datos históricos, auditoría y dependencias de pedidos, cancelaciones y devoluciones; decisión pendiente en [ADR-006](../adr/ADR-006-inventory-and-stock-consistency.md).
 
 ### Pedidos, ventas, pagos y cuenta corriente
 

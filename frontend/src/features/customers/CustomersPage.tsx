@@ -14,6 +14,10 @@ type Customer = {
   id: string
   name: string
   cuitId?: string | null
+  email?: string | null
+  phone?: string | null
+  address?: string | null
+  zone?: string | null
   seller?: string
   sellerId?: string
   priceListId?: string | null
@@ -53,27 +57,62 @@ function StatusBadge({ value }: { value: string }) {
 function CustomerForm({
   initial,
   sellers,
+  priceLists,
+  priceListsError,
+  onRetryPriceLists,
   onDone,
   onSuccess,
+  onChangeStatus,
 }: {
   initial?: Customer
   sellers: Seller[]
+  priceLists: PriceList[]
+  priceListsError: boolean
+  onRetryPriceLists: () => void
   onDone: () => void
   onSuccess: (message: string) => void
+  onChangeStatus: (customer: Customer) => void
 }) {
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
   const [businessName, setBusinessName] = useState(initial?.name ?? '')
   const [cuitId, setCuitId] = useState(initial?.cuitId ?? '')
   const [sellerId, setSellerId] = useState(initial?.sellerId ?? '')
+  const [email, setEmail] = useState(initial?.email ?? '')
+  const [phone, setPhone] = useState(initial?.phone ?? '')
+  const [address, setAddress] = useState(initial?.address ?? '')
+  const [zone, setZone] = useState(initial?.zone ?? '')
+  const [priceListId, setPriceListId] = useState(initial?.priceListId ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   useEffect(() => {
     setBusinessName(initial?.name ?? '')
     setCuitId(initial?.cuitId ?? '')
     setSellerId(initial?.sellerId ?? '')
+    setEmail(initial?.email ?? '')
+    setPhone(initial?.phone ?? '')
+    setAddress(initial?.address ?? '')
+    setZone(initial?.zone ?? '')
+    setPriceListId(initial?.priceListId ?? '')
     setError('')
+    setConfirmDiscard(false)
   }, [initial])
+
+  const changed = businessName !== (initial?.name ?? '')
+    || cuitId !== (initial?.cuitId ?? '')
+    || email !== (initial?.email ?? '')
+    || phone !== (initial?.phone ?? '')
+    || address !== (initial?.address ?? '')
+    || zone !== (initial?.zone ?? '')
+    || sellerId !== (initial?.sellerId ?? '')
+    || priceListId !== (initial?.priceListId ?? '')
+
+  function requestClose() {
+    if (saving) return
+    if (changed) setConfirmDiscard(true)
+    else onDone()
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -81,7 +120,7 @@ function CustomerForm({
     setSaving(true)
     setError('')
     try {
-      const body = { businessName, cuitId: cuitId.trim() || null, sellerId: sellerId || undefined }
+      const body = { businessName, cuitId: cuitId.trim() || null, email: email.trim() || null, phone: phone.trim() || null, address: address.trim() || null, zone: zone.trim() || null, sellerId: sellerId || undefined, ...(initial ? { priceListId: priceListId || null } : {}) }
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
       await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
@@ -95,15 +134,23 @@ function CustomerForm({
     }
   }
 
-  return <Panel title={initial ? 'Editar cliente' : 'Nuevo cliente'}>
+  return <>
+  <Panel title={initial ? 'Editar cliente' : 'Nuevo cliente'} action={<button className="customer-modal-close" type="button" aria-label="Cerrar modal" onClick={requestClose} disabled={saving}><span aria-hidden="true">×</span></button>}>
     <form className="form-grid" onSubmit={submit}>
       <label className="field"><span>Razón social</span><input className="input" value={businessName} onChange={(event) => setBusinessName(event.target.value)} required /></label>
       <label className="field"><span>CUIT (opcional)</span><input className="input" value={cuitId} onChange={(event) => setCuitId(event.target.value)} /></label>
+      <label className="field"><span>Mail</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+      <label className="field"><span>Celular</span><input className="input" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+      <label className="field"><span>Dirección</span><input className="input" value={address} onChange={(event) => setAddress(event.target.value)} /></label>
+      <label className="field"><span>Zona</span><input className="input" value={zone} onChange={(event) => setZone(event.target.value)} /></label>
       {isAdmin && <label className="field"><span>Vendedor asignado</span><select className="select" aria-label="Vendedor asignado" value={sellerId} onChange={(event) => setSellerId(event.target.value)}><option value="">Sin asignar</option>{sellers.map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName} ({seller.email})</option>)}</select></label>}
+      {initial && <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" value={priceListId} onChange={(event) => setPriceListId(event.target.value)} disabled={priceListsError}><option value="">Sin lista asignada</option>{priceLists.map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select>{priceListsError && <span className="error-text">No se pudieron cargar las listas. <Button variant="link" type="button" onClick={onRetryPriceLists}>Reintentar</Button></span>}</label>}
       {error && <p className="error-text" role="alert">{error}</p>}
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={onDone}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div>
+      <div className="page-actions customer-form-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}<div className="customer-form-actions-right"><Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || (initial !== undefined && priceListsError)}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></div>
     </form>
   </Panel>
+  {confirmDiscard && <div role="alertdialog" aria-modal="true" aria-labelledby="discard-customer-title" className="customer-discard-backdrop"><Panel title="Descartar cambios"><p id="discard-customer-title">Tenés cambios sin guardar. ¿Querés salir sin guardar los cambios?</p><div className="page-actions"><Button variant="secondary" type="button" onClick={() => setConfirmDiscard(false)}>Seguir editando</Button><Button type="button" onClick={onDone}>Salir sin guardar</Button></div></Panel></div>}
+  </>
 }
 
 export default function CustomersPage() {
@@ -117,7 +164,6 @@ export default function CustomersPage() {
   const listsQuery = useQuery({ queryKey: ['/api/pricing/lists?page=0&size=100'], queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=100'), enabled: isAdmin })
   const [formCustomer, setFormCustomer] = useState<Customer | undefined>()
   const [showForm, setShowForm] = useState(false)
-  const [selectedLists, setSelectedLists] = useState<Record<string, string>>({})
   const [actionError, setActionError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [actionSaving, setActionSaving] = useState(false)
@@ -125,22 +171,6 @@ export default function CustomersPage() {
 
   async function invalidate() {
     await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
-  }
-
-  async function assignPriceList(customer: Customer) {
-    if (actionSaving) return
-    setActionSaving(true)
-    setActionError('')
-    try {
-      await apiPatch(`/api/customers/${customer.id}/price-list`, { priceListId: selectedLists[customer.id] || null })
-      await invalidate()
-      setFeedback('Lista de precios asignada correctamente.')
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) await invalidate()
-      setActionError(errorMessage(cause, 'No se pudo asignar la lista de precios.'))
-    } finally {
-      setActionSaving(false)
-    }
   }
 
   async function changeStatus() {
@@ -152,6 +182,7 @@ export default function CustomersPage() {
       await apiPatch(`/api/customers/${statusCustomer.id}/status`, { status })
       await invalidate()
       setStatusCustomer(undefined)
+      setFormCustomer(undefined)
       setFeedback(status === 'ACTIVE' ? 'Cliente activado correctamente.' : 'Cliente desactivado correctamente.')
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 404) await invalidate()
@@ -176,15 +207,14 @@ export default function CustomersPage() {
     { key: 'seller', label: 'Vendedor' },
     { key: 'balance', label: 'Saldo', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
-    ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Record<string, string>) => <div className="page-actions"><Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button><Button variant="link" onClick={() => setStatusCustomer(query.data?.content.find((customer) => customer.id === row.id))}>{row.status === 'ACTIVE' ? 'Desactivar cliente' : 'Activar cliente'}</Button></div> }] : []),
+    ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Record<string, string>) => <div className="page-actions"><Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button></div> }] : []),
   ]
 
   return <>
     <PageHeader eyebrow="Operación" title="Clientes" description="Gestioná clientes, vendedor, lista de precios y cuenta corriente." actions={isAdmin ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
-    {isAdmin && (showForm || formCustomer) && <CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} />}
-    {isAdmin && formCustomer && <Panel title="Lista de precios" description="La asignación se aplica al cliente seleccionado."><div className="form-grid"><label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" value={selectedLists[formCustomer.id] ?? formCustomer.priceListId ?? ''} onChange={(event) => setSelectedLists((current) => ({ ...current, [formCustomer.id]: event.target.value }))} disabled={listsQuery.isError}><option value="">Sin lista asignada</option>{(listsQuery.data?.content ?? []).map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select></label>{listsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar las listas de precios. <Button variant="link" type="button" onClick={() => listsQuery.refetch()}>Reintentar</Button></p>}<Button type="button" onClick={() => assignPriceList(formCustomer)} disabled={actionSaving || listsQuery.isError}>{actionSaving ? 'Guardando...' : 'Asignar lista'}</Button></div></Panel>}
+    {isAdmin && (showForm || formCustomer) && <div role="dialog" aria-modal="true" aria-label={formCustomer ? 'Editar cliente' : 'Nuevo cliente'} className="modal-backdrop"><div className="customer-modal"><CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} /></div></div>}
     <Panel><div className="toolbar"><label className="field"><span>Buscar clientes</span><input className="input search-input" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
       {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay clientes" description="Creá el primer cliente para comenzar a gestionar la operación." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo cliente</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>

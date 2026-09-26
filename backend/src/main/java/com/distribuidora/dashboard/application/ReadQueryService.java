@@ -49,7 +49,7 @@ public class ReadQueryService {
         if (sellerScoped()) {
             UUID sellerId = currentUser.requireSellerProfile();
             return page("""
-                select c.id, c.business_name as name, c.tax_id as "cuitId", c.seller_id as "sellerId",
+                select c.id, c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                        c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller, c.balance, c.status
                 from customer.customers c left join seller.seller_profiles sp on sp.id = c.seller_id
                 where c.seller_id = ? and (lower(c.business_name) like ? or lower(c.tax_id) like ?)
@@ -58,7 +58,7 @@ public class ReadQueryService {
                 page, size, sellerId, term, term);
         }
         return page("""
-            select c.id, c.business_name as name, c.tax_id as "cuitId", c.seller_id as "sellerId",
+            select c.id, c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                    c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller,
                    c.balance, c.status
             from customer.customers c
@@ -196,7 +196,9 @@ public class ReadQueryService {
         if (sellerScoped()) currentUser.requireOrderAccess(orderId);
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
+                   c.business_name as customer,
+                   coalesce(assigned_seller.display_name, customer_seller.display_name, 'Sin asignar') as seller,
+                   o.status, o.subtotal, o.discount, o.total,
                    o.order_discount_percent as "orderDiscountPercent",
                    o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
@@ -204,6 +206,8 @@ public class ReadQueryService {
                    c.balance as "customerBalance", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
+            left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id
+            left join seller.seller_profiles customer_seller on customer_seller.id = c.seller_id
             where o.id = ?
             """, orderId);
         return detail(order, orderId);
@@ -229,7 +233,9 @@ public class ReadQueryService {
     public Map<String, Object> orderDetailByNumber(String orderNumber) {
         Map<String, Object> order = jdbc.queryForMap("""
             select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer, o.status, o.subtotal, o.discount, o.total,
+                   c.business_name as customer,
+                   coalesce(assigned_seller.display_name, customer_seller.display_name, 'Sin asignar') as seller,
+                   o.status, o.subtotal, o.discount, o.total,
                    o.order_discount_percent as "orderDiscountPercent",
                    o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
@@ -237,6 +243,8 @@ public class ReadQueryService {
                    c.balance as "customerBalance", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
+            left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id
+            left join seller.seller_profiles customer_seller on customer_seller.id = c.seller_id
              where o.order_number = ?
              """, orderNumber);
         if (sellerScoped()) currentUser.requireOrderAccess((UUID) order.get("id"));

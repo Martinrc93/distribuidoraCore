@@ -12,11 +12,18 @@ import { useUrlListState } from '../../shared/useUrlListState'
 
 type Sale = { id: string; number: string; customer: string; total: number; paid: number; balance: number; status: string; date: string }
 type SaleItem = { saleItemId: string; productId: string; productName: string; quantity: number; returnedQuantity: number; returnableQuantity: number }
-type SaleDetail = { sale: { id: string; number: string; status: string }; saleItems: SaleItem[] }
+type SaleDetail = {
+  order?: { id: string; number: string; customer: string; seller?: string; status: string; total: number; date: string }
+  sale: { id: string; number: string; status: string; total?: number; paid?: number; balance?: number; date?: string }
+  payments?: Array<{ id: string; amount: number; method: string; transferReference?: string | null; date: string }>
+  saleItems: SaleItem[]
+}
 type Row = Record<string, string>
 const money = (value: unknown) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(Number(value ?? 0))
 const formatDate = (value: string) => new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(value))
+const formatDateTime = (value: string) => new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 const stateName: Record<string, string> = { CONFIRMED: 'Confirmada', DELIVERED: 'Entregada', CANCELLED: 'Cancelada', RETURNED: 'Con devoluciones' }
+const paymentMethodName: Record<string, string> = { CASH: 'Efectivo', BANK_TRANSFER: 'Transferencia' }
 
 export default function SalesPage() {
   const queryClient = useQueryClient()
@@ -97,10 +104,34 @@ export default function SalesPage() {
       <div className="toolbar"><label className="field"><span>Buscar ventas</span><input className="input search-input" placeholder="Cliente o número de venta" aria-label="Buscar ventas" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
       {query.isLoading ? <EmptyState title="Cargando ventas" description="Consultando ventas registradas." /> : query.isError ? <EmptyState title="No se pudieron cargar las ventas" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay ventas para mostrar" description="Probá otra búsqueda." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} ventas</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
-    {selectedSaleId && <Panel title={`Venta ${detailQuery.data?.sale.number ?? ''}`} description="Líneas reales de la venta y cantidades disponibles para devolver.">
-      {detailQuery.isLoading ? <EmptyState title="Cargando venta" description="Consultando snapshots y líneas de venta." /> : detailQuery.isError ? <EmptyState title="No se pudo cargar la venta" description={detailQuery.error.message} action={<Button variant="secondary" onClick={() => setSelectedSaleId('')}>Cerrar</Button>} /> : !detailQuery.data ? <EmptyState title="Venta no disponible" description="No se encontró el detalle de esta venta." /> : <>
+    {selectedSaleId && <div role="dialog" aria-modal="true" aria-labelledby="sale-detail-title" className="modal-backdrop"><Panel title={`Venta ${detailQuery.data?.sale.number ?? ''}`} description="Pedido, cliente, vendedor, cobros y productos de la venta." action={<Button variant="link" onClick={() => setSelectedSaleId('')}>Cerrar</Button>}>
+      <h2 id="sale-detail-title">Detalle de venta</h2>
+      {detailQuery.isLoading ? <EmptyState title="Cargando venta" description="Consultando snapshots y líneas de venta." /> : detailQuery.isError ? <EmptyState title="No se pudo cargar la venta" description={detailQuery.error.message} /> : !detailQuery.data ? <EmptyState title="Venta no disponible" description="No se encontró el detalle de esta venta." /> : <>
         {feedback && <p className="success-text" role="status">{feedback}</p>}
         {returnError && <p className="error-text" role="alert">{returnError}</p>}
+        <dl className="confirmation-result">
+          <dt>Pedido</dt><dd>{detailQuery.data.order?.number ?? '—'}</dd>
+          <dt>Cliente</dt><dd>{detailQuery.data.order?.customer ?? '—'}</dd>
+          <dt>Vendedor</dt><dd>{detailQuery.data.order?.seller ?? 'Sin asignar'}</dd>
+          <dt>Fecha</dt><dd>{detailQuery.data.sale.date ? formatDateTime(detailQuery.data.sale.date) : detailQuery.data.order?.date ? formatDateTime(detailQuery.data.order.date) : '—'}</dd>
+          <dt>Total</dt><dd>{money(detailQuery.data.sale.total ?? detailQuery.data.order?.total)}</dd>
+          <dt>Pagado</dt><dd>{money(detailQuery.data.sale.paid)}</dd>
+          <dt>Saldo pendiente</dt><dd>{money(detailQuery.data.sale.balance)}</dd>
+          <dt>Estado</dt><dd>{stateName[detailQuery.data.sale.status] ?? detailQuery.data.sale.status}</dd>
+        </dl>
+        <h3>Pagos registrados</h3>
+        {(detailQuery.data.payments ?? []).length === 0 ? <p className="helper-text">No hay pagos registrados.</p> : <DataTable columns={[
+          { key: 'date', label: 'Día y horario' },
+          { key: 'method', label: 'Medio de pago' },
+          { key: 'amount', label: 'Monto', align: 'right' },
+          { key: 'reference', label: 'Referencia' },
+        ]} rows={(detailQuery.data.payments ?? []).map((payment) => ({
+          id: payment.id,
+          date: formatDateTime(payment.date),
+          method: paymentMethodName[payment.method] ?? payment.method,
+          amount: money(payment.amount),
+          reference: payment.transferReference || '—',
+        }))} />}
         <DataTable columns={[
           { key: 'product', label: 'Producto', emphasis: true },
           { key: 'sold', label: 'Vendida', align: 'right' },
@@ -113,8 +144,7 @@ export default function SalesPage() {
           <p className="helper-text">La devolución reincorpora unidades al stock del depósito original. El comando actual no realiza reintegros ni acredita la cuenta corriente.</p>
           <Button type="submit" disabled={savingReturn}>{savingReturn ? 'Registrando…' : 'Registrar devolución'}</Button>
         </form>}
-        <Button variant="secondary" onClick={() => setSelectedSaleId('')}>Cerrar detalle</Button>
       </>}
-    </Panel>}
+    </Panel></div>}
   </>
 }

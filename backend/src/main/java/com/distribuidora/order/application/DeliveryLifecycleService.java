@@ -160,6 +160,49 @@ public class DeliveryLifecycleService {
             Map.of("saleId", saleId.toString(), "credit", credit));
     }
 
+    @Transactional
+    public void reactivate(UUID orderId) {
+        if (currentUser != null && !currentUser.isAdmin()) {
+            throw new org.springframework.security.access.AccessDeniedException("Solo ADMIN_ALL puede reactivar pedidos");
+        }
+        Map<String, Object> lifecycle = lockOrderAndSale(orderId);
+        if (!"CANCELLED".equals(lifecycle.get("order_status")) || !"CANCELLED".equals(lifecycle.get("sale_status"))) {
+            throw new IllegalStateException("Solo se pueden reactivar pedidos y ventas cancelados");
+        }
+        if (decimal(lifecycle.get("paid")).signum() != 0) {
+            throw new IllegalStateException("No se puede reactivar una venta que tiene pagos registrados");
+        }
+
+        UUID saleId = uuid(lifecycle, "sale_id");
+        UUID customerId = uuid(lifecycle, "customer_id");
+        Integer paymentCount = jdbc.queryForObject(
+            "select count(*) from payment.payments where sale_id = ?", Integer.class, saleId);
+        if (paymentCount != null && paymentCount > 0) {
+            throw new IllegalStateException("No se puede reactivar una venta que tiene pagos registrados");
+        }
+        jdbc.queryForMap("select id, balance from customer.customers where id = ? for update", customerId);
+
+        List<Map<String, Object>> lines = jdbc.queryForList(
+            "select product_id, sum(quantity) as quantity from orders.order_items where order_id = ? "
+                + "group by product_id order by product_id", orderId);
+        for (Map<String, Object> line : lines) {
+            inventory.apply(uuid(line, "product_id"), decimal(line.get("quantity")).negate(),
+                "SALE", orderId, "Reactivated cancelled order");
+        }
+
+        BigDecimal total = decimal(lifecycle.get("total")).setScale(4);
+        Timestamp now = Timestamp.from(Instant.now());
+        if (total.signum() > 0) {
+            jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'DEBIT', ?, ?)",
+                UUID.randomUUID(), customerId, saleId, total, now);
+            jdbc.update("update customer.customers set balance = balance + ? where id = ?", total, customerId);
+        }
+        jdbc.update("update orders.orders set status = 'CONFIRMED', cancelled_at = null where id = ? and status = 'CANCELLED'", orderId);
+        jdbc.update("update sale.sales set status = 'CONFIRMED', cancelled_at = null where id = ? and status = 'CANCELLED'", saleId);
+        audit.recordWithinTransaction(actorId(), "ORDER_REACTIVATE", "ORDER", orderId.toString(), "SUCCESS",
+            Map.of("saleId", saleId.toString(), "total", total, "stockProducts", lines.size()));
+    }
+
     private void reversePersistedSaleMovements(UUID orderId, UUID saleId) {
         // Confirmation historically used orderId, while demo/legacy rows may use saleId.
         // Reverse the net stock effect so previous order edits cannot cause over-restoration.
