@@ -5,6 +5,26 @@ intentos de entrega y auditoría. Las respuestas paginadas usan el contrato
 `content`, `page`, `size`, `totalElements` y `totalPages`; la página comienza en
 0 y el tamaño se limita a 100.
 
+## Listado de clientes con filtros
+
+```http
+GET /api/customers?page=0&size=20&search=&sellerId=<uuid>&hasBalance=true&status=ACTIVE
+```
+
+`search` busca por nombre o identificación; `sellerId` filtra por vendedor
+asignado. `hasBalance=true` incluye saldos de cuenta corriente distintos de cero,
+tanto deuda como saldo a favor. `status` admite `ACTIVE`, `INACTIVE` o vacío para
+todos. Omitir estos filtros conserva la consulta completa para otros consumidores;
+la pantalla de clientes envía `ACTIVE` por defecto y ofrece Activo/Inactivo/Todos.
+Un vendedor autenticado sigue limitado a sus clientes, incluso con otro
+`sellerId`. Todos los filtros se combinan antes de paginar y calcular los totales.
+Un UUID, booleano o estado inválido devuelve `400`.
+
+`GET /api/customers/filter-options` devuelve `sellers` con opciones `{ id, name }`
+distintas, ordenadas por nombre e ID, de vendedores con clientes visibles.
+No limita las opciones a una página ni al estado activo. La pantalla conserva
+los filtros en la URL y vuelve a la primera página al cambiarlos.
+
 ## Listado de pedidos por fecha
 
 ```http

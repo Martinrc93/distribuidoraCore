@@ -28,7 +28,15 @@ public class ReadQueryController {
     public Map<String, Object> dashboard() { return queries.dashboard(); }
 
     @GetMapping("/customers")
-    public PageResponse<Map<String, Object>> customers(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.customers(page, size, search); }
+    public PageResponse<Map<String, Object>> customers(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
+            @RequestParam(required = false) UUID sellerId, @RequestParam(defaultValue = "false") boolean hasBalance,
+            @RequestParam(defaultValue = "") String status) {
+        return queries.customers(page, size, search, sellerId, hasBalance, status);
+    }
+
+    @GetMapping("/customers/filter-options")
+    public Map<String, Object> customerFilterOptions() { return queries.customerFilterOptions(); }
 
     @GetMapping("/customers/{customerId}/debts")
     @PreAuthorize("hasAnyAuthority('SALE_PAYMENT', 'ADMIN_ALL')")

@@ -195,6 +195,14 @@ Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
   tarjetas y utiliza ese atributo como etiqueta. Una tabla manual debe mantenerlo.
 - Agrupar búsqueda y filtros en `.toolbar`; input `.input.search-input` y
   select `.select`, con labels visibles o nombres accesibles.
+- En clientes, la búsqueda por nombre o identificación se combina con vendedor
+  por ID mediante `SearchableSelect` (administradores), cuenta corriente «Solo
+  con saldo» (saldo distinto de cero) y estado Activo/Inactivo/Todos. El estado
+  inicial es Activo. Los filtros se aplican antes de paginar, se conservan en la
+  URL y cada cambio vuelve a la primera página. Las opciones de vendedor incluyen
+  todos los vendedores con clientes visibles, sin límite de página, y permiten
+  reintentar si falla su carga. A `640px` o menos cada campo ocupa una fila completa
+  mediante utilidades locales. El estado vacío indica que no hay coincidencias.
 - En pedidos, `.orders-date-filters` agrupa fecha mínima y máxima a la derecha
   de `.orders-toolbar`. Cada campo mide `140px`; a `640px` o menos, búsqueda y
   estado ocupan filas completas y las fechas se distribuyen en dos columnas
@@ -217,6 +225,19 @@ const columns: TableColumn[] = [
 ```
 
 ## Formularios
+
+[`SearchableSelect`](../../frontend/src/shared/components/SearchableSelect.tsx)
+combina un campo editable y una lista desplegable con búsqueda local por nombre.
+Recibe opciones `{ id, name }` y conserva el ID elegido, incluso con nombres
+repetidos. La opción «Todos» siempre está disponible para quitar el filtro.
+Si se abandona la búsqueda sin elegir, conserva la selección anterior.
+Usa las clases `.searchable-select-*`, el campo `.input` de `39px`, ancho base
+de `210px` y lista con scroll de hasta `240px`, sin desbordar el ancho del campo.
+El ancho móvil se define en la pantalla que lo usa; ventas lo expande a `640px`.
+Expone roles combobox/listbox/option y opción activa mediante
+`aria-activedescendant`: flechas recorren opciones, Enter elige, Escape cancela
+y Tab cierra sin atrapar el foco. Incluye estados de carga, deshabilitado,
+selección no disponible y búsqueda sin coincidencias.
 
 - `.form-grid`: dos columnas, gap `14px`; una columna a `760px` o menos.
 - Cada campo usa `label.field` con un texto y un control asociado. Si el label

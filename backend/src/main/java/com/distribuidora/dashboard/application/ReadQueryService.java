@@ -49,17 +49,30 @@ public class ReadQueryService {
     }
 
     public PageResponse<Map<String, Object>> customers(int page, int size, String search) {
+        return customers(page, size, search, null, false, "");
+    }
+
+    public PageResponse<Map<String, Object>> customers(int page, int size, String search,
+            UUID sellerId, boolean hasBalance, String status) {
+        String state = status == null ? "" : status.trim();
+        if (!state.isEmpty() && !state.equals("ACTIVE") && !state.equals("INACTIVE")) {
+            throw new IllegalArgumentException("El estado del cliente debe ser ACTIVE o INACTIVE");
+        }
         String term = like(search);
+        String where = " where (lower(c.business_name) like ? or lower(c.tax_id) like ?)";
+        List<Object> parameters = new ArrayList<>(List.of(term, term));
         if (sellerScoped()) {
-            UUID sellerId = currentUser.requireSellerProfile();
-            return page("""
-                select c.id, c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
-                       c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller, c.balance, c.status
-                from customer.customers c left join seller.seller_profiles sp on sp.id = c.seller_id
-                where c.seller_id = ? and (lower(c.business_name) like ? or lower(c.tax_id) like ?)
-                order by c.business_name
-                """, "select count(*) from customer.customers where seller_id = ? and (lower(business_name) like ? or lower(tax_id) like ?)",
-                page, size, sellerId, term, term);
+            where += " and c.seller_id = ?";
+            parameters.add(currentUser.requireSellerProfile());
+        }
+        if (sellerId != null) {
+            where += " and c.seller_id = ?";
+            parameters.add(sellerId);
+        }
+        if (hasBalance) where += " and c.balance <> 0";
+        if (!state.isEmpty()) {
+            where += " and c.status = ?";
+            parameters.add(state);
         }
         return page("""
             select c.id, c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
@@ -67,10 +80,21 @@ public class ReadQueryService {
                    c.balance, c.status
             from customer.customers c
             left join seller.seller_profiles sp on sp.id = c.seller_id
-            where lower(c.business_name) like ? or lower(c.tax_id) like ?
-            order by c.business_name
-            """, "select count(*) from customer.customers where lower(business_name) like ? or lower(tax_id) like ?",
-            page, size, term, term);
+            """ + where + " order by c.business_name, c.id", "select count(*) from customer.customers c" + where,
+            page, size, parameters.toArray());
+    }
+
+    public Map<String, Object> customerFilterOptions() {
+        String where = "";
+        List<Object> parameters = new ArrayList<>();
+        if (sellerScoped()) {
+            where = " where c.seller_id = ?";
+            parameters.add(currentUser.requireSellerProfile());
+        }
+        return Map.of("sellers", jdbc.queryForList("""
+            select distinct sp.id, sp.display_name as name
+            from customer.customers c join seller.seller_profiles sp on sp.id = c.seller_id
+            """ + where + " order by sp.display_name, sp.id", parameters.toArray()));
     }
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search) {

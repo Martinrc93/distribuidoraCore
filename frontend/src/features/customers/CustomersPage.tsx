@@ -8,6 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type Customer = {
@@ -132,7 +133,7 @@ function CustomerForm({
       const body = { businessName, cuitId: cuitId.trim() || null, email: email.trim() || null, phone: phone.trim() || null, address: address.trim() || null, zone: zone.trim() || null, sellerId: sellerId || undefined, ...(initial || priceListId ? { priceListId: priceListId || null } : {}) }
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
-      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') || queryKey[0] === '/api/customers/filter-options' })
       onSuccess(initial ? 'Cliente actualizado correctamente.' : 'Cliente creado correctamente.')
       onDone()
     } catch (cause) {
@@ -165,10 +166,14 @@ function CustomerForm({
 export default function CustomersPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
-  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'sellerId', 'hasBalance', 'status'])
   const search = getFilter('search')
-  const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}`
+  const sellerId = getFilter('sellerId')
+  const hasBalance = getFilter('hasBalance') === 'true'
+  const status = getFilter('status') || 'ACTIVE'
+  const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&sellerId=${encodeURIComponent(sellerId)}&hasBalance=${hasBalance}&status=${encodeURIComponent(status === 'ALL' ? '' : status)}`
   const query = useQuery({ queryKey: [customerPath], queryFn: () => apiGet<ApiPage<Customer>>(customerPath) })
+  const optionsQuery = useQuery({ queryKey: ['/api/customers/filter-options'], queryFn: () => apiGet<{ sellers: Array<{ id: string; name: string }> }>('/api/customers/filter-options'), enabled: isAdmin })
   const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGet<ApiPage<Seller>>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const zonesQuery = useQuery({ queryKey: ['/api/zones'], queryFn: () => apiGet<Zone[]>('/api/zones'), enabled: isAdmin })
   const listsQuery = useQuery({ queryKey: ['/api/pricing/lists?page=0&size=100'], queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=100'), enabled: isAdmin })
@@ -180,7 +185,7 @@ export default function CustomersPage() {
   const [statusCustomer, setStatusCustomer] = useState<Customer | undefined>()
 
   async function invalidate() {
-    await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
+    await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') || queryKey[0] === '/api/customers/filter-options' })
   }
 
   async function changeStatus() {
@@ -225,8 +230,14 @@ export default function CustomersPage() {
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
     {isAdmin && (showForm || formCustomer) && <div role="dialog" aria-modal="true" aria-label={formCustomer ? 'Editar cliente' : 'Nuevo cliente'} className="modal-backdrop"><div className="customer-modal"><CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} /></div></div>}
-    <Panel><div className="toolbar"><label className="field"><span>Buscar clientes</span><input className="input search-input" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
-      {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay clientes" description="Creá el primer cliente para comenzar a gestionar la operación." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo cliente</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+    <Panel><div className="toolbar">
+      <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar clientes</span><input className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
+      {isAdmin && <SearchableSelect label="Buscar por vendedor" options={optionsQuery.data?.sellers ?? []} value={sellerId} onChange={(value) => setFilter('sellerId', value)} allLabel="Todos los vendedores" unavailableLabel="Vendedor no disponible" loadingLabel="Cargando vendedores…" loading={optionsQuery.isLoading} disabled={optionsQuery.isLoading || optionsQuery.isError} className="[@media(max-width:640px)]:w-full" />}
+      <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Cuenta corriente</span><select aria-label="Cuenta corriente" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={hasBalance ? 'true' : ''} onChange={(event) => setFilter('hasBalance', event.target.value)}><option value="">Todos los saldos</option><option value="true">Solo con saldo</option></select></label>
+      <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Estado</span><select aria-label="Estado" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="ACTIVE">Activo</option><option value="INACTIVE">Inactivo</option><option value="ALL">Todos</option></select></label>
+    </div>
+      {isAdmin && optionsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los vendedores del filtro. <Button variant="link" type="button" onClick={() => optionsQuery.refetch()}>Reintentar filtro</Button></p>}
+      {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay clientes para mostrar" description="No se encontraron clientes con los filtros seleccionados." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {isAdmin && sellersQuery.isError && (showForm || formCustomer) && <p className="error-text" role="alert">No se pudieron cargar los vendedores. <Button variant="link" type="button" onClick={() => sellersQuery.refetch()}>Reintentar</Button></p>}
     {statusCustomer && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusCustomer.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusCustomer.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusCustomer(undefined)}>Cancelar</Button><Button onClick={changeStatus} disabled={actionSaving}>{actionSaving ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
