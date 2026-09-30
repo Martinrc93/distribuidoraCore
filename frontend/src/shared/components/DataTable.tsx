@@ -12,11 +12,12 @@ type DataTableProps = {
   columns: TableColumn[]
   rows: Record<string, string>[]
   onRowClick?: (row: Record<string, string>) => void
+  className?: string
 }
 
-export function DataTable({ columns, rows, onRowClick }: DataTableProps) {
+export function DataTable({ columns, rows, onRowClick, className }: DataTableProps) {
   return (
-    <div className="table-wrap">
+    <div className={`table-wrap${className ? ` ${className}` : ''}`}>
       <table className="data-table">
         <thead><tr>{columns.map((column) => <th className={column.align === 'right' ? 'align-right' : ''} key={column.key}>{column.label}</th>)}</tr></thead>
         <tbody>

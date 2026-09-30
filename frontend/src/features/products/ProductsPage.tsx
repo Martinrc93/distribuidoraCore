@@ -303,14 +303,16 @@ export default function ProductsPage() {
     { key: 'brand', label: 'Marca' },
     ...(isAdmin ? [{ key: 'cost', label: 'Costo', align: 'right' as const }] : []),
     { key: 'stock', label: 'Stock', align: 'right', render: (value) => <span className={Number(value) < 0 ? 'negative-number' : ''}>{value}</span> },
-    { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
-    { key: 'actions', label: '', render: (_value: string, row: Record<string, string>) => {
+    { key: 'actions', label: 'Estado y acciones', align: 'right', render: (_value: string, row: Record<string, string>) => {
       const product = products.find((candidate) => candidate.id === row.id)
       if (!product) return null
-      return <div className="page-actions">
-        <Button variant="link" onClick={() => setSelectedProduct(product)}>Ver movimientos</Button>
-        {hasAuthority('STOCK_ADJUST') && <Button variant="link" onClick={() => { setAdjustmentProduct(product); setQuantity(''); setReason(''); setAdjustmentError('') }}>Ajustar stock</Button>}
-        {isAdmin && <Button variant="link" onClick={() => { setFormProduct(product); setShowForm(false); setFeedback('') }} disabled={formSaving || mutating}>Editar</Button>}
+      return <div className="product-row-controls">
+        <StatusBadge value={product.status ?? 'ACTIVE'} />
+        <div className="table-row-actions">
+          <Button variant="secondary" onClick={() => setSelectedProduct(product)} aria-label={`Ver movimientos de ${product.name}`}>Ver movimientos</Button>
+          {hasAuthority('STOCK_ADJUST') && <Button variant="secondary" onClick={() => { setAdjustmentProduct(product); setQuantity(''); setReason(''); setAdjustmentError('') }} aria-label={`Ajustar stock de ${product.name}`}>Ajustar stock</Button>}
+          {isAdmin && <Button variant="secondary" onClick={() => { setFormProduct(product); setShowForm(false); setFeedback('') }} disabled={formSaving || mutating} aria-label={`Editar ${product.name}`}>Editar</Button>}
+        </div>
       </div>
     } },
   ]
@@ -335,7 +337,7 @@ export default function ProductsPage() {
     {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} activeLists={activeLists} categories={categories} brands={brands} optionsLoading={optionsLoading} optionsError={optionsError} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} onChangeStatus={(product) => { setActionError(''); setStatusProduct(product) }} />}
     <Panel>
       <div className="toolbar"><label className="field"><span>Buscar productos</span><input className="input search-input" aria-label="Buscar productos" placeholder="Nombre o categoría" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
-      {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title={search ? 'No hay productos para mostrar' : 'Todavía no hay productos'} description={search ? 'Probá otra búsqueda.' : 'Creá el primer producto para comenzar a gestionar el catálogo.'} action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+      {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title={search ? 'No hay productos para mostrar' : 'Todavía no hay productos'} description={search ? 'Probá otra búsqueda.' : 'Creá el primer producto para comenzar a gestionar el catálogo.'} action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable className={isAdmin ? 'products-table-admin' : 'products-table-standard'} columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {selectedProduct && <div role="dialog" aria-modal="true" aria-labelledby="movements-title" className="modal-backdrop"><Panel title="Movimientos del producto" action={<Button variant="link" onClick={() => setSelectedProduct(undefined)}>Cerrar</Button>}>
       <h2 id="movements-title">{selectedProduct.name}</h2>
