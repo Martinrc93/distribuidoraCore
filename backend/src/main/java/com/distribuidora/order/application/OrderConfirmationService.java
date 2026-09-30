@@ -56,6 +56,7 @@ public class OrderConfirmationService {
         BigDecimal orderDiscountPercent();
         List<? extends PaymentCommand> payments();
         default UUID sellerId() { return null; }
+        default BigDecimal previousBalanceAmount() { return ZERO; }
     }
 
     public interface EditCommand {
@@ -72,7 +73,12 @@ public class OrderConfirmationService {
 
     public record ConfirmationResult(UUID orderId, UUID saleId, String orderNumber, String saleNumber,
                                      BigDecimal total, BigDecimal paid, BigDecimal balance,
-                                     CreditLimitWarningResult creditLimitWarning) { }
+                                     CreditLimitWarningResult creditLimitWarning, BigDecimal previousBalanceAmount) {
+        public ConfirmationResult(UUID orderId, UUID saleId, String orderNumber, String saleNumber,
+                                  BigDecimal total, BigDecimal paid, BigDecimal balance, CreditLimitWarningResult warning) {
+            this(orderId, saleId, orderNumber, saleNumber, total, paid, balance, warning, ZERO);
+        }
+    }
 
     public record EditResult(UUID orderId, UUID saleId, BigDecimal total, BigDecimal paid, BigDecimal balance) { }
 
@@ -147,6 +153,16 @@ public class OrderConfirmationService {
         if (!"ACTIVE".equals(customer.get("status"))) {
             throw new IllegalStateException("El cliente no está activo");
         }
+        BigDecimal balanceBeforeOrder = decimalOrZero(customer.get("balance"));
+        BigDecimal previousBalanceAmount = previousBalanceAmount(request);
+        if (previousBalanceAmount.signum() > 0) {
+            BigDecimal currentBalance = jdbc.queryForObject(
+                "select balance from customer.customers where id = ? for update", BigDecimal.class, customerId);
+            if (currentBalance == null || previousBalanceAmount.compareTo(currentBalance) > 0) {
+                throw new IllegalArgumentException("El importe del saldo anterior supera el saldo actual del cliente");
+            }
+            balanceBeforeOrder = currentBalance;
+        }
         UUID sellerId = resolveSellerId(customer, request.sellerId());
         if (sellerId != null) {
             boolean sellerExists = Boolean.TRUE.equals(jdbc.queryForObject(
@@ -164,7 +180,7 @@ public class OrderConfirmationService {
         BigDecimal monetaryPaid = monetaryPaid(request.payments());
         List<BigDecimal> accountDebits = accountDebits(request.payments(), calculated.total(), monetaryPaid);
         BigDecimal totalAccountDebit = accountDebits.stream().reduce(ZERO, BigDecimal::add).setScale(4);
-        BigDecimal projectedBalance = decimalOrZero(customer.get("balance")).add(totalAccountDebit).setScale(4);
+        BigDecimal projectedBalance = balanceBeforeOrder.add(totalAccountDebit).setScale(4);
         BigDecimal creditLimit = jdbc.queryForObject(
             "select credit_limit from app.business_settings where id = 1", BigDecimal.class);
         boolean creditLimitExceeded = creditLimit != null && projectedBalance.compareTo(creditLimit) > 0;
@@ -184,11 +200,11 @@ public class OrderConfirmationService {
         Timestamp now = Timestamp.from(Instant.now());
         String orderNumber = number("ORD");
         String saleNumber = number("SAL");
-        jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id, previous_balance_amount) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             orderId, orderNumber, customerId, sellerId, calculated.subtotal(),
             calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
             request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
-            calculated.orderDiscountPercent(), orderDiscount.ruleId());
+            calculated.orderDiscountPercent(), orderDiscount.ruleId(), previousBalanceAmount);
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
         jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent, order_discount_rule_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?)",
@@ -208,12 +224,13 @@ public class OrderConfirmationService {
         BigDecimal responsePaid = monetaryPaid(request.payments());
         ConfirmationResult response = new ConfirmationResult(
             orderId, saleId, orderNumber, saleNumber, calculated.total(), responsePaid,
-            calculated.total().subtract(responsePaid).setScale(4), creditWarning);
+            calculated.total().subtract(responsePaid).setScale(4), creditWarning, previousBalanceAmount);
         Map<String, Object> auditDetails = new HashMap<>();
         auditDetails.put("saleId", saleId.toString());
         auditDetails.put("total", calculated.total());
         auditDetails.put("paid", responsePaid);
         auditDetails.put("balance", response.balance());
+        auditDetails.put("previousBalanceAmount", previousBalanceAmount);
         auditDetails.put("creditLimit", creditLimit);
         auditDetails.put("projectedBalance", projectedBalance);
         auditDetails.put("creditLimitExceeded", creditLimitExceeded);
@@ -425,7 +442,7 @@ public class OrderConfirmationService {
             ? new CreditLimitWarningResult(existing.creditLimit(), existing.projectedBalance(),
                 existing.projectedBalance().subtract(existing.creditLimit()).setScale(4)) : null;
         return new ConfirmationResult(existing.orderId(), existing.saleId(), existing.orderNumber(),
-            existing.saleNumber(), existing.total(), existing.paid(), existing.total().subtract(existing.paid()).setScale(4), warning);
+            existing.saleNumber(), existing.total(), existing.paid(), existing.total().subtract(existing.paid()).setScale(4), warning, previousBalanceAmount(request));
     }
 
     private void validateOverrides(ConfirmationCommand request) {
@@ -447,6 +464,10 @@ public class OrderConfirmationService {
             throw new IllegalArgumentException("Los campos obligatorios son inválidos");
         }
         validatePercent(request.orderDiscountPercent(), "orderDiscountPercent");
+        if (request.previousBalanceAmount() != null) {
+            if (request.previousBalanceAmount().signum() < 0) throw new IllegalArgumentException("El importe del saldo anterior no puede ser negativo");
+            validateScale(request.previousBalanceAmount(), "previousBalanceAmount");
+        }
         for (LineCommand line : request.lines()) {
             if (line == null || line.productId() == null || line.quantity() == null
                 || line.lineDiscountPercent() == null) {
@@ -560,7 +581,15 @@ public class OrderConfirmationService {
             });
         }
         append(canonical, request.sellerId());
+        if (previousBalanceAmount(request).signum() > 0) {
+            append(canonical, "previousBalanceAmount");
+            append(canonical, previousBalanceAmount(request));
+        }
         return hex(sha256(canonical.toString()));
+    }
+
+    private BigDecimal previousBalanceAmount(ConfirmationCommand request) {
+        return request.previousBalanceAmount() == null ? ZERO : request.previousBalanceAmount().setScale(4);
     }
 
     private void append(StringBuilder canonical, Object value) {

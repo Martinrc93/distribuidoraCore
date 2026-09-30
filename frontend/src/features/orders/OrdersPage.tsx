@@ -9,6 +9,7 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { useUrlListState } from '../../shared/useUrlListState'
+import { OrderDateFilter } from './OrderDateFilter'
 
 type Order = { id: string; number: string; customer: string; seller: string; total: number; status: string; date: string }
 type Row = Record<string, string>
@@ -52,6 +53,17 @@ export default function OrdersPage() {
     next.delete('page')
     setParams(next, { replace: true })
   }
+  const hasFilters = Boolean(search || status || dateMin || dateMax)
+
+  function clearFilters() {
+    const next = new URLSearchParams(params)
+    next.delete('search')
+    next.delete('status')
+    next.delete('page')
+    next.set('dateMin', '')
+    next.set('dateMax', '')
+    setParams(next, { replace: true })
+  }
   const rows: Row[] = (query.data?.content ?? []).map((order) => ({
     id: order.id,
     number: order.number,
@@ -79,11 +91,11 @@ export default function OrdersPage() {
         <label className="field"><span>Buscar pedidos</span><input className="input search-input" placeholder="Cliente o número" aria-label="Buscar pedidos" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
         <label className="field"><span>Filtrar por estado</span><select className="select" aria-label="Filtrar por estado" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="">Todos los estados</option><option value="CONFIRMED">Confirmado</option><option value="DELIVERED">Entregado</option><option value="CANCELLED">Cancelado</option></select></label>
         <div className="orders-date-filters">
-          <label className="field"><span>Fecha mín.</span><input className="input" type="text" placeholder="dd/mm/aaaa" maxLength={10} value={dateMin} onChange={(event) => setDateFilter('dateMin', event.target.value)} aria-invalid={min === null || invalidRange} aria-describedby={dateError ? 'orders-date-error' : undefined} /></label>
-          <label className="field"><span>Fecha máx.</span><input className="input" type="text" placeholder="dd/mm/aaaa" maxLength={10} value={dateMax} onChange={(event) => setDateFilter('dateMax', event.target.value)} aria-invalid={max === null || invalidRange} aria-describedby={dateError ? 'orders-date-error' : undefined} /></label>
+          <OrderDateFilter id="orders-date-min" label="Fecha mín." value={dateMin} isoValue={min ?? ''} onChange={(value) => setDateFilter('dateMin', value)} invalid={min === null || invalidRange} describedBy={dateError ? 'orders-date-error' : undefined} />
+          <OrderDateFilter id="orders-date-max" label="Fecha máx." value={dateMax} isoValue={max ?? ''} onChange={(value) => setDateFilter('dateMax', value)} invalid={max === null || invalidRange} describedBy={dateError ? 'orders-date-error' : undefined} />
         </div>
       </form>
-      {dateError ? <p id="orders-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay pedidos para mostrar" description="No se encontraron pedidos para la búsqueda y el rango de fechas seleccionados." action={<Button href="/orders/new">+ Nuevo pedido</Button>} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+      {dateError ? <p id="orders-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title={hasFilters ? 'No hay pedidos para estos filtros' : 'No hay pedidos para mostrar'} description={hasFilters ? 'No se encontraron pedidos para la búsqueda y el rango de fechas seleccionados. Podés quitar los filtros para consultar todos los pedidos.' : 'Todavía no hay pedidos registrados para tu usuario.'} action={hasFilters ? <Button variant="secondary" type="button" onClick={clearFilters}>Ver todos los pedidos</Button> : <Button href="/orders/new">+ Nuevo pedido</Button>} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
   </>
 }

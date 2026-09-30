@@ -10,6 +10,8 @@ import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -42,6 +44,61 @@ class OrderConfirmationServiceTest {
     @AfterEach
     void clearAuthentication() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void storesPreviousBalanceSeparatelyWithoutDuplicatingDebtOrInventory() {
+        authenticate("ORDER_CREATE");
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "balance", new BigDecimal("100")));
+        when(jdbc.queryForObject(eq("select balance from customer.customers where id = ? for update"), eq(BigDecimal.class), eq(customerId)))
+            .thenReturn(new BigDecimal("100"));
+        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of("priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10")));
+        var response = service.confirm(new OrderConfirmationDtos.ConfirmationRequest("previous-balance", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2"), BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of(), null, new BigDecimal("40")));
+        assertThat(response.total()).isEqualByComparingTo("20");
+        assertThat(response.balance()).isEqualByComparingTo("20");
+        assertThat(response.previousBalanceAmount()).isEqualByComparingTo("40");
+        var insert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("previous_balance_amount"), insert.capture());
+        assertThat((BigDecimal) insert.getValue()[insert.getValue().length - 1]).isEqualByComparingTo("40");
+        var debit = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("insert into customer.account_ledger"), debit.capture());
+        assertThat((BigDecimal) debit.getValue()[3]).isEqualByComparingTo("20");
+        verify(jdbc).update(eq("update customer.customers set balance = balance + ? where id = ?"), eq(new BigDecimal("20.0000")), eq(customerId));
+        verify(inventory).apply(eq(productId), argThat(value -> value.compareTo(new BigDecimal("-2")) == 0), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
+        verify(jdbc, never()).update(contains("payment.payments"), any(Object[].class));
+    }
+
+    @Test
+    void rejectsPreviousBalanceAboveTheLockedCustomerBalanceBeforeCreatingAnOrder() {
+        authenticate("ORDER_CREATE");
+        UUID customerId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "balance", new BigDecimal("100")));
+        when(jdbc.queryForObject(eq("select balance from customer.customers where id = ? for update"), eq(BigDecimal.class), eq(customerId)))
+            .thenReturn(new BigDecimal("30"));
+        var request = new OrderConfirmationDtos.ConfirmationRequest("changed-balance", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of(), null, new BigDecimal("40"));
+        assertThatThrownBy(() -> service.confirm(request)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("supera el saldo actual");
+        verifyNoInteractions(inventory, pricing);
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void rejectsNegativeOrOverprecisePreviousBalanceAmounts() {
+        authenticate("ORDER_CREATE");
+        for (String value : List.of("-1", "0.00001")) {
+            var request = new OrderConfirmationDtos.ConfirmationRequest("invalid", UUID.randomUUID(), null,
+                List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of(), null, new BigDecimal(value));
+            assertThatThrownBy(() -> service.confirm(request)).isInstanceOf(IllegalArgumentException.class);
+        }
+        verifyNoInteractions(jdbc, pricing, inventory);
     }
 
     @Test
@@ -78,9 +135,10 @@ class OrderConfirmationServiceTest {
         assertThat((String) orderInsert.getValue()[9]).hasSize(64);
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "40"})
     @SuppressWarnings({"unchecked", "rawtypes"})
-    void sameFingerprintReturnsCommittedResponseWithoutResolvingPricingAgain() throws Exception {
+    void sameFingerprintReturnsCommittedResponseWithoutResolvingPricingAgain(String previousBalance) throws Exception {
         authenticate("ORDER_CREATE");
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
@@ -102,14 +160,16 @@ class OrderConfirmationServiceTest {
             return List.of(((RowMapper) invocation.getArgument(1)).mapRow(resultSet, 0));
         });
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
-            .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "balance", new BigDecimal("100")));
+        when(jdbc.queryForObject(eq("select balance from customer.customers where id = ? for update"), eq(BigDecimal.class), eq(customerId)))
+            .thenReturn(new BigDecimal("100"));
         when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
             "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10")));
 
         var request = new OrderConfirmationDtos.ConfirmationRequest(
             "retry-key", customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
-            BigDecimal.ZERO, List.of(new OrderConfirmationDtos.PaymentRequest("CASH", new BigDecimal("10"))));
+            BigDecimal.ZERO, List.of(new OrderConfirmationDtos.PaymentRequest("CASH", new BigDecimal("10"))), null, new BigDecimal(previousBalance));
         var first = service.confirm(request);
         var fingerprint = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("idempotency_fingerprint"), fingerprint.capture());
@@ -119,6 +179,17 @@ class OrderConfirmationServiceTest {
         var second = service.confirm(request);
 
         assertThat(second).isEqualTo(first);
+        assertThat(second.previousBalanceAmount()).isEqualByComparingTo(previousBalance);
+        var changedBalanceRequest = new OrderConfirmationDtos.ConfirmationRequest(
+            request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(),
+            request.payments(), null, new BigDecimal("50"));
+        assertThatThrownBy(() -> service.confirm(changedBalanceRequest))
+            .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
+        if (previousBalance.equals("0")) {
+            var legacyRequest = new OrderConfirmationDtos.ConfirmationRequest(
+                request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(), request.payments());
+            assertThat(service.confirm(legacyRequest)).isEqualTo(first);
+        }
         verify(pricing, times(1)).resolve(customerId, productId, null);
 
         var changedRequest = new OrderConfirmationDtos.ConfirmationRequest(

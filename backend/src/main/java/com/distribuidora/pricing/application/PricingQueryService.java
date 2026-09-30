@@ -75,18 +75,7 @@ public class PricingQueryService {
     }
 
     public Map<String, Object> resolveAsOf(UUID customerId, UUID productId, UUID explicitListId, LocalDate asOf) {
-        Map<String, Object> customer = jdbc.queryForMap(
-            "select price_list_id from customer.customers where id = ?", customerId);
-        UUID assignedListId = (UUID) customer.get("price_list_id");
-        UUID selectedListId = explicitListId != null ? explicitListId : assignedListId;
-
-        Map<String, Object> selectedList = selectedListId == null
-            ? jdbc.queryForMap("select id, code, status from catalog.price_lists where code = 'GENERAL' and status = 'ACTIVE'", new Object[0])
-            : jdbc.queryForMap("select id, code, status from catalog.price_lists where id = ?", selectedListId);
-        if (!"ACTIVE".equals(selectedList.get("status"))) {
-            throw new IllegalStateException("La lista de precios no está activa");
-        }
-
+        Map<String, Object> selectedList = selectedList(customerId, explicitListId);
         UUID resolvedListId = (UUID) selectedList.get("id");
         try {
             return findPrice(resolvedListId, productId, asOf);
@@ -107,6 +96,56 @@ public class PricingQueryService {
             }
             throw missingPrice;
         }
+    }
+
+    public List<Map<String, Object>> resolveBatch(UUID customerId, List<UUID> productIds, UUID explicitListId) {
+        if (productIds == null || productIds.isEmpty() || productIds.size() > 100 || productIds.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new IllegalArgumentException("La consulta debe incluir entre 1 y 100 productos válidos");
+        }
+        UUID listId = (UUID) selectedList(customerId, explicitListId).get("id");
+        List<UUID> distinctProducts = productIds.stream().distinct().toList();
+        String placeholders = String.join(",", java.util.Collections.nCopies(distinctProducts.size(), "?"));
+        Object[] parameters = new Object[distinctProducts.size() + 3];
+        parameters[0] = listId;
+        parameters[1] = listId;
+        parameters[2] = listId;
+        for (int i = 0; i < distinctProducts.size(); i++) parameters[i + 3] = distinctProducts.get(i);
+        return jdbc.queryForList("""
+            select p.id as "productId", resolved."priceListId", resolved."priceListCode", resolved."unitPrice"
+            from catalog.products p
+            join lateral (
+                select candidate.id as "priceListId", candidate.code as "priceListCode", history.price as "unitPrice"
+                from catalog.price_lists candidate
+                join lateral (
+                    select h.price
+                    from catalog.product_price_history h
+                    where h.price_list_id = candidate.id and h.product_id = p.id
+                      and h.effective_on <= (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date
+                    order by h.effective_on desc, h.created_at desc, h.id desc
+                    limit 1
+                ) history on true
+                where candidate.status = 'ACTIVE' and (candidate.id = ? or candidate.id < ?)
+                order by (candidate.id = ?) desc, candidate.id desc
+                limit 1
+            ) resolved on true
+            where p.id in (%s)
+            """.formatted(placeholders), parameters);
+    }
+
+    private Map<String, Object> selectedList(UUID customerId, UUID explicitListId) {
+        Map<String, Object> customer = jdbc.queryForMap(
+            "select price_list_id from customer.customers where id = ?", customerId);
+        UUID assignedListId = (UUID) customer.get("price_list_id");
+        UUID selectedListId = explicitListId != null ? explicitListId : assignedListId;
+
+        Map<String, Object> selectedList = selectedListId == null
+            ? jdbc.queryForMap("select id, code, status from catalog.price_lists where code = 'GENERAL' and status = 'ACTIVE'", new Object[0])
+            : jdbc.queryForMap("select id, code, status from catalog.price_lists where id = ?", selectedListId);
+        if (!"ACTIVE".equals(selectedList.get("status"))) {
+            throw new IllegalStateException("La lista de precios no está activa");
+        }
+
+        return selectedList;
     }
 
     private Map<String, Object> findPrice(UUID listId, UUID productId, LocalDate asOf) {

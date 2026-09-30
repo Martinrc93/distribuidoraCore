@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SellersPage from './SellersPage'
+import { selectEntity } from '../../test/selectEntity'
 
 function token() { return `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature` }
 function response(body: unknown, status = 200) { return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response) }
@@ -49,8 +50,8 @@ describe('SellersPage', () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><SellersPage /></MemoryRouter></QueryClientProvider>)
 
     await user.click(await screen.findByRole('button', { name: /reasignar clientes/i }))
-    await user.selectOptions(screen.getByLabelText('Vendedor de origen'), 'seller-1')
-    await user.selectOptions(screen.getByLabelText('Vendedor de destino'), 'seller-2')
+    await selectEntity(user, 'Vendedor de origen', 'Lucía')
+    await selectEntity(user, 'Vendedor de destino', 'Nuevo')
     await user.click(screen.getByLabelText('Reasignar pedidos pendientes'))
     await user.click(screen.getByRole('button', { name: /continuar reasignación/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()

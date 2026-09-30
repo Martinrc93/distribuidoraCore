@@ -8,7 +8,14 @@ P:\dev\distribuidora\backend\src\test\java\com\distribuidora\catalog\ProductComm
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\catalog\ProductCommandServiceTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\customer\AccountPaymentControllerTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\customer\CustomerCommandServiceTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\CustomersFiltersControllerTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\CustomersFiltersTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\OrdersDateFilterControllerTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\OrdersDateFilterTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\PreviousCustomerOrderTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\ReadQueryServiceTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\SalesFiltersControllerTest.java
+P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\SalesFiltersTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\dashboard\SellerReadQueryTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\db\migration\BrandsAndCategoriesMigrationContractTest.java
 P:\dev\distribuidora\backend\src\test\java\com\distribuidora\db\migration\OptionalCustomerTaxIdMigrationContractTest.java

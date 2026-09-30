@@ -4,6 +4,7 @@ import { apiGet, apiGetBlob, apiPost, ApiError } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Panel } from '../../shared/components/Panel'
+import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 
 type DeliveryPayment = { method: 'CASH' | 'BANK_TRANSFER'; amount: string }
 type NotificationStatus = { requestId: string; status: string; attemptCount: number; requestedAt: string; sentAt?: string | null; lastError?: string | null }
@@ -83,6 +84,7 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
   }
 
   async function cancelOrder() {
+    if (busy) return
     setBusy(true)
     setError('')
     try {
@@ -191,7 +193,7 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="page-actions"><Button type="button" variant="secondary" onClick={() => setShowDelivery(false)} disabled={busy}>Cancelar</Button><Button type="submit" disabled={busy}>{busy ? 'Guardando...' : 'Confirmar intento'}</Button></div>
     </form></Panel></div>}
-    {showCancel && <div role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="modal-backdrop"><Panel title="Cancelar pedido"><h2 id="cancel-title">¿Cancelar el pedido {orderNumber}?</h2><p>El backend revertirá el stock si el pedido cumple las condiciones de cancelación.</p>{error && <p className="error-text" role="alert">{error}</p>}<div className="page-actions"><Button variant="secondary" onClick={() => setShowCancel(false)} disabled={busy}>Volver</Button><Button onClick={cancelOrder} disabled={busy}>{busy ? 'Cancelando...' : 'Confirmar cancelación'}</Button></div></Panel></div>}
+    {showCancel && <ConfirmationDialog title={`¿Cancelar el pedido ${orderNumber}?`} description="Se cancelará el pedido y se devolverán sus productos al stock si cumple las condiciones de cancelación." confirmLabel="Confirmar cancelación" pendingLabel="Cancelando..." pending={busy} error={error} onCancel={() => setShowCancel(false)} onConfirm={() => void cancelOrder()} />}
     {showReactivate && <div role="dialog" aria-modal="true" aria-labelledby="reactivate-title" className="modal-backdrop"><Panel title="Reactivar pedido"><h2 id="reactivate-title">¿Reactivar el pedido {orderNumber} como confirmado?</h2><p>Se volverá a descontar el stock de sus productos y se restaurará el saldo de la venta en la cuenta corriente.</p>{error && <p className="error-text" role="alert">{error}</p>}<div className="page-actions"><Button variant="secondary" onClick={() => setShowReactivate(false)} disabled={busy}>Volver</Button><Button onClick={reactivateOrder} disabled={busy}>{busy ? 'Reactivando...' : 'Confirmar reactivación'}</Button></div></Panel></div>}
     {showNotification && <Panel title="Compartir comprobante"><form className="form-grid" onSubmit={requestNotification}>
       <label className="field"><span>Canal de envío</span><select className="select" value={channel} onChange={(event) => updateNotification('channel', event.target.value as 'EMAIL' | 'WHATSAPP')}><option value="EMAIL">Email</option><option value="WHATSAPP">WhatsApp</option></select></label>

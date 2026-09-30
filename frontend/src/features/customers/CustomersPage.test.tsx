@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CustomersPage from './CustomersPage'
+import { selectEntity } from '../../test/selectEntity'
 
 function token(authorities: string[]) {
   const payload = btoa(JSON.stringify({ authorities }))
@@ -24,9 +25,32 @@ function response(body: unknown, status = 200) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 }
 
+function mockFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+  return vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    if (String(input) === '/api/zones') return response([])
+    if (String(input) === '/api/customers/filter-options') return response({ sellers: [] })
+    return handler(input, init)
+  })
+}
+
 const customers = { content: [{ id: 'customer-1', name: 'Almacén Norte', cuitId: '30-123', seller: 'Lucía', balance: 1000, status: 'ACTIVE', priceListId: 'list-1' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
 describe('CustomersPage', () => {
+  it('preserves customer edits until discard is confirmed through the shared dialog', async () => {
+    const user = userEvent.setup()
+    mockFetch((input) => String(input).startsWith('/api/customers') ? response(customers) : response({ content: [] }))
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /nuevo cliente/i }))
+    await user.type(screen.getByLabelText(/razón social/i), 'Cliente pendiente')
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    const dialog = screen.getByRole('dialog', { name: '¿Descartar los cambios?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Seguir editando' }))
+    expect(screen.getByLabelText(/razón social/i)).toHaveValue('Cliente pendiente')
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Descartar cambios' }))
+    expect(screen.queryByLabelText(/razón social/i)).not.toBeInTheDocument()
+  })
+
   afterEach(() => cleanup())
 
   beforeEach(() => {
@@ -36,7 +60,7 @@ describe('CustomersPage', () => {
 
   it('shows a dash when a customer has no CUIT', async () => {
     const customerWithoutTaxId = { ...customers.content[0], cuitId: null }
-    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers')
+    mockFetch((input) => String(input).startsWith('/api/customers')
       ? response({ ...customers, content: [customerWithoutTaxId] })
       : response({ content: [] }))
     renderPage([])
@@ -47,7 +71,7 @@ describe('CustomersPage', () => {
 
   it('creates a customer with seller assignment and invalidates the exact list query', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    const fetchMock = mockFetch((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/customers') && !init?.method) return response(customers)
       if (path.startsWith('/api/sellers')) return response({ content: [{ id: 'seller-1', displayName: 'Lucía', email: 'lucia@test' }] })
@@ -61,7 +85,7 @@ describe('CustomersPage', () => {
     await user.click(await screen.findByRole('button', { name: /nuevo cliente/i }))
     await user.type(screen.getByLabelText(/razón social/i), 'Despensa Centro')
     await user.type(screen.getByLabelText(/cuit/i), '30-456')
-    await user.selectOptions(screen.getByLabelText(/vendedor/i), 'seller-1')
+    await selectEntity(user, 'Vendedor asignado', 'Lucía (lucia@test)')
     await user.click(screen.getByRole('button', { name: /guardar cliente/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Despensa Centro', cuitId: '30-456', email: null, phone: null, address: null, zone: null, sellerId: 'seller-1' }) })))
@@ -71,7 +95,7 @@ describe('CustomersPage', () => {
 
   it('creates a customer without a tax identification', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    const fetchMock = mockFetch((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/customers') && !init?.method) return response(customers)
       if (path.startsWith('/api/sellers')) return response({ content: [] })
@@ -92,7 +116,7 @@ describe('CustomersPage', () => {
 
   it('edits a customer, assigns a price list, and confirms status changes', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    const fetchMock = mockFetch((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/customers') && !init?.method) return response(customers)
       if (path.startsWith('/api/sellers')) return response({ content: [] })
@@ -108,8 +132,9 @@ describe('CustomersPage', () => {
     await user.selectOptions(await screen.findByLabelText(/lista de precios/i), 'list-2')
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
     await waitFor(() => expect(screen.queryByRole('button', { name: /guardar cambios/i })).not.toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /editar/i }))
     await user.click(screen.getByRole('button', { name: /desactivar cliente/i }))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: /desactivar a/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ businessName: 'Almacén Sur', cuitId: '30-123', email: null, phone: null, address: null, zone: null, sellerId: undefined, priceListId: 'list-2' }) })))
@@ -120,7 +145,7 @@ describe('CustomersPage', () => {
   it('synchronizes the form when switching between customers', async () => {
     const user = userEvent.setup()
     const secondCustomer = { ...customers.content[0], id: 'customer-2', name: 'Almacén Sur', cuitId: '30-456' }
-    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers?page=') ? response({ ...customers, content: [customers.content[0], secondCustomer] }) : response({ content: [] }))
+    mockFetch((input) => String(input).startsWith('/api/customers?page=') ? response({ ...customers, content: [customers.content[0], secondCustomer] }) : response({ content: [] }))
     renderPage()
 
     const editButtons = await screen.findAllByRole('button', { name: /editar/i })
@@ -133,11 +158,10 @@ describe('CustomersPage', () => {
 
   it.each([
     ['/api/customers/customer-1', 'PUT'],
-    ['/api/customers/customer-1/price-list', 'PATCH'],
     ['/api/customers/customer-1/status', 'PATCH'],
   ])('invalidates customers after a 404 from %s', async (path, method) => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    const fetchMock = mockFetch((input, init) => {
       const requestPath = String(input)
       if (requestPath.startsWith('/api/customers?page=') && !init?.method) return response(customers)
       if (requestPath.startsWith('/api/sellers')) return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
@@ -148,10 +172,8 @@ describe('CustomersPage', () => {
     const queryClient = renderPage()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
-    if (path.endsWith('/price-list')) {
+    if (path.endsWith('/status')) {
       await user.click(await screen.findByRole('button', { name: /editar/i }))
-      await user.click(await screen.findByRole('button', { name: /asignar lista/i }))
-    } else if (path.endsWith('/status')) {
       await user.click(await screen.findByRole('button', { name: /desactivar cliente/i }))
       await user.click(screen.getByRole('button', { name: /confirmar/i }))
     } else {
@@ -163,9 +185,9 @@ describe('CustomersPage', () => {
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
   })
 
-  it('shows customer mutation feedback for update and price-list assignment', async () => {
+  it('saves price-list assignments through the customer form and shows feedback', async () => {
     const user = userEvent.setup()
-    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    mockFetch((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/customers?page=') && !init?.method) return response(customers)
       if (path.startsWith('/api/sellers')) return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
@@ -175,15 +197,13 @@ describe('CustomersPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /editar/i }))
+    await user.selectOptions(screen.getByLabelText('Lista de precios predeterminada'), 'list-1')
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
     expect(await screen.findByText('Cliente actualizado correctamente.')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /editar/i }))
-    await user.click(await screen.findByRole('button', { name: /asignar lista/i }))
-    expect(await screen.findByText('Lista de precios asignada correctamente.')).toBeInTheDocument()
   })
 
   it('shows actionable selector query errors', async () => {
-    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+    mockFetch((input) => {
       const path = String(input)
       if (path.startsWith('/api/customers?page=')) return response(customers)
       if (path.startsWith('/api/sellers')) return response({}, 500)
@@ -193,12 +213,12 @@ describe('CustomersPage', () => {
     renderPage()
     await userEvent.setup().click(await screen.findByRole('button', { name: /editar/i }))
     expect(await screen.findByText('No se pudieron cargar los vendedores.')).toBeInTheDocument()
-    expect(await screen.findByText('No se pudieron cargar las listas de precios.')).toBeInTheDocument()
+    expect(await screen.findByText('No se pudieron cargar las listas.')).toBeInTheDocument()
   })
 
   it('hides admin-only seller and mutation actions for non-admins', async () => {
     sessionStorage.setItem('distribuidora.accessToken', token([]))
-    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers') ? response(customers) : response({ content: [] }))
+    mockFetch((input) => String(input).startsWith('/api/customers') ? response(customers) : response({ content: [] }))
     renderPage()
 
     expect(await screen.findByText('Almacén Norte')).toBeInTheDocument()
@@ -209,7 +229,7 @@ describe('CustomersPage', () => {
 
   it('keeps the form open and shows an actionable conflict error', async () => {
     const user = userEvent.setup()
-    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    mockFetch((input, init) => {
       if (String(input).startsWith('/api/customers') && !init?.method) return response({ ...customers, content: [] })
       if (init?.method === 'POST') return response({ detail: 'El CUIT ya existe' }, 409)
       return response({ content: [] })
@@ -226,7 +246,7 @@ describe('CustomersPage', () => {
 
   it('uses the mutation status before misleading error text for forbidden edits', async () => {
     const user = userEvent.setup()
-    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    mockFetch((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/customers') && !init?.method) return response(customers)
       if (path === '/api/customers/customer-1' && init?.method === 'PUT') return response({ detail: 'conflict' }, 403)
@@ -243,7 +263,7 @@ describe('CustomersPage', () => {
 
   it('uses the mutation status before misleading error text for conflicts', async () => {
     const user = userEvent.setup()
-    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    mockFetch((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/customers') && !init?.method) return response(customers)
       if (path === '/api/customers/customer-1' && init?.method === 'PUT') return response({ detail: 'forbidden' }, 409)

@@ -7,6 +7,8 @@ import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { Panel } from '../../shared/components/Panel'
+import { CustomerSelect } from '../../shared/components/EntitySelect'
+import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type RuleKind = 'LINE' | 'ORDER'
@@ -83,7 +85,7 @@ export default function DiscountRulesSection() {
   const rulesPath = `${RULES_PATH}?page=${rulesPage}&size=20`
   const rulesKey = [rulesPath]
   const rulesQuery = useQuery({ queryKey: rulesKey, queryFn: () => apiGet<ApiPage<DiscountRule>>(rulesPath) })
-  const customersQuery = useQuery({ queryKey: [CUSTOMER_PATH], queryFn: () => apiGet<ApiPage<Customer>>(CUSTOMER_PATH) })
+  const customersQuery = useQuery({ queryKey: [CUSTOMER_PATH], queryFn: () => apiGetAllPages<Customer>(CUSTOMER_PATH) })
   const listsQuery = useQuery({ queryKey: [LIST_PATH], queryFn: () => apiGet<ApiPage<PriceList>>(LIST_PATH) })
   const productsQuery = useQuery({ queryKey: [PRODUCT_PATH], queryFn: () => apiGet<ApiPage<Product>>(PRODUCT_PATH) })
   const [draft, setDraft] = useState<RuleDraft>(emptyDraft)
@@ -217,7 +219,7 @@ export default function DiscountRulesSection() {
       <label className="field"><span>Descripción</span><input className="input" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} required maxLength={160} disabled={saveMutation.isPending} /></label>
       <label className="field"><span>Aplicación</span><select className="select" value={draft.kind} onChange={(event) => setDraft((current) => ({ ...current, kind: event.target.value as RuleKind, productId: '' }))} disabled={saveMutation.isPending}><option value="LINE">Por línea</option><option value="ORDER">Por pedido</option></select></label>
       <label className="field"><span>Porcentaje</span><input className="input" type="text" inputMode="decimal" value={draft.percent} onChange={(event) => setDraft((current) => ({ ...current, percent: event.target.value }))} required disabled={saveMutation.isPending} /></label>
-      <label className="field"><span>Cliente (opcional)</span><select className="select" value={draft.customerId} onChange={(event) => setDraft((current) => ({ ...current, customerId: event.target.value }))} disabled={saveMutation.isPending || customersQuery.isError}><option value="">Todos los clientes</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>
+      <CustomerSelect mode="selection" label="Cliente (opcional)" options={customers} value={draft.customerId} onChange={(value) => setDraft((current) => ({ ...current, customerId: value }))} emptyLabel="Todos los clientes" loading={customersQuery.isLoading} disabled={saveMutation.isPending || customersQuery.isError} />
       <label className="field"><span>Lista de precios (opcional)</span><select className="select" value={draft.priceListId} onChange={(event) => setDraft((current) => ({ ...current, priceListId: event.target.value }))} disabled={saveMutation.isPending || listsQuery.isError}><option value="">Todas las listas</option>{lists.map((list) => <option key={list.id} value={list.id}>{list.code} · {list.name}</option>)}</select></label>
       {draft.kind === 'LINE' && <label className="field"><span>Producto</span><select className="select" value={draft.productId} onChange={(event) => setDraft((current) => ({ ...current, productId: event.target.value }))} required disabled={saveMutation.isPending || productsQuery.isError}><option value="">Seleccionar producto...</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select></label>}
       <label className="field"><span>Válida desde (opcional)</span><input className="input" type="date" value={draft.validFrom} onChange={(event) => setDraft((current) => ({ ...current, validFrom: event.target.value }))} disabled={saveMutation.isPending} /></label>

@@ -3,6 +3,8 @@ package com.distribuidora.pricing.api;
 import com.distribuidora.pricing.application.PricingQueryService;
 import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import com.distribuidora.shared.web.PageResponse;
+import com.distribuidora.shared.security.CurrentUserAccess;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.List;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -18,10 +21,12 @@ import java.util.UUID;
 public class PricingQueryController {
     private final PricingQueryService queries;
     private final CommercialDiscountRuleQueryService discountRules;
+    private final CurrentUserAccess access;
 
-    public PricingQueryController(PricingQueryService queries, CommercialDiscountRuleQueryService discountRules) {
+    public PricingQueryController(PricingQueryService queries, CommercialDiscountRuleQueryService discountRules, CurrentUserAccess access) {
         this.queries = queries;
         this.discountRules = discountRules;
+        this.access = access;
     }
 
     @GetMapping("/lists")
@@ -67,5 +72,16 @@ public class PricingQueryController {
         @RequestParam(defaultValue = "20") int size
     ) {
         return discountRules.rules(page, size);
+    }
+
+    @GetMapping("/resolve-batch")
+    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    public List<Map<String, Object>> resolveBatch(
+        @RequestParam UUID customerId,
+        @RequestParam List<UUID> productIds,
+        @RequestParam(required = false) UUID priceListId
+    ) {
+        access.requireCustomerAccess(customerId);
+        return queries.resolveBatch(customerId, productIds, priceListId);
     }
 }

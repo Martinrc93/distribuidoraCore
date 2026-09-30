@@ -126,8 +126,8 @@ async function apiErrorFromResponse(response: Response, fallback: string): Promi
   return new ApiError(response.status, body?.detail, fallback, body?.code, body?.affectedPriceLists)
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetchAuthenticated(path, {})
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetchAuthenticated(path, signal ? { signal } : {})
   if (!response.ok) {
     if (response.status === 401) clearAccessToken()
     throw await apiErrorFromResponse(response, response.status === 401 ? 'Sesión expirada' : 'No se pudieron cargar los datos')

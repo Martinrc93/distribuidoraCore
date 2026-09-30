@@ -1,20 +1,26 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState, type FormEvent, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
+import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySelect'
+import { apiGetAllPages } from '../../shared/api/pagination'
+import { loadOrderPrices } from './orderPrice'
+import { PreviousOrderDiscountDialog } from './PreviousOrderDiscountDialog'
+import { useDiscardChanges } from '../../shared/useDiscardChanges'
 
 type Customer = { id: string; name: string; sellerId?: string | null; seller?: string | null; priceListId?: string | null; balance?: number }
 type Product = { id: string; sku: string; name: string; presentation: string; stock?: number; status?: string }
+type PreviousOrderItem = { productId: string; productName: string; sku: string; presentation: string; status: string; stock: number; quantity: number; lineDiscountPercent: number }
+type PreviousOrder = { available: boolean; orderId?: string; orderNumber?: string; orderDiscountPercent?: number; items?: PreviousOrderItem[] }
 type PriceList = { id: string; code: string; name: string; status: string }
 type Seller = { id: string; displayName: string; email: string }
-type PriceResolution = { productId: string; priceListId: string; priceListCode: string; unitPrice: number }
 type DraftLine = { productId: string; quantity: string; lineDiscountPercent: string; unitPriceOverride: string }
-type DraftPayment = { method: 'CASH' | 'BANK_TRANSFER' | 'CUSTOMER_ACCOUNT'; amount: string }
 type ConfirmationRequest = {
   idempotencyKey: string
   customerId: string
@@ -22,7 +28,8 @@ type ConfirmationRequest = {
   priceListId: string
   lines: Array<{ productId: string; quantity: number; lineDiscountPercent: number; unitPriceOverride?: number }>
   orderDiscountPercent: number
-  payments: Array<{ method: DraftPayment['method']; amount: number }>
+  previousBalanceAmount?: number
+  payments: []
 }
 type ConfirmationResponse = {
   orderId: string
@@ -32,6 +39,8 @@ type ConfirmationResponse = {
   total: number
   paid: number
   balance: number
+  previousBalanceAmount?: number
+  collectionTotal?: number
   creditLimitWarning?: { creditLimit: number; projectedBalance: number; exceededBy: number } | null
 }
 
@@ -46,7 +55,7 @@ function money(value: number) {
 
 function message(cause: unknown) {
   if (cause instanceof ApiError) {
-    if (cause.status === 400) return cause.detail || 'Revisá cantidades, pagos y descuentos.'
+    if (cause.status === 400) return cause.detail || 'Revisá cantidades y descuentos.'
     if (cause.status === 403) return 'Tu usuario no tiene permiso para confirmar este pedido.'
     if (cause.status === 404) return cause.detail || 'Un cliente, producto o lista dejó de estar disponible.'
     if (cause.status === 409) return cause.detail || 'El stock, el precio o la clave de confirmación entró en conflicto.'
@@ -58,40 +67,74 @@ function newKey() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+async function loadPriceLists() {
+  const first = await apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20')
+  const lists = [...first.content]
+  for (let page = 1; page < first.totalPages; page += 1) {
+    const next = await apiGet<ApiPage<PriceList>>(`/api/pricing/lists?page=${page}&size=20`)
+    lists.push(...next.content)
+  }
+  return { ...first, content: lists }
+}
+
 export default function OrderCreatePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
-  const customersQuery = useQuery({ queryKey: CUSTOMER_KEY, queryFn: () => apiGet<ApiPage<Customer>>('/api/customers?page=0&size=20') })
+  const customersQuery = useQuery({ queryKey: CUSTOMER_KEY, queryFn: () => apiGetAllPages<Customer>('/api/customers?page=0&size=20') })
   const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGet<ApiPage<Product>>('/api/products?page=0&size=20') })
-  const listsQuery = useQuery({ queryKey: PRICE_LIST_KEY, queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20') })
-  const sellersQuery = useQuery({ queryKey: SELLER_KEY, queryFn: () => apiGet<ApiPage<Seller>>('/api/sellers?page=0&size=100'), enabled: isAdmin })
+  const listsQuery = useQuery({ queryKey: ['order-create-price-lists', ...PRICE_LIST_KEY], queryFn: loadPriceLists })
+  const sellersQuery = useQuery({ queryKey: SELLER_KEY, queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const customers = customersQuery.data?.content ?? []
-  const products = productsQuery.data?.content ?? []
+  const [importedProducts, setImportedProducts] = useState<Product[]>([])
+  const products = [...new Map([...(productsQuery.data?.content ?? []), ...importedProducts].map((product) => [product.id, product])).values()]
   const activeLists = (listsQuery.data?.content ?? []).filter((list) => list.status === 'ACTIVE')
   const [customerId, setCustomerId] = useState('')
   const [sellerId, setSellerId] = useState('')
   const [explicitListId, setExplicitListId] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([])
   const [selectedProductId, setSelectedProductId] = useState('')
-  const [payments, setPayments] = useState<DraftPayment[]>([{ method: 'CASH', amount: '' }])
+  const [selectedProductQuantity, setSelectedProductQuantity] = useState('1')
+  const [selectedProductDiscount, setSelectedProductDiscount] = useState('0')
   const [orderDiscountPercent, setOrderDiscountPercent] = useState('0')
-  const [selectedProductPriceOverride, setSelectedProductPriceOverride] = useState('')
+  const [selectedProductPriceOverride, setSelectedProductPriceOverride] = useState<string | undefined>()
   const [attempt, setAttempt] = useState<ConfirmationRequest | undefined>()
   const [responseData, setResponseData] = useState<ConfirmationResponse | undefined>()
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [previousBalanceInput, setPreviousBalanceInput] = useState('')
+  const [selectedPreviousBalance, setSelectedPreviousBalance] = useState(0)
+  const [previousBalanceError, setPreviousBalanceError] = useState('')
+  const [discountPrompt, setDiscountPrompt] = useState<{ order: PreviousOrder; anchor: HTMLElement }>()
   const customer = customers.find((item) => item.id === customerId)
-  const resolvedListId = explicitListId || customer?.priceListId || ''
+  const customerBalance = Number(customer?.balance ?? 0)
+  const defaultListId = customer ? customer.priceListId || activeLists.find((list) => list.code === 'GENERAL')?.id || '' : ''
+  const resolvedListId = explicitListId || defaultListId
   const selectedList = activeLists.find((list) => list.id === resolvedListId)
-  const resolutions = useQueries({
-    queries: lines.map((line) => ({
-      queryKey: ['order-price-resolution', customerId, resolvedListId, line.productId],
-      queryFn: () => apiGet<PriceResolution>(`/api/pricing/resolve?customerId=${encodeURIComponent(customerId)}&productId=${encodeURIComponent(line.productId)}&priceListId=${encodeURIComponent(resolvedListId)}`),
-      enabled: Boolean(customerId && resolvedListId),
-      retry: false,
-    })),
+  const previousOrderQuery = useQuery({
+    queryKey: ['order-create-previous-order', customerId],
+    queryFn: ({ signal }) => apiGet<PreviousOrder>(`/api/customers/${encodeURIComponent(customerId)}/last-order`, signal),
+    enabled: Boolean(customerId),
+    retry: false,
   })
+  const priceProductIds = products.filter((product) => product.status === 'ACTIVE').map((product) => product.id).sort()
+  const pricesQuery = useQuery({
+    queryKey: ['order-price-batch', customerId, resolvedListId, priceProductIds],
+    queryFn: ({ signal }) => loadOrderPrices(customerId, resolvedListId, priceProductIds, signal),
+    enabled: Boolean(customerId && selectedList && priceProductIds.length),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  })
+  const pricesById = useMemo(() => new Map((pricesQuery.data ?? []).map((price) => [price.productId, price])), [pricesQuery.data])
+  function priceResolution(productId: string) {
+    const data = pricesById.get(productId)
+    const waiting = !data && (pricesQuery.isPending || pricesQuery.isFetching)
+    return { data, isLoading: waiting, isFetching: waiting && pricesQuery.isFetching, isError: Boolean(productId) && !waiting && (pricesQuery.isError || !data), error: pricesQuery.error ?? new Error('Este producto no tiene precio disponible en la lista.'), refetch: pricesQuery.refetch }
+  }
+  const selectedPriceQuery = priceResolution(selectedProductId)
+  const resolutions = lines.map((line) => priceResolution(line.productId))
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products])
   const previewSubtotal = lines.reduce((sum, line, index) => {
     const quantity = Number(line.quantity)
@@ -100,19 +143,41 @@ export default function OrderCreatePage() {
     if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice)) return sum
     return sum + quantity * unitPrice * (1 - discount / 100)
   }, 0)
-  const previewDiscount = isAdmin ? previewSubtotal * (Number(orderDiscountPercent || 0) / 100) : 0
+  const orderDiscountValue = Number(orderDiscountPercent.trim().replace(',', '.') || 0)
+  const invalidOrderDiscount = isAdmin && (!Number.isFinite(orderDiscountValue) || orderDiscountValue < 0 || orderDiscountValue > 100)
+  const previewDiscount = isAdmin && !invalidOrderDiscount ? previewSubtotal * (orderDiscountValue / 100) : 0
   const previewTotal = Math.max(0, previewSubtotal - previewDiscount)
-  const hasUnsavedDraft = Boolean(customerId || lines.length || payments.some((payment) => payment.amount.trim()))
-
-  useEffect(() => {
-    if (!hasUnsavedDraft || responseData) return
-    function warnBeforeLeave(event: BeforeUnloadEvent) {
-      event.preventDefault()
-      event.returnValue = ''
+  const lineRows = lines.map((line, index) => {
+    const product = productsById.get(line.productId)
+    const resolution = resolutions[index]
+    const unitPrice = Number(line.unitPriceOverride || resolution?.data?.unitPrice || 0)
+    const discount = isAdmin ? Number(line.lineDiscountPercent || 0) : 0
+    return {
+      kind: 'PRODUCT',
+      id: line.productId,
+      name: product?.name ?? 'Producto',
+      quantity: line.quantity,
+      price: resolution?.isLoading ? 'Resolviendo...' : resolution?.isError ? 'No disponible' : money(unitPrice),
+      discount: isAdmin ? line.lineDiscountPercent : '0',
+      subtotal: money(unitPrice * Number(line.quantity || 0) * (1 - discount / 100)),
     }
-    window.addEventListener('beforeunload', warnBeforeLeave)
-    return () => window.removeEventListener('beforeunload', warnBeforeLeave)
-  }, [hasUnsavedDraft, responseData])
+  })
+  if (selectedPreviousBalance > 0) lineRows.push({ kind: 'BALANCE', id: 'previous-balance', name: 'Saldo anterior', quantity: '—', price: money(selectedPreviousBalance), discount: '—', subtotal: money(selectedPreviousBalance) })
+  const lineColumns: TableColumn[] = [
+    { key: 'name', label: 'Producto', emphasis: true, render: (value) => <span className="order-line-product" title={value}>{value}</span> },
+    { key: 'quantity', label: 'Cantidad', render: (value, row) => row.kind === 'BALANCE' ? value : <input className="input order-compact-input" size={4} aria-label={`Cantidad de ${row.name}`} type="text" inputMode="decimal" value={value} onChange={(event) => updateLine(row.id, 'quantity', event.target.value)} /> },
+    { key: 'price', label: 'Precio unitario', align: 'right' },
+    { key: 'discount', label: 'Descuento (%)', render: (value, row) => row.kind === 'BALANCE' ? value : isAdmin ? <input className="input order-compact-input" size={4} aria-label={`Descuento de ${row.name}`} type="text" inputMode="decimal" value={value} onChange={(event) => updateLine(row.id, 'lineDiscountPercent', event.target.value)} /> : `${value}%` },
+    { key: 'subtotal', label: 'Subtotal', align: 'right', emphasis: true },
+    { key: 'remove', label: '', align: 'right', render: (_value, row) => <Button variant="danger" type="button" aria-label={`Quitar ${row.name}`} title={`Quitar ${row.name}`} onClick={() => removeLine(row.id)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" /></svg></Button> },
+  ]
+  const hasUnsavedDraft = Boolean(customerId || sellerId || explicitListId || lines.length || selectedProductId || orderDiscountPercent !== '0' || previousBalanceInput)
+  const { requestDiscard, discardDialog } = useDiscardChanges({
+    hasChanges: hasUnsavedDraft && !responseData,
+    onDiscard: () => navigate('/orders'),
+    disabled: submitting,
+    protectUnload: true,
+  })
 
   function draftChanged() {
     setAttempt(undefined)
@@ -124,15 +189,68 @@ export default function OrderCreatePage() {
     draftChanged()
     setCustomerId(selectedCustomerId)
     setSellerId(selectedCustomer?.sellerId ?? '')
-    setExplicitListId(selectedCustomer?.priceListId ?? '')
+    setExplicitListId('')
+    setSelectedProductPriceOverride(undefined)
+    setPreviousBalanceInput('')
+    setSelectedPreviousBalance(0)
+    setPreviousBalanceError('')
+  }
+
+  function includePreviousBalance(amountText = previousBalanceInput) {
+    const normalized = amountText.trim().replace(',', '.')
+    const amount = Number(normalized)
+    if (!/^\d+(?:\.\d{1,4})?$/.test(normalized) || !Number.isFinite(amount) || amount <= 0 || amount > customerBalance) {
+      setPreviousBalanceError(`Ingresá un importe mayor a cero y hasta ${money(Math.max(0, customerBalance))}.`)
+      return
+    }
+    draftChanged()
+    setPreviousBalanceError('')
+    setPreviousBalanceInput(normalized.replace('.', ','))
+    setSelectedPreviousBalance(amount)
+  }
+
+  function loadPreviousOrder(event: MouseEvent<HTMLButtonElement>) {
+    const previous = previousOrderQuery.data
+    if (!previous?.available || !previous.items?.length || previousOrderQuery.isFetching || !selectedList) return
+    const unavailable = previous.items.filter((item) => item.status !== 'ACTIVE')
+    if (unavailable.length) {
+      setError(`No se puede cargar el pedido anterior: hay productos no disponibles (${unavailable.map((item) => item.productName).join(', ')}).`)
+      return
+    }
+    if (isAdmin && (Number(previous.orderDiscountPercent) > 0 || previous.items.some((item) => Number(item.lineDiscountPercent) > 0))) {
+      setDiscountPrompt({ order: previous, anchor: event.currentTarget })
+      return
+    }
+    applyPreviousOrder(previous, false)
+  }
+
+  function applyPreviousOrder(previous: PreviousOrder, copyDiscounts: boolean) {
+    if (!previous.items?.length) return
+    draftChanged()
+    setImportedProducts(previous.items.map((item) => ({ id: item.productId, name: item.productName, sku: item.sku, presentation: item.presentation, status: item.status, stock: item.stock })))
+    setLines(previous.items.map((item) => ({ productId: item.productId, quantity: String(item.quantity), lineDiscountPercent: String(isAdmin && copyDiscounts ? item.lineDiscountPercent : 0), unitPriceOverride: '' })))
+    setOrderDiscountPercent(String(isAdmin && copyDiscounts ? previous.orderDiscountPercent ?? 0 : 0))
+    setSelectedProductId('')
+    setSelectedProductQuantity('1')
+    setSelectedProductDiscount('0')
+    setSelectedProductPriceOverride(undefined)
   }
 
   function addProduct() {
-    if (!selectedProductId || lines.some((line) => line.productId === selectedProductId)) return
+    if (!customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data || lines.some((line) => line.productId === selectedProductId)) return
+    const quantity = Number(selectedProductQuantity.trim().replace(',', '.'))
+    const discountInput = selectedProductDiscount.trim().replace(',', '.')
+    const discount = isAdmin ? Number(discountInput) : 0
+    const override = selectedProductPriceOverride?.trim().replace(',', '.') ?? ''
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity % 0.5 !== 0) { setError('La cantidad debe ser positiva y múltiplo de 0,5.'); return }
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento debe estar entre 0 y 100%.'); return }
+    if (isAdmin && selectedProductPriceOverride !== undefined && (!override || !Number.isFinite(Number(override)) || Number(override) < 0)) { setError('El precio debe ser un número no negativo.'); return }
     draftChanged()
-    setLines((current) => [...current, { productId: selectedProductId, quantity: '1', lineDiscountPercent: '0', unitPriceOverride: isAdmin ? selectedProductPriceOverride : '' }])
+    setLines((current) => [...current, { productId: selectedProductId, quantity: String(quantity), lineDiscountPercent: String(discount), unitPriceOverride: isAdmin ? override : '' }])
     setSelectedProductId('')
-    setSelectedProductPriceOverride('')
+    setSelectedProductQuantity('1')
+    setSelectedProductDiscount('0')
+    setSelectedProductPriceOverride(undefined)
   }
 
   function updateLine(productId: string, field: keyof Omit<DraftLine, 'productId'>, value: string) {
@@ -142,18 +260,21 @@ export default function OrderCreatePage() {
 
   function removeLine(productId: string) {
     draftChanged()
+    if (productId === 'previous-balance') {
+      setSelectedPreviousBalance(0)
+      setPreviousBalanceInput('')
+      setPreviousBalanceError('')
+      return
+    }
     setLines((current) => current.filter((line) => line.productId !== productId))
-  }
-
-  function updatePayment(index: number, field: keyof DraftPayment, value: string) {
-    draftChanged()
-    setPayments((current) => current.map((payment, paymentIndex) => paymentIndex === index ? { ...payment, [field]: value } : payment))
   }
 
   function buildPayload(): ConfirmationRequest | undefined {
     if (!customerId) { setError('Seleccioná un cliente.'); return undefined }
     if (!resolvedListId) { setError('Seleccioná una lista de precios.'); return undefined }
+    if (!selectedList) { setError('La lista asignada no está disponible. Seleccioná una lista activa.'); return undefined }
     if (lines.length === 0) { setError('Agregá al menos un producto al pedido.'); return undefined }
+    if (selectedPreviousBalance > Math.max(0, customerBalance)) { setError('El importe del saldo anterior supera el saldo actual del cliente.'); return undefined }
     if (resolutions.some((resolution) => resolution.isLoading)) { setError('Esperá a que se resuelvan los precios antes de confirmar.'); return undefined }
     if (resolutions.some((resolution) => resolution.isError || !resolution.data)) { setError('No se pudo resolver el precio de una línea. Revisá la lista y los productos.'); return undefined }
 
@@ -169,16 +290,9 @@ export default function OrderCreatePage() {
       if (resolutions[index].data?.unitPrice === undefined) { setError('Falta resolver el precio del producto.'); return undefined }
     }
 
-    const payloadPayments: ConfirmationRequest['payments'] = []
-    for (const payment of payments) {
-      if (!payment.amount.trim()) continue
-      const amount = Number(payment.amount)
-      if (!Number.isFinite(amount) || amount <= 0) { setError('Cada importe cobrado debe ser mayor a cero.'); return undefined }
-      payloadPayments.push({ method: payment.method, amount })
-    }
-    const discount = isAdmin ? Number(orderDiscountPercent || 0) : 0
+    const discount = isAdmin ? orderDiscountValue : 0
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento general debe estar entre 0 y 100%.'); return undefined }
-    return { idempotencyKey: newKey(), customerId, ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, payments: payloadPayments }
+    return { idempotencyKey: newKey(), customerId, ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments: [] }
   }
 
   async function confirm(event: FormEvent) {
@@ -213,6 +327,7 @@ export default function OrderCreatePage() {
     <PageHeader eyebrow="Pedido confirmado" title={responseData.orderNumber} description="El pedido y la venta quedaron registrados." />
     <Panel title="Resultado de la confirmación">
       <dl className="confirmation-result"><dt>Venta</dt><dd>{responseData.saleNumber}</dd><dt>Total</dt><dd>{money(responseData.total)}</dd><dt>Cobrado</dt><dd>{money(responseData.paid)}</dd><dt>Saldo pendiente</dt><dd>{money(responseData.balance)}</dd></dl>
+      {Number(responseData.previousBalanceAmount ?? 0) > 0 && <dl className="confirmation-result"><dt>Saldo anterior para entrega</dt><dd>{money(responseData.previousBalanceAmount!)}</dd><dt>Total a cobrar con la entrega</dt><dd>{money(responseData.collectionTotal ?? responseData.total + responseData.previousBalanceAmount!)}</dd></dl>}
       {responseData.creditLimitWarning && <p className="warning-text" role="status">El saldo proyectado {money(responseData.creditLimitWarning.projectedBalance)} supera el límite de crédito {money(responseData.creditLimitWarning.creditLimit)} por {money(responseData.creditLimitWarning.exceededBy)}.</p>}
       <div className="page-actions"><Button href={`/orders/${responseData.orderId}`}>Ver pedido</Button><Button variant="secondary" onClick={() => navigate('/orders')}>Volver a pedidos</Button></div>
     </Panel>
@@ -222,58 +337,53 @@ export default function OrderCreatePage() {
   const readLoading = customersQuery.isLoading || productsQuery.isLoading || listsQuery.isLoading || (isAdmin && sellersQuery.isLoading)
 
   return <>
-    <PageHeader eyebrow="Operación" title="Nuevo pedido" actions={<Button variant="secondary" href="/orders">Cancelar</Button>} />
+    <PageHeader eyebrow="Operación" title="Nuevo pedido" actions={<Button variant="secondary" type="button" onClick={requestDiscard} disabled={submitting}>Cancelar</Button>} />
+    {discardDialog}
     {readLoading ? <Panel><EmptyState title="Cargando datos del pedido" description={isAdmin ? 'Consultando clientes, productos, vendedores y listas activas.' : 'Consultando clientes, productos y listas activas.'} /></Panel>
       : readError ? <Panel><EmptyState title="No se pudo preparar el pedido" description={readError.message} action={isAdmin && sellersQuery.isError && readError === sellersQuery.error ? <Button variant="secondary" onClick={() => sellersQuery.refetch()}>Reintentar vendedores</Button> : undefined} /></Panel>
         : <form onSubmit={confirm}>
           {error && <p className="error-text" role="alert">{error}</p>}
-          <div className="order-layout">
-            <div className="order-main">
-              <Panel title="Datos del pedido">
-                <div className="order-customer-grid">
-                  <label className="field"><span>Cliente</span><select className="select" value={customerId} onChange={(event) => selectCustomer(event.target.value)} required><option value="">Seleccionar cliente...</option>{customers.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-                  {isAdmin
-                    ? <label className="field"><span>Vendedor</span><select className="select" aria-label="Vendedor" value={sellerId} onChange={(event) => { draftChanged(); setSellerId(event.target.value) }}><option value="">Usar vendedor del cliente</option>{(sellersQuery.data?.content ?? []).map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>
-                    : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>}
-                  <label className="field"><span>Lista de precios</span><select className="select" value={resolvedListId} onChange={(event) => { draftChanged(); setExplicitListId(event.target.value) }} required><option value="">Seleccionar lista...</option>{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select></label>
-                </div>
-                {customer && <p className="helper-text">Saldo de cuenta corriente actual: {money(Number(customer.balance ?? 0))}</p>}
-                <div className="section-heading"><div><h3>Productos</h3><p>Los precios se resuelven para el cliente y la lista seleccionada.</p></div></div>
-                <div className="product-picker"><label className="field"><span>Producto</span><select className="select" value={selectedProductId} onChange={(event) => { setSelectedProductId(event.target.value); setSelectedProductPriceOverride('') }} disabled={!customerId || !resolvedListId}><option value="">Seleccionar producto...</option>{products.filter((item) => item.status === 'ACTIVE').map((item) => <option value={item.id} key={item.id}>{item.name} · {item.sku} · stock total {item.stock ?? 0}</option>)}</select></label>{isAdmin && <label className="field"><span>Precio manual para el producto</span><input className="input" type="text" inputMode="decimal" value={selectedProductPriceOverride} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} disabled={!selectedProductId} /></label>}<Button type="button" variant="secondary" onClick={addProduct} disabled={!selectedProductId}>Agregar producto</Button></div>
-                {lines.length === 0 ? <EmptyState title="Todavía no agregaste productos" description="Elegí un producto para consultar su precio en la lista seleccionada." /> : <div className="order-lines">{lines.map((line, index) => {
-                  const product = productsById.get(line.productId)
-                  const resolution = resolutions[index]
-                  const unitPrice = Number(line.unitPriceOverride || resolution?.data?.unitPrice || 0)
-                  const quantity = Number(line.quantity || 0)
-                  const discount = isAdmin ? Number(line.lineDiscountPercent || 0) : 0
-                  const lineTotal = unitPrice * quantity * (1 - discount / 100)
-                  return <article className="order-line" key={line.productId}>
-                     <div className="order-line-heading"><div><strong>{product?.name}</strong><small>{product?.sku} · {product?.presentation} · stock total {product?.stock ?? 0}</small></div><Button variant="link" type="button" onClick={() => removeLine(line.productId)}>Quitar</Button></div>
-                    <div className="order-line-fields">
-                      <label className="field"><span>Cantidad de {product?.name}</span><input className="input" type="text" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(line.productId, 'quantity', event.target.value)} /></label>
-                      <div className="field"><span>Precio de {resolution?.data?.priceListCode ?? selectedList?.code ?? 'lista'}</span><strong>{resolution?.isLoading ? 'Resolviendo...' : resolution?.isError ? 'No disponible' : money(unitPrice)}</strong></div>
-                      {isAdmin && <label className="field"><span>Descuento de línea (%)</span><input className="input" type="text" inputMode="decimal" value={line.lineDiscountPercent} onChange={(event) => updateLine(line.productId, 'lineDiscountPercent', event.target.value)} /></label>}
-                      <div className="field"><span>Total de línea (preview)</span><strong>{money(lineTotal)}</strong></div>
-                    </div>
-                  </article>
-                })}</div>}
-                {isAdmin && <label className="field"><span>Descuento general (%)</span><input className="input" type="text" inputMode="decimal" value={orderDiscountPercent} onChange={(event) => { draftChanged(); setOrderDiscountPercent(event.target.value) }} /></label>}
-              </Panel>
+          <Panel title="Datos del pedido">
+            {discountPrompt && <PreviousOrderDiscountDialog orderNumber={discountPrompt.order.orderNumber ?? ''} orderDiscount={Number(discountPrompt.order.orderDiscountPercent ?? 0)} items={discountPrompt.order.items ?? []} anchor={discountPrompt.anchor} onDismiss={() => setDiscountPrompt(undefined)} onChoose={(copyDiscounts) => { applyPreviousOrder(discountPrompt.order, copyDiscounts); setDiscountPrompt(undefined) }} />}
+            <div className="order-customer-grid">
+              <CustomerSelect mode="selection" label="Cliente" options={customers} value={customerId} onChange={selectCustomer} required disabled={submitting} />
+              {isAdmin
+                ? <SellerSelect mode="selection" label="Vendedor" options={(sellersQuery.data?.content ?? []).map((seller) => ({ id: seller.id, name: seller.displayName }))} value={sellerId} onChange={(value) => { draftChanged(); setSellerId(value) }} emptyLabel="Usar vendedor del cliente" disabled={submitting} />
+                : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>}
+              <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" aria-invalid={Boolean(customerId && resolvedListId && !selectedList)} aria-describedby={customerId && resolvedListId && !selectedList ? 'order-price-list-error' : undefined} value={resolvedListId} onChange={(event) => { draftChanged(); setExplicitListId(event.target.value); setSelectedProductPriceOverride(undefined) }} required><option value="">Seleccionar lista...</option>{resolvedListId && !selectedList && <option value={resolvedListId} disabled>Lista asignada no disponible</option>}{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select>{customerId && resolvedListId && !selectedList && <span id="order-price-list-error" className="error-text">Seleccioná una lista activa para continuar.</span>}</label>
+              <div className="order-previous-action"><Button type="button" variant="secondary" onClick={loadPreviousOrder} disabled={!customerId || !selectedList || previousOrderQuery.isFetching || previousOrderQuery.isError || !previousOrderQuery.data?.available || submitting} title={!customerId ? 'Seleccioná un cliente para consultar su último pedido.' : previousOrderQuery.isFetching ? 'Consultando el último pedido del cliente.' : previousOrderQuery.isError ? 'No se pudo consultar el pedido anterior.' : !previousOrderQuery.data?.available ? 'Este cliente no tiene pedidos anteriores.' : 'Reemplazar los productos del borrador con los del último pedido del cliente.'}>Cargar pedido anterior</Button></div>
             </div>
-            <aside className="order-summary">
-              <Panel title="Cobro" description="Podés registrar más de un medio o dejar el saldo en cuenta corriente.">
-                {payments.map((payment, index) => <div className="payment-entry" key={index}>
-                  <label className="field"><span>Medio de pago</span><select className="select" value={payment.method} onChange={(event) => updatePayment(index, 'method', event.target.value as DraftPayment['method'])}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option><option value="CUSTOMER_ACCOUNT">Cuenta corriente</option></select></label>
-                  <label className="field"><span>Importe de pago</span><input className="input" type="text" inputMode="decimal" value={payment.amount} onChange={(event) => updatePayment(index, 'amount', event.target.value)} /></label>
-                  {payments.length > 1 && <Button type="button" variant="link" onClick={() => { draftChanged(); setPayments((current) => current.filter((_item, itemIndex) => itemIndex !== index)) }}>Quitar medio</Button>}
-                </div>)}
-                <Button type="button" variant="secondary" onClick={() => { draftChanged(); setPayments((current) => [...current, { method: 'CASH', amount: '' }]) }}>Agregar medio de pago</Button>
-                <dl className="order-totals"><dt>Subtotal (preview)</dt><dd>{money(previewSubtotal)}</dd>{isAdmin && <><dt>Descuento general (preview)</dt><dd>{money(previewDiscount)}</dd></>}<dt className="total-label">Total estimado</dt><dd className="total-value">{money(previewTotal)}</dd></dl>
-                <Button fullWidth disabled={submitting || resolutions.some((resolution) => resolution.isLoading) || lines.length === 0}>{submitting ? 'Confirmando...' : attempt ? 'Reintentar confirmación' : 'Confirmar pedido'}</Button>
-                <p className="helper-text">El total definitivo, el stock, los descuentos y el límite de crédito se validan en el servidor.</p>
-              </Panel>
-            </aside>
-          </div>
+            {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
+            <div className={`product-picker order-product-picker${isAdmin ? ' order-product-picker-admin' : ''}`}>
+              <label className="field order-product-choice"><span>Producto</span><select className="select" value={selectedProductId} onChange={(event) => { setSelectedProductId(event.target.value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError('') }} disabled={!customerId || !selectedList}><option value="">Seleccionar producto...</option>{products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => <option value={item.id} key={item.id}>{item.name} · {item.sku} · stock total {item.stock ?? 0}</option>)}</select></label>
+              <label className="field"><span>Precio</span><input className="input" aria-label="Precio" aria-busy={selectedPriceQuery.isFetching} placeholder={selectedProductId && selectedPriceQuery.isFetching ? 'Consultando...' : selectedProductId && selectedPriceQuery.isError ? 'No disponible' : '—'} type="text" inputMode="decimal" value={selectedProductPriceOverride ?? (selectedProductId && selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '')} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} readOnly={!isAdmin} disabled={!customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data} /></label>
+              <label className="field"><span>Cantidad</span><input className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductQuantity} onChange={(event) => setSelectedProductQuantity(event.target.value)} disabled={!selectedProductId} /></label>
+              {isAdmin && <label className="field"><span>Descuento</span><input className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductDiscount} onChange={(event) => setSelectedProductDiscount(event.target.value)} disabled={!selectedProductId} /></label>}
+              <Button type="button" variant="secondary" onClick={addProduct} disabled={!customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data}>Agregar producto</Button>
+              {selectedProductId && selectedPriceQuery.isError && <p className="order-product-choice error-text" role="alert">No se pudo consultar el precio de la lista. {selectedPriceQuery.error?.message} <Button type="button" variant="link" onClick={() => selectedPriceQuery.refetch()}>Reintentar precio</Button></p>}
+            </div>
+            <DataTable className="order-lines order-lines-table" columns={lineColumns} rows={lineRows} emptyContent={<p className="table-empty-message">Elegí un producto para consultar su precio en la lista seleccionada.</p>} />
+            {customer && <section className="order-account" aria-labelledby="order-account-title">
+              <div className="order-account-balance"><h3 id="order-account-title">Cuenta corriente</h3><span>Saldo actual</span><strong>{money(customerBalance)}</strong></div>
+              <div className="order-account-controls">
+                <label className="field"><span>Importe para el remito</span><input className="input" type="text" inputMode="decimal" value={previousBalanceInput} placeholder="0,00" aria-invalid={Boolean(previousBalanceError)} aria-describedby={previousBalanceError ? 'order-account-error' : undefined} onChange={(event) => { setPreviousBalanceInput(event.target.value); setPreviousBalanceError('') }} disabled={customerBalance <= 0 || submitting} /></label>
+                <Button type="button" variant="secondary" onClick={() => includePreviousBalance()} disabled={customerBalance <= 0 || submitting || !previousBalanceInput.trim()}>{selectedPreviousBalance > 0 ? 'Actualizar importe' : 'Agregar importe'}</Button>
+                <Button type="button" variant="link" onClick={() => includePreviousBalance(String(customerBalance))} disabled={customerBalance <= 0 || submitting}>Agregar saldo total</Button>
+              </div>
+              {previousBalanceError && <p className="error-text" id="order-account-error" role="alert">{previousBalanceError}</p>}
+            </section>}
+            <div className={`order-checkout${isAdmin ? '' : ' order-checkout-standard'}`}>
+              {isAdmin && <div className="order-checkout-discount">
+                <label className="field"><span>Descuento general</span><span className="order-discount-input"><input className="input" type="text" inputMode="decimal" aria-label="Descuento general (%)" aria-invalid={invalidOrderDiscount} aria-describedby={invalidOrderDiscount ? 'order-discount-error' : 'order-discount-hint'} value={orderDiscountPercent} onChange={(event) => { draftChanged(); setOrderDiscountPercent(event.target.value) }} /><span aria-hidden="true">%</span></span></label>
+                {invalidOrderDiscount ? <p id="order-discount-error" className="error-text" role="alert">Ingresá un descuento entre 0 y 100%.</p> : <p id="order-discount-hint" className="helper-text">De 0 a 100% sobre el subtotal.</p>}
+              </div>}
+              <dl className="order-totals"><dt>Subtotal</dt><dd>{money(previewSubtotal)}</dd>{isAdmin && <><dt>Descuento general</dt><dd className={previewDiscount > 0 ? 'order-discount-value' : undefined}>{previewDiscount > 0 ? '− ' : ''}{money(previewDiscount)}</dd></>}{selectedPreviousBalance > 0 && <><dt>Total del pedido</dt><dd>{money(previewTotal)}</dd><dt>Saldo anterior</dt><dd>{money(selectedPreviousBalance)}</dd></>}</dl>
+              <div className="order-checkout-actions">
+                <dl className="order-checkout-total"><dt>{selectedPreviousBalance > 0 ? 'Total a cobrar' : 'Total estimado'}</dt><dd className="total-value">{money(previewTotal + selectedPreviousBalance)}</dd></dl>
+                <Button type="submit" fullWidth disabled={submitting || invalidOrderDiscount || resolutions.some((resolution) => resolution.isLoading) || lines.length === 0}>{submitting ? 'Confirmando...' : attempt ? 'Reintentar confirmación' : 'Confirmar pedido'}</Button>
+              </div>
+            </div>
+          </Panel>
         </form>}
   </>
 }

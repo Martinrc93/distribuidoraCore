@@ -13,14 +13,16 @@ type DataTableProps = {
   rows: Record<string, string>[]
   onRowClick?: (row: Record<string, string>) => void
   className?: string
+  emptyContent?: ReactNode
 }
 
-export function DataTable({ columns, rows, onRowClick, className }: DataTableProps) {
+export function DataTable({ columns, rows, onRowClick, className, emptyContent }: DataTableProps) {
   return (
     <div className={`table-wrap${className ? ` ${className}` : ''}`}>
       <table className="data-table">
         <thead><tr>{columns.map((column) => <th className={column.align === 'right' ? 'align-right' : ''} key={column.key}>{column.label}</th>)}</tr></thead>
         <tbody>
+          {rows.length === 0 && emptyContent != null && <tr className="table-empty-row"><td className="table-empty-cell" colSpan={columns.length}>{emptyContent}</td></tr>}
           {rows.map((row, index) => <tr className={onRowClick ? 'clickable-row' : ''} key={`${row.id ?? row.name ?? 'row'}-${index}`} onClick={() => onRowClick?.(row)}>
             {columns.map((column) => <td data-label={column.label} className={`${column.align === 'right' ? 'align-right' : ''}${column.emphasis ? ' cell-emphasis' : ''}`} key={column.key}>{column.render ? column.render(row[column.key] ?? '', row) : row[column.key] ?? '-'}</td>)}
           </tr>)}

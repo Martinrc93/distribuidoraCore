@@ -26,12 +26,18 @@ public final class OrderConfirmationDtos {
         @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 4)
         BigDecimal orderDiscountPercent,
         List<@NotNull @Valid PaymentRequest> payments,
-        UUID sellerId
+        UUID sellerId,
+        @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousBalanceAmount
     ) implements OrderConfirmationService.ConfirmationCommand {
         public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
                                    List<LineRequest> lines, BigDecimal orderDiscountPercent,
                                    List<PaymentRequest> payments) {
-            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, null);
+            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, null, null);
+        }
+        public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
+                                   List<LineRequest> lines, BigDecimal orderDiscountPercent,
+                                   List<PaymentRequest> payments, UUID sellerId) {
+            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, sellerId, null);
         }
     }
 
@@ -60,11 +66,17 @@ public final class OrderConfirmationDtos {
         BigDecimal total,
         BigDecimal paid,
         BigDecimal balance,
-        CreditLimitWarning creditLimitWarning
+        CreditLimitWarning creditLimitWarning,
+        BigDecimal previousBalanceAmount,
+        BigDecimal collectionTotal
     ) {
         public ConfirmationResponse(UUID orderId, UUID saleId, String orderNumber, String saleNumber,
                                     BigDecimal total, BigDecimal paid, BigDecimal balance) {
-            this(orderId, saleId, orderNumber, saleNumber, total, paid, balance, null);
+            this(orderId, saleId, orderNumber, saleNumber, total, paid, balance, null, BigDecimal.ZERO, total);
+        }
+        public ConfirmationResponse(UUID orderId, UUID saleId, String orderNumber, String saleNumber,
+                                    BigDecimal total, BigDecimal paid, BigDecimal balance, CreditLimitWarning warning) {
+            this(orderId, saleId, orderNumber, saleNumber, total, paid, balance, warning, BigDecimal.ZERO, total);
         }
     }
 

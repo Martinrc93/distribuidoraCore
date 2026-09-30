@@ -8,7 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import { SearchableSelect } from '../../shared/components/SearchableSelect'
+import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySelect'
 import { useUrlListState } from '../../shared/useUrlListState'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 
@@ -129,8 +129,8 @@ export default function SalesPage() {
     <Panel>
       <form className="toolbar" onSubmit={(event) => event.preventDefault()}>
         <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar ventas</span><input className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Número de venta" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
-        <SearchableSelect label="Buscar por cliente" options={customers} value={customerId} onChange={(value) => setFilter('customerId', value)} allLabel="Todos los clientes" unavailableLabel="Cliente no disponible" loadingLabel="Cargando clientes…" loading={optionsQuery.isLoading} disabled={optionsQuery.isLoading || optionsQuery.isError} className="[@media(max-width:640px)]:w-full" />
-        <SearchableSelect label="Buscar por vendedor" options={sellers} value={sellerId} onChange={(value) => setFilter('sellerId', value)} allLabel="Todos los vendedores" unavailableLabel="Vendedor no disponible" loadingLabel="Cargando vendedores…" loading={optionsQuery.isLoading} disabled={optionsQuery.isLoading || optionsQuery.isError} className="[@media(max-width:640px)]:w-full" />
+        <CustomerSelect options={customers} value={customerId} onChange={(value) => setFilter('customerId', value)} loading={optionsQuery.isLoading} disabled={optionsQuery.isError} />
+        <SellerSelect options={sellers} value={sellerId} onChange={(value) => setFilter('sellerId', value)} loading={optionsQuery.isLoading} disabled={optionsQuery.isError} />
         <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Saldo pendiente</span><select className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={pendingBalance ? 'true' : ''} onChange={(event) => setFilter('pendingBalance', event.target.value)}><option value="">Todas las ventas</option><option value="true">Solo con saldo impago</option></select></label>
         <div className="orders-date-filters">
           <OrderDateFilter id="sales-date-min" label="Fecha mín." value={dateMin} isoValue={min ?? ''} onChange={(value) => setFilter('dateMin', value)} invalid={min === null || invalidRange} describedBy={dateError ? 'sales-date-error' : undefined} />

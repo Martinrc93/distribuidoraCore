@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DiscountRulesSection from './DiscountRulesSection'
+import { selectEntity } from '../../test/selectEntity'
 
 function token(authorities: string[]) {
   return `header.${btoa(JSON.stringify({ authorities }))}.signature`
@@ -45,7 +46,7 @@ describe('DiscountRulesSection', () => {
     await user.type(screen.getByLabelText('Código'), 'CLIENTE_LINEA10')
     await user.type(screen.getByLabelText('Descripción'), '10% para este cliente')
     await user.type(screen.getByLabelText('Porcentaje'), '10')
-    await user.selectOptions(screen.getByLabelText('Cliente (opcional)'), 'customer-1')
+    await selectEntity(user, 'Cliente (opcional)', 'Almacén Norte')
     await user.selectOptions(screen.getByLabelText('Lista de precios (opcional)'), 'list-1')
     await user.selectOptions(screen.getByLabelText('Producto'), 'product-1')
     await user.type(screen.getByLabelText('Prioridad'), '5')

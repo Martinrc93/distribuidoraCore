@@ -7,6 +7,8 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { SellerSelect } from '../../shared/components/EntitySelect'
+import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type Seller = { id: string; userId: string; displayName: string; email: string; status: string; assignedCustomersCount: number }
@@ -46,6 +48,8 @@ export default function SellersPage() {
   const [reassignPendingOrders, setReassignPendingOrders] = useState(false)
   const [confirmCustomerReassign, setConfirmCustomerReassign] = useState(false)
   const [reassignOrders, setReassignOrders] = useState(false)
+  const sellerOptionsQuery = useQuery({ queryKey: ['seller-reassignment-options'], queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: reassignCustomers || reassignOrders })
+  const sellerOptions = (sellerOptionsQuery.data?.content ?? []).map((seller) => ({ id: seller.id, name: seller.displayName, status: seller.status }))
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([])
   const [onlyPendingOrders, setOnlyPendingOrders] = useState(true)
   const [confirmOrderReassign, setConfirmOrderReassign] = useState(false)
@@ -169,13 +173,15 @@ export default function SellersPage() {
     </form></Panel>}
     <Panel title="Perfiles comerciales"><div className="toolbar"><label className="field"><span>Buscar vendedores</span><input className="input search-input" aria-label="Buscar vendedores" placeholder="Nombre o email" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label><label className="field"><span>Estado</span><select className="select" aria-label="Filtrar vendedores por estado" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="">Todos</option><option value="ACTIVE">Activos</option><option value="INACTIVE">Inactivos</option></select></label></div>{sellersQuery.isLoading ? <EmptyState title="Cargando vendedores" description="Consultando perfiles comerciales." /> : sellersQuery.isError ? <EmptyState title="No se pudieron cargar los vendedores" description={sellersQuery.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay vendedores" description="Creá un perfil comercial asociado a un usuario." action={<Button onClick={openCreate}>+ Nuevo vendedor</Button>} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {sellersQuery.data?.totalElements ?? 0} vendedores</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (sellersQuery.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}</Panel>
     {reassignCustomers && <Panel title="Reasignar clientes"><form className="form-grid" onSubmit={(event) => { event.preventDefault(); setConfirmCustomerReassign(true) }}>
-      <label className="field"><span>Vendedor de origen</span><select className="select" value={sourceSellerId} onChange={(event) => setSourceSellerId(event.target.value)}><option value="">Seleccionar...</option>{sellers.map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>
-      <label className="field"><span>Vendedor de destino</span><select className="select" value={targetSellerId} onChange={(event) => setTargetSellerId(event.target.value)}><option value="">Seleccionar...</option>{sellers.filter((seller) => seller.status === 'ACTIVE').map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>
+      <SellerSelect mode="selection" label="Vendedor de origen" options={sellerOptions} value={sourceSellerId} onChange={setSourceSellerId} required loading={sellerOptionsQuery.isLoading} disabled={saving || sellerOptionsQuery.isError} />
+      <SellerSelect mode="selection" label="Vendedor de destino" options={sellerOptions.filter((seller) => seller.status === 'ACTIVE')} value={targetSellerId} onChange={setTargetSellerId} required loading={sellerOptionsQuery.isLoading} disabled={saving || sellerOptionsQuery.isError} />
+      {sellerOptionsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los vendedores. <Button type="button" variant="link" onClick={() => sellerOptionsQuery.refetch()}>Reintentar vendedores</Button></p>}
       <label className="radio-row"><input aria-label="Reasignar pedidos pendientes" type="checkbox" checked={reassignPendingOrders} onChange={(event) => setReassignPendingOrders(event.target.checked)} /> Reasignar también pedidos pendientes de esos clientes</label>
       <div className="page-actions"><Button type="button" variant="secondary" onClick={() => setReassignCustomers(false)}>Cancelar</Button><Button type="submit">Continuar reasignación</Button></div>
     </form></Panel>}
     {reassignOrders && <Panel title="Reasignar pedidos"><form className="form-grid" onSubmit={(event) => { event.preventDefault(); setConfirmOrderReassign(true) }}>
-      <label className="field"><span>Vendedor de destino</span><select className="select" value={targetSellerId} onChange={(event) => setTargetSellerId(event.target.value)}><option value="">Seleccionar...</option>{sellers.filter((seller) => seller.status === 'ACTIVE').map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName}</option>)}</select></label>
+      <SellerSelect mode="selection" label="Vendedor de destino" options={sellerOptions.filter((seller) => seller.status === 'ACTIVE')} value={targetSellerId} onChange={setTargetSellerId} required loading={sellerOptionsQuery.isLoading} disabled={saving || sellerOptionsQuery.isError} />
+      {sellerOptionsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los vendedores. <Button type="button" variant="link" onClick={() => sellerOptionsQuery.refetch()}>Reintentar vendedores</Button></p>}
       <label className="radio-row"><input type="checkbox" checked={onlyPendingOrders} onChange={(event) => setOnlyPendingOrders(event.target.checked)} /> Solo pedidos pendientes</label>
       {ordersQuery.isLoading ? <p>Cargando pedidos...</p> : ordersQuery.isError ? <p className="error-text">No se pudieron cargar los pedidos.</p> : <fieldset className="order-select-list"><legend>Pedidos disponibles</legend>{orders.map((order) => <label className="radio-row" key={order.id}><input type="checkbox" checked={selectedOrderIds.includes(order.id)} onChange={(event) => setSelectedOrderIds((current) => event.target.checked ? [...current, order.id] : current.filter((id) => id !== order.id))} /> {order.number} · {order.customer} · {order.status}</label>)}</fieldset>}
       <div className="page-actions"><Button type="button" variant="secondary" onClick={() => setReassignOrders(false)}>Cancelar</Button><Button type="submit">Continuar reasignación</Button></div>

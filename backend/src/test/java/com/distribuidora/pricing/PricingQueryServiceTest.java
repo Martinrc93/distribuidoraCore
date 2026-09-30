@@ -27,6 +27,31 @@ class PricingQueryServiceTest {
     private final PricingQueryService service = new PricingQueryService(jdbc);
 
     @Test
+    void rejectsUnboundedOrInvalidBatchesBeforeQuerying() {
+        UUID customerId = UUID.randomUUID();
+        for (List<UUID> ids : List.of(List.<UUID>of(), java.util.Collections.nCopies(101, UUID.randomUUID()), java.util.Arrays.asList((UUID) null))) {
+            assertThatThrownBy(() -> service.resolveBatch(customerId, ids, null)).isInstanceOf(IllegalArgumentException.class);
+        }
+        org.mockito.Mockito.verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void resolvesDistinctProductsInOneQueryWithTheSameListFallbackOrderAndEffectiveDate() {
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
+        var price = Map.<String, Object>of("productId", productId, "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.ZERO);
+        when(jdbc.queryForMap(anyString(), any(Object[].class))).thenReturn(Map.of("price_list_id", listId), Map.of("id", listId, "status", "ACTIVE"));
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(price));
+        assertThat(service.resolveBatch(customerId, List.of(productId, productId), null)).containsExactly(price);
+        var sql = ArgumentCaptor.forClass(String.class);
+        var parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).queryForList(sql.capture(), parameters.capture());
+        assertThat(parameters.getValue()).containsExactly(listId, listId, listId, productId);
+        assertThat(sql.getValue()).contains("candidate.status = 'ACTIVE'", "candidate.id < ?", "order by (candidate.id = ?) desc, candidate.id desc", "America/Argentina/Buenos_Aires", "h.effective_on desc, h.created_at desc, h.id desc");
+    }
+
+    @Test
     void returnsPagedPriceLists() {
         Map<String, Object> list = Map.of("id", UUID.randomUUID(), "code", "GENERAL", "name", "Lista general");
         when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(list));

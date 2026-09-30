@@ -51,7 +51,8 @@ test('admin can create a customer, price a product, confirm an order and open it
   const listedProducts = (await productList.json()).content as Array<{ id: string; name: string }>
   const createdProduct = listedProducts.find((product) => product.name === productName)
   expect(createdProduct).toBeDefined()
-  await page.getByLabel('Cliente').selectOption({ label: customerName })
+  await page.getByRole('combobox', { name: 'Cliente', exact: true }).fill(customerName)
+  await page.getByRole('option', { name: customerName, exact: true }).click()
   const list = page.getByLabel('Lista de precios')
   const generalOption = list.locator('option').filter({ hasText: 'GENERAL' }).first()
   await list.selectOption(await generalOption.getAttribute('value') ?? '')

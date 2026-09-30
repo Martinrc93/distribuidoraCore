@@ -39,9 +39,57 @@ estado y el alcance del vendedor. Omitir o vaciar un extremo elimina ese límite
 Una fecha inválida o un rango invertido devuelve `400`.
 
 La pantalla de pedidos muestra ambas fechas inicialmente con el día actual y usa
-el formato numérico `dd/mm/aaaa` tanto en los filtros como en la tabla. Los filtros
+el formato numérico `dd/mm/aaaa` tanto en los filtros como en la tabla. Un clic en
+el campo o en su botón abre un calendario con meses, días y acciones en español,
+independiente del idioma del navegador; también admite edición manual.
+Los filtros
 se conservan en la URL y cambiar una fecha vuelve a la primera página. Vaciar
 ambas permite consultar todo el historial.
+
+## Creación de pedidos en la interfaz
+
+`GET /api/pricing/resolve-batch?customerId=<uuid>&priceListId=<uuid>&productIds=<uuid>,<uuid>`
+devuelve un arreglo con `productId`, `priceListId`, `priceListCode` y `unitPrice`.
+Admite entre 1 y 100 IDs y elimina duplicados. Requiere `ORDER_CREATE` o
+`ADMIN_ALL` y respeta el alcance de clientes del vendedor. Usa el precio vigente
+en Argentina de la lista elegida; si falta, aplica las mismas listas anteriores
+activas y el mismo orden que la resolución individual. Los productos sin precio
+se omiten y la UI bloquea agregarlos. La confirmación conserva la resolución
+autoritativa del servidor. La UI precarga solamente los productos disponibles
+para el pedido y reutiliza el resultado al seleccionar y agregar líneas.
+
+En la creación de pedidos, la UI selecciona automáticamente `priceListId` del
+cliente; si es nulo, usa la lista activa `GENERAL`, conforme al criterio de
+pricing. La confirmación envía `payments: []`: el pedido se registra sin cobro
+inicial y su importe queda pendiente en cuenta corriente. El resumen de totales
+y el botón de confirmación aparecen debajo de los productos.
+
+La confirmación admite `previousBalanceAmount` opcional (cero por defecto),
+no negativo, de hasta cuatro decimales y limitado al saldo deudor actual del
+cliente, comprobado bajo bloqueo transaccional. Se guarda como
+`orders.orders.previous_balance_amount` para incluirlo en el futuro remito.
+Es un concepto de cobro separado de los productos: no se descuenta, no mueve
+stock y no vuelve a generar deuda ni un pago. `total`, la venta y el débito en
+cuenta corriente siguen correspondiendo solo al nuevo pedido. La respuesta de
+confirmación y el detalle incluyen `previousBalanceAmount` y `collectionTotal`
+(total del pedido más el importe seleccionado). Cambiar este importe con la
+misma clave de idempotencia produce un conflicto; omitirlo o enviar cero conserva
+la compatibilidad de las claves anteriores. La carga del pedido anterior no lo copia.
+
+`GET /api/customers/{customerId}/last-order` requiere `ORDER_CREATE` o `ADMIN_ALL`
+y comprueba acceso al cliente y al pedido según el alcance del vendedor. Devuelve
+`{ "available": false }` si no hay pedidos confirmados o entregados visibles.
+Selecciona el último por fecha de creación y, en empate, ID descendente.
+Cuando existe, devuelve `available`, `orderId`, `orderNumber`,
+`orderDiscountPercent` e `items` con `productId`, `productName`, `sku`,
+`presentation`, `status`, `stock`, `quantity` y `lineDiscountPercent`. Los datos
+del producto corresponden al catálogo actual; el nombre histórico sirve de
+respaldo si ya no existe. No se limita a las primeras páginas del catálogo.
+La UI reemplaza los productos del borrador con sus cantidades y resuelve los
+precios de la lista actual, sin copiar precios manuales ni cobros. Solo el
+administrador puede copiar descuentos, tras elegirlo en un modal que aparece
+cuando el pedido anterior los contiene. Cargar sin descuentos los restablece
+a cero. Los productos no activos bloquean la carga.
 
 ## Deudas abiertas de un cliente
 

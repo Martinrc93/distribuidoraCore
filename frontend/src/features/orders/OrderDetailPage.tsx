@@ -15,7 +15,7 @@ type OrderItem = { productId: string; productName: string; quantity: number; uni
 type Payment = { id: string; amount: number; method: string; transferReference?: string | null; date: string }
 type DeliveryAttempt = { id: string; attemptNumber: number; result: 'DELIVERED' | 'FAILED'; observation?: string | null; attemptedAt: string; attemptedBy: string }
 type OrderDetail = {
-  order: { id: string; number: string; customerId: string; customer: string; status: string; subtotal: number; discount: number; total: number; customerBalance: number; date: string }
+  order: { id: string; number: string; customerId: string; customer: string; status: string; subtotal: number; discount: number; total: number; customerBalance: number; date: string; previousBalanceAmount?: number; collectionTotal?: number }
   items: OrderItem[]
   sale: { id: string; number: string; status: string; total: number; paid: number; balance: number; date: string }
   payments: Payment[]
@@ -129,6 +129,7 @@ export default function OrderDetailPage() {
     <PageHeader eyebrow="Operación" title={order.number} description={`${order.customer} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href="/orders">Volver a pedidos</Button>{canEdit && !editing && <Button onClick={startEditing}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !canEdit && <span className="helper-text">No se puede editar desde el frontend porque este pedido contiene descuentos o usa listas distintas entre líneas.</span>}</div>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && <p className="error-text" role="alert">{error}</p>}
+    {Number(order.previousBalanceAmount ?? 0) > 0 && <Panel title="Importe para la entrega"><dl className="confirmation-result"><dt>Total del pedido</dt><dd>{money(order.total)}</dd><dt>Saldo anterior incluido</dt><dd>{money(order.previousBalanceAmount)}</dd><dt>Total a cobrar</dt><dd>{money(order.collectionTotal ?? order.total + Number(order.previousBalanceAmount))}</dd></dl></Panel>}
     <div className="stats-grid compact">
       <article className="stat-card"><span>Estado del pedido</span><strong><Badge tone="soft">{order.status}</Badge></strong><small>{order.customer}</small></article>
       <article className="stat-card"><span>Total de la venta</span><strong>{money(sale.total)}</strong><small>Venta {sale.number}</small></article>

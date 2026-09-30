@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import OrdersPage from './OrdersPage'
@@ -24,11 +24,22 @@ function mockOrders() {
 }
 
 describe('OrdersPage', () => {
-  afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks(); vi.useRealTimers() })
+  const dialogMethods = ['showModal', 'close'] as const
+  const originalDialogMethods = dialogMethods.map((method) => Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, method))
+  afterEach(() => {
+    cleanup(); sessionStorage.clear(); vi.restoreAllMocks(); vi.useRealTimers()
+    dialogMethods.forEach((method, index) => {
+      const descriptor = originalDialogMethods[index]
+      if (descriptor) Object.defineProperty(HTMLDialogElement.prototype, method, descriptor)
+      else Reflect.deleteProperty(HTMLDialogElement.prototype, method)
+    })
+  })
   beforeEach(() => {
     sessionStorage.setItem('distribuidora.accessToken', 'access-token')
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-09-30T12:00:00Z'))
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true } })
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false } })
   })
 
   it('lists real orders and opens their detail route', async () => {
@@ -56,6 +67,79 @@ describe('OrdersPage', () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('dateMin=2026-09-29&dateMax=2026-09-29'), expect.anything())
   })
 
+  it('opens each calendar from the date field, calendar button and keyboard', async () => {
+    mockOrders()
+    renderOrders()
+    await screen.findByText('PED-001')
+    for (const label of ['Fecha mín.', 'Fecha máx.']) {
+      const input = screen.getByLabelText(label)
+      const button = screen.getByRole('button', { name: `Abrir calendario: ${label}` })
+      const openers = [() => fireEvent.click(input), () => fireEvent.click(button), () => fireEvent.keyDown(input, { key: 'Enter' }), () => fireEvent.keyDown(input, { key: 'ArrowDown', altKey: true })]
+      for (const open of openers) {
+        open()
+        const calendar = screen.getByRole('dialog', { name: new RegExp(`Calendario: ${label}`) })
+        expect(within(calendar).getByText('Septiembre de 2026')).toBeInTheDocument()
+        expect(within(calendar).getByText('lu')).toBeInTheDocument()
+        expect(within(calendar).getByRole('button', { name: /miércoles, 30 de septiembre de 2026/ })).toHaveFocus()
+        fireEvent.click(within(calendar).getByRole('button', { name: 'Cerrar' }))
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      }
+    }
+  })
+
+  it('applies calendar selections in numeric format and resets pagination', async () => {
+    const fetchMock = mockOrders()
+    renderOrders('/orders?page=1')
+    await screen.findByText('PED-001')
+    fireEvent.click(screen.getByLabelText('Fecha mín.'))
+    fireEvent.click(screen.getByRole('button', { name: /15 de septiembre de 2026/ }))
+    expect(screen.getByLabelText('Fecha mín.')).toHaveValue('15/09/2026')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=20&search=&status=&dateMin=2026-09-15&dateMax=2026-09-30', expect.anything()))
+    fireEvent.click(screen.getByLabelText('Fecha máx.'))
+    fireEvent.click(screen.getByRole('button', { name: /25 de septiembre de 2026/ }))
+    expect(screen.getByLabelText('Fecha máx.')).toHaveValue('25/09/2026')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('dateMin=2026-09-15&dateMax=2026-09-25'), expect.anything()))
+    fireEvent.click(screen.getByLabelText('Fecha mín.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar' }))
+    expect(screen.getByLabelText('Fecha mín.')).toHaveValue('')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('dateMin=&dateMax=2026-09-25'), expect.anything()))
+  })
+
+  it('navigates leap days and months with the keyboard and closes without changing filters', async () => {
+    mockOrders()
+    renderOrders('/orders?dateMin=29%2F02%2F2024')
+    await screen.findByText('PED-001')
+    const input = screen.getByLabelText('Fecha mín.')
+    fireEvent.click(input)
+    fireEvent.keyDown(screen.getByRole('button', { name: /29 de febrero de 2024/ }), { key: 'ArrowRight' })
+    expect(screen.getByText('Marzo de 2024')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /, 1 de marzo de 2024/ })).toHaveFocus()
+    fireEvent.keyDown(screen.getByRole('button', { name: /, 1 de marzo de 2024/ }), { key: 'PageUp' })
+    expect(screen.getByRole('button', { name: /, 1 de febrero de 2024/ })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' }))
+    expect(screen.getByText('Marzo de 2024')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }))
+    expect(screen.getByText('Febrero de 2024')).toBeInTheDocument()
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: false, cancelable: true }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(input).toHaveValue('29/02/2024')
+    expect(input).toHaveFocus()
+  })
+
+  it('selects today using the Argentine day and clears from the calendar', async () => {
+    vi.setSystemTime(new Date('2026-09-30T02:00:00Z'))
+    mockOrders()
+    renderOrders('/orders?dateMin=01%2F09%2F2026')
+    await screen.findByText('PED-001')
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir calendario: Fecha mín.' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hoy' }))
+    expect(screen.getByLabelText('Fecha mín.')).toHaveValue('29/09/2026')
+    expect(screen.getByRole('button', { name: 'Abrir calendario: Fecha mín.' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir calendario: Fecha mín.' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar' }))
+    expect(screen.getByLabelText('Fecha mín.')).toHaveValue('')
+  })
+
   it('restores date filters from the URL and keeps them while paginating', async () => {
     const fetchMock = mockOrders()
     renderOrders('/orders?dateMin=01%2F09%2F2026&dateMax=30%2F09%2F2026&status=CONFIRMED&search=Norte')
@@ -80,6 +164,31 @@ describe('OrdersPage', () => {
     fireEvent.change(screen.getByLabelText('Buscar pedidos'), { target: { value: 'Norte' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=20&search=Norte&status=&dateMin=&dateMax=', expect.anything()))
     expect(screen.getByLabelText('Fecha mín.')).toHaveValue('')
+  })
+
+  it('shows historical orders after clearing filters from an empty result', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const params = new URL(String(input), 'http://localhost').searchParams
+      const filtered = Boolean(params.get('dateMin') || params.get('dateMax') || params.get('search') || params.get('status'))
+      return response({ content: filtered ? [] : [{ id: 'old-order', number: 'PED-ANTERIOR', customer: 'Almacén Norte', seller: 'Lucía', total: 300, status: 'CONFIRMED', date: '2026-09-19T12:00:00Z' }], page: 0, size: 20, totalElements: filtered ? 0 : 1, totalPages: filtered ? 0 : 1 })
+    })
+    renderOrders('/orders?page=2&search=Norte&status=DELIVERED')
+    expect(await screen.findByText('No hay pedidos para estos filtros')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todos los pedidos' }))
+    expect(await screen.findByText('PED-ANTERIOR')).toBeInTheDocument()
+    expect(screen.getByLabelText('Fecha mín.')).toHaveValue('')
+    expect(screen.getByLabelText('Fecha máx.')).toHaveValue('')
+    expect(screen.getByLabelText('Buscar pedidos')).toHaveValue('')
+    expect(screen.getByLabelText('Filtrar por estado')).toHaveValue('')
+    expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=20&search=&status=&dateMin=&dateMax=', expect.anything())
+  })
+
+  it('offers creation rather than clearing filters when no orders exist without filters', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
+    renderOrders('/orders?dateMin=&dateMax=')
+    expect(await screen.findByText('No hay pedidos para mostrar')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ver todos los pedidos' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: '+ Nuevo pedido' })).toHaveLength(2)
   })
 
   it.each(['31/09/2026', '29/02/2026', '30/9/2026', '2026-09-30', '30/09/0000', 'texto'])('rejects invalid date %s without fetching orders', async (value) => {

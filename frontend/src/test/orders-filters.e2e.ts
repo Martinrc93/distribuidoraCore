@@ -1,5 +1,28 @@
 import { expect, test } from '@playwright/test'
 
+test('empty daily results let users show historical orders with one click', async ({ page }, testInfo) => {
+  await page.clock.setFixedTime(new Date('2026-09-30T12:00:00Z'))
+  await page.addInitScript(() => sessionStorage.setItem('distribuidora.accessToken', 'test-access-token'))
+  await page.route('**/api/orders?*', async (route) => {
+    const params = new URL(route.request().url()).searchParams
+    const filtered = Boolean(params.get('dateMin') || params.get('dateMax') || params.get('search') || params.get('status'))
+    await route.fulfill({ json: {
+      content: filtered ? [] : [{ id: 'historical', number: 'PED-ANTERIOR', customer: 'Almacén Norte', seller: 'Lucía', total: 300, status: 'CONFIRMED', date: '2026-09-19T12:00:00Z' }],
+      page: 0, size: 20, totalElements: filtered ? 0 : 1, totalPages: filtered ? 0 : 1,
+    } })
+  })
+  await page.goto('/orders')
+  await expect(page.getByRole('heading', { name: 'No hay pedidos para estos filtros' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('orders-empty-daily.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Ver todos los pedidos' }).click()
+  await expect(page.getByText('PED-ANTERIOR', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Fecha mín.', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Fecha máx.', { exact: true })).toHaveValue('')
+  await page.reload()
+  await expect(page.getByText('PED-ANTERIOR', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Fecha mín.', { exact: true })).toHaveValue('')
+})
+
 test('order date filters default to today, persist across pages and adapt to mobile', async ({ page }, testInfo) => {
   await page.clock.setFixedTime(new Date('2026-09-30T12:00:00Z'))
   await page.addInitScript(() => sessionStorage.setItem('distribuidora.accessToken', 'test-access-token'))
@@ -14,8 +37,8 @@ test('order date filters default to today, persist across pages and adapt to mob
     } })
   })
   await page.goto('/orders')
-  const min = page.getByLabel('Fecha mín.')
-  const max = page.getByLabel('Fecha máx.')
+  const min = page.getByLabel('Fecha mín.', { exact: true })
+  const max = page.getByLabel('Fecha máx.', { exact: true })
   await expect(min).toHaveValue('30/09/2026')
   await expect(max).toHaveValue('30/09/2026')
   await expect(page.getByText('PED-0', { exact: true })).toBeVisible()
@@ -26,6 +49,8 @@ test('order date filters default to today, persist across pages and adapt to mob
   await expect(min).toBeFocused()
   expect(await min.evaluate((input) => Number.parseFloat(getComputedStyle(input).outlineWidth))).toBeGreaterThan(0)
   await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Abrir calendario: Fecha mín.' })).toBeFocused()
+  await page.keyboard.press('Tab')
   await expect(max).toBeFocused()
 
   const statusBox = await page.getByLabel('Filtrar por estado').boundingBox()
@@ -34,6 +59,34 @@ test('order date filters default to today, persist across pages and adapt to mob
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
   await page.screenshot({ path: testInfo.outputPath('orders-date-filters.png'), fullPage: true })
+
+  await min.click()
+  const calendar = page.getByRole('dialog', { name: /Calendario: Fecha mín./ })
+  await expect(calendar).toBeVisible()
+  await expect(calendar.getByRole('heading')).toHaveText('Septiembre de 2026')
+  await expect(calendar.getByText('lu', { exact: true })).toBeVisible()
+  await expect(calendar.getByRole('button', { name: 'Hoy', exact: true })).toBeVisible()
+  const calendarBox = await calendar.boundingBox()
+  const viewport = page.viewportSize()!
+  expect(calendarBox!.x).toBeGreaterThanOrEqual(0)
+  expect(calendarBox!.y).toBeGreaterThanOrEqual(0)
+  expect(calendarBox!.x + calendarBox!.width).toBeLessThanOrEqual(viewport.width)
+  expect(calendarBox!.y + calendarBox!.height).toBeLessThanOrEqual(viewport.height)
+  await page.screenshot({ path: testInfo.outputPath('orders-min-calendar.png') })
+  await expect(calendar.getByRole('button', { name: /30 de septiembre de 2026/ })).toBeFocused()
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('Enter')
+  await expect(min).toHaveValue('29/09/2026')
+  await expect.poll(() => requests.at(-1)?.searchParams.get('dateMin')).toBe('2026-09-29')
+  await page.getByRole('button', { name: 'Abrir calendario: Fecha máx.' }).click()
+  await page.getByRole('dialog', { name: /Calendario: Fecha máx./ }).getByRole('button', { name: /29 de septiembre de 2026/ }).click()
+  await expect(max).toHaveValue('29/09/2026')
+  await expect.poll(() => requests.at(-1)?.searchParams.get('dateMax')).toBe('2026-09-29')
+  await expect(page.getByRole('button', { name: 'Abrir calendario: Fecha máx.' })).toBeFocused()
+  await min.click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(min).toBeFocused()
 
   await min.fill('01/09/2026')
   await expect.poll(() => requests.at(-1)?.searchParams.get('dateMin')).toBe('2026-09-01')

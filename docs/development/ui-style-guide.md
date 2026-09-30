@@ -176,10 +176,90 @@ nativos, `variant` y `fullWidth`; `href` hace que renderice un enlace.
 
 ## Tablas, filtros y paginación
 
+La creación de pedidos usa un único `Panel` de ancho completo con los datos y
+productos. El cierre `.order-checkout` usa tres columnas sobre fondo blanco,
+separadas de los productos por un borde superior: descuento general compacto
+de `96px` con sufijo `%`, desglose de subtotal/descuento de hasta `240px` y
+total con confirmación de hasta `340px`. Solo el bloque final usa fondo canvas,
+borde y padding `16px`; el total se destaca en `22px` y el botón de ancho
+completo queda debajo, con altura mínima `42px`. Sin permisos de administrador
+se muestran solo desglose y confirmación. El descuento admite coma decimal,
+muestra errores asociados al campo para valores fuera de `0–100` y bloquea
+confirmación hasta corregirlos. A `1050px` se usan dos columnas, con descuento
+y desglose a la izquierda y total/confirmación a la derecha. A `760px` o menos se apilan los tres bloques,
+con etiqueta y porcentaje alineados en una fila. No se muestra la aclaración
+de cuenta corriente en este cierre.
+Al elegir un cliente, su saldo aparece debajo de los productos en `.order-account`,
+con importe destacado, un campo «Importe para el remito» y acciones para agregar
+un importe parcial o el saldo completo. Sin saldo deudor se deshabilitan las
+acciones. El importe elegido aparece como una fila «Saldo anterior», sin cantidad
+ni descuento y con papelera para quitarlo. Los totales separan el pedido del
+saldo anterior y muestran «Total a cobrar». Cambiar cliente elimina la selección;
+actualizar el importe reemplaza la fila existente. En móvil, importe y acciones
+se apilan sin desbordar. El importe se guarda en el pedido para el futuro remito
+y no genera un nuevo débito, descuento ni movimiento de stock.
+Esta variante no incluye controles de cobro. Al cambiar de cliente se selecciona
+su lista asignada o `GENERAL` si no tiene una, y se descarta la selección manual
+del cliente anterior. Se cargan todas las páginas de listas para poder mostrar
+la asignada. Una lista asignada no disponible se señala y requiere seleccionar
+una lista activa.
+La fila de cliente, vendedor y lista incluye «Cargar pedido anterior» a la derecha;
+en móvil se apila con ancho completo. El botón queda gris y deshabilitado sin
+cliente, durante la consulta o si no hay pedido previo. Carga el último pedido
+confirmado o entregado visible para el usuario, reemplazando los productos del
+borrador y conservando cantidades. Usa la lista y precios actuales. La carga
+inicial excluye descuentos; si el pedido anterior tiene descuentos, solo el
+administrador recibe un diálogo para cargar sin descuentos o copiarlos. Cancelar
+o Escape conserva el borrador, y el foco vuelve al botón. No copia cobros ni precios manuales históricos.
+Los productos no disponibles bloquean la carga con un mensaje, y los errores
+de consulta permiten reintentar.
+
+El selector `.order-product-picker` precarga los precios de los productos
+disponibles al elegir cliente y lista, en lotes de hasta 100 productos. La caché
+se identifica por cliente, lista y productos, y permanece vigente por un minuto.
+Seleccionar, agregar o quitar un producto no genera otra consulta de precio.
+No se recarga al cambiar el foco o reconectar, evitando esperas al volver a la
+pantalla en celular. Los productos importados del pedido anterior se incluyen
+en la carga. Cambiar cliente o lista cancela la consulta anterior; no se muestran
+precios de otro contexto. La confirmación valida nuevamente los precios en el servidor.
+El campo «Precio» se carga con el precio de
+lista; solo el administrador puede editarlo y aplicar descuentos. La modificación
+se envía como `unitPriceOverride` de la línea y solo afecta a ese pedido, sin
+actualizar la lista. Cambiar cliente, lista o producto restablece el precio de
+lista. Cantidad y «Descuento» utilizan cajas de `4ch + 22px` con `size=4`, sin
+limitar el valor a cuatro caracteres; el descuento admite valores entre `0` y
+`100`. Producto, precio, cantidad, descuento y acción se alinean en una misma
+fila en escritorio. El selector de producto
+recibe más espacio; si el contenido no entra, el desplazamiento horizontal queda
+dentro del selector, sin desbordar la página. Los campos se apilan a `760px`.
+La acción de agregar espera la consulta de precio y permite reintentar errores.
+Durante la consulta, «Consultando…» aparece como placeholder dentro del campo,
+sin cambiar la alineación de la fila. La consulta de precio tiene un límite de
+`15s`, se cancela al cambiar de selección y muestra el error con reintento si no
+responde a tiempo.
+Cantidad y descuento se transfieren a la línea y se restablecen a `1` y `0`
+para la siguiente selección. La cantidad debe ser positiva y múltiplo de `0,5`;
+el descuento debe estar entre `0` y `100`.
+
+Las líneas agregadas reutilizan `DataTable` con la variante `.order-lines-table`.
+La tabla permanece visible aunque no haya líneas. En ese caso, conserva los
+encabezados y muestra la ayuda para elegir un producto dentro de una celda que
+ocupa todas las columnas, sin reemplazar la tabla por un estado vacío externo.
+Producto, cantidad, precio unitario, descuento porcentual, subtotal y eliminación
+se muestran en una fila en escritorio. Cantidad y descuento conservan los campos
+compactos; solo el administrador puede editar descuentos. La acción final es un
+botón `danger` de `38px` con una papelera de `16px` y nombre accesible «Quitar
+{producto}». A `640px` o menos se utiliza el patrón de tarjetas de la tabla
+compartida, con etiquetas visibles y la papelera al final.
+
 Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
 `columns` define `key`, `label`, `align`, `emphasis` y `render` opcional;
 `rows` recibe `Record<string, string>[]`. Formatear valores antes de pasarlos.
 `className` se agrega al contenedor `.table-wrap`, no al elemento `table`.
+`emptyContent` es opcional: sin filas, se muestra dentro de una celda con
+`colSpan` igual a la cantidad de columnas. `.table-empty-cell` centra el contenido
+con padding vertical de `32px`; `.table-empty-message` limita el texto a `320px`.
+En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
 
 - Contenedor con borde y radio `8px`, overflow horizontal en desktop.
   Tabla de ancho completo y mínimo `720px`.
@@ -229,6 +309,10 @@ Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
   foco dentro del diálogo y lo devuelve al disparador al cerrar; admite Escape,
   flechas, Home/End y PageUp/PageDown (con Shift cambia el año). La selección
   conserva `dd/mm/aaaa` y se aplica también en mobile.
+  Las fechas inician en el día actual de Argentina. Si los filtros no encuentran
+  pedidos, el estado vacío ofrece «Ver todos los pedidos»: quita búsqueda,
+  estado y ambas fechas, vuelve a la primera página y conserva los límites
+  vacíos en la URL para que no se restablezcan al recargar.
 - `.pagination` contiene resumen y botones anterior/siguiente. Se compone en
   cada pantalla: **no existe un componente compartido `Pagination`** actualmente.
   Deshabilitar los extremos y conservar filtros/página en la URL cuando corresponda.
@@ -250,15 +334,54 @@ const columns: TableColumn[] = [
 [`SearchableSelect`](../../frontend/src/shared/components/SearchableSelect.tsx)
 combina un campo editable y una lista desplegable con búsqueda local por nombre.
 Recibe opciones `{ id, name }` y conserva el ID elegido, incluso con nombres
-repetidos. La opción «Todos» siempre está disponible para quitar el filtro.
+repetidos. La opción vacía siempre está disponible para quitar la selección;
+su texto y significado dependen del contexto (todos, sin asignar o seleccionar).
 Si se abandona la búsqueda sin elegir, conserva la selección anterior.
 Usa las clases `.searchable-select-*`, el campo `.input` de `39px`, ancho base
 de `210px` y lista con scroll de hasta `240px`, sin desbordar el ancho del campo.
-El ancho móvil se define en la pantalla que lo usa; ventas lo expande a `640px`.
+El ancho móvil es común: a `640px` o menos ocupa todo el ancho disponible.
 Expone roles combobox/listbox/option y opción activa mediante
 `aria-activedescendant`: flechas recorren opciones, Enter elige, Escape cancela
 y Tab cierra sin atrapar el foco. Incluye estados de carga, deshabilitado,
 selección no disponible y búsqueda sin coincidencias.
+
+### Patrón obligatorio de selección de clientes y vendedores
+
+Usar [`CustomerSelect` y `SellerSelect`](../../frontend/src/shared/components/EntitySelect.tsx)
+en cualquier filtro o formulario que elija una entidad por ID. Ambos delegan la
+interacción a `SearchableSelect`; no sustituirlos por un select nativo ni duplicar
+su búsqueda en una feature. Las búsquedas libres del listado de clientes o de
+vendedores siguen usando un input: buscan texto, no seleccionan una entidad.
+
+- En modo `filter` (por defecto), las etiquetas son «Buscar por cliente» y
+  «Buscar por vendedor»; la opción vacía es «Todos los clientes/vendedores».
+  Elegir una opción aplica su ID y la pantalla reinicia su paginación. El control
+  mide `210px` en escritorio y ocupa una fila completa a `640px` o menos.
+- En modo `selection`, ocupa todo el ancho del campo del formulario. `label`
+  conserva el contexto («Cliente del pago», «Vendedor asignado», etc.) y
+  `emptyLabel` define el significado del ID vacío: seleccionar, sin asignar,
+  todos o usar el vendedor del cliente. `required` exige elegir una opción;
+  escribir un nombre sin seleccionarlo no satisface la validación nativa.
+- Clic o flechas abren la lista. Escribir filtra las opciones por nombre sin
+  distinguir mayúsculas ni acentos; seleccionar confirma el ID. Flechas recorren,
+  Enter elige, Escape cancela y Tab/clic fuera cierran conservando la selección
+  previa. El texto escrito sin confirmar nunca se envía como ID.
+- Las opciones vacías permanecen disponibles para quitar una selección; nombres
+  repetidos conservan IDs distintos. Opciones de carga, selección no disponible,
+  bloqueo y búsqueda sin coincidencias tienen textos compartidos. `loading`
+  deshabilita el campo y su botón; `invalid` y `describedBy` asocian errores/ayuda.
+- Los formularios cargan todas las páginas de opciones autorizadas mediante
+  [`apiGetAllPages`](../../frontend/src/shared/api/pagination.ts), conservando los
+  filtros y permisos de cada consulta. Ventas y el filtro de vendedores en
+  clientes usan sus endpoints de opciones completos. La reasignación no toma
+  sus opciones de la página visible de vendedores. Si la carga falla, permitir
+  reintentar sin ofrecer un conjunto incompleto como si estuviera completo.
+
+Aplicado a ventas, filtro y formulario de clientes, creación de pedidos, pagos,
+reglas de descuento y reasignación de clientes/pedidos. Las reglas de negocio
+(clientes activos para descuentos, vendedores activos de destino, vendedor
+heredado del cliente y selección obligatoria en pedidos/pagos) pertenecen a cada
+pantalla; la interacción de búsqueda y selección es siempre la misma.
 
 - `.form-grid`: dos columnas, gap `14px`; una columna a `760px` o menos.
 - Cada campo usa `label.field` con un texto y un control asociado. Si el label
@@ -317,12 +440,43 @@ y las clases de catálogo para nuevos modales comunes; no inventar una API inexi
 de catálogo tiene foco inicial y manejo de `Escape`, pero no implementa contención
 ni restauración del foco. No asumir que `aria-modal` resuelve esos comportamientos.
 
-### Variantes existentes
+### Confirmaciones reutilizables de cancelación y descarte
+
+[`ConfirmationDialog`](../../frontend/src/shared/components/ConfirmationDialog.tsx)
+centraliza las confirmaciones destructivas. Montarlo solo cuando se requiere
+confirmación. Recibe `title`, `description`, `confirmLabel`, `onConfirm` y
+`onCancel`; opcionalmente `cancelLabel`, `pendingLabel`, `pending` y `error`.
+Usa `<dialog>` con `showModal()` en un portal a `document.body`: contiene el foco,
+impide interacción con el fondo y queda sobre los formularios existentes. Enfoca
+la acción segura al abrir y devuelve el foco al disparador si sigue montado.
+Escape conserva los datos. Mientras `pending` está activo, ambas acciones y
+Escape quedan bloqueados; los errores se muestran dentro con `role="alert"`.
+No cierra al pulsar el fondo.
+
+`.confirmation-dialog-*` conserva el patrón de catálogo: ancho `480px`, radio
+`10px`, encabezado/cuerpo/pie separados, botones compartidos y confirmación
+`danger`. Limita la altura con `100dvh` y scroll interno; a `760px` reduce padding
+y márgenes, y a `640px` las acciones comparten el ancho y permiten wrap.
+
+[`useDiscardChanges`](../../frontend/src/shared/useDiscardChanges.tsx) recibe
+`hasChanges`, `onDiscard`, `disabled` y `protectUnload` opcionales; devuelve
+`requestDiscard` y `discardDialog`. Sin cambios ejecuta el cierre directamente;
+con cambios ofrece «Seguir editando» y «Descartar cambios». Se usa al cancelar
+la creación de pedidos y al cerrar el formulario de clientes. La cancelación
+de un pedido confirmado usa `ConfirmationDialog` con su consecuencia específica,
+estado de carga y error recuperable.
+
+En pedidos, `protectUnload` mantiene el aviso nativo para recargar/cerrar la
+pestaña. Ese aviso es controlado por el navegador y no admite diseño ni texto
+personalizado. El hook confirma los cierres explícitos que usan `requestDiscard`;
+no bloquea por sí mismo navegación del sidebar ni atrás/adelante del router.
+
+### Variantes específicas por pantalla
 
 | Variante | Alcance y diferencia |
 | --- | --- |
 | `.modal-backdrop .panel` | Patrón básico de `520px`; no incluye por sí solo límite de altura ni las tres secciones |
-| `.customer-modal` | Formulario de clientes de hasta `640px`, scroll interno y confirmación de descarte en capa `40` |
+| `.customer-modal` | Formulario de clientes de hasta `640px`, scroll interno y descarte mediante `ConfirmationDialog` |
 | `.price-status-dialog-*` | Confirmación de estado de listas: `480px`, radio `12px`, resumen del cambio, cierre y capa `35` |
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
 

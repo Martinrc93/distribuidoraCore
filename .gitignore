@@ -4,3 +4,6 @@
 /frontend/dist-tailwind-check/
 /frontend/test-results/
 /frontend/node_modules/
+/backend/target-order-price/
+/backend/target/*.log
+/backend/target/surefire-reports/*.dumpstream

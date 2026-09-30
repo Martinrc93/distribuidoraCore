@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PaymentsPage from './PaymentsPage'
+import { selectEntity } from '../../test/selectEntity'
 
 function token(authorities: string[]) { return `header.${btoa(JSON.stringify({ authorities }))}.signature` }
 function response(body: unknown, status = 200) {
@@ -46,7 +47,7 @@ describe('PaymentsPage', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     await user.click(await screen.findByRole('button', { name: /registrar pago/i }))
-    await user.selectOptions(screen.getByLabelText('Cliente del pago'), 'customer-1')
+    await selectEntity(user, 'Cliente del pago', /Almacén Norte/)
     await user.selectOptions(screen.getByLabelText('Medio del pago'), 'BANK_TRANSFER')
     expect(screen.getByLabelText('Referencia de transferencia')).toBeInTheDocument()
     await user.type(screen.getByLabelText('Importe a registrar'), '50')
@@ -79,7 +80,7 @@ describe('PaymentsPage', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     await user.click(await screen.findByRole('button', { name: /registrar pago/i }))
-    await user.selectOptions(screen.getByLabelText('Cliente del pago'), 'customer-1')
+    await selectEntity(user, 'Cliente del pago', /Almacén Norte/)
     await screen.findByRole('option', { name: /VEN-001/ })
     await user.selectOptions(screen.getByLabelText('Imputación'), 'sale-1')
     await user.type(screen.getByLabelText('Importe a registrar'), '50')

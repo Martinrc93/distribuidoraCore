@@ -45,6 +45,12 @@ public class ReadQueryController {
         return queries.customerDebts(customerId, page, size);
     }
 
+    @GetMapping("/customers/{customerId}/last-order")
+    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    public Map<String, Object> lastCustomerOrder(@PathVariable UUID customerId) {
+        return queries.lastCustomerOrder(customerId);
+    }
+
     @GetMapping("/products")
     public PageResponse<Map<String, Object>> products(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.products(page, size, search); }
 

@@ -41,6 +41,7 @@ public class OrderConfirmationController {
             : new OrderConfirmationDtos.CreditLimitWarning(result.creditLimitWarning().creditLimit(),
                 result.creditLimitWarning().projectedBalance(), result.creditLimitWarning().exceededBy());
         return new OrderConfirmationDtos.ConfirmationResponse(result.orderId(), result.saleId(), result.orderNumber(),
-            result.saleNumber(), result.total(), result.paid(), result.balance(), warning);
+            result.saleNumber(), result.total(), result.paid(), result.balance(), warning,
+            result.previousBalanceAmount(), result.total().add(result.previousBalanceAmount()));
     }
 }

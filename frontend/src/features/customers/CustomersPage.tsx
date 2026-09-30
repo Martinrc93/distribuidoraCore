@@ -8,8 +8,10 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import { SearchableSelect } from '../../shared/components/SearchableSelect'
+import { SellerSelect } from '../../shared/components/EntitySelect'
+import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
+import { useDiscardChanges } from '../../shared/useDiscardChanges'
 
 type Customer = {
   id: string
@@ -59,6 +61,8 @@ function StatusBadge({ value }: { value: string }) {
 function CustomerForm({
   initial,
   sellers,
+  sellersLoading,
+  sellersError,
   zones,
   zonesLoading,
   zonesError,
@@ -72,6 +76,8 @@ function CustomerForm({
 }: {
   initial?: Customer
   sellers: Seller[]
+  sellersLoading: boolean
+  sellersError: boolean
   zones: Zone[]
   zonesLoading: boolean
   zonesError: boolean
@@ -95,7 +101,6 @@ function CustomerForm({
   const [priceListId, setPriceListId] = useState(initial?.priceListId ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [confirmDiscard, setConfirmDiscard] = useState(false)
   useEffect(() => {
     setBusinessName(initial?.name ?? '')
     setCuitId(initial?.cuitId ?? '')
@@ -106,7 +111,6 @@ function CustomerForm({
     setZone(initial?.zone ?? '')
     setPriceListId(initial?.priceListId ?? '')
     setError('')
-    setConfirmDiscard(false)
   }, [initial])
 
   const changed = businessName !== (initial?.name ?? '')
@@ -118,11 +122,7 @@ function CustomerForm({
     || sellerId !== (initial?.sellerId ?? '')
     || priceListId !== (initial?.priceListId ?? '')
 
-  function requestClose() {
-    if (saving) return
-    if (changed) setConfirmDiscard(true)
-    else onDone()
-  }
+  const { requestDiscard: requestClose, discardDialog } = useDiscardChanges({ hasChanges: changed, onDiscard: onDone, disabled: saving })
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -153,13 +153,13 @@ function CustomerForm({
       <label className="field"><span>Celular</span><input className="input" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
       <label className="field"><span>Dirección</span><input className="input" value={address} onChange={(event) => setAddress(event.target.value)} /></label>
       <label className="field"><span>Zona</span><select className="select" aria-label="Zona" value={zone} onChange={(event) => setZone(event.target.value)} disabled={zonesLoading || zonesError}><option value="">Sin zona asignada</option>{initial?.zone && !zones.some((item) => item.name === initial.zone) && <option value={initial.zone}>{initial.zone}</option>}{zones.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}</select>{zonesError && <span className="error-text">No se pudieron cargar las zonas. <Button variant="link" type="button" onClick={onRetryZones}>Reintentar</Button></span>}</label>
-      {isAdmin && <label className="field"><span>Vendedor asignado</span><select className="select" aria-label="Vendedor asignado" value={sellerId} onChange={(event) => setSellerId(event.target.value)}><option value="">Sin asignar</option>{sellers.map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName} ({seller.email})</option>)}</select></label>}
+      {isAdmin && <SellerSelect mode="selection" label="Vendedor asignado" options={sellers.map((seller) => ({ id: seller.id, name: `${seller.displayName} (${seller.email})` }))} value={sellerId} onChange={setSellerId} emptyLabel="Sin asignar" loading={sellersLoading} disabled={saving || sellersError} />}
       <label className="field"><span>Lista de precios predeterminada</span><select className="select" aria-label="Lista de precios predeterminada" value={priceListId} onChange={(event) => setPriceListId(event.target.value)} disabled={priceListsError}><option value="">Sin lista asignada</option>{priceLists.filter((list) => list.status === 'ACTIVE').map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select>{priceListsError && <span className="error-text">No se pudieron cargar las listas. <Button variant="link" type="button" onClick={onRetryPriceLists}>Reintentar</Button></span>}</label>
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="page-actions customer-form-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}<div className="customer-form-actions-right"><Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || priceListsError}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></div>
     </form>
   </Panel>
-  {confirmDiscard && <div role="alertdialog" aria-modal="true" aria-labelledby="discard-customer-title" className="customer-discard-backdrop"><Panel title="Descartar cambios"><p id="discard-customer-title">Tenés cambios sin guardar. ¿Querés salir sin guardar los cambios?</p><div className="page-actions"><Button variant="secondary" type="button" onClick={() => setConfirmDiscard(false)}>Seguir editando</Button><Button type="button" onClick={onDone}>Salir sin guardar</Button></div></Panel></div>}
+  {discardDialog}
   </>
 }
 
@@ -174,7 +174,7 @@ export default function CustomersPage() {
   const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&sellerId=${encodeURIComponent(sellerId)}&hasBalance=${hasBalance}&status=${encodeURIComponent(status === 'ALL' ? '' : status)}`
   const query = useQuery({ queryKey: [customerPath], queryFn: () => apiGet<ApiPage<Customer>>(customerPath) })
   const optionsQuery = useQuery({ queryKey: ['/api/customers/filter-options'], queryFn: () => apiGet<{ sellers: Array<{ id: string; name: string }> }>('/api/customers/filter-options'), enabled: isAdmin })
-  const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGet<ApiPage<Seller>>('/api/sellers?page=0&size=100'), enabled: isAdmin })
+  const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const zonesQuery = useQuery({ queryKey: ['/api/zones'], queryFn: () => apiGet<Zone[]>('/api/zones'), enabled: isAdmin })
   const listsQuery = useQuery({ queryKey: ['/api/pricing/lists?page=0&size=100'], queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=100'), enabled: isAdmin })
   const [formCustomer, setFormCustomer] = useState<Customer | undefined>()
@@ -229,10 +229,10 @@ export default function CustomersPage() {
     <PageHeader eyebrow="Operación" title="Clientes" description="Gestioná clientes, vendedor, lista de precios y cuenta corriente." actions={isAdmin ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
-    {isAdmin && (showForm || formCustomer) && <div role="dialog" aria-modal="true" aria-label={formCustomer ? 'Editar cliente' : 'Nuevo cliente'} className="modal-backdrop"><div className="customer-modal"><CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} /></div></div>}
+    {isAdmin && (showForm || formCustomer) && <div role="dialog" aria-modal="true" aria-label={formCustomer ? 'Editar cliente' : 'Nuevo cliente'} className="modal-backdrop"><div className="customer-modal"><CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} sellersLoading={sellersQuery.isLoading} sellersError={sellersQuery.isError} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} /></div></div>}
     <Panel><div className="toolbar">
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar clientes</span><input className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
-      {isAdmin && <SearchableSelect label="Buscar por vendedor" options={optionsQuery.data?.sellers ?? []} value={sellerId} onChange={(value) => setFilter('sellerId', value)} allLabel="Todos los vendedores" unavailableLabel="Vendedor no disponible" loadingLabel="Cargando vendedores…" loading={optionsQuery.isLoading} disabled={optionsQuery.isLoading || optionsQuery.isError} className="[@media(max-width:640px)]:w-full" />}
+      {isAdmin && <SellerSelect options={optionsQuery.data?.sellers ?? []} value={sellerId} onChange={(value) => setFilter('sellerId', value)} loading={optionsQuery.isLoading} disabled={optionsQuery.isError} />}
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Cuenta corriente</span><select aria-label="Cuenta corriente" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={hasBalance ? 'true' : ''} onChange={(event) => setFilter('hasBalance', event.target.value)}><option value="">Todos los saldos</option><option value="true">Solo con saldo</option></select></label>
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Estado</span><select aria-label="Estado" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="ACTIVE">Activo</option><option value="INACTIVE">Inactivo</option><option value="ALL">Todos</option></select></label>
     </div>

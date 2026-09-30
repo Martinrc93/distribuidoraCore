@@ -7,6 +7,8 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { CustomerSelect } from '../../shared/components/EntitySelect'
+import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type Payment = { id: string; customer: string; sale: string; amount: number; method: string; transferReference?: string | null; date: string }
@@ -40,7 +42,7 @@ export default function PaymentsPage() {
   const paymentsPath = `/api/payments?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}`
   const paymentsKey = [paymentsPath]
   const paymentsQuery = useQuery({ queryKey: paymentsKey, queryFn: () => apiGet<ApiPage<Payment>>(paymentsPath) })
-  const customersQuery = useQuery({ queryKey: CUSTOMERS_KEY, queryFn: () => apiGet<ApiPage<Customer>>(CUSTOMERS_PATH), enabled: canPay })
+  const customersQuery = useQuery({ queryKey: CUSTOMERS_KEY, queryFn: () => apiGetAllPages<Customer>(CUSTOMERS_PATH), enabled: canPay })
   const debtsQuery = useQuery({
     queryKey: ['customer-debts', customerId],
     queryFn: () => apiGet<ApiPage<CustomerDebt>>(`/api/customers/${customerId}/debts?page=0&size=100`),
@@ -107,7 +109,7 @@ export default function PaymentsPage() {
     {error && <p className="error-text" role="alert">{error}</p>}
     {showForm && canPay && <Panel title="Registrar pago" description="Elegí una deuda específica o aplicá el importe a las deudas más antiguas (FIFO).">
       {customersQuery.isLoading ? <EmptyState title="Cargando clientes" description="Consultando saldos de cuenta corriente." /> : customersQuery.isError ? <EmptyState title="No se pudieron cargar clientes" description={customersQuery.error.message} /> : <form className="form-grid" onSubmit={submit}>
-        <label className="field"><span>Cliente del pago</span><select className="select" value={customerId} onChange={(event) => { setCustomerId(event.target.value); setSaleId('') }} required><option value="">Seleccionar cliente...</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.name} · saldo {money(customer.balance)}</option>)}</select></label>
+        <CustomerSelect mode="selection" label="Cliente del pago" options={customers.map((customer) => ({ id: customer.id, name: `${customer.name} · saldo ${money(customer.balance)}` }))} value={customerId} onChange={(value) => { setCustomerId(value); setSaleId('') }} required disabled={saving} />
         <label className="field"><span>Imputación</span><select className="select" value={saleId} onChange={(event) => setSaleId(event.target.value)} disabled={!customerId || debtsQuery.isLoading || debtsQuery.isError}><option value="">FIFO · deuda más antigua</option>{debts.map((debt) => <option value={debt.saleId} key={debt.saleId}>{debt.saleNumber} · saldo {money(debt.balance)}</option>)}</select></label>
         {debtsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar las deudas: {debtsQuery.error.message}</p>}
         {debtsQuery.isLoading && customerId && <p className="helper-text" role="status">Cargando deudas abiertas del cliente…</p>}

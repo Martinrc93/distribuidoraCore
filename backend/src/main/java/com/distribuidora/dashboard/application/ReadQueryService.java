@@ -193,6 +193,35 @@ public class ReadQueryService {
              """ + where, page, size, parameters.toArray());
     }
 
+    public Map<String, Object> lastCustomerOrder(UUID customerId) {
+        if (currentUser != null) currentUser.requireCustomerAccess(customerId);
+        String where = " where o.customer_id = ? and o.status in ('CONFIRMED', 'DELIVERED')";
+        List<Object> parameters = new ArrayList<>(List.of(customerId));
+        if (sellerScoped()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            where += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            parameters.add(sellerId);
+            parameters.add(sellerId);
+        }
+        List<Map<String, Object>> orders = jdbc.queryForList("""
+            select o.id, o.order_number as "number", o.order_discount_percent as "orderDiscountPercent"
+            from orders.orders o join customer.customers c on c.id = o.customer_id
+            """ + where + " order by o.created_at desc, o.id desc limit 1", parameters.toArray());
+        if (orders.isEmpty()) return Map.of("available", false);
+        Map<String, Object> order = orders.getFirst();
+        List<Map<String, Object>> items = jdbc.queryForList("""
+            select oi.product_id as "productId", coalesce(p.name, oi.product_name) as "productName",
+                   p.sku, p.presentation, p.status, coalesce(ib.quantity, 0) as stock,
+                   oi.quantity, oi.line_discount_percent as "lineDiscountPercent"
+            from orders.order_items oi
+            left join catalog.products p on p.id = oi.product_id
+            left join inventory.inventory_balances ib on ib.product_id = oi.product_id
+            where oi.order_id = ? order by oi.id
+            """, order.get("ID"));
+        return Map.of("available", !items.isEmpty(), "orderId", order.get("ID"),
+            "orderNumber", order.get("number"), "orderDiscountPercent", order.get("orderDiscountPercent"), "items", items);
+    }
+
     public PageResponse<Map<String, Object>> customerDebts(UUID customerId, int page, int size) {
         if (currentUser != null) currentUser.requireCustomerAccess(customerId);
         jdbc.queryForObject("select id from customer.customers where id = ?", UUID.class, customerId);
@@ -236,7 +265,8 @@ public class ReadQueryService {
                    o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
-                   c.balance as "customerBalance", o.created_at as date
+                   c.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
+                   (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
             left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id
@@ -273,7 +303,8 @@ public class ReadQueryService {
                    o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
-                   c.balance as "customerBalance", o.created_at as date
+                   c.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
+                   (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
             left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id

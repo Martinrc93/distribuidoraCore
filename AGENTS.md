@@ -16,6 +16,12 @@
   a new global default.
 - Distinguish implemented behavior from requirements that still need work. Do
   not copy known accessibility gaps from an existing screen into new UI.
+- Customer and seller pickers must use the shared `CustomerSelect` and
+  `SellerSelect` components from `frontend/src/shared/components/EntitySelect.tsx`.
+  Keep search, selection, keyboard, loading, empty and responsive behavior in the
+  shared component. Do not duplicate these interactions or replace these pickers
+  with native selects. Follow the documented filter/selection modes and load all
+  authorized option pages rather than limiting choices to the visible list page.
 
 ## Changes and communication
 
