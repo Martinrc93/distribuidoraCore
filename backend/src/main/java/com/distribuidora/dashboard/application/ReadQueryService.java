@@ -10,6 +10,10 @@ import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 @Service
 public class ReadQueryService {
@@ -126,23 +130,32 @@ public class ReadQueryService {
     }
 
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status) {
+        return orders(page, size, search, status, null, null);
+    }
+
+    public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
+            LocalDate dateMin, LocalDate dateMax) {
+        if (dateMin != null && dateMax != null && dateMin.isAfter(dateMax)) {
+            throw new IllegalArgumentException("La fecha mínima no puede ser posterior a la fecha máxima");
+        }
         String term = like(search);
         String state = status == null || status.isBlank() ? "%" : status;
+        String where = " where (lower(c.business_name) like ? or lower(o.order_number) like ?) and o.status like ?";
+        List<Object> parameters = new ArrayList<>(List.of(term, term, state));
         if (sellerScoped()) {
             UUID sellerId = currentUser.requireSellerProfile();
-            return page("""
-                select o.id, o.order_number as number, c.business_name as customer,
-                       coalesce(sp.display_name, 'Sin asignar') as seller, o.total, o.status, o.created_at as date
-                from orders.orders o join customer.customers c on c.id = o.customer_id
-                left join seller.seller_profiles sp on sp.id = o.seller_id
-                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
-                  and (lower(c.business_name) like ? or lower(o.order_number) like ?) and o.status like ?
-                order by o.created_at desc
-                """, """
-                select count(*) from orders.orders o join customer.customers c on c.id = o.customer_id
-                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
-                  and (lower(c.business_name) like ? or lower(o.order_number) like ?) and o.status like ?
-                """, page, size, sellerId, sellerId, term, term, state);
+            where += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            parameters.add(sellerId);
+            parameters.add(sellerId);
+        }
+        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
+        if (dateMin != null) {
+            where += " and o.created_at >= ?";
+            parameters.add(Timestamp.from(dateMin.atStartOfDay(zone).toInstant()));
+        }
+        if (dateMax != null) {
+            where += " and o.created_at < ?";
+            parameters.add(Timestamp.from(dateMax.plusDays(1).atStartOfDay(zone).toInstant()));
         }
         return page("""
             select o.id, o.order_number as number, c.business_name as customer,
@@ -151,13 +164,9 @@ public class ReadQueryService {
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
             left join seller.seller_profiles sp on sp.id = o.seller_id
-            where (lower(c.business_name) like ? or lower(o.order_number) like ?)
-              and o.status like ?
-            order by o.created_at desc
-            """, """
+            """ + where + " order by o.created_at desc, o.id desc", """
             select count(*) from orders.orders o join customer.customers c on c.id = o.customer_id
-            where (lower(c.business_name) like ? or lower(o.order_number) like ?) and o.status like ?
-             """, page, size, term, term, state);
+             """ + where, page, size, parameters.toArray());
     }
 
     public PageResponse<Map<String, Object>> customerDebts(UUID customerId, int page, int size) {

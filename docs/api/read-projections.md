@@ -5,6 +5,24 @@ intentos de entrega y auditoría. Las respuestas paginadas usan el contrato
 `content`, `page`, `size`, `totalElements` y `totalPages`; la página comienza en
 0 y el tamaño se limita a 100.
 
+## Listado de pedidos por fecha
+
+```http
+GET /api/orders?page=0&size=20&search=&status=&dateMin=2026-09-01&dateMax=2026-09-30
+```
+
+`dateMin` y `dateMax` son opcionales, con formato ISO `yyyy-MM-dd`. Filtran
+la fecha de creación del pedido por días completos en
+`America/Argentina/Buenos_Aires`, incluyendo ambos extremos. El filtro se aplica
+antes de paginar y también a `totalElements` y `totalPages`, junto con búsqueda,
+estado y el alcance del vendedor. Omitir o vaciar un extremo elimina ese límite.
+Una fecha inválida o un rango invertido devuelve `400`.
+
+La pantalla de pedidos muestra ambas fechas inicialmente con el día actual y usa
+el formato numérico `dd/mm/aaaa` tanto en los filtros como en la tabla. Los filtros
+se conservan en la URL y cambiar una fecha vuelve a la primera página. Vaciar
+ambas permite consultar todo el historial.
+
 ## Deudas abiertas de un cliente
 
 ```http

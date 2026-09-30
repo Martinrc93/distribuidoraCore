@@ -112,6 +112,9 @@
   .panel-header { @apply flex justify-between gap-[18px] [align-items:start] mb-[18px]; }
   .quick-actions { @apply grid gap-[9px]; }
   .toolbar { @apply flex gap-[9px] flex-wrap mb-[18px]; }
+  .orders-toolbar > .field { @apply min-w-0; }
+  .orders-date-filters { @apply ml-auto flex gap-[9px]; }
+  .orders-date-filters .field { @apply w-[140px] min-w-0; }
   .input, .select { @apply w-full [border:1px_solid_#c7d4ce] rounded-[4px] bg-white text-ink min-h-[39px] [padding:0_10px] text-[12px] [outline:none]; }
   .input:focus, .select:focus { @apply border-accent [box-shadow:0_0_0_2px_#d8e9e0]; }
   .search-input { @apply max-w-[360px]; }
@@ -276,6 +279,10 @@
   }
 
   @media (max-width: 640px) {
+    .orders-toolbar > .field { @apply w-full; }
+    .orders-toolbar .input, .orders-toolbar .select { @apply w-full max-w-none min-w-0; }
+    .orders-date-filters { @apply ml-0 w-full grid grid-cols-[repeat(2,_minmax(0,_1fr))]; }
+    .orders-date-filters .field { @apply w-full; }
     .page-actions { @apply w-full; }
     .page-actions .button { @apply flex-[1]; }
     .customer-form-actions { @apply flex-wrap; }

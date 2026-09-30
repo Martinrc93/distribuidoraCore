@@ -195,6 +195,11 @@ Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
   tarjetas y utiliza ese atributo como etiqueta. Una tabla manual debe mantenerlo.
 - Agrupar búsqueda y filtros en `.toolbar`; input `.input.search-input` y
   select `.select`, con labels visibles o nombres accesibles.
+- En pedidos, `.orders-date-filters` agrupa fecha mínima y máxima a la derecha
+  de `.orders-toolbar`. Cada campo mide `140px`; a `640px` o menos, búsqueda y
+  estado ocupan filas completas y las fechas se distribuyen en dos columnas
+  iguales. Esta variante pertenece a pedidos. Los campos usan `dd/mm/aaaa`,
+  labels visibles y errores asociados mediante `aria-describedby`.
 - `.pagination` contiene resumen y botones anterior/siguiente. Se compone en
   cada pantalla: **no existe un componente compartido `Pagination`** actualmente.
   Deshabilitar los extremos y conservar filtros/página en la URL cuando corresponda.

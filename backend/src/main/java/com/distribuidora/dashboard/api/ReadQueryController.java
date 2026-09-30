@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.format.annotation.DateTimeFormat;
 
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
@@ -47,7 +49,13 @@ public class ReadQueryController {
     public PageResponse<Map<String, Object>> movements(@PathVariable UUID productId, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) { return queries.movements(productId, page, size); }
 
     @GetMapping("/orders")
-    public PageResponse<Map<String, Object>> orders(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search, @RequestParam(defaultValue = "") String status) { return queries.orders(page, size, search, status); }
+    public PageResponse<Map<String, Object>> orders(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "") String status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax) {
+        return queries.orders(page, size, search, status, dateMin, dateMax);
+    }
 
     @GetMapping("/orders/{orderId}")
     public Map<String, Object> order(@PathVariable UUID orderId) { return queries.orderDetail(orderId); }
