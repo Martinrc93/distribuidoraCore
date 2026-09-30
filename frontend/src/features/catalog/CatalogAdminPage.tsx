@@ -9,7 +9,7 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 
-type CatalogItem = { id: string; name: string; code?: string | null; status: string; productCount?: number }
+type CatalogItem = { id: string; name: string; status: string; productCount?: number }
 type Kind = 'brands' | 'categories'
 type Row = Record<string, string>
 
@@ -34,7 +34,6 @@ export default function CatalogAdminPage() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<CatalogItem | undefined>()
   const [name, setName] = useState('')
-  const [code, setCode] = useState('')
   const [deactivateItem, setDeactivateItem] = useState<CatalogItem | undefined>()
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -47,7 +46,6 @@ export default function CatalogAdminPage() {
   function openCreate() {
     setEditing(undefined)
     setName('')
-    setCode('')
     setError('')
     setShowForm(true)
   }
@@ -55,9 +53,13 @@ export default function CatalogAdminPage() {
   function openEdit(item: CatalogItem) {
     setEditing(item)
     setName(item.name)
-    setCode(item.code ?? '')
     setError('')
     setShowForm(true)
+  }
+
+  function openDeactivate(item: CatalogItem) {
+    setError('')
+    setDeactivateItem(item)
   }
 
   async function save(event: FormEvent) {
@@ -67,7 +69,7 @@ export default function CatalogAdminPage() {
     setSaving(true)
     setError('')
     try {
-      const body = { name: name.trim(), code: code.trim() || null }
+      const body = { name: name.trim() }
       if (editing) await apiPut(`${resource.endpoint}/${editing.id}`, body)
       else await apiPost(resource.endpoint, body)
       await queryClient.invalidateQueries({ queryKey: resource.queryKey })
@@ -108,23 +110,21 @@ export default function CatalogAdminPage() {
   const rows: Row[] = items.map((item) => ({
     id: item.id,
     name: item.name,
-    code: item.code ?? '—',
     products: String(item.productCount ?? 0),
     status: item.status,
   }))
   const columns: TableColumn[] = [
     { key: 'name', label: 'Nombre', emphasis: true },
-    { key: 'code', label: 'Código' },
     { key: 'products', label: 'Productos asociados', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'ACTIVE' ? 'strong' : 'muted'}>{value === 'ACTIVE' ? 'Activa' : 'Inactiva'}</Badge> },
     ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Row) => {
       const item = items.find((candidate) => candidate.id === row.id)
       if (!item) return null
-      return <div className="page-actions">
-        <Button variant="link" onClick={() => openEdit(item)}>Editar {resource.singular}</Button>
+      return <div className="catalog-row-actions">
+        <Button variant="secondary" onClick={() => openEdit(item)} aria-label={`Editar ${resource.singular} ${item.name}`}>Editar</Button>
         {item.status === 'ACTIVE'
-          ? <Button variant="link" onClick={() => setDeactivateItem(item)}>Eliminar {resource.singular} {item.name}</Button>
-          : <Button variant="link" onClick={() => reactivate(item)}>Activar {resource.singular}</Button>}
+          ? <Button variant="danger" onClick={() => openDeactivate(item)} aria-label={`Desactivar ${resource.singular} ${item.name}`}>Desactivar</Button>
+          : <Button variant="secondary" onClick={() => reactivate(item)} aria-label={`Activar ${resource.singular} ${item.name}`}>Activar</Button>}
       </div>
     } }] : []),
   ]
@@ -137,16 +137,42 @@ export default function CatalogAdminPage() {
       <button type="button" role="tab" aria-selected={kind === 'brands'} className={`catalog-tab${kind === 'brands' ? ' selected' : ''}`} onClick={() => { setKind('brands'); setShowForm(false); setEditing(undefined); setError(''); setFeedback('') }}>Marcas</button>
       <button type="button" role="tab" aria-selected={kind === 'categories'} className={`catalog-tab${kind === 'categories' ? ' selected' : ''}`} onClick={() => { setKind('categories'); setShowForm(false); setEditing(undefined); setError(''); setFeedback('') }}>Categorías</button>
     </div>
-    {showForm && isAdmin && <Panel title={editing ? `Editar ${resource.singular}` : `Nueva ${resource.singular}`}><form className="form-grid" onSubmit={save}>
-      <label className="field"><span>Nombre de {resource.singular}</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} required disabled={saving} /></label>
-      <label className="field"><span>Código de {resource.singular}</span><input className="input" value={code} onChange={(event) => setCode(event.target.value)} disabled={saving} /></label>
-      {error && <p className="error-text" role="alert">{error}</p>}
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setShowForm(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : editing ? `Guardar ${resource.singular}` : `Guardar ${resource.singular}`}</Button></div>
-    </form></Panel>}
+    {showForm && isAdmin && <div role="dialog" aria-modal="true" aria-labelledby="catalog-form-title" className="modal-backdrop catalog-modal-backdrop" onKeyDown={(event) => { if (event.key === 'Escape' && !saving) { setShowForm(false); setEditing(undefined); setError('') } }}>
+      <section className="panel catalog-modal">
+        <header className="catalog-modal-header">
+          <p className="catalog-modal-kicker">{capitalize(resource.plural)}</p>
+          <h2 id="catalog-form-title">{editing ? `Editar ${resource.singular}` : `Nueva ${resource.singular}`}</h2>
+          <p>{editing ? `Actualizá los datos de la ${resource.singular}.` : `Completá los datos para crear una ${resource.singular}.`}</p>
+        </header>
+        <form onSubmit={save}>
+          <div className="catalog-modal-body">
+            <label className="field"><span>Nombre de {resource.singular}</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} required disabled={saving} autoFocus /></label>
+            {error && <p className="error-text" role="alert">{error}</p>}
+          </div>
+          <footer className="catalog-modal-footer">
+            <Button variant="secondary" type="button" onClick={() => { setShowForm(false); setEditing(undefined); setError('') }} disabled={saving}>Cancelar</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : `Guardar ${resource.singular}`}</Button>
+          </footer>
+        </form>
+      </section>
+    </div>}
     <Panel title={capitalize(resource.plural)}>
       {resource.query.isLoading ? <EmptyState title={`Cargando ${resource.plural}`} description="Consultando el catálogo." /> : resource.query.isError ? <EmptyState title={`No se pudieron cargar ${resource.plural}`} description={resource.query.error.message} /> : items.length === 0 ? <EmptyState title={`Todavía no hay ${resource.plural}`} description={`Creá la primera ${resource.singular} para organizar los productos.`} action={isAdmin ? <Button onClick={openCreate}>+ Nueva {resource.singular}</Button> : undefined} /> : <DataTable columns={columns} rows={rows} />}
     </Panel>
-    {deactivateItem && <div role="dialog" aria-modal="true" aria-labelledby="catalog-status-title" className="modal-backdrop"><Panel title={`Desactivar ${resource.singular}`}><h2 id="catalog-status-title">¿Desactivar {deactivateItem.name}?</h2><p>Los productos asociados conservarán el nombre guardado.</p><div className="page-actions"><Button variant="secondary" onClick={() => setDeactivateItem(undefined)}>Cancelar</Button><Button onClick={deactivate}>Confirmar</Button></div></Panel></div>}
+    {deactivateItem && <div role="dialog" aria-modal="true" aria-labelledby="catalog-status-title" className="modal-backdrop catalog-modal-backdrop" onKeyDown={(event) => { if (event.key === 'Escape') setDeactivateItem(undefined) }}>
+      <section className="panel catalog-modal">
+        <header className="catalog-modal-header">
+          <p className="catalog-modal-kicker">{capitalize(resource.singular)}</p>
+          <h2 id="catalog-status-title">¿Desactivar «{deactivateItem.name}»?</h2>
+          <p>Los productos asociados conservarán el nombre guardado.</p>
+        </header>
+        {error && <div className="catalog-modal-body"><p className="error-text" role="alert">{error}</p></div>}
+        <footer className="catalog-modal-footer">
+          <Button variant="secondary" onClick={() => setDeactivateItem(undefined)} autoFocus>Cancelar</Button>
+          <Button variant="danger" onClick={deactivate}>Desactivar {resource.singular}</Button>
+        </footer>
+      </section>
+    </div>}
   </>
 }
 

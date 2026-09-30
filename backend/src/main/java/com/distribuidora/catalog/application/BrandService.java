@@ -18,10 +18,9 @@ import java.util.UUID;
 public class BrandService {
     public interface BrandCommand {
         String name();
-        String code();
     }
 
-    public record BrandView(UUID id, String name, String code, String status, Instant createdAt, long productCount) { }
+    public record BrandView(UUID id, String name, String status, Instant createdAt, long productCount) { }
 
     private final JdbcTemplate jdbc;
     private final AuditService audit;
@@ -40,7 +39,6 @@ public class BrandService {
         }
 
         String name = request.name().trim();
-        String code = normalizeCode(request.code(), name);
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.brands where lower(name) = ?)", Boolean.class, name.toLowerCase(Locale.ROOT))
@@ -49,22 +47,15 @@ public class BrandService {
             throw new IllegalStateException("Ya existe una marca con ese nombre");
         }
 
-        boolean codeExists = Boolean.TRUE.equals(
-            jdbc.queryForObject("select exists(select 1 from catalog.brands where lower(code) = ?)", Boolean.class, code.toLowerCase(Locale.ROOT))
-        );
-        if (codeExists) {
-            throw new IllegalStateException("Ya existe una marca con ese código");
-        }
-
         UUID id = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
 
         jdbc.update(
-            "insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
-            id, name, code, now
+            "insert into catalog.brands(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)",
+            id, name, now
         );
 
-        audit.record(actorId(), "BRAND_CREATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name, "code", code));
+        audit.record(actorId(), "BRAND_CREATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
         return id;
     }
 
@@ -82,7 +73,6 @@ public class BrandService {
         }
 
         String name = request.name().trim();
-        String code = normalizeCode(request.code(), name);
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.brands where lower(name) = ? and id <> ?)",
@@ -92,16 +82,8 @@ public class BrandService {
             throw new IllegalStateException("Ya existe una marca con ese nombre");
         }
 
-        boolean codeExists = Boolean.TRUE.equals(
-            jdbc.queryForObject("select exists(select 1 from catalog.brands where lower(code) = ? and id <> ?)",
-                Boolean.class, code.toLowerCase(Locale.ROOT), id)
-        );
-        if (codeExists) {
-            throw new IllegalStateException("Ya existe una marca con ese código");
-        }
-
-        jdbc.update("update catalog.brands set name = ?, code = ? where id = ?", name, code, id);
-        audit.record(actorId(), "BRAND_UPDATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name, "code", code));
+        jdbc.update("update catalog.brands set name = ? where id = ?", name, id);
+        audit.record(actorId(), "BRAND_UPDATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
     }
 
     @Transactional
@@ -130,7 +112,7 @@ public class BrandService {
 
     public BrandView getById(UUID id) {
         List<BrandView> list = jdbc.query("""
-            select b.id, b.name, b.code, b.status, b.created_at as "createdAt",
+            select b.id, b.name, b.status, b.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.brand_id = b.id) as "productCount"
             from catalog.brands b
             where b.id = ?
@@ -138,7 +120,6 @@ public class BrandService {
             (rs, i) -> new BrandView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
-                rs.getString("code"),
                 rs.getString("status"),
                 rs.getTimestamp("createdAt").toInstant(),
                 rs.getLong("productCount")
@@ -156,30 +137,22 @@ public class BrandService {
         String state = status == null || status.isBlank() ? "%" : status.trim();
 
         return jdbc.query("""
-            select b.id, b.name, b.code, b.status, b.created_at as "createdAt",
+            select b.id, b.name, b.status, b.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.brand_id = b.id) as "productCount"
             from catalog.brands b
-            where (lower(b.name) like ? or lower(b.code) like ?)
+            where lower(b.name) like ?
               and b.status like ?
             order by b.name
             """,
             (rs, i) -> new BrandView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
-                rs.getString("code"),
                 rs.getString("status"),
                 rs.getTimestamp("createdAt").toInstant(),
                 rs.getLong("productCount")
             ),
-            term, term, state
+            term, state
         );
-    }
-
-    private String normalizeCode(String rawCode, String name) {
-        if (rawCode != null && !rawCode.isBlank()) {
-            return rawCode.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_-]+", "-");
-        }
-        return name.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_-]+", "-");
     }
 
     private UUID actorId() {

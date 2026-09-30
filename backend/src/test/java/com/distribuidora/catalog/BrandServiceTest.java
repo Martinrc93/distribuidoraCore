@@ -45,45 +45,34 @@ class BrandServiceTest {
     void create_rejectsNullOrBlankName() {
         assertThatThrownBy(() -> service.create(null))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("", null)))
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("")))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("   ", "CODE")))
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("   ")))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void create_rejectsDuplicateNameOrCode() {
+    void create_rejectsDuplicateName() {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(name) = ?)"), eq(Boolean.class), eq("coca cola")))
             .thenReturn(true);
 
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("Coca Cola", "COCA")))
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("Coca Cola")))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("nombre");
-
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(name) = ?)"), eq(Boolean.class), eq("coca cola")))
-            .thenReturn(false);
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(code) = ?)"), eq(Boolean.class), eq("coca")))
-            .thenReturn(true);
-
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("Coca Cola", "COCA")))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("código");
     }
 
     @Test
-    void create_succeeds_normalizesCodeAndAudits() {
+    void create_succeedsAndAudits() {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(name) = ?)"), eq(Boolean.class), eq("coca cola")))
             .thenReturn(false);
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(code) = ?)"), eq(Boolean.class), eq("coca-cola")))
-            .thenReturn(false);
-        when(jdbc.update(anyString(), any(), any(), any(), any(), any())).thenReturn(1);
+        when(jdbc.update(anyString(), any(), any(), any())).thenReturn(1);
 
-        UUID brandId = service.create(new CatalogAdminDtos.CreateBrandRequest("Coca Cola", ""));
+        UUID brandId = service.create(new CatalogAdminDtos.CreateBrandRequest("Coca Cola"));
 
         assertThat(brandId).isNotNull();
         verify(jdbc).update(
-            eq("insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)"),
-            eq(brandId), eq("Coca Cola"), eq("COCA-COLA"), any(Timestamp.class)
+            eq("insert into catalog.brands(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)"),
+            eq(brandId), eq("Coca Cola"), any(Timestamp.class)
         );
         verify(audit).record(eq(adminUserId), eq("BRAND_CREATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
     }
@@ -93,7 +82,7 @@ class BrandServiceTest {
         UUID brandId = UUID.randomUUID();
         assertThatThrownBy(() -> service.update(brandId, null))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("", "CODE")))
+        assertThatThrownBy(() -> service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("")))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -103,7 +92,7 @@ class BrandServiceTest {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where id = ?)"), eq(Boolean.class), eq(brandId)))
             .thenReturn(false);
 
-        assertThatThrownBy(() -> service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("Nueva Marca", "NUEVA")))
+        assertThatThrownBy(() -> service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("Nueva Marca")))
             .isInstanceOf(EmptyResultDataAccessException.class);
     }
 
@@ -115,7 +104,7 @@ class BrandServiceTest {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(name) = ? and id <> ?)"), eq(Boolean.class), eq("pepsi"), eq(brandId)))
             .thenReturn(true);
 
-        assertThatThrownBy(() -> service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("Pepsi", "PEPSI")))
+        assertThatThrownBy(() -> service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("Pepsi")))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("nombre");
     }
@@ -127,13 +116,11 @@ class BrandServiceTest {
             .thenReturn(true);
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(name) = ? and id <> ?)"), eq(Boolean.class), eq("pepsi"), eq(brandId)))
             .thenReturn(false);
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(code) = ? and id <> ?)"), eq(Boolean.class), eq("pepsi"), eq(brandId)))
-            .thenReturn(false);
-        when(jdbc.update(anyString(), any(), any(), eq(brandId))).thenReturn(1);
+        when(jdbc.update(anyString(), any(), eq(brandId))).thenReturn(1);
 
-        service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("Pepsi", "PEPSI"));
+        service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("Pepsi"));
 
-        verify(jdbc).update(eq("update catalog.brands set name = ?, code = ? where id = ?"), eq("Pepsi"), eq("PEPSI"), eq(brandId));
+        verify(jdbc).update(eq("update catalog.brands set name = ? where id = ?"), eq("Pepsi"), eq(brandId));
         verify(audit).record(eq(adminUserId), eq("BRAND_UPDATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
     }
 
@@ -175,7 +162,7 @@ class BrandServiceTest {
     void getById_succeeds() {
         UUID brandId = UUID.randomUUID();
         BrandService.BrandView response = new BrandService.BrandView(
-            brandId, "Coca Cola", "COCA-COLA", "ACTIVE", Instant.now(), 12L
+            brandId, "Coca Cola", "ACTIVE", Instant.now(), 12L
         );
         when(jdbc.query(anyString(), any(RowMapper.class), eq(brandId)))
             .thenReturn(List.of(response));
@@ -190,9 +177,9 @@ class BrandServiceTest {
     void list_returnsResults() {
         UUID brandId = UUID.randomUUID();
         BrandService.BrandView response = new BrandService.BrandView(
-            brandId, "Coca Cola", "COCA-COLA", "ACTIVE", Instant.now(), 12L
+            brandId, "Coca Cola", "ACTIVE", Instant.now(), 12L
         );
-        when(jdbc.query(anyString(), any(RowMapper.class), any(), any(), any()))
+        when(jdbc.query(anyString(), any(RowMapper.class), any(), any()))
             .thenReturn(List.of(response));
 
         List<BrandService.BrandView> results = service.list("coca", "ACTIVE");

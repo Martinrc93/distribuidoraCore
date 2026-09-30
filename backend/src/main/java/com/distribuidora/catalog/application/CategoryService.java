@@ -18,10 +18,9 @@ import java.util.UUID;
 public class CategoryService {
     public interface CategoryCommand {
         String name();
-        String code();
     }
 
-    public record CategoryView(UUID id, String name, String code, String status, Instant createdAt, long productCount) { }
+    public record CategoryView(UUID id, String name, String status, Instant createdAt, long productCount) { }
 
     private final JdbcTemplate jdbc;
     private final AuditService audit;
@@ -40,7 +39,6 @@ public class CategoryService {
         }
 
         String name = request.name().trim();
-        String code = normalizeCode(request.code(), name);
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.categories where lower(name) = ?)",
@@ -50,23 +48,15 @@ public class CategoryService {
             throw new IllegalStateException("Ya existe una categoría con ese nombre");
         }
 
-        boolean codeExists = Boolean.TRUE.equals(
-            jdbc.queryForObject("select exists(select 1 from catalog.categories where lower(code) = ?)",
-                Boolean.class, code.toLowerCase(Locale.ROOT))
-        );
-        if (codeExists) {
-            throw new IllegalStateException("Ya existe una categoría con ese código");
-        }
-
         UUID id = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
 
         jdbc.update(
-            "insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
-            id, name, code, now
+            "insert into catalog.categories(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)",
+            id, name, now
         );
 
-        audit.record(actorId(), "CATEGORY_CREATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name, "code", code));
+        audit.record(actorId(), "CATEGORY_CREATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name));
         return id;
     }
 
@@ -84,7 +74,6 @@ public class CategoryService {
         }
 
         String name = request.name().trim();
-        String code = normalizeCode(request.code(), name);
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.categories where lower(name) = ? and id <> ?)",
@@ -94,16 +83,8 @@ public class CategoryService {
             throw new IllegalStateException("Ya existe una categoría con ese nombre");
         }
 
-        boolean codeExists = Boolean.TRUE.equals(
-            jdbc.queryForObject("select exists(select 1 from catalog.categories where lower(code) = ? and id <> ?)",
-                Boolean.class, code.toLowerCase(Locale.ROOT), id)
-        );
-        if (codeExists) {
-            throw new IllegalStateException("Ya existe una categoría con ese código");
-        }
-
-        jdbc.update("update catalog.categories set name = ?, code = ? where id = ?", name, code, id);
-        audit.record(actorId(), "CATEGORY_UPDATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name, "code", code));
+        jdbc.update("update catalog.categories set name = ? where id = ?", name, id);
+        audit.record(actorId(), "CATEGORY_UPDATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name));
     }
 
     @Transactional
@@ -132,7 +113,7 @@ public class CategoryService {
 
     public CategoryView getById(UUID id) {
         List<CategoryView> list = jdbc.query("""
-            select c.id, c.name, c.code, c.status, c.created_at as "createdAt",
+            select c.id, c.name, c.status, c.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.category_id = c.id or lower(p.category) = lower(c.name)) as "productCount"
             from catalog.categories c
             where c.id = ?
@@ -140,7 +121,6 @@ public class CategoryService {
             (rs, i) -> new CategoryView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
-                rs.getString("code"),
                 rs.getString("status"),
                 rs.getTimestamp("createdAt").toInstant(),
                 rs.getLong("productCount")
@@ -158,30 +138,22 @@ public class CategoryService {
         String state = status == null || status.isBlank() ? "%" : status.trim();
 
         return jdbc.query("""
-            select c.id, c.name, c.code, c.status, c.created_at as "createdAt",
+            select c.id, c.name, c.status, c.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.category_id = c.id or lower(p.category) = lower(c.name)) as "productCount"
             from catalog.categories c
-            where (lower(c.name) like ? or lower(c.code) like ?)
+            where lower(c.name) like ?
               and c.status like ?
             order by c.name
             """,
             (rs, i) -> new CategoryView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
-                rs.getString("code"),
                 rs.getString("status"),
                 rs.getTimestamp("createdAt").toInstant(),
                 rs.getLong("productCount")
             ),
-            term, term, state
+            term, state
         );
-    }
-
-    private String normalizeCode(String rawCode, String name) {
-        if (rawCode != null && !rawCode.isBlank()) {
-            return rawCode.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_-]+", "-");
-        }
-        return name.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_-]+", "-");
     }
 
     private UUID actorId() {

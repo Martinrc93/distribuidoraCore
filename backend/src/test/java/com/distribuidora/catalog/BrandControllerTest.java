@@ -59,7 +59,7 @@ class BrandControllerTest {
         UUID id = UUID.randomUUID();
         when(service.create(any())).thenReturn(id);
 
-        CatalogAdminDtos.CreateBrandRequest request = new CatalogAdminDtos.CreateBrandRequest("Quilmes", "QUIL");
+        CatalogAdminDtos.CreateBrandRequest request = new CatalogAdminDtos.CreateBrandRequest("Quilmes");
         ResponseEntity<CatalogAdminDtos.IdResponse> response = controller.create(request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(201);
@@ -71,7 +71,7 @@ class BrandControllerTest {
     @Test
     void update_returnsNoContent() {
         UUID id = UUID.randomUUID();
-        CatalogAdminDtos.UpdateBrandRequest request = new CatalogAdminDtos.UpdateBrandRequest("Quilmes Clásica", "QUIL");
+        CatalogAdminDtos.UpdateBrandRequest request = new CatalogAdminDtos.UpdateBrandRequest("Quilmes Clásica");
 
         ResponseEntity<Void> response = controller.update(id, request);
 
@@ -103,10 +103,10 @@ class BrandControllerTest {
     @Test
     void list_returnsOk() {
         BrandService.BrandView brand = new BrandService.BrandView(
-            UUID.randomUUID(), "Quilmes", "QUIL", "ACTIVE", Instant.now(), 5L
+            UUID.randomUUID(), "Quilmes", "ACTIVE", Instant.now(), 5L
         );
         CatalogAdminDtos.BrandResponse expected = new CatalogAdminDtos.BrandResponse(
-            brand.id(), brand.name(), brand.code(), brand.status(), brand.createdAt(), brand.productCount());
+            brand.id(), brand.name(), brand.status(), brand.createdAt(), brand.productCount());
         when(service.list("quil", "ACTIVE")).thenReturn(List.of(brand));
 
         ResponseEntity<List<CatalogAdminDtos.BrandResponse>> response = controller.list("quil", "ACTIVE");
@@ -119,7 +119,7 @@ class BrandControllerTest {
     void getById_returnsOk() {
         UUID id = UUID.randomUUID();
         BrandService.BrandView brand = new BrandService.BrandView(
-            id, "Quilmes", "QUIL", "ACTIVE", Instant.now(), 5L
+            id, "Quilmes", "ACTIVE", Instant.now(), 5L
         );
         when(service.getById(id)).thenReturn(brand);
 
@@ -127,7 +127,7 @@ class BrandControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isEqualTo(new CatalogAdminDtos.BrandResponse(
-            brand.id(), brand.name(), brand.code(), brand.status(), brand.createdAt(), brand.productCount()));
+            brand.id(), brand.name(), brand.status(), brand.createdAt(), brand.productCount()));
     }
 
     @Test
@@ -138,12 +138,12 @@ class BrandControllerTest {
         mockMvc.perform(post("/api/brands")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"name":"Quilmes","code":"QUIL"}
+                    {"name":"Quilmes"}
                     """))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(id.toString()));
 
-        verify(service).create(new CatalogAdminDtos.CreateBrandRequest("Quilmes", "QUIL"));
+        verify(service).create(new CatalogAdminDtos.CreateBrandRequest("Quilmes"));
     }
 
     @Test
@@ -151,7 +151,7 @@ class BrandControllerTest {
         mockMvc.perform(post("/api/brands")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"name":"   ","code":"QUIL"}
+                    {"name":"   "}
                     """))
             .andExpect(status().isBadRequest());
 

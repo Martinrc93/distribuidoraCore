@@ -12,21 +12,18 @@ public final class CatalogAdminDtos {
     }
 
     public record CreateBrandRequest(
-        @NotBlank(message = "name es obligatorio") String name,
-        String code
+        @NotBlank(message = "name es obligatorio") String name
     ) implements BrandService.BrandCommand {
     }
 
     public record UpdateBrandRequest(
-        @NotBlank(message = "name es obligatorio") String name,
-        String code
+        @NotBlank(message = "name es obligatorio") String name
     ) implements BrandService.BrandCommand {
     }
 
     public record BrandResponse(
         UUID id,
         String name,
-        String code,
         String status,
         Instant createdAt,
         long productCount
@@ -34,21 +31,18 @@ public final class CatalogAdminDtos {
     }
 
     public record CreateCategoryRequest(
-        @NotBlank(message = "name es obligatorio") String name,
-        String code
+        @NotBlank(message = "name es obligatorio") String name
     ) implements CategoryService.CategoryCommand {
     }
 
     public record UpdateCategoryRequest(
-        @NotBlank(message = "name es obligatorio") String name,
-        String code
+        @NotBlank(message = "name es obligatorio") String name
     ) implements CategoryService.CategoryCommand {
     }
 
     public record CategoryResponse(
         UUID id,
         String name,
-        String code,
         String status,
         Instant createdAt,
         long productCount

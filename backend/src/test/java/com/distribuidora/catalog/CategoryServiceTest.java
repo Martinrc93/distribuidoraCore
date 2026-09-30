@@ -45,45 +45,34 @@ class CategoryServiceTest {
     void create_rejectsNullOrBlankName() {
         assertThatThrownBy(() -> service.create(null))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("", null)))
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("")))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("   ", "CODE")))
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("   ")))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void create_rejectsDuplicateNameOrCode() {
+    void create_rejectsDuplicateName() {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(name) = ?)"), eq(Boolean.class), eq("bebidas")))
             .thenReturn(true);
 
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas", "BEB")))
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas")))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("nombre");
-
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(name) = ?)"), eq(Boolean.class), eq("bebidas")))
-            .thenReturn(false);
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(code) = ?)"), eq(Boolean.class), eq("beb")))
-            .thenReturn(true);
-
-        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas", "BEB")))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("código");
     }
 
     @Test
-    void create_succeeds_normalizesCodeAndAudits() {
+    void create_succeedsAndAudits() {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(name) = ?)"), eq(Boolean.class), eq("bebidas")))
             .thenReturn(false);
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(code) = ?)"), eq(Boolean.class), eq("bebidas")))
-            .thenReturn(false);
-        when(jdbc.update(anyString(), any(), any(), any(), any(), any())).thenReturn(1);
+        when(jdbc.update(anyString(), any(), any(), any())).thenReturn(1);
 
-        UUID categoryId = service.create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas", ""));
+        UUID categoryId = service.create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas"));
 
         assertThat(categoryId).isNotNull();
         verify(jdbc).update(
-            eq("insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)"),
-            eq(categoryId), eq("Bebidas"), eq("BEBIDAS"), any(Timestamp.class)
+            eq("insert into catalog.categories(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)"),
+            eq(categoryId), eq("Bebidas"), any(Timestamp.class)
         );
         verify(audit).record(eq(adminUserId), eq("CATEGORY_CREATE"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
     }
@@ -93,7 +82,7 @@ class CategoryServiceTest {
         UUID categoryId = UUID.randomUUID();
         assertThatThrownBy(() -> service.update(categoryId, null))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("", "CODE")))
+        assertThatThrownBy(() -> service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("")))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -103,7 +92,7 @@ class CategoryServiceTest {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where id = ?)"), eq(Boolean.class), eq(categoryId)))
             .thenReturn(false);
 
-        assertThatThrownBy(() -> service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("Snacks", "SNK")))
+        assertThatThrownBy(() -> service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("Snacks")))
             .isInstanceOf(EmptyResultDataAccessException.class);
     }
 
@@ -115,7 +104,7 @@ class CategoryServiceTest {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(name) = ? and id <> ?)"), eq(Boolean.class), eq("snacks"), eq(categoryId)))
             .thenReturn(true);
 
-        assertThatThrownBy(() -> service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("Snacks", "SNK")))
+        assertThatThrownBy(() -> service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("Snacks")))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("nombre");
     }
@@ -127,13 +116,11 @@ class CategoryServiceTest {
             .thenReturn(true);
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(name) = ? and id <> ?)"), eq(Boolean.class), eq("snacks"), eq(categoryId)))
             .thenReturn(false);
-        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(code) = ? and id <> ?)"), eq(Boolean.class), eq("snk"), eq(categoryId)))
-            .thenReturn(false);
-        when(jdbc.update(anyString(), any(), any(), eq(categoryId))).thenReturn(1);
+        when(jdbc.update(anyString(), any(), eq(categoryId))).thenReturn(1);
 
-        service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("Snacks", "SNK"));
+        service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("Snacks"));
 
-        verify(jdbc).update(eq("update catalog.categories set name = ?, code = ? where id = ?"), eq("Snacks"), eq("SNK"), eq(categoryId));
+        verify(jdbc).update(eq("update catalog.categories set name = ? where id = ?"), eq("Snacks"), eq(categoryId));
         verify(audit).record(eq(adminUserId), eq("CATEGORY_UPDATE"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
     }
 
@@ -175,7 +162,7 @@ class CategoryServiceTest {
     void getById_succeeds() {
         UUID categoryId = UUID.randomUUID();
         CategoryService.CategoryView response = new CategoryService.CategoryView(
-            categoryId, "Bebidas", "BEBIDAS", "ACTIVE", Instant.now(), 25L
+            categoryId, "Bebidas", "ACTIVE", Instant.now(), 25L
         );
         when(jdbc.query(anyString(), any(RowMapper.class), eq(categoryId)))
             .thenReturn(List.of(response));
@@ -190,9 +177,9 @@ class CategoryServiceTest {
     void list_returnsResults() {
         UUID categoryId = UUID.randomUUID();
         CategoryService.CategoryView response = new CategoryService.CategoryView(
-            categoryId, "Bebidas", "BEBIDAS", "ACTIVE", Instant.now(), 25L
+            categoryId, "Bebidas", "ACTIVE", Instant.now(), 25L
         );
-        when(jdbc.query(anyString(), any(RowMapper.class), any(), any(), any()))
+        when(jdbc.query(anyString(), any(RowMapper.class), any(), any()))
             .thenReturn(List.of(response));
 
         List<CategoryService.CategoryView> results = service.list("beb", "ACTIVE");

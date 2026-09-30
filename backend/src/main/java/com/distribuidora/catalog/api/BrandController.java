@@ -59,7 +59,7 @@ public class BrandController {
     }
 
     private static CatalogAdminDtos.BrandResponse toResponse(BrandService.BrandView view) {
-        return new CatalogAdminDtos.BrandResponse(view.id(), view.name(), view.code(), view.status(),
+        return new CatalogAdminDtos.BrandResponse(view.id(), view.name(), view.status(),
             view.createdAt(), view.productCount());
     }
 }

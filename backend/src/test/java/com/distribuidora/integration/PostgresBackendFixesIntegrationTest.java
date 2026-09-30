@@ -1295,16 +1295,16 @@ class PostgresBackendFixesIntegrationTest {
     private UUID createCategory() {
         UUID id = UUID.randomUUID();
         categories.add(id);
-        jdbc.update("insert into catalog.categories(id, name, code, status, created_at) values (?, 'PG category', ?, 'ACTIVE', ?)",
-            id, "PG-CAT-" + id, java.sql.Timestamp.from(Instant.now()));
+        jdbc.update("insert into catalog.categories(id, name, status, created_at) values (?, 'PG category', 'ACTIVE', ?)",
+            id, java.sql.Timestamp.from(Instant.now()));
         return id;
     }
 
     private UUID createBrand() {
         UUID id = UUID.randomUUID();
         brands.add(id);
-        jdbc.update("insert into catalog.brands(id, name, code, status, created_at) values (?, 'PG brand', ?, 'ACTIVE', ?)",
-            id, "PG-BRAND-" + id, java.sql.Timestamp.from(Instant.now()));
+        jdbc.update("insert into catalog.brands(id, name, status, created_at) values (?, 'PG brand', 'ACTIVE', ?)",
+            id, java.sql.Timestamp.from(Instant.now()));
         return id;
     }
 

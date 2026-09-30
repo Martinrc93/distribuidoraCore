@@ -59,7 +59,7 @@ class CategoryControllerTest {
         UUID id = UUID.randomUUID();
         when(service.create(any())).thenReturn(id);
 
-        CatalogAdminDtos.CreateCategoryRequest request = new CatalogAdminDtos.CreateCategoryRequest("Bebidas", "BEB");
+        CatalogAdminDtos.CreateCategoryRequest request = new CatalogAdminDtos.CreateCategoryRequest("Bebidas");
         ResponseEntity<CatalogAdminDtos.IdResponse> response = controller.create(request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(201);
@@ -71,7 +71,7 @@ class CategoryControllerTest {
     @Test
     void update_returnsNoContent() {
         UUID id = UUID.randomUUID();
-        CatalogAdminDtos.UpdateCategoryRequest request = new CatalogAdminDtos.UpdateCategoryRequest("Bebidas con Alcohol", "BEB");
+        CatalogAdminDtos.UpdateCategoryRequest request = new CatalogAdminDtos.UpdateCategoryRequest("Bebidas con Alcohol");
 
         ResponseEntity<Void> response = controller.update(id, request);
 
@@ -103,10 +103,10 @@ class CategoryControllerTest {
     @Test
     void list_returnsOk() {
         CategoryService.CategoryView category = new CategoryService.CategoryView(
-            UUID.randomUUID(), "Bebidas", "BEB", "ACTIVE", Instant.now(), 10L
+            UUID.randomUUID(), "Bebidas", "ACTIVE", Instant.now(), 10L
         );
         CatalogAdminDtos.CategoryResponse expected = new CatalogAdminDtos.CategoryResponse(
-            category.id(), category.name(), category.code(), category.status(), category.createdAt(), category.productCount());
+            category.id(), category.name(), category.status(), category.createdAt(), category.productCount());
         when(service.list("beb", "ACTIVE")).thenReturn(List.of(category));
 
         ResponseEntity<List<CatalogAdminDtos.CategoryResponse>> response = controller.list("beb", "ACTIVE");
@@ -119,7 +119,7 @@ class CategoryControllerTest {
     void getById_returnsOk() {
         UUID id = UUID.randomUUID();
         CategoryService.CategoryView category = new CategoryService.CategoryView(
-            id, "Bebidas", "BEB", "ACTIVE", Instant.now(), 10L
+            id, "Bebidas", "ACTIVE", Instant.now(), 10L
         );
         when(service.getById(id)).thenReturn(category);
 
@@ -127,7 +127,7 @@ class CategoryControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isEqualTo(new CatalogAdminDtos.CategoryResponse(
-            category.id(), category.name(), category.code(), category.status(), category.createdAt(), category.productCount()));
+            category.id(), category.name(), category.status(), category.createdAt(), category.productCount()));
     }
 
     @Test
@@ -138,12 +138,12 @@ class CategoryControllerTest {
         mockMvc.perform(post("/api/categories")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"name":"Bebidas","code":"BEB"}
+                    {"name":"Bebidas"}
                     """))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(id.toString()));
 
-        verify(service).create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas", "BEB"));
+        verify(service).create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas"));
     }
 
     @Test
@@ -151,7 +151,7 @@ class CategoryControllerTest {
         mockMvc.perform(post("/api/categories")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"name":"   ","code":"BEB"}
+                    {"name":"   "}
                     """))
             .andExpect(status().isBadRequest());
 

@@ -2,7 +2,7 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'reac
 
 type BaseProps = {
   children: ReactNode
-  variant?: 'primary' | 'secondary' | 'ghost' | 'link'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'link' | 'danger'
   fullWidth?: boolean
 }
 

@@ -13,8 +13,8 @@ function response(body: unknown, status = 200) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 }
 
-const brands = [{ id: 'brand-1', name: 'Molino Norte', code: 'MN', status: 'ACTIVE', productCount: 2 }]
-const categories = [{ id: 'category-1', name: 'Almacén', code: 'ALM', status: 'ACTIVE', productCount: 4 }]
+const brands = [{ id: 'brand-1', name: 'Molino Norte', status: 'ACTIVE', productCount: 2 }]
+const categories = [{ id: 'category-1', name: 'Almacén', status: 'ACTIVE', productCount: 4 }]
 
 function renderPage(authorities = ['ADMIN_ALL']) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -39,15 +39,15 @@ describe('CatalogAdminPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /nueva marca/i }))
+    expect(screen.getByRole('dialog', { name: 'Nueva marca' })).toBeInTheDocument()
     await user.type(screen.getByLabelText('Nombre de marca'), 'Lácteos del Sur')
-    await user.type(screen.getByLabelText('Código de marca'), 'LDS')
     await user.click(screen.getByRole('button', { name: /guardar marca/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/brands', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ name: 'Lácteos del Sur', code: 'LDS' }),
+      method: 'POST', body: JSON.stringify({ name: 'Lácteos del Sur' }),
     })))
     expect(await screen.findByText('Marca creada correctamente.')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /eliminar marca molino norte/i }))
+    await user.click(screen.getByRole('button', { name: /desactivar marca molino norte/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/brands/brand-1', expect.objectContaining({ method: 'DELETE' })))
@@ -66,11 +66,10 @@ describe('CatalogAdminPage', () => {
     await user.click(await screen.findByRole('tab', { name: 'Categorías' }))
     await user.click(await screen.findByRole('button', { name: /nueva categoría/i }))
     await user.type(screen.getByLabelText('Nombre de categoría'), 'Bebidas')
-    await user.type(screen.getByLabelText('Código de categoría'), 'BEB')
     await user.click(screen.getByRole('button', { name: /guardar categoría/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/categories', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ name: 'Bebidas', code: 'BEB' }),
+      method: 'POST', body: JSON.stringify({ name: 'Bebidas' }),
     })))
     expect(await screen.findByText('La categoría ya existe')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /guardar categoría/i })).toBeInTheDocument()
