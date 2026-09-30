@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError, getAccessToken, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
@@ -14,7 +14,39 @@ import { useUrlListState } from '../../shared/useUrlListState'
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean }
 type ProductPrice = { productId: string; sku: string; name: string; price: number; effectiveOn?: string }
 type PriceHistory = { effectiveOn: string; price: number; recordedAt: string; updatedAt: string; scheduled: boolean }
+type ListVisibility = 'ACTIVE' | 'INACTIVE' | 'ALL'
+type PriceListPreferences = { visibility: ListVisibility; expanded: boolean }
 type Row = Record<string, string>
+
+const defaultPriceListPreferences: PriceListPreferences = { visibility: 'ALL', expanded: true }
+
+function priceListPreferenceKey() {
+  const token = getAccessToken()
+  try {
+    const payload = token?.split('.')[1]
+    if (!payload) return 'distribuidora.user-preferences.session.priceLists'
+    const base64 = payload.replaceAll('-', '+').replaceAll('_', '/')
+    const decoded = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))) as { sub?: unknown; email?: unknown }
+    const userId = typeof decoded.sub === 'string' ? decoded.sub : typeof decoded.email === 'string' ? decoded.email : 'session'
+    return `distribuidora.user-preferences.${encodeURIComponent(userId)}.priceLists`
+  } catch {
+    return 'distribuidora.user-preferences.session.priceLists'
+  }
+}
+
+function readPriceListPreferences(key: string): PriceListPreferences {
+  try {
+    const saved = localStorage.getItem(key)
+    if (!saved) return defaultPriceListPreferences
+    const value = JSON.parse(saved) as Partial<PriceListPreferences>
+    return {
+      visibility: value.visibility === 'ACTIVE' || value.visibility === 'INACTIVE' || value.visibility === 'ALL' ? value.visibility : 'ALL',
+      expanded: typeof value.expanded === 'boolean' ? value.expanded : true,
+    }
+  } catch {
+    return defaultPriceListPreferences
+  }
+}
 
 function money(value: unknown) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 4 }).format(Number(value ?? 0))
@@ -39,6 +71,9 @@ export default function PriceListsPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
+  const preferencesKey = priceListPreferenceKey()
+  const [preferences, setPreferences] = useState(() => readPriceListPreferences(preferencesKey))
+  const { visibility: listVisibility, expanded: listExpanded } = preferences
   const { page: listPage, pageSize, setPage: setListPage } = useUrlListState([], 20, 'page')
   const { page: pricePage, setPage: setPricePage } = useUrlListState([], 20, 'pricePage')
   const { page: historyPage, setPage: setHistoryPage } = useUrlListState([], 20, 'historyPage')
@@ -46,6 +81,7 @@ export default function PriceListsPage() {
   const listsKey = [listsPath]
   const listsQuery = useQuery({ queryKey: listsKey, queryFn: () => apiGet<ApiPage<PriceList>>(listsPath) })
   const lists = listsQuery.data?.content ?? []
+  const visibleLists = lists.filter((list) => listVisibility === 'ALL' || list.status === listVisibility)
   const [selectedId, setSelectedId] = useState('')
   const selectedList = lists.find((list) => list.id === selectedId)
   const [editingHistoryProduct, setEditingHistoryProduct] = useState<ProductPrice | undefined>()
@@ -72,10 +108,18 @@ export default function PriceListsPage() {
   const [feedback, setFeedback] = useState('')
 
   useEffect(() => {
-    if (selectedId && lists.some((list) => list.id === selectedId)) return
-    const initial = lists.find((list) => list.status === 'ACTIVE' && list.isDefault) ?? lists.find((list) => list.status === 'ACTIVE')
-    setSelectedId(initial?.id ?? lists[0]?.id ?? '')
-  }, [lists, selectedId])
+    if (selectedId && visibleLists.some((list) => list.id === selectedId)) return
+    const initial = visibleLists.find((list) => list.status === 'ACTIVE' && list.isDefault) ?? visibleLists.find((list) => list.status === 'ACTIVE')
+    setSelectedId(initial?.id ?? visibleLists[0]?.id ?? '')
+  }, [lists, selectedId, listVisibility])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(preferencesKey, JSON.stringify(preferences))
+    } catch {
+      // Keep the current choices for this page even when browser storage is unavailable.
+    }
+  }, [preferences, preferencesKey])
 
   const createMutation = useMutation({
     mutationFn: () => apiPost('/api/pricing/lists', { code: code.trim(), name: name.trim() }),
@@ -183,23 +227,23 @@ export default function PriceListsPage() {
     { key: 'sku', label: 'SKU' },
     { key: 'price', label: 'Precio de lista', align: 'right' },
     { key: 'effectiveOn', label: 'Vigente desde' },
-    ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Row) => <Button variant="link" onClick={() => {
+    { key: 'actions', label: 'Acciones', align: 'right', render: (_value: string, row: Row) => {
       const product = pricesQuery.data?.content.find((item) => item.productId === row.id)
-      if (product) { setEditingProduct(product); setPrice(String(product.price)); setEffectiveOn(''); setError('') }
-    }}>Editar precio de {row.name.toLowerCase()}</Button> }] : []),
-    { key: 'history', label: '', render: (_value: string, row: Row) => <Button variant="link" onClick={() => {
-      const product = pricesQuery.data?.content.find((item) => item.productId === row.id)
-      if (product) { setEditingHistoryProduct(product); setHistoryPage(0); setError('') }
-    }}>Ver historial de {row.name.toLowerCase()}</Button> },
+      if (!product) return null
+      return <div className="table-row-actions">
+        {isAdmin && <Button variant="secondary" onClick={() => { setEditingProduct(product); setPrice(String(product.price)); setEffectiveOn(''); setError('') }} aria-label={`Editar precio de ${product.name}`}>Editar</Button>}
+        <Button variant="secondary" onClick={() => { setEditingHistoryProduct(product); setHistoryPage(0); setError('') }} aria-label={`Ver historial de precios de ${product.name}`}>Historial</Button>
+      </div>
+    } },
   ]
 
-  return <>
+  return <div className="price-lists-page">
     <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin && pricingView === 'prices' ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && <p className="error-text" role="alert">{error}</p>}
-    <div className="price-list-tabs" role="tablist" aria-label="Secciones de precios">
-      <button className={`price-list-tab${pricingView === 'prices' ? ' selected' : ''}`} type="button" role="tab" aria-selected={pricingView === 'prices'} onClick={() => setPricingView('prices')}>Listas y precios</button>
-      <button className={`price-list-tab${pricingView === 'discounts' ? ' selected' : ''}`} type="button" role="tab" aria-selected={pricingView === 'discounts'} onClick={() => { setPricingView('discounts'); setShowCreate(false); setError('') }}>Reglas de descuento</button>
+    <div className="pricing-section-tabs" role="tablist" aria-label="Secciones de precios">
+      <button className={`pricing-section-tab${pricingView === 'prices' ? ' selected' : ''}`} type="button" role="tab" aria-selected={pricingView === 'prices'} onClick={() => setPricingView('prices')}>Listas y precios</button>
+      <button className={`pricing-section-tab${pricingView === 'discounts' ? ' selected' : ''}`} type="button" role="tab" aria-selected={pricingView === 'discounts'} onClick={() => { setPricingView('discounts'); setShowCreate(false); setError('') }}>Reglas de descuento</button>
     </div>
     {pricingView === 'discounts' ? <DiscountRulesSection /> : <>
     {showCreate && isAdmin && <Panel title="Nueva lista de precios"><form className="form-grid" onSubmit={submitCreate}>
@@ -212,15 +256,24 @@ export default function PriceListsPage() {
       <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setRenameList(undefined)}>Cancelar</Button><Button type="submit">Guardar nombre</Button></div>
     </form></Panel>}
     {listsQuery.isLoading || listsQuery.isError ? <Panel><State error={listsQuery.error} /></Panel> : lists.length === 0 ? <Panel><EmptyState title="Todavía no hay listas" description="Creá una lista de precios para asignar valores de venta a los productos." action={isAdmin ? <Button onClick={() => setShowCreate(true)}>+ Nueva lista</Button> : undefined} /></Panel> : <>
-      <Panel title="Listas disponibles" description="Elegí una lista para consultar y editar sus precios.">
-        <div className="price-list-tabs" role="tablist" aria-label="Listas disponibles">{lists.map((list) => <button className={`price-list-tab${selectedId === list.id ? ' selected' : ''}`} type="button" role="tab" aria-selected={selectedId === list.id} key={list.id} onClick={() => { const next = new URLSearchParams(searchParams); next.delete('pricePage'); next.delete('historyPage'); setSearchParams(next); setSelectedId(list.id); setEditingHistoryProduct(undefined); setFeedback(''); setError('') }}>
-          <strong>{list.name}</strong><span>{list.code}{list.isDefault ? ' · Predeterminada' : ''}</span><span>{list.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span>
-        </button>)}</div>
-        {isAdmin && selectedList && <div className="page-actions price-list-actions"><Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button><Button variant="secondary" onClick={() => setStatusList(selectedList)}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button></div>}
+      <Panel title="Listas de precios" description={`${visibleLists.length} ${visibleLists.length === 1 ? 'lista visible' : 'listas visibles'} · Los pedidos usan la lista asignada al cliente.`} action={<div className="price-list-controls">
+        <label className="price-list-filter"><span>Mostrar</span><select className="select" aria-label="Mostrar listas" value={listVisibility} onChange={(event) => setPreferences((current) => ({ ...current, visibility: event.target.value as ListVisibility }))}>
+          <option value="ALL">Todas</option><option value="ACTIVE">Activas</option><option value="INACTIVE">Inactivas</option>
+        </select></label>
+        <Button variant="secondary" aria-label={listExpanded ? 'Plegar listas' : 'Desplegar listas'} title={listExpanded ? 'Plegar listas' : 'Desplegar listas'} aria-expanded={listExpanded} aria-controls="price-list-selector" onClick={() => setPreferences((current) => ({ ...current, expanded: !current.expanded }))}>
+          <svg className={`price-list-toggle-icon${listExpanded ? ' expanded' : ''}`} viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </Button>
+      </div>}>
+        {listExpanded && (visibleLists.length > 0 ? <div id="price-list-selector" className="price-list-selector" role="tablist" aria-label="Listas disponibles">{visibleLists.map((list) => <button className={`price-list-card${selectedId === list.id ? ' selected' : ''}`} type="button" role="tab" aria-selected={selectedId === list.id} key={list.id} onClick={() => { const next = new URLSearchParams(searchParams); next.delete('pricePage'); next.delete('historyPage'); setSearchParams(next); setSelectedId(list.id); setEditingHistoryProduct(undefined); setFeedback(''); setError('') }}>
+          <span className="price-list-card-heading"><strong>{list.name}</strong>{list.isDefault && <span className="price-list-default">Predeterminada</span>}</span>
+          <span className="price-list-code">{list.code}</span>
+          <span className={`price-list-status${list.status === 'ACTIVE' ? ' active' : ''}`}><i aria-hidden="true" />{list.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span>
+        </button>)}</div> : <EmptyState title={`No hay listas ${listVisibility === 'ACTIVE' ? 'activas' : 'inactivas'}`} description="Elegí otro filtro para ver las listas disponibles." />)}
+        {listExpanded && isAdmin && selectedList && <div className="page-actions price-list-actions"><Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button><Button variant="secondary" onClick={() => setStatusList(selectedList)}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button></div>}
         {listsQuery.data && listsQuery.data.totalPages > 1 && <div className="pagination"><span>Página {listPage + 1} de {listsQuery.data.totalPages} · {listsQuery.data.totalElements} listas</span><div><Button variant="secondary" onClick={() => setListPage(listPage - 1)} disabled={listPage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setListPage(listPage + 1)} disabled={listPage + 1 >= listsQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
-      <Panel title={selectedList ? `Precios · ${selectedList.name}` : 'Precios'}>
-        {pricesQuery.isLoading || pricesQuery.isError ? <State error={pricesQuery.error} /> : rows.length === 0 ? <EmptyState title="Esta lista todavía no tiene precios" description="Los precios aparecen cuando se asignan a productos." /> : <DataTable columns={priceColumns} rows={rows} />}
+      <Panel title={selectedList ? `Precios de ${selectedList.name}` : 'Precios'} description={pricesQuery.data ? `${pricesQuery.data.totalElements} productos en esta lista` : selectedList ? `${selectedList.code}${selectedList.isDefault ? ' · Lista predeterminada' : ''}` : undefined}>
+        {pricesQuery.isLoading || pricesQuery.isError ? <State error={pricesQuery.error} /> : rows.length === 0 ? <EmptyState title="Esta lista todavía no tiene precios" description="Los precios aparecen cuando se asignan a productos." /> : <DataTable className={isAdmin ? 'price-products-table price-products-table-admin' : 'price-products-table price-products-table-standard'} columns={priceColumns} rows={rows} />}
         {pricesQuery.data && pricesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {pricePage + 1} de {pricesQuery.data.totalPages} · {pricesQuery.data.totalElements} productos</span><div><Button variant="secondary" onClick={() => setPricePage(pricePage - 1)} disabled={pricePage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPricePage(pricePage + 1)} disabled={pricePage + 1 >= pricesQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
     </>}
@@ -254,5 +307,5 @@ export default function PriceListsPage() {
     {historyEntryToCancel && <div role="dialog" aria-modal="true" aria-labelledby="cancel-price-title" className="modal-backdrop"><Panel title="Cancelar precio programado"><h2 id="cancel-price-title">¿Cancelar la vigencia del {historyEntryToCancel.effectiveOn}?</h2><p>El cambio no modificará precios que ya entraron en vigor.</p><div className="page-actions"><Button variant="secondary" onClick={() => setHistoryEntryToCancel(undefined)}>Volver</Button><Button onClick={cancelScheduledPrice}>Confirmar cancelación</Button></div></Panel></div>}
     {statusList && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusList.status === 'ACTIVE' ? 'desactivar' : 'activar'} la lista {statusList.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusList(undefined)}>Cancelar</Button><Button onClick={changeStatus}>Confirmar</Button></div></Panel></div>}
     </>}
-  </>
+  </div>
 }
