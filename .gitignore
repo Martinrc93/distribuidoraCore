@@ -1,3 +1,6 @@
 /backups/
 *.dcbak
 *.dump
+/frontend/dist-tailwind-check/
+/frontend/test-results/
+/frontend/node_modules/

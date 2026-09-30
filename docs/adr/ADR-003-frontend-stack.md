@@ -70,6 +70,15 @@ invalidación y consistencia.
 
 ## Consequences
 
+### Estado de implementación de UI (2026-09-30)
+
+Tailwind CSS 4 está integrado mediante `@tailwindcss/vite`. La migración conserva
+los componentes propios, sus clases semánticas y los valores originales utilizando
+`@apply` en `frontend/src/styles.css`; Preflight se omite para preservar los estilos
+base del navegador. shadcn/ui sigue siendo parte de la decisión original y no está
+instalado. Para nuevas interfaces se debe consultar la
+[guía de estilos](../development/ui-style-guide.md).
+
 ### Positivas
 
 - Menos duplicación de estado.

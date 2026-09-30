@@ -5,6 +5,15 @@ funcionales están en [`frontend-diagrams.md`](./frontend-diagrams.md).
 
 ## Stack
 
+Para implementar estilos y componentes, consultar primero la
+[guía de estilos y patrones de interfaz](../development/ui-style-guide.md).
+La implementación actual utiliza Tailwind CSS 4 mediante `@tailwindcss/vite`,
+patrones semánticos con `@apply` en `src/styles.css` y componentes propios en
+`src/shared/components`. Se conservan los valores del diseño y se omite Preflight.
+shadcn/ui en la lista siguiente pertenece al stack previsto y no está instalado. La estructura
+siguiente describe la organización propuesta; el CSS global actual es un archivo
+`src/styles.css`.
+
 ```text
 React + TypeScript + Vite
 React Router

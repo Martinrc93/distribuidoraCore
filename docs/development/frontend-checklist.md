@@ -22,10 +22,13 @@ Estado actualizado: 2026-09-25
 
 ## Componentes Y UX Transversal
 
+- Referencia obligatoria para cambios de interfaz: [guía de estilos y patrones de interfaz](ui-style-guide.md). Describe los componentes reales, sus variantes y los requisitos para nuevas interfaces.
+
+- [x] Tailwind CSS 4 integrado con Vite y Vitest; patrones existentes migrados a `@apply` con valores exactos y sin Preflight.
 - [x] Layout responsive desktop/mobile.
 - [x] Tablas transformadas a cards en mobile; listados con búsqueda/filtros y paginación conectados a parámetros de URL.
 - [x] Estados de carga y error para consultas principales.
-- [x] Componentes reutilizables de botones, paneles, badges, tablas y paginación.
+- [x] Componentes reutilizables de botones, paneles, badges y tablas; paginación compuesta por pantalla con estilos comunes.
 - [x] Feedback de mutaciones con mensajes de éxito y errores accionables en flujos implementados.
 - [x] Confirmación explícita para bajas lógicas, cancelaciones y acciones irreversibles implementadas.
 - [x] Filtros y paginación persistidos en URL en clientes, pedidos, ventas, pagos, productos, inventario, depósitos, listas/precios/historial, descuentos, usuarios, vendedores y auditoría.
