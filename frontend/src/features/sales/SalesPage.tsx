@@ -8,8 +8,12 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { useUrlListState } from '../../shared/useUrlListState'
+import { OrderDateFilter } from '../orders/OrderDateFilter'
 
+type FilterOption = { id: string; name: string }
+type SaleFilterOptions = { customers: FilterOption[]; sellers: FilterOption[] }
 type Sale = { id: string; number: string; customer: string; total: number; paid: number; balance: number; status: string; date: string }
 type SaleItem = { saleItemId: string; productId: string; productName: string; quantity: number; returnedQuantity: number; returnableQuantity: number }
 type SaleDetail = {
@@ -25,19 +29,41 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('es-AR', { dat
 const stateName: Record<string, string> = { CONFIRMED: 'Confirmada', DELIVERED: 'Entregada', CANCELLED: 'Cancelada', RETURNED: 'Con devoluciones' }
 const paymentMethodName: Record<string, string> = { CASH: 'Efectivo', BANK_TRANSFER: 'Transferencia' }
 
+function parseDate(value: string) {
+  if (!value) return ''
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value)
+  if (!match) return null
+  const [, day, month, year] = match
+  const iso = `${year}-${month}-${day}`
+  const date = new Date(`${iso}T00:00:00Z`)
+  return Number(year) > 0 && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso ? iso : null
+}
+
 export default function SalesPage() {
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
-  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'customerId', 'sellerId', 'pendingBalance', 'dateMin', 'dateMax'])
   const search = getFilter('search')
+  const customerId = getFilter('customerId')
+  const sellerId = getFilter('sellerId')
+  const pendingBalance = getFilter('pendingBalance') === 'true'
+  const dateMin = getFilter('dateMin')
+  const dateMax = getFilter('dateMax')
+  const min = parseDate(dateMin)
+  const max = parseDate(dateMax)
+  const invalidRange = Boolean(min && max && min > max)
+  const dateError = min === null || max === null ? 'Las fechas deben ser válidas y tener formato dd/mm/aaaa.' : invalidRange ? 'La fecha mínima no puede ser posterior a la fecha máxima.' : ''
   const [selectedSaleId, setSelectedSaleId] = useState('')
   const [returnReason, setReturnReason] = useState('')
   const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({})
   const [returnError, setReturnError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [savingReturn, setSavingReturn] = useState(false)
-  const path = `/api/sales?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}`
-  const query = useQuery({ queryKey: [path], queryFn: () => apiGet<ApiPage<Sale>>(path) })
+  const path = `/api/sales?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&customerId=${encodeURIComponent(customerId)}&sellerId=${encodeURIComponent(sellerId)}&pendingBalance=${pendingBalance}&dateMin=${min ?? ''}&dateMax=${max ?? ''}`
+  const query = useQuery({ queryKey: [path], queryFn: () => apiGet<ApiPage<Sale>>(path), enabled: !dateError })
+  const optionsQuery = useQuery({ queryKey: ['/api/sales/filter-options'], queryFn: () => apiGet<SaleFilterOptions>('/api/sales/filter-options') })
+  const customers = optionsQuery.data?.customers ?? []
+  const sellers = optionsQuery.data?.sellers ?? []
   const detailQuery = useQuery({
     queryKey: ['sale-detail', selectedSaleId],
     queryFn: () => apiGet<SaleDetail>(`/api/sales/${selectedSaleId}`),
@@ -101,8 +127,18 @@ export default function SalesPage() {
   return <>
     <PageHeader eyebrow="Operación" title="Ventas" description="Consultá importes cobrados, saldos y estado de las ventas." />
     <Panel>
-      <div className="toolbar"><label className="field"><span>Buscar ventas</span><input className="input search-input" placeholder="Cliente o número de venta" aria-label="Buscar ventas" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
-      {query.isLoading ? <EmptyState title="Cargando ventas" description="Consultando ventas registradas." /> : query.isError ? <EmptyState title="No se pudieron cargar las ventas" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay ventas para mostrar" description="Probá otra búsqueda." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} ventas</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+      <form className="toolbar" onSubmit={(event) => event.preventDefault()}>
+        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar ventas</span><input className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Número de venta" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
+        <SearchableSelect label="Buscar por cliente" options={customers} value={customerId} onChange={(value) => setFilter('customerId', value)} allLabel="Todos los clientes" unavailableLabel="Cliente no disponible" loadingLabel="Cargando clientes…" loading={optionsQuery.isLoading} disabled={optionsQuery.isLoading || optionsQuery.isError} className="[@media(max-width:640px)]:w-full" />
+        <SearchableSelect label="Buscar por vendedor" options={sellers} value={sellerId} onChange={(value) => setFilter('sellerId', value)} allLabel="Todos los vendedores" unavailableLabel="Vendedor no disponible" loadingLabel="Cargando vendedores…" loading={optionsQuery.isLoading} disabled={optionsQuery.isLoading || optionsQuery.isError} className="[@media(max-width:640px)]:w-full" />
+        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Saldo pendiente</span><select className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={pendingBalance ? 'true' : ''} onChange={(event) => setFilter('pendingBalance', event.target.value)}><option value="">Todas las ventas</option><option value="true">Solo con saldo impago</option></select></label>
+        <div className="orders-date-filters">
+          <OrderDateFilter id="sales-date-min" label="Fecha mín." value={dateMin} isoValue={min ?? ''} onChange={(value) => setFilter('dateMin', value)} invalid={min === null || invalidRange} describedBy={dateError ? 'sales-date-error' : undefined} />
+          <OrderDateFilter id="sales-date-max" label="Fecha máx." value={dateMax} isoValue={max ?? ''} onChange={(value) => setFilter('dateMax', value)} invalid={max === null || invalidRange} describedBy={dateError ? 'sales-date-error' : undefined} />
+        </div>
+      </form>
+      {optionsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los clientes y vendedores. <Button variant="link" type="button" onClick={() => optionsQuery.refetch()}>Reintentar filtros</Button></p>}
+      {dateError ? <p id="sales-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando ventas" description="Consultando ventas registradas." /> : query.isError ? <EmptyState title="No se pudieron cargar las ventas" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay ventas para mostrar" description="No se encontraron ventas con los filtros seleccionados." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} ventas</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {selectedSaleId && <div role="dialog" aria-modal="true" aria-labelledby="sale-detail-title" className="modal-backdrop"><Panel title={`Venta ${detailQuery.data?.sale.number ?? ''}`} description="Pedido, cliente, vendedor, cobros y productos de la venta." action={<Button variant="link" onClick={() => setSelectedSaleId('')}>Cerrar</Button>}>
       <h2 id="sale-detail-title">Detalle de venta</h2>

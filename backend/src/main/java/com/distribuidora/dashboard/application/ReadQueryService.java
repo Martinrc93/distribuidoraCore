@@ -326,32 +326,81 @@ public class ReadQueryService {
     }
 
     public PageResponse<Map<String, Object>> sales(int page, int size, String search) {
-        String term = like(search);
+        return sales(page, size, search, null, null, false);
+    }
+
+    public PageResponse<Map<String, Object>> sales(int page, int size, String search,
+            UUID customerId, UUID sellerId, boolean pendingBalance) {
+        return sales(page, size, search, customerId, sellerId, pendingBalance, null, null);
+    }
+
+    public PageResponse<Map<String, Object>> sales(int page, int size, String search,
+            UUID customerId, UUID sellerId, boolean pendingBalance, LocalDate dateMin, LocalDate dateMax) {
+        if (dateMin != null && dateMax != null && dateMin.isAfter(dateMax)) {
+            throw new IllegalArgumentException("La fecha mínima no puede ser posterior a la fecha máxima");
+        }
+        String from = """
+            from sale.sales s
+            join orders.orders o on o.id = s.order_id
+            join customer.customers c on c.id = s.customer_id
+            where lower(s.sale_number) like ?
+            """;
+        List<Object> parameters = new ArrayList<>(List.of(like(search)));
+        if (customerId != null) {
+            from += " and s.customer_id = ?";
+            parameters.add(customerId);
+        }
+        if (sellerId != null) {
+            from += " and coalesce(o.seller_id, c.seller_id) = ?";
+            parameters.add(sellerId);
+        }
+        if (pendingBalance) {
+            from += " and s.total > s.paid and s.status <> 'CANCELLED'";
+        }
         if (sellerScoped()) {
-            UUID sellerId = currentUser.requireSellerProfile();
-            return page("""
-                select s.id, s.sale_number as number, c.business_name as customer, s.total, s.paid,
-                       (s.total - s.paid) as balance, s.status, s.created_at as date
-                from sale.sales s join orders.orders o on o.id = s.order_id
-                join customer.customers c on c.id = s.customer_id
-                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
-                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?) order by s.created_at desc
-                """, """
-                select count(*) from sale.sales s join orders.orders o on o.id = s.order_id
-                join customer.customers c on c.id = s.customer_id
-                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
-                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?)
-                """, page, size, sellerId, sellerId, term, term);
+            UUID scopedSellerId = currentUser.requireSellerProfile();
+            from += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            parameters.add(scopedSellerId);
+            parameters.add(scopedSellerId);
+        }
+        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
+        if (dateMin != null) {
+            from += " and s.created_at >= ?";
+            parameters.add(Timestamp.from(dateMin.atStartOfDay(zone).toInstant()));
+        }
+        if (dateMax != null) {
+            from += " and s.created_at < ?";
+            parameters.add(Timestamp.from(dateMax.plusDays(1).atStartOfDay(zone).toInstant()));
         }
         return page("""
             select s.id, s.sale_number as number, c.business_name as customer,
                    s.total, s.paid, (s.total - s.paid) as balance,
                    s.status, s.created_at as date
-            from sale.sales s join customer.customers c on c.id = s.customer_id
-            where lower(c.business_name) like ? or lower(s.sale_number) like ?
-            order by s.created_at desc
-            """, "select count(*) from sale.sales s join customer.customers c on c.id = s.customer_id where lower(c.business_name) like ? or lower(s.sale_number) like ?",
-            page, size, term, term);
+            """ + from + " order by s.created_at desc, s.id desc", "select count(*) " + from,
+            page, size, parameters.toArray());
+    }
+
+    public Map<String, Object> saleFilterOptions() {
+        String from = """
+            from sale.sales s
+            join orders.orders o on o.id = s.order_id
+            join customer.customers c on c.id = s.customer_id
+            left join seller.seller_profiles sp on sp.id = coalesce(o.seller_id, c.seller_id)
+            where 1 = 1
+            """;
+        List<Object> parameters = new ArrayList<>();
+        if (sellerScoped()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            from += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            parameters.add(sellerId);
+            parameters.add(sellerId);
+        }
+        return Map.of(
+            "customers", jdbc.queryForList("select distinct c.id, c.business_name as name " + from
+                + " order by name, c.id", parameters.toArray()),
+            "sellers", jdbc.queryForList("select distinct sp.id, sp.display_name as name " + from
+                + " and sp.id is not null order by name, sp.id", parameters.toArray())
+        );
     }
 
     public PageResponse<Map<String, Object>> payments(int page, int size, String search) {

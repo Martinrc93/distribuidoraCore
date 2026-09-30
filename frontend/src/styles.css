@@ -115,6 +115,26 @@
   .orders-toolbar > .field { @apply min-w-0; }
   .orders-date-filters { @apply ml-auto flex gap-[9px]; }
   .orders-date-filters .field { @apply w-[140px] min-w-0; }
+  .orders-date-control { @apply relative; }
+  .orders-date-control > .input { @apply pr-[34px]; }
+  .orders-date-trigger { @apply absolute right-[3px] top-[3px] bottom-[3px] flex items-center; }
+  .orders-date-trigger .button { @apply min-h-[30px] w-[28px] p-0 flex items-center justify-center; }
+  .orders-calendar-dialog { @apply fixed [inset:auto] m-0 p-[12px] max-w-[calc(100vw_-_24px)] max-h-[calc(100dvh_-_24px)] overflow-auto bg-surface text-ink [border:1px_solid_var(--line)] rounded-[8px] [box-shadow:0_8px_28px_#193a4326] font-sans font-normal; }
+  .orders-calendar-dialog::backdrop { @apply bg-[#193a4314]; }
+  .orders-calendar-label { @apply block text-muted text-[11px] mb-[6px]; }
+  .orders-calendar-header { @apply flex items-center justify-between gap-[4px] mb-[8px]; }
+  .orders-calendar-header h2 { @apply m-0 text-[14px]; }
+  .orders-calendar-header .button { @apply min-h-[32px] w-[32px] p-0 text-[22px]; }
+  .orders-calendar-grid { @apply w-full table-fixed [border-spacing:2px]; }
+  .orders-calendar-grid th { @apply text-muted text-[11px] font-normal pb-[6px]; }
+  .orders-calendar-grid abbr { @apply no-underline; }
+  .orders-calendar-grid td { @apply p-0 text-center; }
+  .orders-calendar-grid button { @apply w-full min-h-[32px] p-0 [border:1px_solid_transparent] rounded-[4px] bg-transparent text-ink text-[12px] cursor-pointer; }
+  .orders-calendar-grid button:hover { @apply bg-surface-muted; }
+  .orders-calendar-grid button[aria-current="date"] { @apply border-accent font-bold; }
+  .orders-calendar-grid button[aria-pressed="true"] { @apply bg-accent text-white; }
+  .orders-calendar-footer { @apply flex items-center justify-between gap-[4px] mt-[8px] pt-[8px] [border-top:1px_solid_var(--line)]; }
+  .orders-calendar-footer .button { @apply min-h-[32px] text-[11px] px-[8px]; }
   .input, .select { @apply w-full [border:1px_solid_#c7d4ce] rounded-[4px] bg-white text-ink min-h-[39px] [padding:0_10px] text-[12px] [outline:none]; }
   .input:focus, .select:focus { @apply border-accent [box-shadow:0_0_0_2px_#d8e9e0]; }
   .search-input { @apply max-w-[360px]; }

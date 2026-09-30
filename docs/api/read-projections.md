@@ -59,6 +59,41 @@ pendiente de la venta.
 La UI usa `saleId` para imputar el cobro a esa venta; sin selección conserva la
 imputación FIFO. Un usuario sin permiso recibe `403`.
 
+## Listado de ventas con filtros independientes
+
+```http
+GET /api/sales?page=0&size=20&search=SAL-001&customerId=<uuid>&sellerId=<uuid>&pendingBalance=true&dateMin=2026-09-01&dateMax=2026-09-30
+```
+
+`search` busca exclusivamente por número de venta, de forma parcial y sin
+distinguir mayúsculas. `customerId` y `sellerId` son UUID opcionales y filtran
+por identidad exacta. El vendedor es el del pedido; si no tiene uno asignado,
+se usa el vendedor del cliente. Los filtros se combinan entre sí.
+
+`dateMin` y `dateMax` son opcionales en formato ISO `yyyy-MM-dd`. Filtran la
+fecha de creación de la venta por días completos de
+`America/Argentina/Buenos_Aires`, incluyendo ambos extremos. Omitir o vaciar
+un extremo elimina ese límite. Un UUID o fecha inválidos, o un rango invertido,
+devuelven `400`.
+
+`pendingBalance` es opcional y vale `false` por defecto. Con `true` incluye solo
+ventas con `total > paid`, excluyendo las canceladas. Incluye ventas sin pagos
+y con pagos parciales. Los filtros se aplican antes de paginar y al conteo total;
+conservan el alcance del vendedor autenticado.
+
+`GET /api/sales/filter-options` devuelve `customers` y `sellers`, cada uno con
+opciones `{ id, name }` distintas y ordenadas por nombre. Incluye las entidades
+con ventas visibles para el usuario, sin limitar las opciones a una página de
+resultados. Un vendedor solo recibe opciones dentro de su alcance.
+
+La pantalla utiliza desplegables de cliente y vendedor con búsqueda local por
+nombre (ignora mayúsculas y acentos). Elegir una opción aplica su ID; escribir
+solo reduce las opciones disponibles. Conserva los filtros
+en la URL y vuelve a la primera página al cambiar cualquiera. Reutiliza los
+campos de fecha y calendario de pedidos, con formato `dd/mm/aaaa`; ambos
+inician vacíos para conservar la consulta de todo el historial. En móvil los
+filtros principales ocupan filas completas y las fechas forman dos columnas.
+
 ## Detalle de venta y líneas retornables
 
 ```http

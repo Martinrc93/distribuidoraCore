@@ -203,11 +203,32 @@ Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
   todos los vendedores con clientes visibles, sin límite de página, y permiten
   reintentar si falla su carga. A `640px` o menos cada campo ocupa una fila completa
   mediante utilidades locales. El estado vacío indica que no hay coincidencias.
+- En ventas, la búsqueda por número utiliza un input; cliente y vendedor
+  utilizan `SearchableSelect` por ID con opciones de las ventas visibles para el
+  usuario. Permiten escribir parte del nombre, sin distinguir mayúsculas ni
+  acentos; escribir reduce las opciones y elegir una aplica el filtro.
+  El select Saldo pendiente alterna todas las ventas y solo
+  ventas con saldo impago (excluye canceladas). Se combinan los filtros y se
+  conservan en la URL; cada cambio vuelve a la primera página. A `640px` o menos
+  cada filtro principal ocupa una fila completa mediante utilidades locales
+  de Tailwind. Las fechas reutilizan `OrderDateFilter` y `OrderCalendar`, junto
+  con `.orders-date-filters`, y forman dos columnas en móvil. Inician vacías,
+  admiten límites abiertos y muestran errores para fechas o rangos inválidos.
+  La carga fallida de las opciones permite reintentar sin bloquear el listado.
+  Esta distribución pertenece a ventas y no cambia el patrón global.
 - En pedidos, `.orders-date-filters` agrupa fecha mínima y máxima a la derecha
   de `.orders-toolbar`. Cada campo mide `140px`; a `640px` o menos, búsqueda y
   estado ocupan filas completas y las fechas se distribuyen en dos columnas
   iguales. Esta variante pertenece a pedidos. Los campos usan `dd/mm/aaaa`,
   labels visibles y errores asociados mediante `aria-describedby`.
+  `OrderDateFilter` conserva el texto numérico y abre `OrderCalendar` en español al
+  hacer clic en el campo o su botón de calendario, o con `Enter`/`Alt+ArrowDown`.
+  `.orders-date-control` posiciona el botón sobre el campo. El calendario utiliza
+  un `dialog` nativo anclado al campo y limitado al viewport, con meses y días
+  en español, semana desde el lunes y acciones Hoy/Limpiar/Cerrar. Conserva el
+  foco dentro del diálogo y lo devuelve al disparador al cerrar; admite Escape,
+  flechas, Home/End y PageUp/PageDown (con Shift cambia el año). La selección
+  conserva `dd/mm/aaaa` y se aplica también en mobile.
 - `.pagination` contiene resumen y botones anterior/siguiente. Se compone en
   cada pantalla: **no existe un componente compartido `Pagination`** actualmente.
   Deshabilitar los extremos y conservar filtros/página en la URL cuando corresponda.

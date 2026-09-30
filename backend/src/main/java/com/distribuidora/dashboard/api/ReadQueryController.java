@@ -75,7 +75,19 @@ public class ReadQueryController {
     public Map<String, Object> sale(@PathVariable UUID saleId) { return queries.saleDetail(saleId); }
 
     @GetMapping("/sales")
-    public PageResponse<Map<String, Object>> sales(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.sales(page, size, search); }
+    public PageResponse<Map<String, Object>> sales(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
+            @RequestParam(required = false) UUID customerId, @RequestParam(required = false) UUID sellerId,
+            @RequestParam(defaultValue = "false") boolean pendingBalance,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax) {
+        return queries.sales(page, size, search, customerId, sellerId, pendingBalance, dateMin, dateMax);
+    }
+
+    @GetMapping("/sales/filter-options")
+    public Map<String, Object> saleFilterOptions() {
+        return queries.saleFilterOptions();
+    }
 
     @GetMapping("/payments")
     public PageResponse<Map<String, Object>> payments(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.payments(page, size, search); }
