@@ -251,8 +251,8 @@
   .customer-modal-close:hover { @apply text-white border-accent bg-accent; }
   .customer-modal-close:disabled { @apply opacity-[.45] cursor-not-allowed; }
   .product-picker { @apply grid grid-cols-[minmax(200px,_1fr)_minmax(190px,_.7fr)_auto] gap-[12px] [align-items:end] [margin:4px_0_20px]; }
-  .product-picker.order-product-picker { @apply grid-cols-[minmax(180px,_1fr)_minmax(110px,_160px)_70px_auto] mt-[18px] overflow-x-auto pb-[6px]; }
-  .product-picker.order-product-picker-admin { @apply grid-cols-[minmax(180px,_1fr)_minmax(110px,_160px)_70px_70px_auto]; }
+  .product-picker.order-product-picker { @apply grid-cols-[minmax(0,_1fr)_minmax(110px,_160px)_70px_auto] mt-[18px] overflow-visible pb-[6px]; }
+  .product-picker.order-product-picker-admin { @apply grid-cols-[minmax(0,_1fr)_minmax(110px,_160px)_70px_70px_auto]; }
   .order-product-picker > .field { @apply min-w-0; }
   .order-product-picker .input, .order-product-picker .select { @apply w-full min-w-0; }
   .order-product-picker .order-compact-input, .order-lines-table .order-compact-input { @apply w-[calc(4ch_+_22px)] min-w-0; }

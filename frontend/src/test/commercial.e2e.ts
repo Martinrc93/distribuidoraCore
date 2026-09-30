@@ -44,7 +44,7 @@ test('admin can create a customer, price a product, confirm an order and open it
   await page.getByRole('button', { name: 'Confirmar ajuste' }).click()
   await expect(page.getByRole('status')).toContainText('Ajuste de inventario registrado.')
 
-  const productListResponse = page.waitForResponse((response) => response.url().includes('/api/products?page=0&size=20') && response.request().method() === 'GET')
+  const productListResponse = page.waitForResponse((response) => response.url().includes('/api/products?page=0&size=100') && response.request().method() === 'GET')
   await page.goto('/orders/new')
   const productList = await productListResponse
   expect(productList.ok()).toBeTruthy()
@@ -60,7 +60,8 @@ test('admin can create a customer, price a product, confirm an order and open it
   const centralOption = depot.locator('option').filter({ hasText: 'CENTRAL' }).first()
   await depot.selectOption(await centralOption.getAttribute('value') ?? '')
   const productSelect = page.getByRole('combobox', { name: 'Producto', exact: true })
-  await productSelect.selectOption(createdProduct!.id)
+  await productSelect.fill(productName)
+  await page.getByRole('option', { name: productName, exact: false }).click()
   await page.getByRole('button', { name: 'Agregar producto' }).click()
 
   const orderResponse = page.waitForResponse((response) => response.url().endsWith('/api/orders/confirm') && response.request().method() === 'POST')

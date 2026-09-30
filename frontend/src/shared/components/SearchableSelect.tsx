@@ -15,21 +15,24 @@ type Props = {
   invalid?: boolean
   describedBy?: string
   fullWidth?: boolean
+  preserveSearch?: boolean
   className?: string
 }
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim()
 
-export function SearchableSelect({ label, options, value, onChange, allLabel, unavailableLabel, loadingLabel, loading = false, disabled = false, required = false, invalid, describedBy, fullWidth = false, className = '' }: Props) {
+export function SearchableSelect({ label, options, value, onChange, allLabel, unavailableLabel, loadingLabel, loading = false, disabled = false, required = false, invalid, describedBy, fullWidth = false, preserveSearch = false, className = '' }: Props) {
   const id = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState<string | null>(null)
+  const [retainedSearch, setRetainedSearch] = useState('')
   const [active, setActive] = useState(-1)
   const expanded = open && !disabled && !loading
   const selectedName = value ? options.find((option) => option.id === value)?.name ?? unavailableLabel : allLabel
-  const matches = options.filter((option) => normalize(option.name).includes(normalize(search ?? '')))
+  const previousSearch = preserveSearch ? retainedSearch : ''
+  const matches = options.filter((option) => normalize(option.name).includes(normalize(search ?? previousSearch)))
   const visibleOptions = [{ id: '', name: allLabel }, ...matches]
   const activeOption = expanded && active >= 0 && active < visibleOptions.length ? active : -1
 
@@ -48,6 +51,7 @@ export function SearchableSelect({ label, options, value, onChange, allLabel, un
   }
 
   function choose(option: Option) {
+    if (preserveSearch) setRetainedSearch(option.id ? search ?? retainedSearch : '')
     onChange(option.id)
     close()
     inputRef.current?.focus()
@@ -79,7 +83,7 @@ export function SearchableSelect({ label, options, value, onChange, allLabel, un
         aria-controls={expanded ? `${id}-list` : undefined} aria-activedescendant={activeOption >= 0 ? `${id}-option-${activeOption}` : undefined}
         aria-required={required || undefined} aria-invalid={invalid} aria-describedby={describedBy} aria-busy={loading || undefined}
         autoComplete="off" disabled={disabled || loading} placeholder="Buscar por nombre…"
-        value={loading ? loadingLabel : expanded && search !== null ? search : selectedName}
+        value={loading ? loadingLabel : expanded && search !== null ? search : previousSearch && (expanded || !value) ? previousSearch : selectedName}
         onFocus={(event) => event.target.select()} onClick={(event) => { if (!expanded) event.currentTarget.select(); setOpen(true) }} onKeyDown={handleKeyDown}
         onChange={(event) => { setSearch(event.target.value); setOpen(true); setActive(-1) }} />
       <button type="button" className="searchable-select-toggle" aria-label={`Abrir opciones: ${label}`} tabIndex={-1}

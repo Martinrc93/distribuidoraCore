@@ -214,6 +214,19 @@ o Escape conserva el borrador, y el foco vuelve al botón. No copia cobros ni pr
 Los productos no disponibles bloquean la carga con un mensaje, y los errores
 de consulta permiten reintentar.
 
+El campo «Producto» reutiliza `SearchableSelect` con ancho completo: escribir
+filtra las opciones por nombre o código, sin distinguir mayúsculas ni acentos.
+Conserva nombre, código y stock en las opciones; excluye productos inactivos o
+ya agregados al pedido. Se cargan todas las páginas del catálogo en bloques de
+100 para incluir coincidencias de páginas posteriores. La búsqueda es local,
+sin consultas adicionales al escribir, y conserva la navegación con teclado.
+Solo este selector activa `preserveSearch`: al elegir una opción conserva el
+texto de búsqueda y, después de agregarla, vuelve a mostrar ese texto. Al abrir
+la lista se mantiene el filtro para seleccionar otro producto. Elegir la opción
+vacía limpia la búsqueda; cambiar de cliente también la reinicia. Escape o blur
+descarta texto sin seleccionar y conserva la última búsqueda utilizada.
+El desplegable queda visible sobre el contenido, sin recortes de su contenedor;
+en móvil ocupa el ancho del campo y admite scroll dentro de la lista.
 El selector `.order-product-picker` precarga los precios de los productos
 disponibles al elegir cliente y lista, en lotes de hasta 100 productos. La caché
 se identifica por cliente, lista y productos, y permanece vigente por un minuto.
@@ -230,8 +243,8 @@ lista. Cantidad y «Descuento» utilizan cajas de `4ch + 22px` con `size=4`, sin
 limitar el valor a cuatro caracteres; el descuento admite valores entre `0` y
 `100`. Producto, precio, cantidad, descuento y acción se alinean en una misma
 fila en escritorio. El selector de producto
-recibe más espacio; si el contenido no entra, el desplazamiento horizontal queda
-dentro del selector, sin desbordar la página. Los campos se apilan a `760px`.
+recibe el espacio restante de la fila y puede reducir su ancho sin desbordar
+la página. Los campos se apilan a `760px`.
 La acción de agregar espera la consulta de precio y permite reintentar errores.
 Durante la consulta, «Consultando…» aparece como placeholder dentro del campo,
 sin cambiar la alineación de la fila. La consulta de precio tiene un límite de

@@ -9,6 +9,7 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySelect'
+import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { apiGetAllPages } from '../../shared/api/pagination'
 import { loadOrderPrices } from './orderPrice'
 import { PreviousOrderDiscountDialog } from './PreviousOrderDiscountDialog'
@@ -45,7 +46,7 @@ type ConfirmationResponse = {
 }
 
 const CUSTOMER_KEY = ['/api/customers?page=0&size=20']
-const PRODUCT_KEY = ['/api/products?page=0&size=20']
+const PRODUCT_KEY = ['order-create-products', '/api/products?page=0&size=100']
 const PRICE_LIST_KEY = ['/api/pricing/lists?page=0&size=20']
 const SELLER_KEY = ['/api/sellers?page=0&size=100']
 
@@ -82,7 +83,7 @@ export default function OrderCreatePage() {
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
   const customersQuery = useQuery({ queryKey: CUSTOMER_KEY, queryFn: () => apiGetAllPages<Customer>('/api/customers?page=0&size=20') })
-  const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGet<ApiPage<Product>>('/api/products?page=0&size=20') })
+  const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGetAllPages<Product>('/api/products?page=0&size=100') })
   const listsQuery = useQuery({ queryKey: ['order-create-price-lists', ...PRICE_LIST_KEY], queryFn: loadPriceLists })
   const sellersQuery = useQuery({ queryKey: SELLER_KEY, queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const customers = customersQuery.data?.content ?? []
@@ -355,7 +356,7 @@ export default function OrderCreatePage() {
             </div>
             {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
             <div className={`product-picker order-product-picker${isAdmin ? ' order-product-picker-admin' : ''}`}>
-              <label className="field order-product-choice"><span>Producto</span><select className="select" value={selectedProductId} onChange={(event) => { setSelectedProductId(event.target.value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError('') }} disabled={!customerId || !selectedList}><option value="">Seleccionar producto...</option>{products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => <option value={item.id} key={item.id}>{item.name} · {item.sku} · stock total {item.stock ?? 0}</option>)}</select></label>
+              <SearchableSelect key={customerId} label="Producto" className="order-product-choice" fullWidth preserveSearch allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" options={products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => ({ id: item.id, name: [item.name, item.sku, `stock total ${item.stock ?? 0}`].filter(Boolean).join(' · ') }))} value={selectedProductId} onChange={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError('') }} disabled={!customerId || !selectedList || submitting} />
               <label className="field"><span>Precio</span><input className="input" aria-label="Precio" aria-busy={selectedPriceQuery.isFetching} placeholder={selectedProductId && selectedPriceQuery.isFetching ? 'Consultando...' : selectedProductId && selectedPriceQuery.isError ? 'No disponible' : '—'} type="text" inputMode="decimal" value={selectedProductPriceOverride ?? (selectedProductId && selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '')} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} readOnly={!isAdmin} disabled={!customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data} /></label>
               <label className="field"><span>Cantidad</span><input className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductQuantity} onChange={(event) => setSelectedProductQuantity(event.target.value)} disabled={!selectedProductId} /></label>
               {isAdmin && <label className="field"><span>Descuento</span><input className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductDiscount} onChange={(event) => setSelectedProductDiscount(event.target.value)} disabled={!selectedProductId} /></label>}
