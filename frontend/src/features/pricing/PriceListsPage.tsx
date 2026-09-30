@@ -236,6 +236,7 @@ export default function PriceListsPage() {
       </div>
     } },
   ]
+  const nextStatusIsActive = statusList?.status !== 'ACTIVE'
 
   return <div className="price-lists-page">
     <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin && pricingView === 'prices' ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
@@ -269,7 +270,7 @@ export default function PriceListsPage() {
           <span className="price-list-code">{list.code}</span>
           <span className={`price-list-status${list.status === 'ACTIVE' ? ' active' : ''}`}><i aria-hidden="true" />{list.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span>
         </button>)}</div> : <EmptyState title={`No hay listas ${listVisibility === 'ACTIVE' ? 'activas' : 'inactivas'}`} description="Elegí otro filtro para ver las listas disponibles." />)}
-        {listExpanded && isAdmin && selectedList && <div className="page-actions price-list-actions"><Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button><Button variant="secondary" onClick={() => setStatusList(selectedList)}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button></div>}
+        {listExpanded && isAdmin && selectedList && <div className="page-actions price-list-actions"><Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button><Button variant="secondary" onClick={() => { setError(''); setStatusList(selectedList) }}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button></div>}
         {listsQuery.data && listsQuery.data.totalPages > 1 && <div className="pagination"><span>Página {listPage + 1} de {listsQuery.data.totalPages} · {listsQuery.data.totalElements} listas</span><div><Button variant="secondary" onClick={() => setListPage(listPage - 1)} disabled={listPage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setListPage(listPage + 1)} disabled={listPage + 1 >= listsQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
       <Panel title={selectedList ? `Precios de ${selectedList.name}` : 'Precios'} description={pricesQuery.data ? `${pricesQuery.data.totalElements} productos en esta lista` : selectedList ? `${selectedList.code}${selectedList.isDefault ? ' · Lista predeterminada' : ''}` : undefined}>
@@ -305,7 +306,37 @@ export default function PriceListsPage() {
       <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setEditingProduct(undefined)}>Cancelar</Button><Button type="submit">Guardar precio</Button></div>
     </form></Panel></div>}
     {historyEntryToCancel && <div role="dialog" aria-modal="true" aria-labelledby="cancel-price-title" className="modal-backdrop"><Panel title="Cancelar precio programado"><h2 id="cancel-price-title">¿Cancelar la vigencia del {historyEntryToCancel.effectiveOn}?</h2><p>El cambio no modificará precios que ya entraron en vigor.</p><div className="page-actions"><Button variant="secondary" onClick={() => setHistoryEntryToCancel(undefined)}>Volver</Button><Button onClick={cancelScheduledPrice}>Confirmar cancelación</Button></div></Panel></div>}
-    {statusList && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusList.status === 'ACTIVE' ? 'desactivar' : 'activar'} la lista {statusList.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusList(undefined)}>Cancelar</Button><Button onClick={changeStatus}>Confirmar</Button></div></Panel></div>}
+    {statusList && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description" className="price-status-dialog-backdrop">
+      <section className={`price-status-dialog${nextStatusIsActive ? ' is-activating' : ' is-deactivating'}`}>
+        <header className="price-status-dialog-header">
+          <span className="price-status-dialog-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M7 12.5 10.2 16 17.5 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </span>
+          <div>
+            <p className="price-status-dialog-kicker">Lista de precios</p>
+            <h2 id="status-dialog-title">{nextStatusIsActive ? 'Activar lista' : 'Desactivar lista'}</h2>
+          </div>
+          <button className="price-status-dialog-close" type="button" aria-label="Cerrar diálogo" onClick={() => setStatusList(undefined)}>×</button>
+        </header>
+        <div className="price-status-dialog-body">
+          <p id="status-dialog-description">Se actualizará el estado de la lista seleccionada.</p>
+          {error && <p className="price-status-dialog-error" role="alert">{error}</p>}
+          <div className="price-status-dialog-summary">
+            <span className="price-status-dialog-label">Lista seleccionada</span>
+            <strong>{statusList.name}</strong>
+            <div className="price-status-transition" aria-label={`Estado ${statusList.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}; nuevo estado ${nextStatusIsActive ? 'Activa' : 'Inactiva'}`}>
+              <span className={`price-status-pill${statusList.status === 'ACTIVE' ? ' active' : ''}`}>{statusList.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span>
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m0 0-4-4m4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <span className={`price-status-pill${nextStatusIsActive ? ' active' : ''}`}>{nextStatusIsActive ? 'Activa' : 'Inactiva'}</span>
+            </div>
+          </div>
+        </div>
+        <footer className="price-status-dialog-footer">
+          <Button variant="secondary" onClick={() => setStatusList(undefined)}>Cancelar</Button>
+          <Button variant={nextStatusIsActive ? 'primary' : 'danger'} onClick={changeStatus}>{nextStatusIsActive ? 'Activar lista' : 'Desactivar lista'}</Button>
+        </footer>
+      </section>
+    </div>}
     </>}
   </div>
 }
