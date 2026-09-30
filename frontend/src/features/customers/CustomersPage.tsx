@@ -27,6 +27,7 @@ type Customer = {
 
 type Seller = { id: string; displayName: string; email: string }
 type PriceList = { id: string; code: string; name: string; status: string }
+type Zone = { id: string; name: string }
 
 function money(value: unknown) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value ?? 0))
@@ -57,6 +58,10 @@ function StatusBadge({ value }: { value: string }) {
 function CustomerForm({
   initial,
   sellers,
+  zones,
+  zonesLoading,
+  zonesError,
+  onRetryZones,
   priceLists,
   priceListsError,
   onRetryPriceLists,
@@ -66,6 +71,10 @@ function CustomerForm({
 }: {
   initial?: Customer
   sellers: Seller[]
+  zones: Zone[]
+  zonesLoading: boolean
+  zonesError: boolean
+  onRetryZones: () => void
   priceLists: PriceList[]
   priceListsError: boolean
   onRetryPriceLists: () => void
@@ -120,7 +129,7 @@ function CustomerForm({
     setSaving(true)
     setError('')
     try {
-      const body = { businessName, cuitId: cuitId.trim() || null, email: email.trim() || null, phone: phone.trim() || null, address: address.trim() || null, zone: zone.trim() || null, sellerId: sellerId || undefined, ...(initial ? { priceListId: priceListId || null } : {}) }
+      const body = { businessName, cuitId: cuitId.trim() || null, email: email.trim() || null, phone: phone.trim() || null, address: address.trim() || null, zone: zone.trim() || null, sellerId: sellerId || undefined, ...(initial || priceListId ? { priceListId: priceListId || null } : {}) }
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
       await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
@@ -142,11 +151,11 @@ function CustomerForm({
       <label className="field"><span>Mail</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
       <label className="field"><span>Celular</span><input className="input" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
       <label className="field"><span>Dirección</span><input className="input" value={address} onChange={(event) => setAddress(event.target.value)} /></label>
-      <label className="field"><span>Zona</span><input className="input" value={zone} onChange={(event) => setZone(event.target.value)} /></label>
+      <label className="field"><span>Zona</span><select className="select" aria-label="Zona" value={zone} onChange={(event) => setZone(event.target.value)} disabled={zonesLoading || zonesError}><option value="">Sin zona asignada</option>{initial?.zone && !zones.some((item) => item.name === initial.zone) && <option value={initial.zone}>{initial.zone}</option>}{zones.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}</select>{zonesError && <span className="error-text">No se pudieron cargar las zonas. <Button variant="link" type="button" onClick={onRetryZones}>Reintentar</Button></span>}</label>
       {isAdmin && <label className="field"><span>Vendedor asignado</span><select className="select" aria-label="Vendedor asignado" value={sellerId} onChange={(event) => setSellerId(event.target.value)}><option value="">Sin asignar</option>{sellers.map((seller) => <option value={seller.id} key={seller.id}>{seller.displayName} ({seller.email})</option>)}</select></label>}
-      {initial && <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" value={priceListId} onChange={(event) => setPriceListId(event.target.value)} disabled={priceListsError}><option value="">Sin lista asignada</option>{priceLists.map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select>{priceListsError && <span className="error-text">No se pudieron cargar las listas. <Button variant="link" type="button" onClick={onRetryPriceLists}>Reintentar</Button></span>}</label>}
+      <label className="field"><span>Lista de precios predeterminada</span><select className="select" aria-label="Lista de precios predeterminada" value={priceListId} onChange={(event) => setPriceListId(event.target.value)} disabled={priceListsError}><option value="">Sin lista asignada</option>{priceLists.filter((list) => list.status === 'ACTIVE').map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select>{priceListsError && <span className="error-text">No se pudieron cargar las listas. <Button variant="link" type="button" onClick={onRetryPriceLists}>Reintentar</Button></span>}</label>
       {error && <p className="error-text" role="alert">{error}</p>}
-      <div className="page-actions customer-form-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}<div className="customer-form-actions-right"><Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || (initial !== undefined && priceListsError)}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></div>
+      <div className="page-actions customer-form-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}<div className="customer-form-actions-right"><Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || priceListsError}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></div>
     </form>
   </Panel>
   {confirmDiscard && <div role="alertdialog" aria-modal="true" aria-labelledby="discard-customer-title" className="customer-discard-backdrop"><Panel title="Descartar cambios"><p id="discard-customer-title">Tenés cambios sin guardar. ¿Querés salir sin guardar los cambios?</p><div className="page-actions"><Button variant="secondary" type="button" onClick={() => setConfirmDiscard(false)}>Seguir editando</Button><Button type="button" onClick={onDone}>Salir sin guardar</Button></div></Panel></div>}
@@ -161,6 +170,7 @@ export default function CustomersPage() {
   const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}`
   const query = useQuery({ queryKey: [customerPath], queryFn: () => apiGet<ApiPage<Customer>>(customerPath) })
   const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGet<ApiPage<Seller>>('/api/sellers?page=0&size=100'), enabled: isAdmin })
+  const zonesQuery = useQuery({ queryKey: ['/api/zones'], queryFn: () => apiGet<Zone[]>('/api/zones'), enabled: isAdmin })
   const listsQuery = useQuery({ queryKey: ['/api/pricing/lists?page=0&size=100'], queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=100'), enabled: isAdmin })
   const [formCustomer, setFormCustomer] = useState<Customer | undefined>()
   const [showForm, setShowForm] = useState(false)
@@ -214,7 +224,7 @@ export default function CustomersPage() {
     <PageHeader eyebrow="Operación" title="Clientes" description="Gestioná clientes, vendedor, lista de precios y cuenta corriente." actions={isAdmin ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
-    {isAdmin && (showForm || formCustomer) && <div role="dialog" aria-modal="true" aria-label={formCustomer ? 'Editar cliente' : 'Nuevo cliente'} className="modal-backdrop"><div className="customer-modal"><CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} /></div></div>}
+    {isAdmin && (showForm || formCustomer) && <div role="dialog" aria-modal="true" aria-label={formCustomer ? 'Editar cliente' : 'Nuevo cliente'} className="modal-backdrop"><div className="customer-modal"><CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} /></div></div>}
     <Panel><div className="toolbar"><label className="field"><span>Buscar clientes</span><input className="input search-input" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
       {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="Todavía no hay clientes" description="Creá el primer cliente para comenzar a gestionar la operación." action={isAdmin ? <Button onClick={() => setShowForm(true)}>+ Nuevo cliente</Button> : undefined} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>

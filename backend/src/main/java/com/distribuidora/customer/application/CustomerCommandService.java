@@ -34,16 +34,17 @@ public class CustomerCommandService {
     @Transactional
     public UUID create(CustomerInput input) {
         validate(input);
+        validatePriceList(input.priceListId());
         String cuitId = normalize(input.cuitId());
         if (cuitId != null && exists("select exists(select 1 from customer.customers where tax_id = ?)", cuitId)) {
             throw new IllegalStateException("Ya existe un cliente con esa identificación");
         }
         UUID id = UUID.randomUUID();
         jdbc.update("""
-            insert into customer.customers(id, business_name, tax_id, email, phone, address, zone, seller_id, balance, status, created_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, 0, 'ACTIVE', ?)
+            insert into customer.customers(id, business_name, tax_id, email, phone, address, zone, seller_id, price_list_id, balance, status, created_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ACTIVE', ?)
             """, id, input.businessName().trim(), cuitId, normalize(input.email()), normalize(input.phone()),
-            normalize(input.address()), normalize(input.zone()), input.sellerId(), timestamp());
+            normalize(input.address()), normalize(input.zone()), input.sellerId(), input.priceListId(), timestamp());
         Map<String, Object> details = new HashMap<>();
         details.put("cuitId", cuitId);
         audit.record(actorId(), "CUSTOMER_CREATE", "CUSTOMER", id.toString(), "SUCCESS", details);

@@ -23,6 +23,7 @@ import SellersPage from '../features/admin/SellersPage'
 import CreditLimitPage from '../features/admin/CreditLimitPage'
 import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
 import AuditPage from '../features/admin/AuditPage'
+import ZonesPage from '../features/admin/ZonesPage'
 
 type Row = Record<string, string>
 
@@ -95,6 +96,7 @@ const menuGroups = [
     links: [
       ['Usuarios', '/admin/users'],
       ['Vendedores', '/admin/sellers'],
+      ['Zonas', '/admin/zones'],
       ['Configuración', '/admin/settings'],
       ['Auditoría', '/admin/audit'],
     ],
@@ -238,6 +240,7 @@ export default function App() {
         <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/sellers" element={<SellersPage />} />
+        <Route path="/admin/zones" element={hasAuthority('ADMIN_ALL') ? <ZonesPage /> : <Navigate to="/orders" replace />} />
         <Route path="/admin/settings" element={<CreditLimitPage />} />
         <Route path="/admin/audit" element={hasAuthority('ADMIN_ALL') ? <AuditPage /> : <Navigate to="/orders" replace />} />
         <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." />} />

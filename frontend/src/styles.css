@@ -63,9 +63,14 @@ h2 { margin-bottom: 5px; font-size: 15px; letter-spacing: -.015em; }
 h3 { font-size: 14px; margin-bottom: 5px; }
 .page-header p, .panel-header p, .section-heading p { color: var(--muted); font-size: 13px; margin-bottom: 0; }
 .page-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.customer-form-actions { grid-column: 1 / -1; align-items: center; justify-content: space-between; flex-wrap: nowrap; }
-.customer-form-actions-right { display: flex; justify-content: flex-end; gap: 8px; margin-left: auto; }
-.customer-form-actions .button { flex: 0 0 auto; }
+.customer-form-actions { grid-column: 1 / -1; align-items: center; justify-content: space-between; flex-wrap: nowrap; border-top: 1px solid var(--line); padding-top: 16px; margin-top: 4px; }
+.customer-form-actions-right { display: flex; justify-content: flex-end; gap: 10px; margin-left: auto; }
+.customer-form-actions .button { flex: 0 0 auto; min-height: 42px; padding-inline: 18px; font-size: 12px; letter-spacing: .005em; }
+.customer-form-actions .button-primary { box-shadow: 0 1px 2px rgba(25, 58, 67, .14); }
+.customer-form-actions .button-secondary { border-color: #cbd8d2; }
+.zone-form { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 14px; align-items: end; }
+.zone-form .error-text { grid-column: 1 / -1; }
+.zone-form > .page-actions { justify-content: flex-end; }
 .button { appearance: none; display: inline-flex; align-items: center; justify-content: center; min-height: 38px; border: 1px solid transparent; border-radius: 5px; cursor: pointer; padding: 0 14px; font-size: 12px; font-weight: 700; transition: background .15s, border-color .15s; }
 .button:disabled { opacity: .45; cursor: not-allowed; }
 .button-primary { color: white; background: var(--accent); border-color: var(--accent); }
@@ -200,6 +205,8 @@ h3 { font-size: 14px; margin-bottom: 5px; }
   .order-summary { position: static; }
   .product-picker { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
+  .zone-form { grid-template-columns: 1fr; }
+  .zone-form > .page-actions { justify-content: stretch; }
   .order-customer-grid { grid-template-columns: 1fr; }
   .stats-grid, .stats-grid.compact { grid-template-columns: 1fr 1fr; }
   .panel { padding: 15px; }
