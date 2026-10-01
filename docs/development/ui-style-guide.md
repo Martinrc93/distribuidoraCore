@@ -1,7 +1,7 @@
 # Guía de estilos y patrones de interfaz
 
 Referencia obligatoria para crear, modificar o revisar interfaces del proyecto.
-Revisada contra el código actual el **2026-09-30**.
+Revisada contra el código actual el **2026-10-01**.
 
 ## Uso y mantenimiento
 
@@ -119,6 +119,21 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 
 - Respetar el shell existente: `.app-shell`, `.sidebar`, `.main-area`, `.topbar`
   y `.page-content`. No duplicarlo dentro de una feature.
+- [`AppShell`](../../frontend/src/app/AppShell.tsx) centraliza la navegación y
+  reutiliza el mismo contenido y los mismos permisos en escritorio y menú compacto.
+  Sobre `1050px`, el sidebar conserva `250px`, permanece visible al desplazar la
+  página y ocupa `100dvh`. Solo la navegación tiene scroll interno; marca y sesión
+  quedan disponibles. Hasta `820px` de altura reduce espacios entre grupos y filas.
+- Hasta `1050px`, la barra superior fija de `66px` muestra marca, sección actual
+  y «Menú», con área táctil mínima de `44px`. El menú abre un `dialog` nativo
+  lateral de hasta `320px`, limitado al viewport y sus áreas seguras. Conserva
+  grupos, selección activa, permisos, sesión y «Salir»; los enlaces tienen `44px`
+  de altura mínima. Su navegación desplaza internamente sin ocultar el pie.
+- El menú compacto contiene el foco e impide interactuar o desplazar el fondo.
+  Enfoca «Cerrar menú» al abrir y devuelve el foco al disparador al cerrar.
+  Escape, clic en el fondo o selección de un enlace cierran el menú, también
+  al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
+  activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
 - Las rutas de Resumen, Zonas y Auditoría usan `RequireAdmin` en
   [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
@@ -561,8 +576,8 @@ Esta variante no modifica las dimensiones ni el cierre de otros modales.
 
 | Ancho máximo | Comportamiento actual |
 | --- | --- |
-| `1050px` | Sidebar `210px`, contenido con padding `28px`, métricas en dos columnas |
-| `760px` | Shell vertical, navegación horizontal, contenido `24px 16px`, header/formularios/layouts principales en una columna |
+| `1050px` | Menú lateral desplegable, barra superior fija de `66px`, contenido con padding `28px`, métricas en dos columnas |
+| `760px` | Barra superior con padding horizontal `16px`, contenido `24px 16px`, header/formularios/layouts principales en una columna |
 | `640px` | Toolbar de ancho completo, acciones generales expandidas, tablas en tarjetas y pies de modal adaptados |
 | `460px` | Métricas en una columna, paginación y encabezados de sección apilados |
 
@@ -593,6 +608,12 @@ Para código frontend ejecutar los checks pertinentes definidos en
 [`package.json`](../../frontend/package.json): `npm run build`, `npm test` y,
 cuando cambie un flujo completo o comportamiento responsive, las pruebas E2E
 relevantes. Ejecutarlos desde `frontend` y documentar qué se verificó.
+
+`npm run test:navigation` verifica el shell en doce anchos de `320px` a `1920px`,
+incluidos ambos lados de `1050px`, teclado, Escape, fondo, permisos, cambio de
+resolución y cierre de sesión. Usa respuestas de API simuladas, sin backend ni
+base de datos; genera capturas en `test-results/navigation`. Si Chromium no está
+instalado, admite `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` como el resto de los E2E.
 
 ### Verificación de equivalencia visual
 

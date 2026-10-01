@@ -79,6 +79,7 @@ test('admin can create a customer, price a product, confirm an order and open it
   await expect(page.getByText(productName)).toBeVisible()
 
   if (testInfo.project.name.startsWith('mobile')) {
+    await page.getByRole('button', { name: 'Abrir menú' }).click()
     await expect(page.getByRole('navigation', { name: 'Navegación principal' })).toBeVisible()
     const width = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }))
     expect(width.document).toBeLessThanOrEqual(width.viewport)

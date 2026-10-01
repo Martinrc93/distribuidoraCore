@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import AppShell from './AppShell'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Navigate, NavLink, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
-import { apiGet, getAccessToken, login, logout } from '../shared/api/client'
+import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
+import { apiGet, getAccessToken, login } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
 import { Badge, type BadgeTone } from '../shared/components/Badge'
@@ -72,102 +73,6 @@ function LoginPage() {
   }
 
   return <main className="login-page"><Panel title="Ingresar" description="Usá un usuario creado en la base de datos."><form className="login-form" onSubmit={submit}><label className="field"><span>Email</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label className="field"><span>Contraseña</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error-text">{error}</p>}<Button fullWidth disabled={submitting}>{submitting ? 'Ingresando...' : 'Ingresar'}</Button></form></Panel></main>
-}
-
-const menuGroups = [
-  {
-    label: 'Operación',
-    links: [
-      ['Resumen', '/dashboard'],
-      ['Pedidos', '/orders'],
-      ['Ventas', '/sales'],
-      ['Clientes', '/customers'],
-      ['Pagos y deuda', '/payments'],
-    ],
-  },
-  {
-    label: 'Catálogo',
-    links: [
-      ['Productos', '/products'],
-      ['Marcas y categorías', '/catalog'],
-      ['Listas de precios', '/price-lists'],
-    ],
-  },
-  {
-    label: 'Administración',
-    links: [
-      ['Usuarios', '/admin/users'],
-      ['Vendedores', '/admin/sellers'],
-      ['Zonas', '/admin/zones'],
-      ['Configuración', '/admin/settings'],
-      ['Auditoría', '/admin/audit'],
-    ],
-  },
-]
-
-function AppShell() {
-  const navigate = useNavigate()
-  const isAdmin = hasAuthority('ADMIN_ALL')
-
-  async function signOut() {
-    await logout().catch(() => undefined)
-    navigate('/login', { replace: true })
-  }
-
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <span className="brand-mark">D</span>
-          <div>
-            <strong>Distribuidora</strong>
-            <span>Gestión comercial</span>
-          </div>
-        </div>
-
-        <nav className="main-nav" aria-label="Navegación principal">
-          {menuGroups.filter((group) => group.label !== 'Administración' || isAdmin).map((group) => (
-            <div className="nav-group" key={group.label}>
-              <span className="nav-group-label">{group.label}</span>
-              {group.links.filter(([, href]) => href !== '/dashboard' || isAdmin).map(([label, href]) => (
-                <NavLink
-                  className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                  key={href}
-                  to={href}
-                >
-                  <span className="nav-dot" aria-hidden="true" />
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="user-chip">
-            <span className="avatar" aria-hidden="true">D</span>
-            <span>
-              <strong>Sesión activa</strong>
-              <small>{isAdmin ? 'Administrador' : 'Usuario'}</small>
-            </span>
-          </div>
-          <Button variant="ghost" fullWidth onClick={signOut}>Salir</Button>
-        </div>
-      </aside>
-
-      <div className="main-area">
-        <header className="topbar">
-          <div className="breadcrumbs">Empresa / Operación</div>
-          <div className="topbar-actions">
-            <span className="connection-status"><span className="status-dot" /> Sistema operativo</span>
-          </div>
-        </header>
-        <main className="page-content">
-          <Outlet />
-        </main>
-      </div>
-    </div>
-  )
 }
 
 function DashboardPage() {
