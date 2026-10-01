@@ -515,12 +515,22 @@ no bloquea por sí mismo navegación del sidebar ni atrás/adelante del router.
 | Variante | Alcance y diferencia |
 | --- | --- |
 | `.modal-backdrop .panel` | Patrón básico de `520px`; no incluye por sí solo límite de altura ni las tres secciones |
-| `.customer-modal` | Formulario de clientes de hasta `640px`, scroll interno y descarte mediante `ConfirmationDialog` |
+| `.customer-modal` | Formulario de clientes de ancho adaptable hasta `1040px`, scroll interno y descarte mediante `ConfirmationDialog` |
 | `.price-status-dialog-*` | Confirmación de estado de listas: `480px`, radio `12px`, resumen del cambio, cierre y capa `35` |
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
 
 Mantener estas diferencias acotadas. Si se generaliza una variante, extraer la
 estructura reutilizable y documentar su API antes de extenderla a otras features.
+
+El modal de alta/edición de clientes usa `min(100%, clamp(640px, 76vw, 1040px))`
+de ancho, altura máxima `calc(100dvh - 40px)` y scroll interno. Conserva dos
+columnas de campos en escritorio y una a `760px` o menos. El panel tiene radio
+de `10px` y padding uniforme de `24px` (`16px` a `760px` o menos), incluido el
+espacio debajo de las acciones. La grilla no agrega margen inferior. El título
+de `20px` y el botón de cierre se alinean al centro; el cierre usa un SVG de
+`20px` dentro de un área de `40px`, radio `7px`, hover discreto y el foco visible
+compartido. Mantiene el nombre accesible y el bloqueo durante el guardado.
+Esta variante no modifica las dimensiones ni el cierre de otros modales.
 
 ## Badges, feedback y estados
 
