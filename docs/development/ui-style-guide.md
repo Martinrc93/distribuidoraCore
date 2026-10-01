@@ -119,6 +119,11 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 
 - Respetar el shell existente: `.app-shell`, `.sidebar`, `.main-area`, `.topbar`
   y `.page-content`. No duplicarlo dentro de una feature.
+- Las rutas de Resumen, Zonas y Auditoría usan `RequireAdmin` en
+  [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
+  la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
+  a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
+  conservar los permisos de la sesión anterior. La API mantiene su autorización.
 - `.page-content`: ancho máximo `1440px`, centrado y padding desktop `38px`.
 - Usar [`PageHeader`](../../frontend/src/shared/components/PageHeader.tsx):
   `eyebrow` y `title` obligatorios; `description` y `actions` opcionales.
@@ -131,6 +136,10 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 - Usar [`StatCard`](../../frontend/src/shared/components/StatCard.tsx) con
   `label`, `value`, `detail` y `emphasis` opcional. `.stats-grid` tiene cuatro
   columnas; `.stats-grid.compact`, tres. Borde superior verde y valor de `25px`.
+- Resumen muestra solo «Ventas del día» y «Deuda pendiente», en dos columnas
+  mediante utilidades locales y una a `460px` o menos. «Pedidos recientes» ocupa
+  el ancho completo debajo. No incluye acciones de creación ni acciones rápidas;
+  conserva «Ver todos» para abrir el listado de pedidos.
 
 ## Botones y acciones
 

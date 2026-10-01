@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, getAccessToken, login, logout } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
@@ -28,10 +28,8 @@ import ZonesPage from '../features/admin/ZonesPage'
 type Row = Record<string, string>
 
 type DashboardData = {
-  confirmedOrders: number
   todaySales: number
   pendingBalance: number
-  negativeStock: number
   recentOrders: Array<{ id: string; customer: string; seller: string; total: number; status: string }>
 }
 
@@ -46,6 +44,10 @@ function LoadState({ error }: { error?: Error | null }) {
 
 function RequireAuth() {
   return getAccessToken() ? <Outlet /> : <Navigate to="/login" replace />
+}
+
+function RequireAdmin({ children }: { children: ReactNode }) {
+  return hasAuthority('ADMIN_ALL') ? children : <Navigate to="/orders" replace />
 }
 
 function LoginPage() {
@@ -176,29 +178,17 @@ function DashboardPage() {
   return (
     <>
       <PageHeader
-         eyebrow="Datos en tiempo real"
+        eyebrow="Datos en tiempo real"
         title="Resumen operativo"
         description="Una vista rápida de la actividad comercial de hoy."
-        actions={<Button href="/orders/new">+ Nuevo pedido</Button>}
       />
-      <section className="stats-grid" aria-label="Indicadores principales">
-         <StatCard label="Pedidos confirmados" value={String(query.data.confirmedOrders)} detail="Desde PostgreSQL" />
-         <StatCard label="Ventas del día" value={money(query.data.todaySales)} detail="Ventas registradas hoy" />
-         <StatCard label="Deuda pendiente" value={money(query.data.pendingBalance)} detail="Saldo de clientes" />
-         <StatCard label="Stock negativo" value={String(query.data.negativeStock)} detail="Productos a revisar" emphasis />
+      <section className="stats-grid grid-cols-2 [@media(max-width:460px)]:grid-cols-1" aria-label="Indicadores principales">
+        <StatCard label="Ventas del día" value={money(query.data.todaySales)} detail="Ventas registradas hoy" />
+        <StatCard label="Deuda pendiente" value={money(query.data.pendingBalance)} detail="Saldo de clientes" />
       </section>
-      <div className="content-grid two-thirds">
-        <Panel title="Pedidos recientes" action={<Button variant="link" href="/orders">Ver todos</Button>}>
-          <DataTable columns={orderColumns} rows={recentOrders} />
-        </Panel>
-        <Panel title="Acciones rápidas">
-          <div className="quick-actions">
-            <Button href="/orders/new" fullWidth>Crear pedido</Button>
-            <Button href="/customers" variant="secondary" fullWidth>Buscar cliente</Button>
-            <Button href="/payments" variant="secondary" fullWidth>Registrar pago</Button>
-          </div>
-        </Panel>
-      </div>
+      <Panel title="Pedidos recientes" action={<Button variant="link" href="/orders">Ver todos</Button>}>
+        <DataTable columns={orderColumns} rows={recentOrders} />
+      </Panel>
     </>
   )
 }
@@ -228,7 +218,7 @@ export default function App() {
       <Route element={<RequireAuth />}>
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={hasAuthority('ADMIN_ALL') ? <DashboardPage /> : <Navigate to="/orders" replace />} />
+        <Route path="/dashboard" element={<RequireAdmin><DashboardPage /></RequireAdmin>} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/orders/new" element={<OrderCreatePage />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
@@ -240,9 +230,9 @@ export default function App() {
         <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/sellers" element={<SellersPage />} />
-        <Route path="/admin/zones" element={hasAuthority('ADMIN_ALL') ? <ZonesPage /> : <Navigate to="/orders" replace />} />
+        <Route path="/admin/zones" element={<RequireAdmin><ZonesPage /></RequireAdmin>} />
         <Route path="/admin/settings" element={<CreditLimitPage />} />
-        <Route path="/admin/audit" element={hasAuthority('ADMIN_ALL') ? <AuditPage /> : <Navigate to="/orders" replace />} />
+        <Route path="/admin/audit" element={<RequireAdmin><AuditPage /></RequireAdmin>} />
         <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." />} />
       </Route>
       </Route>

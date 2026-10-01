@@ -65,6 +65,47 @@ describe('App shell', () => {
     expect(screen.queryByRole('navigation', { name: /navegación principal/i })).not.toBeInTheDocument()
   })
 
+  it('opens the dashboard after an administrator logs in without reloading', async () => {
+    const accessToken = `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      if (String(input) === '/api/auth/login') return response({ accessToken, refreshToken: 'refresh-token' })
+      if (String(input) === '/api/dashboard') return response({ confirmedOrders: 3, todaySales: 1500, pendingBalance: 200, negativeStock: 0, recentOrders: [] })
+      if (String(input) === '/api/zones') return response([])
+      return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+    })
+    const user = userEvent.setup()
+    renderApp('/login')
+
+    await user.type(screen.getByLabelText('Email'), 'admin@example.test')
+    await user.type(screen.getByLabelText('Contraseña'), 'test-password')
+    await user.click(screen.getByRole('button', { name: 'Ingresar' }))
+
+    expect(await screen.findByRole('heading', { name: 'Resumen operativo' })).toBeInTheDocument()
+    expect(await screen.findByText('Ventas del día')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Resumen' })).toHaveClass('active')
+    expect(fetchMock).toHaveBeenCalledWith('/api/dashboard', expect.any(Object))
+
+    await user.click(screen.getByRole('link', { name: 'Clientes' }))
+    await screen.findByRole('heading', { name: 'Clientes' })
+    await user.click(screen.getByRole('link', { name: 'Resumen' }))
+
+    expect(await screen.findByRole('heading', { name: 'Resumen operativo' })).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Zonas' }))
+    expect(await screen.findByRole('heading', { name: 'Zonas' })).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Auditoría' }))
+    expect(await screen.findByRole('heading', { name: 'Auditoría' })).toBeInTheDocument()
+  })
+
+  it.each(['/dashboard', '/admin/zones', '/admin/audit'])('keeps %s restricted to administrators', async (route) => {
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`)
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
+    renderApp(route)
+
+    expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/zones', '/api/audit'].some((path) => String(input).split('?')[0] === path))).toBe(false)
+  })
+
   it('hides administrative navigation when the session has no readable admin authority', () => {
     sessionStorage.setItem('distribuidora.accessToken', 'malformed-token')
     renderApp('/dashboard')
