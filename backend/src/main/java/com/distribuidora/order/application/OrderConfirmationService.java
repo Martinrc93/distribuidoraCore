@@ -63,6 +63,7 @@ public class OrderConfirmationService {
         UUID priceListId();
         List<? extends LineCommand> lines();
         BigDecimal orderDiscountPercent();
+        default BigDecimal previousBalanceAmount() { return null; }
     }
 
     public record ConfirmationData(String idempotencyKey, UUID customerId, UUID priceListId,
@@ -264,7 +265,7 @@ public class OrderConfirmationService {
         }
 
         Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, "
-            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid "
+            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid, o.previous_balance_amount "
             + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update of o, s", orderId);
         if (!"CONFIRMED".equals(lifecycle.get("order_status")) || !"CONFIRMED".equals(lifecycle.get("sale_status"))) {
             throw new IllegalStateException("Solo se pueden editar pedidos y ventas confirmados");
@@ -273,6 +274,16 @@ public class OrderConfirmationService {
         UUID customerId = uuidOrNull(lifecycle.get("customer_id"));
         Map<String, Object> customer = jdbc.queryForMap(
             "select id, balance from customer.customers where id = ? for update", customerId);
+        BigDecimal previousBalance = request.previousBalanceAmount() == null
+            ? decimal(lifecycle.get("previous_balance_amount")) : request.previousBalanceAmount();
+        validateScale(previousBalance, "previousBalanceAmount");
+        if (previousBalance.signum() < 0) {
+            throw new IllegalArgumentException("El importe del saldo anterior no puede ser negativo");
+        }
+        if (previousBalance.compareTo(decimal(lifecycle.get("previous_balance_amount"))) != 0
+            && previousBalance.compareTo(decimal(customer.get("balance")).max(ZERO)) > 0) {
+            throw new IllegalStateException("El importe del saldo anterior supera el saldo actual del cliente");
+        }
         ConfirmationCommand pricingRequest = new ConfirmationData(
             "confirmed-order-edit", customerId, request.priceListId(), request.lines(), request.orderDiscountPercent(), List.of());
         validateRequest(pricingRequest);
@@ -330,16 +341,16 @@ public class OrderConfirmationService {
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
         insertItems("sale.sale_items", saleId, resolved, calculated.lines());
         BigDecimal discount = calculated.lineDiscount().add(calculated.orderDiscount()).setScale(4);
-        jdbc.update("update orders.orders set subtotal = ?, discount = ?, total = ?, order_discount_percent = ?, order_discount_rule_id = ? where id = ?",
+        jdbc.update("update orders.orders set subtotal = ?, discount = ?, total = ?, order_discount_percent = ?, order_discount_rule_id = ?, previous_balance_amount = ? where id = ?",
             calculated.subtotal(), discount, calculated.total(), calculated.orderDiscountPercent(),
-            orderDiscount.ruleId(), orderId);
+            orderDiscount.ruleId(), previousBalance, orderId);
         jdbc.update("update sale.sales set total = ?, order_discount_percent = ?, order_discount_rule_id = ? where id = ?",
             calculated.total(), calculated.orderDiscountPercent(), orderDiscount.ruleId(), saleId);
 
         audit.recordWithinTransaction(actorId(), "ORDER_EDIT", "ORDER", orderId.toString(), "SUCCESS",
             Map.of("saleId", saleId.toString(), "previousTotal", decimal(lifecycle.get("sale_total")),
                 "total", calculated.total(), "paid", paid, "accountDebtAdjustment", ledgerAdjustment,
-                "inventoryMovementsApplied", inventoryMovementsApplied));
+                "inventoryMovementsApplied", inventoryMovementsApplied, "previousBalanceAmount", previousBalance));
         return new EditResult(orderId, saleId, calculated.total(), paid, targetAccountDebt);
     }
 

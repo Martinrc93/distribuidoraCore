@@ -214,6 +214,23 @@ o Escape conserva el borrador, y el foco vuelve al botón. No copia cobros ni pr
 Los productos no disponibles bloquean la carga con un mensaje, y los errores
 de consulta permiten reintentar.
 
+La creación y edición de pedidos comparten `OrderForm`. En edición, cliente y
+vendedor usan `CustomerSelect` y `SellerSelect` deshabilitados con los nombres
+del pedido, sin cargar opciones para modificarlos. Se precargan productos,
+cantidades, precios guardados, descuentos y saldo anterior. Los administradores
+pueden agregar/quitar productos y editar el precio unitario en la tabla; cambiar
+de lista descarta los precios anteriores y consulta los de la lista elegida.
+La acción principal es «Guardar cambios» y actualiza el pedido existente, sin
+crear otra venta ni modificar los cobros. Cancelar vuelve al detalle; si hubo
+cambios, utiliza la confirmación compartida de descarte. Conserva las mismas
+validaciones, tabla, totales y adaptación móvil de creación. Solo admite pedidos
+y ventas confirmados, con una misma lista entre sus líneas.
+En el listado, `.table-row-actions` agrupa «Ver detalle» y «Editar»; la segunda
+acción solo aparece para administradores en pedidos confirmados. El enlace con
+`?edit=true` abre el mismo formulario después de verificar permisos y estado
+del detalle. Modificar la URL no concede acceso de edición. Las acciones usan
+el wrap móvil compartido; cancelar o guardar elimina ese parámetro de la URL.
+
 El campo «Producto» reutiliza `SearchableSelect` con ancho completo: escribir
 filtra las opciones por nombre, sin distinguir mayúsculas ni acentos.
 Las opciones muestran solo el nombre; excluye productos inactivos o

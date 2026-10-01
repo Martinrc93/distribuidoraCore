@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiGet, type ApiPage } from '../../shared/api/client'
+import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
@@ -33,6 +34,7 @@ function parseDate(value: string) {
 }
 
 export default function OrdersPage() {
+  const isAdmin = hasAuthority('ADMIN_ALL')
   const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'status'])
   const search = getFilter('search')
   const status = getFilter('status')
@@ -81,7 +83,7 @@ export default function OrdersPage() {
     { key: 'date', label: 'Fecha' },
     { key: 'total', label: 'Total', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'CANCELLED' ? 'muted' : value === 'DELIVERED' ? 'strong' : 'soft'}>{value}</Badge> },
-    { key: 'action', label: '', render: (_value, row) => <Button variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button> },
+    { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button>{isAdmin && row.status === 'CONFIRMED' && <Button variant="secondary" href={`/orders/${row.id}?edit=true`} aria-label={`Editar pedido ${row.number}`}>Editar</Button>}</div> },
   ]
 
   return <>

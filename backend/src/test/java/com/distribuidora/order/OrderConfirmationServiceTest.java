@@ -12,6 +12,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.NullSource;
+import com.distribuidora.order.api.OrderEditDtos;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -449,6 +451,67 @@ class OrderConfirmationServiceTest {
             .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
 
         verifyNoInteractions(jdbc, pricing, inventory, audit);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"0", "40"})
+    void editsRemittanceAmountWithoutChangingPaymentsOrDuplicatingDebt(String amount) {
+        authenticate("ADMIN_ALL");
+        UUID orderId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
+        when(jdbc.queryForMap(contains("from orders.orders"), eq(orderId))).thenReturn(Map.of(
+            "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "sale_id", saleId,
+            "customer_id", customerId, "sale_total", BigDecimal.TEN, "paid", new BigDecimal("2"),
+            "previous_balance_amount", new BigDecimal("30")));
+        when(jdbc.queryForMap(contains("customer.customers"), eq(customerId)))
+            .thenReturn(Map.of("id", customerId, "balance", new BigDecimal("100")));
+        when(jdbc.queryForList(contains("from orders.order_items"), eq(orderId)))
+            .thenReturn(List.of(Map.of("product_id", productId, "quantity", BigDecimal.ONE)));
+        when(jdbc.queryForObject(contains("account_ledger"), eq(BigDecimal.class), eq(saleId)))
+            .thenReturn(new BigDecimal("8"));
+        when(jdbc.queryForObject(contains("catalog.products"), eq(String.class), eq(productId)))
+            .thenReturn("Product");
+        when(pricing.resolve(customerId, productId, listId)).thenReturn(Map.of(
+            "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN));
+
+        var result = service.editConfirmed(orderId, new OrderEditDtos.EditRequest(listId,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, amount == null ? null : new BigDecimal(amount)));
+
+        assertThat(result.total()).isEqualByComparingTo("10");
+        assertThat(result.paid()).isEqualByComparingTo("2");
+        assertThat(result.balance()).isEqualByComparingTo("8");
+        var update = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("update orders.orders set subtotal"), update.capture());
+        assertThat((BigDecimal) update.getValue()[5]).isEqualByComparingTo(amount == null ? "30" : amount);
+        verify(jdbc, never()).update(contains("account_ledger"), any(Object[].class));
+        verify(jdbc, never()).update(contains("customer.customers"), any(Object[].class));
+        verify(jdbc, never()).update(contains("payment.payments"), any(Object[].class));
+        verifyNoInteractions(inventory);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-1", "101", "1.00001"})
+    void rejectsInvalidRemittanceEditsBeforeChangingCommercialData(String amount) {
+        authenticate("ADMIN_ALL");
+        UUID orderId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        when(jdbc.queryForMap(contains("from orders.orders"), eq(orderId))).thenReturn(Map.of(
+            "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "customer_id", customerId,
+            "previous_balance_amount", new BigDecimal("30")));
+        when(jdbc.queryForMap(contains("customer.customers"), eq(customerId)))
+            .thenReturn(Map.of("id", customerId, "balance", new BigDecimal("100")));
+
+        assertThatThrownBy(() -> service.editConfirmed(orderId, new OrderEditDtos.EditRequest(null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, new BigDecimal(amount))))
+            .isInstanceOfAny(IllegalArgumentException.class, IllegalStateException.class);
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        verifyNoInteractions(pricing, inventory, audit);
     }
 
     @Test

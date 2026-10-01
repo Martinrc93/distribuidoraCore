@@ -5,6 +5,69 @@ async function selectProduct(page: Page, search: string) {
   await page.getByRole('option', { name: search ? /^Harina$/ : 'Seleccionar producto...', exact: !search }).click()
 }
 
+test('editing uses the order form and locks customer and seller on desktop and mobile', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL', 'ORDER_CREATE'] }))}.signature`)
+  })
+  let saved: Record<string, unknown> | undefined
+  const detail = {
+    order: { id: 'edit-1', number: 'PED-EDITAR', customerId: 'c1', customer: 'Almacén Norte', seller: 'Lucía', status: 'CONFIRMED', subtotal: 300, discount: 0, orderDiscountPercent: 0, total: 300, customerBalance: 1000, previousBalanceAmount: 20, date: '2026-10-01T15:00:00Z' },
+    sale: { id: 'sale-1', number: 'VEN-EDITAR', status: 'CONFIRMED', total: 300, paid: 100, balance: 200 },
+    items: [{ productId: 'p1', productName: 'Harina', quantity: 2, unitPrice: 150, lineTotal: 300, priceListId: 'list1', priceListCode: 'GENERAL', lineDiscountPercent: 0 }],
+    payments: [{ id: 'pay1', method: 'CASH', amount: 100, date: '2026-10-01T15:00:00Z' }],
+    account: { debit: 300, credit: 100, net: 200 }, deliveryAttempts: [],
+  }
+  await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
+    const path = new URL(route.request().url()).pathname
+    const paged = (content: unknown[]) => ({ content, page: 0, size: 100, totalElements: content.length, totalPages: 1 })
+    let json: unknown = paged([])
+    if (path === '/api/orders') json = paged([{ id: 'edit-1', number: 'PED-EDITAR', customer: 'Almacén Norte', seller: 'Lucía', total: 300, status: 'CONFIRMED', date: '2026-10-01T15:00:00Z' }])
+    if (path === '/api/orders/edit-1') {
+      if (route.request().method() === 'PUT') saved = route.request().postDataJSON()
+      json = detail
+    }
+    if (path === '/api/products') json = paged([{ id: 'p1', name: 'Harina', status: 'ACTIVE' }, { id: 'p2', name: 'Arroz', status: 'ACTIVE' }])
+    if (path === '/api/pricing/lists') json = paged([{ id: 'list1', code: 'GENERAL', name: 'General', status: 'ACTIVE' }])
+    if (path === '/api/pricing/resolve-batch') json = [{ productId: 'p1', unitPrice: 200 }, { productId: 'p2', unitPrice: 50 }]
+    if (path.endsWith('/last-order')) json = { available: false }
+    await route.fulfill({ json })
+  })
+  await page.goto('/orders?dateMin=&dateMax=')
+  const detailLink = page.getByRole('link', { name: 'Abrir pedido PED-EDITAR' })
+  const editLink = page.getByRole('link', { name: 'Editar pedido PED-EDITAR' })
+  await expect(detailLink).toBeVisible()
+  await expect(editLink).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('order-list-actions.png'), fullPage: true })
+  await editLink.click()
+  await expect(page).toHaveURL(/\/orders\/edit-1\?edit=true$/)
+  const customer = page.getByRole('combobox', { name: 'Cliente', exact: true })
+  const seller = page.getByRole('combobox', { name: 'Vendedor', exact: true })
+  await expect(customer).toBeDisabled()
+  await expect(customer).toHaveValue('Almacén Norte')
+  await expect(seller).toBeDisabled()
+  await expect(seller).toHaveValue('Lucía')
+  const quantity = page.getByLabel('Cantidad de Harina')
+  await quantity.fill('1.3')
+  await expect(page.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled()
+  await quantity.fill('3')
+  await expect(page.getByLabel('Precio unitario de Harina')).toHaveValue('150')
+  const product = page.getByRole('combobox', { name: 'Producto', exact: true })
+  await product.fill('arr')
+  await page.getByRole('option', { name: 'Arroz', exact: true }).click()
+  await expect(page.getByLabel('Precio', { exact: true })).toHaveValue('50')
+  await page.getByRole('button', { name: 'Agregar producto', exact: true }).click()
+  await page.getByLabel('Descuento de Arroz').fill('10')
+  await page.getByLabel('Importe para el remito').fill('40')
+  await page.getByRole('button', { name: 'Actualizar importe', exact: true }).click()
+  const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
+  expect(widths.document).toBeLessThanOrEqual(widths.viewport)
+  await page.screenshot({ path: testInfo.outputPath('edit-order.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+  await expect(page.getByText('Pedido actualizado. Se conservaron los cobros existentes.')).toBeVisible()
+  expect(saved).toEqual({ priceListId: 'list1', lines: [{ productId: 'p1', quantity: 3, lineDiscountPercent: 0, unitPriceOverride: 150 }, { productId: 'p2', quantity: 1, lineDiscountPercent: 10 }], orderDiscountPercent: 0, previousBalanceAmount: 40 })
+  await expect(page.getByRole('heading', { name: 'Pagos registrados' })).toBeVisible()
+})
+
 test('price tables show product names without a product code column', async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`)

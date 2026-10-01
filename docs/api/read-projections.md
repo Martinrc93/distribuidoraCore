@@ -76,6 +76,15 @@ confirmación y el detalle incluyen `previousBalanceAmount` y `collectionTotal`
 misma clave de idempotencia produce un conflicto; omitirlo o enviar cero conserva
 la compatibilidad de las claves anteriores. La carga del pedido anterior no lo copia.
 
+`PUT /api/orders/{orderId}` requiere `ADMIN_ALL` y un pedido y venta confirmados.
+Recibe `priceListId`, `lines` (con `unitPriceOverride` opcional por producto),
+`orderDiscountPercent` y `previousBalanceAmount` opcional. Conserva cliente,
+vendedor y pagos existentes. Omitir `previousBalanceAmount` conserva el importe
+guardado; enviar cero lo elimina. Un importe nuevo debe ser no negativo, tener
+hasta cuatro decimales y no superar el saldo deudor actual del cliente. No genera
+deuda, pago ni movimiento de stock por ese concepto. La edición recalcula productos,
+ajusta solo sus diferencias de stock y deuda y rechaza un total menor al ya cobrado.
+
 `GET /api/customers/{customerId}/last-order` requiere `ORDER_CREATE` o `ADMIN_ALL`
 y comprueba acceso al cliente y al pedido según el alcance del vendedor. Devuelve
 `{ "available": false }` si no hay pedidos confirmados o entregados visibles.

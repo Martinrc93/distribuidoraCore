@@ -8,7 +8,8 @@ function response(body: unknown) {
   return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
 }
 
-function renderOrders(entry = '/orders') {
+function renderOrders(entry = '/orders', authorities?: string[]) {
+  if (authorities) sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities }))}.signature`)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[entry]}><Routes>
     <Route path="/orders" element={<OrdersPage />} />
@@ -24,6 +25,19 @@ function mockOrders() {
 }
 
 describe('OrdersPage', () => {
+  it.each([['ADMIN_ALL'], ['ORDER_CREATE']])('shows direct edit links only for admins: %s', async (authority) => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => response({
+      content: ['CONFIRMED', 'DELIVERED', 'CANCELLED'].map((status) => ({ id: status, number: `PED-${status}`, customer: 'Almacén Norte', seller: 'Lucía', total: 300, status, date: '2026-10-01T15:00:00Z' })),
+      page: 0, size: 20, totalElements: 3, totalPages: 1,
+    }))
+    renderOrders('/orders', [authority])
+    await screen.findByText('PED-CONFIRMED')
+    expect(screen.getAllByRole('link', { name: /Abrir pedido/ })).toHaveLength(3)
+    if (authority === 'ADMIN_ALL') {
+      expect(screen.getByRole('link', { name: 'Editar pedido PED-CONFIRMED' })).toHaveAttribute('href', '/orders/CONFIRMED?edit=true')
+      expect(screen.getAllByRole('link', { name: /Editar pedido/ })).toHaveLength(1)
+    } else expect(screen.queryByRole('link', { name: /Editar pedido/ })).not.toBeInTheDocument()
+  })
   const dialogMethods = ['showModal', 'close'] as const
   const originalDialogMethods = dialogMethods.map((method) => Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, method))
   afterEach(() => {

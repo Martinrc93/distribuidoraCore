@@ -21,8 +21,12 @@ public final class OrderEditDtos {
         UUID priceListId,
         @NotNull @Size(min = 1) List<@NotNull @Valid LineRequest> lines,
         @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 4)
-        BigDecimal orderDiscountPercent
+        BigDecimal orderDiscountPercent,
+        @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousBalanceAmount
     ) implements OrderConfirmationService.EditCommand {
+        public EditRequest(UUID priceListId, List<LineRequest> lines, BigDecimal orderDiscountPercent) {
+            this(priceListId, lines, orderDiscountPercent, null);
+        }
     }
 
     public record EditResponse(UUID orderId, UUID saleId, BigDecimal total, BigDecimal paid, BigDecimal balance) {
