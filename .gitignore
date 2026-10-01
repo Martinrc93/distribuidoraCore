@@ -5,5 +5,6 @@
 /frontend/test-results/
 /frontend/node_modules/
 /backend/target-order-price/
+/backend/target-sku-check/
 /backend/target/*.log
 /backend/target/surefire-reports/*.dumpstream

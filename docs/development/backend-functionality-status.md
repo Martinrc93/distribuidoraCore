@@ -61,7 +61,7 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Crear productos.
 - [x] Editar productos.
 - [x] Activar y desactivar productos lógicamente.
-- [x] Validar SKU único e importes no negativos.
+- [x] Identificar productos por UUID, sin SKU, y validar importes no negativos.
 - [x] Mantener precios con `NUMERIC(19,4)` y `BigDecimal`.
 - [x] Crear, editar y cambiar estado de listas de precios.
 - [x] Mantener listas iniciales `GENERAL`, `LISTA_2` y `LISTA_3`.

@@ -29,7 +29,7 @@ class ReadQueryServiceTest {
     private final ReadQueryService service = new ReadQueryService(jdbc);
 
     @Test
-    void includesSkuInProductProjectionForAdminAndSellerQueries() {
+    void returnsProductNamesAndStockWithCostOnlyForAdmins() {
         when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
         when(jdbc.queryForObject(anyString(), eq(Number.class), any(Object[].class))).thenReturn(0);
 
@@ -42,13 +42,33 @@ class ReadQueryServiceTest {
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc, times(2)).queryForList(sql.capture(), any(Object[].class));
         assertThat(sql.getAllValues()).allSatisfy(query -> {
-            assertThat(query).contains("p.sku");
+            assertThat(query).contains("p.name").doesNotContain("p.sku");
             assertThat(query).doesNotContain("p.price");
             assertThat(query).contains("left join inventory.inventory_balances ib on ib.product_id = p.id");
             assertThat(query).doesNotContain("sum(quantity)");
         });
         assertThat(sql.getAllValues().get(0)).contains("p.cost");
         assertThat(sql.getAllValues().get(1)).doesNotContain("p.cost");
+    }
+
+    @Test
+    void omitsStockProjectionAndInventoryJoinWhenNotRequested() throws Exception {
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForObject(anyString(), eq(Number.class), any(Object[].class))).thenReturn(0);
+        service.products(0, 100, "harina", false);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).queryForList(sql.capture(), parameters.capture());
+        assertThat(sql.getValue()).contains("p.name").doesNotContain("stock", "inventory", "sku");
+        assertThat(parameters.getValue()[0]).isEqualTo("%harina%");
+        var queries = mock(ReadQueryService.class);
+        when(queries.products(0, 100, "", false)).thenReturn(new PageResponse<>(List.of(), 0, 100, 0, 0));
+        org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
+            new com.distribuidora.dashboard.api.ReadQueryController(queries)).build()
+            .perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/products")
+                .param("size", "100").param("includeStock", "false"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        verify(queries).products(0, 100, "", false);
     }
 
     @Test

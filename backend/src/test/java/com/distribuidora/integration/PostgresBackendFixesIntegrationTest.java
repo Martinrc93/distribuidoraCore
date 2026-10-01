@@ -442,28 +442,28 @@ class PostgresBackendFixesIntegrationTest {
         UUID adminId = createUser("product-price-http");
         assignRole(adminId, "ADMIN");
         String token = loginHttp(email(adminId));
-        String sku = "HTTP-" + UUID.randomUUID().toString().substring(0, 12);
-        String base = "\"name\":\"HTTP price product\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":10";
+        String productName = "HTTP-" + UUID.randomUUID().toString().substring(0, 12);
+        String base = "\"name\":\"" + productName + "\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":10";
 
         mockMvc.perform(post("/api/products")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"sku\":\"" + sku + "\"," + base + "}"))
+                .content("{" + base + "}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
         mockMvc.perform(post("/api/products")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"sku\":\"" + sku + "\"," + base + ",\"prices\":[]}"))
+                .content("{" + base + ",\"prices\":[]}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-        assertThat(jdbc.queryForObject("select count(*) from catalog.products where sku = ?", Long.class, sku)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from catalog.products where name = ?", Long.class, productName)).isZero();
 
         MvcResult created = mockMvc.perform(post("/api/products")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"sku\":\"" + sku + "\"," + base + ",\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
+                .content("{" + base + ",\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
             .andExpect(status().isCreated())
             .andReturn();
         UUID productId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).path("id").asText());
@@ -503,11 +503,10 @@ class PostgresBackendFixesIntegrationTest {
         UUID customerId = UUID.fromString(objectMapper.readTree(customerResponse.getResponse().getContentAsString()).path("id").asText());
         customers.add(customerId);
 
-        String sku = "E2E-" + UUID.randomUUID().toString().substring(0, 12);
         MvcResult productResponse = mockMvc.perform(post("/api/products")
                 .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"sku\":\"" + sku + "\",\"name\":\"Commercial E2E product\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":5,\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
+                .content("{\"name\":\"Commercial E2E product\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":5,\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
             .andExpect(status().isCreated())
             .andReturn();
         UUID productId = UUID.fromString(objectMapper.readTree(productResponse.getResponse().getContentAsString()).path("id").asText());
@@ -621,7 +620,7 @@ class PostgresBackendFixesIntegrationTest {
         UUID categoryId = createCategory();
         UUID brandId = createBrand();
         UUID productId = productCommandService.create(new ProductCommandService.ProductInput(
-            "PG-" + UUID.randomUUID(), "PG integration product", "legacy", "unit", BigDecimal.ONE,
+            "PG integration product", "legacy", "unit", BigDecimal.ONE,
             List.of(new ProductCommandService.ProductPriceInput(
                 UUID.fromString("00000000-0000-0000-0000-000000000001"), BigDecimal.TEN)), categoryId, brandId));
         products.add(productId);
@@ -631,13 +630,13 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(jdbc.queryForObject("select category from catalog.products where id = ?", String.class, productId)).isEqualTo("PG category");
 
         productCommandService.update(productId, new ProductCommandService.ProductInput(
-            "PG-" + UUID.randomUUID(), "PG integration product updated", "legacy update", "unit", BigDecimal.ONE, null));
+            "PG integration product updated", "legacy update", "unit", BigDecimal.ONE, null));
         assertThat(jdbc.queryForObject("select category_id from catalog.products where id = ?", UUID.class, productId)).isEqualTo(categoryId);
         assertThat(jdbc.queryForObject("select brand_id from catalog.products where id = ?", UUID.class, productId)).isEqualTo(brandId);
 
         jdbc.update("update catalog.categories set status = 'INACTIVE' where id = ?", categoryId);
         assertThatThrownBy(() -> productCommandService.create(new ProductCommandService.ProductInput(
-            "PG-" + UUID.randomUUID(), "Inactive category", "legacy", "unit", BigDecimal.ONE, null, categoryId, null)))
+            "Inactive category", "legacy", "unit", BigDecimal.ONE, null, categoryId, null)))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -1310,7 +1309,7 @@ class PostgresBackendFixesIntegrationTest {
 
     private UUID createProduct(String suffix) {
         UUID id = productCommandService.create(new ProductCommandService.ProductInput(
-            "PG-" + suffix + "-" + UUID.randomUUID().toString().substring(0, 8), "PG " + suffix,
+            "PG " + suffix,
             "PG category", "unit", BigDecimal.ONE, List.of(new ProductCommandService.ProductPriceInput(
                 UUID.fromString("00000000-0000-0000-0000-000000000001"), BigDecimal.ONE))));
         products.add(id);

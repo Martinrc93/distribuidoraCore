@@ -12,7 +12,7 @@ import DiscountRulesSection from './DiscountRulesSection'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean }
-type ProductPrice = { productId: string; sku: string; name: string; price: number; effectiveOn?: string }
+type ProductPrice = { productId: string; name: string; price: number; effectiveOn?: string }
 type PriceHistory = { effectiveOn: string; price: number; recordedAt: string; updatedAt: string; scheduled: boolean }
 type ListVisibility = 'ACTIVE' | 'INACTIVE' | 'ALL'
 type PriceListPreferences = { visibility: ListVisibility; expanded: boolean }
@@ -217,14 +217,12 @@ export default function PriceListsPage() {
 
   const rows: Row[] = (pricesQuery.data?.content ?? []).map((item) => ({
     id: item.productId,
-    sku: item.sku,
     name: item.name,
     price: money(item.price),
     effectiveOn: item.effectiveOn ?? '—',
   }))
   const priceColumns: TableColumn[] = [
     { key: 'name', label: 'Producto', emphasis: true },
-    { key: 'sku', label: 'SKU' },
     { key: 'price', label: 'Precio de lista', align: 'right' },
     { key: 'effectiveOn', label: 'Vigente desde' },
     { key: 'actions', label: 'Acciones', align: 'right', render: (_value: string, row: Row) => {

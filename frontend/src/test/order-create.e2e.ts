@@ -2,8 +2,38 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function selectProduct(page: Page, search: string) {
   await page.getByRole('combobox', { name: 'Producto', exact: true }).fill(search)
-  await page.getByRole('option', { name: search ? /^Harina ·/ : 'Seleccionar producto...', exact: !search }).click()
+  await page.getByRole('option', { name: search ? /^Harina$/ : 'Seleccionar producto...', exact: !search }).click()
 }
+
+test('price tables show product names without a product code column', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`)
+  })
+  await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
+    const path = new URL(route.request().url()).pathname
+    const content = path === '/api/pricing/lists'
+      ? [{ id: 'list-1', code: 'GENERAL', name: 'General', status: 'ACTIVE', isDefault: true }]
+      : path === '/api/pricing/lists/list-1/prices'
+        ? [{ productId: 'product-1', name: 'Producto Demo 001', price: 100, effectiveOn: '2026-09-30' }]
+        : []
+    await route.fulfill({ json: { content, page: 0, size: 20, totalElements: content.length, totalPages: 1 } })
+  })
+  await page.goto('/price-lists')
+  await expect(page.getByText('Producto Demo 001', { exact: true })).toBeVisible()
+  const table = page.locator('.price-products-table')
+  await expect(table.getByRole('columnheader', { includeHidden: true })).toHaveCount(4)
+  await expect(table.getByRole('columnheader', { name: 'SKU', includeHidden: true })).toHaveCount(0)
+  await expect(table.getByRole('button', { name: 'Editar precio de Producto Demo 001' })).toBeVisible()
+  const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
+  expect(widths.document).toBeLessThanOrEqual(widths.viewport)
+  if (testInfo.project.name.startsWith('desktop')) {
+    expect(await table.getByRole('button', { name: 'Ver historial de precios de Producto Demo 001' }).evaluate((button) => {
+      const box = button.getBoundingClientRect()
+      return Boolean(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('button'))
+    })).toBe(true)
+  }
+  await page.screenshot({ path: testInfo.outputPath('product-prices.png'), fullPage: true })
+})
 
 test('previous orders are disabled without history and admins choose whether to copy discounts', async ({ page }, testInfo) => {
   await page.addInitScript(() => {
@@ -17,12 +47,12 @@ test('previous orders are disabled without history and admins choose whether to 
       { id: 'c1', name: 'Cliente con historial', priceListId: 'list1', sellerId: 'seller1' },
       { id: 'c2', name: 'Cliente sin historial', priceListId: 'list1', sellerId: 'seller1' },
     ])
-    if (path === '/api/products') json = paged([{ id: 'p1', name: 'Harina', sku: 'HAR-1', presentation: 'Bolsa', status: 'ACTIVE' }])
+    if (path === '/api/products') json = paged([{ id: 'p1', name: 'Harina', presentation: 'Bolsa', status: 'ACTIVE' }])
     if (path === '/api/pricing/lists') json = paged([{ id: 'list1', code: 'GENERAL', name: 'General', status: 'ACTIVE' }])
     if (path === '/api/sellers') json = paged([{ id: 'seller1', displayName: 'Lucía' }])
     if (path === '/api/pricing/resolve-batch') json = [{ productId: 'p1', priceListId: 'list1', priceListCode: 'GENERAL', unitPrice: 100 }]
     if (path === '/api/customers/c2/last-order') json = { available: false }
-    if (path === '/api/customers/c1/last-order') json = { available: true, orderId: 'old', orderNumber: 'PED-ANTERIOR', orderDiscountPercent: 5, items: [{ productId: 'p1', productName: 'Harina', sku: 'HAR-1', presentation: 'Bolsa', status: 'ACTIVE', stock: 12, quantity: 2, lineDiscountPercent: 10 }] }
+    if (path === '/api/customers/c1/last-order') json = { available: true, orderId: 'old', orderNumber: 'PED-ANTERIOR', orderDiscountPercent: 5, items: [{ productId: 'p1', productName: 'Harina', presentation: 'Bolsa', status: 'ACTIVE', quantity: 2, lineDiscountPercent: 10 }] }
     await route.fulfill({ json })
   })
   await page.goto('/orders/new')
@@ -61,6 +91,18 @@ test('previous orders are disabled without history and admins choose whether to 
   await load.click()
   await dialog.getByRole('button', { name: 'Copiar descuentos', exact: true }).click()
   await expect(page.getByLabel('Descuento de Harina')).toHaveValue('10')
+  const lineQuantity = page.getByLabel('Cantidad de Harina')
+  await lineQuantity.fill('1.3')
+  await expect(lineQuantity).toHaveAttribute('aria-invalid', 'true')
+  await expect(lineQuantity).toHaveAccessibleDescription('La cantidad de Harina debe ser positiva y múltiplo de 0,5.')
+  await expect(page.getByRole('button', { name: 'Confirmar pedido', exact: true })).toBeDisabled()
+  await expect(page.locator('.total-value')).toHaveText('—')
+  await page.screenshot({ path: testInfo.outputPath('invalid-quantity.png'), fullPage: true })
+  await lineQuantity.fill('1,5')
+  await expect(lineQuantity).toHaveAttribute('aria-invalid', 'false')
+  await expect(page.getByRole('button', { name: 'Confirmar pedido', exact: true })).toBeEnabled()
+  await expect(page.locator('.total-value')).toContainText('128,25')
+  await lineQuantity.fill('2')
   await expect(page.getByLabel('Descuento general (%)')).toHaveValue('5')
   await expect(page.locator('.total-value')).toContainText('171,00')
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
@@ -85,7 +127,7 @@ test('new orders select the customer list and confirm without collecting payment
       { id: 'customer-1', name: 'Almacén Norte', priceListId: 'list-2', sellerId: 'seller-1', seller: 'Lucía', balance: 1000 },
       { id: 'customer-2', name: 'Almacén Sur', priceListId: null, sellerId: 'seller-1', seller: 'Lucía', balance: 0 },
     ])
-    if (url.pathname === '/api/products') json = paged([{ id: 'product-1', sku: 'HAR-1', name: 'Harina', presentation: 'Bolsa', status: 'ACTIVE', stock: 10 }, { id: 'product-2', sku: 'ARR-2', name: 'Arroz', presentation: 'Bolsa', status: 'ACTIVE', stock: 15 }])
+    if (url.pathname === '/api/products') json = paged([{ id: 'product-1', name: 'Harina', presentation: 'Bolsa', status: 'ACTIVE' }, { id: 'product-2', name: 'Arroz', presentation: 'Bolsa', status: 'ACTIVE' }])
     if (url.pathname === '/api/sellers') json = paged([{ id: 'seller-1', displayName: 'Lucía' }])
     if (url.pathname === '/api/pricing/lists') json = paged([
       { id: 'list-1', code: 'GENERAL', name: 'General', status: 'ACTIVE' },
@@ -119,18 +161,18 @@ test('new orders select the customer list and confirm without collecting payment
   await expect(page.getByLabel('Medio de pago')).toHaveCount(0)
   const productInput = page.getByRole('combobox', { name: 'Producto', exact: true })
   await productInput.click()
-  await expect(page.getByRole('option', { name: /^Arroz ·/ })).toBeVisible()
+  await expect(page.getByRole('option', { name: /^Arroz$/ })).toBeVisible()
   await productInput.fill('har')
-  const productOption = page.getByRole('option', { name: /^Harina ·/ })
+  const productOption = page.getByRole('option', { name: /^Harina$/ })
   await expect(productOption).toBeVisible()
-  await expect(page.getByRole('option', { name: /^Arroz ·/ })).toHaveCount(0)
+  await expect(page.getByRole('option', { name: /^Arroz$/ })).toHaveCount(0)
   await productOption.scrollIntoViewIfNeeded()
   const optionBox = (await productOption.boundingBox())!
   expect(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('[role="option"]')), { x: optionBox.x + 12, y: optionBox.y + optionBox.height / 2 })).toBe(true)
   const widthsWhileOpen = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
   expect(widthsWhileOpen.document).toBeLessThanOrEqual(widthsWhileOpen.viewport)
   await page.screenshot({ path: testInfo.outputPath('product-filter.png'), fullPage: true })
-  await productInput.fill('HAR-1')
+  await productInput.fill('harina')
   await productOption.click()
   await expect(page.getByLabel('Precio', { exact: true })).toHaveAttribute('placeholder', 'Consultando...')
   await expect(page.getByRole('button', { name: 'Agregar producto', exact: true })).toBeDisabled()
@@ -180,8 +222,8 @@ test('new orders select the customer list and confirm without collecting payment
   await expect(productInput).toHaveValue('harina')
   await expect(page.getByRole('button', { name: 'Agregar producto', exact: true })).toBeDisabled()
   await productInput.click()
-  await expect(page.getByRole('option', { name: /^Arroz ·/ })).toHaveCount(0)
-  await expect(page.getByRole('option', { name: /^Harina ·/ })).toHaveCount(0)
+  await expect(page.getByRole('option', { name: /^Arroz$/ })).toHaveCount(0)
+  await expect(page.getByRole('option', { name: /^Harina$/ })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('retained-product-search.png'), fullPage: true })
   await page.keyboard.press('Escape')
   await expect(emptyTable.locator('.table-empty-cell')).toHaveCount(0)

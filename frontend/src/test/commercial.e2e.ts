@@ -44,7 +44,7 @@ test('admin can create a customer, price a product, confirm an order and open it
   await page.getByRole('button', { name: 'Confirmar ajuste' }).click()
   await expect(page.getByRole('status')).toContainText('Ajuste de inventario registrado.')
 
-  const productListResponse = page.waitForResponse((response) => response.url().includes('/api/products?page=0&size=100') && response.request().method() === 'GET')
+  const productListResponse = page.waitForResponse((response) => response.url().includes('/api/products?page=0&size=100&includeStock=false') && response.request().method() === 'GET')
   await page.goto('/orders/new')
   const productList = await productListResponse
   expect(productList.ok()).toBeTruthy()

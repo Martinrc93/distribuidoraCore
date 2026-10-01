@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,7 +22,7 @@ function renderPage(authorities = ['ADMIN_ALL']) {
 
 const products = {
   content: [{
-    id: 'product-1', sku: 'SKU-1', name: 'Harina', category: 'Almacén', categoryId: 'category-1',
+    id: 'product-1', name: 'Harina', category: 'Almacén', categoryId: 'category-1',
     brandId: 'brand-1', presentation: 'Bolsa', cost: 100.5, stock: 4, status: 'ACTIVE',
   }],
   page: 0, size: 20, totalElements: 1, totalPages: 1,
@@ -182,10 +182,11 @@ describe('ProductsPage', () => {
     })
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: /desactivar producto/i }))
+    await user.click(await screen.findByRole('button', { name: 'Editar Harina' }))
+    await user.click(screen.getByRole('button', { name: /desactivar producto/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/products/product-1/status', expect.anything())
-    await user.click(screen.getByRole('button', { name: /cancelar/i }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /cancelar/i }))
 
     cleanup()
     sessionStorage.setItem('distribuidora.accessToken', token(['ORDER_CREATE']))

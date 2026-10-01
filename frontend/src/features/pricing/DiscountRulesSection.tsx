@@ -24,7 +24,6 @@ type DiscountRule = {
   priceListId: string | null
   priceListCode: string | null
   productId: string | null
-  sku: string | null
   productName: string | null
   priority: number
   status: RuleStatus
@@ -33,7 +32,7 @@ type DiscountRule = {
 }
 type Customer = { id: string; name: string; status: string }
 type PriceList = { id: string; code: string; name: string; status: string }
-type Product = { id: string; sku: string; name: string; status: string }
+type Product = { id: string; name: string; status: string }
 type RuleDraft = {
   code: string
   description: string
@@ -221,7 +220,7 @@ export default function DiscountRulesSection() {
       <label className="field"><span>Porcentaje</span><input className="input" type="text" inputMode="decimal" value={draft.percent} onChange={(event) => setDraft((current) => ({ ...current, percent: event.target.value }))} required disabled={saveMutation.isPending} /></label>
       <CustomerSelect mode="selection" label="Cliente (opcional)" options={customers} value={draft.customerId} onChange={(value) => setDraft((current) => ({ ...current, customerId: value }))} emptyLabel="Todos los clientes" loading={customersQuery.isLoading} disabled={saveMutation.isPending || customersQuery.isError} />
       <label className="field"><span>Lista de precios (opcional)</span><select className="select" value={draft.priceListId} onChange={(event) => setDraft((current) => ({ ...current, priceListId: event.target.value }))} disabled={saveMutation.isPending || listsQuery.isError}><option value="">Todas las listas</option>{lists.map((list) => <option key={list.id} value={list.id}>{list.code} · {list.name}</option>)}</select></label>
-      {draft.kind === 'LINE' && <label className="field"><span>Producto</span><select className="select" value={draft.productId} onChange={(event) => setDraft((current) => ({ ...current, productId: event.target.value }))} required disabled={saveMutation.isPending || productsQuery.isError}><option value="">Seleccionar producto...</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select></label>}
+      {draft.kind === 'LINE' && <label className="field"><span>Producto</span><select className="select" value={draft.productId} onChange={(event) => setDraft((current) => ({ ...current, productId: event.target.value }))} required disabled={saveMutation.isPending || productsQuery.isError}><option value="">Seleccionar producto...</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>}
       <label className="field"><span>Válida desde (opcional)</span><input className="input" type="date" value={draft.validFrom} onChange={(event) => setDraft((current) => ({ ...current, validFrom: event.target.value }))} disabled={saveMutation.isPending} /></label>
       <label className="field"><span>Válida hasta (opcional)</span><input className="input" type="date" value={draft.validUntil} onChange={(event) => setDraft((current) => ({ ...current, validUntil: event.target.value }))} disabled={saveMutation.isPending} /></label>
       <label className="field"><span>Prioridad</span><input className="input" type="number" min={-1000} max={1000} step={1} value={draft.priority} onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value }))} disabled={saveMutation.isPending} /></label>

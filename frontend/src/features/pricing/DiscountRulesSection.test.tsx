@@ -35,7 +35,7 @@ describe('DiscountRulesSection', () => {
       if (path === '/api/pricing/discount-rules?page=0&size=20') return response(page([]))
       if (path === '/api/customers?page=0&size=100') return response(page([{ id: 'customer-1', name: 'Almacén Norte', status: 'ACTIVE' }]))
       if (path === '/api/pricing/lists?page=0&size=100') return response(page([{ id: 'list-1', code: 'MAYORISTA', name: 'Mayorista', status: 'ACTIVE' }]))
-      if (path === '/api/products?page=0&size=100') return response(page([{ id: 'product-1', sku: 'SKU-1', name: 'Harina', status: 'ACTIVE' }]))
+      if (path === '/api/products?page=0&size=100') return response(page([{ id: 'product-1', name: 'Harina', status: 'ACTIVE' }]))
       if (path === '/api/pricing/discount-rules' && init?.method === 'POST') return response({ id: 'rule-2' }, 201)
       return response({})
     })
@@ -87,7 +87,7 @@ describe('DiscountRulesSection', () => {
       if (path === '/api/pricing/discount-rules?page=0&size=20') return response(rules)
       if (path === '/api/customers?page=0&size=100') return response(page([{ id: 'customer-1', name: 'Almacén Norte', status: 'ACTIVE' }]))
       if (path === '/api/pricing/lists?page=0&size=100') return response(page([{ id: 'list-1', code: 'MAYORISTA', name: 'Mayorista', status: 'ACTIVE' }]))
-      if (path === '/api/products?page=0&size=100') return response(page([{ id: 'product-1', sku: 'SKU-1', name: 'Harina', status: 'ACTIVE' }]))
+      if (path === '/api/products?page=0&size=100') return response(page([{ id: 'product-1', name: 'Harina', status: 'ACTIVE' }]))
       if (path === '/api/pricing/discount-rules/rule-1' && init?.method === 'PUT') return response({}, 204)
       if (path === '/api/pricing/discount-rules/rule-1/status' && init?.method === 'PATCH') return response({}, 204)
       return response({})
@@ -123,14 +123,14 @@ describe('DiscountRulesSection', () => {
 
   it('pages through the discount rules returned by the backend', async () => {
     const user = userEvent.setup()
-    const secondRule = { ...rules.content[0], id: 'rule-2', code: 'ORDER5', description: 'Descuento de pedido', kind: 'ORDER', productId: null, productName: null, sku: null, priority: 1 }
+    const secondRule = { ...rules.content[0], id: 'rule-2', code: 'ORDER5', description: 'Descuento de pedido', kind: 'ORDER', productId: null, productName: null, priority: 1 }
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
       const path = String(input)
       if (path === '/api/pricing/discount-rules?page=0&size=20') return response({ ...rules, totalElements: 21, totalPages: 2 })
       if (path === '/api/pricing/discount-rules?page=1&size=20') return response({ ...page([secondRule]), page: 1, totalElements: 21, totalPages: 2 })
       if (path === '/api/customers?page=0&size=100') return response(page([{ id: 'customer-1', name: 'Almacén Norte', status: 'ACTIVE' }]))
       if (path === '/api/pricing/lists?page=0&size=100') return response(page([{ id: 'list-1', code: 'MAYORISTA', name: 'Mayorista', status: 'ACTIVE' }]))
-      if (path === '/api/products?page=0&size=100') return response(page([{ id: 'product-1', sku: 'SKU-1', name: 'Harina', status: 'ACTIVE' }]))
+      if (path === '/api/products?page=0&size=100') return response(page([{ id: 'product-1', name: 'Harina', status: 'ACTIVE' }]))
       return response({})
     })
     renderSection()

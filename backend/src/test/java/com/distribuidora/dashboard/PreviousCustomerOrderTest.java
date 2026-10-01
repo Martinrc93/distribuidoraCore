@@ -35,11 +35,11 @@ class PreviousCustomerOrderTest {
         for (String schema : List.of("orders", "customer", "catalog", "inventory")) jdbc.execute("create schema " + schema);
         jdbc.execute("create table customer.customers(id uuid primary key, seller_id uuid)");
         jdbc.execute("create table orders.orders(id uuid primary key, order_number varchar, customer_id uuid, seller_id uuid, status varchar, created_at timestamp with time zone, order_discount_percent decimal)");
-        jdbc.execute("create table catalog.products(id uuid primary key, name varchar, sku varchar, presentation varchar, status varchar)");
+        jdbc.execute("create table catalog.products(id uuid primary key, name varchar, presentation varchar, status varchar)");
         jdbc.execute("create table inventory.inventory_balances(product_id uuid primary key, quantity decimal)");
         jdbc.execute("create table orders.order_items(id uuid primary key, order_id uuid, product_id uuid, product_name varchar, quantity decimal, line_discount_percent decimal)");
         jdbc.update("insert into customer.customers values (?, ?)", customerId, sellerId);
-        jdbc.update("insert into catalog.products values (?, 'Current name', 'SKU-1', 'Bag', 'ACTIVE')", productId);
+        jdbc.update("insert into catalog.products values (?, 'Current name', 'Bag', 'ACTIVE')", productId);
         jdbc.update("insert into inventory.inventory_balances values (?, 20)", productId);
         service = new ReadQueryService(jdbc);
     }
@@ -57,7 +57,7 @@ class PreviousCustomerOrderTest {
         @SuppressWarnings("unchecked")
         var items = (List<Map<String, Object>>) result.get("items");
         assertThat(items).hasSize(1);
-        assertThat(items.getFirst()).containsEntry("productName", "Current name").containsEntry("SKU", "SKU-1");
+        assertThat(items.getFirst()).containsEntry("productName", "Current name").doesNotContainKeys("SKU", "STOCK");
         assertThat(items.getFirst().get("QUANTITY").toString()).isEqualTo("3");
         assertThat(items.getFirst().get("lineDiscountPercent").toString()).isEqualTo("10");
     }

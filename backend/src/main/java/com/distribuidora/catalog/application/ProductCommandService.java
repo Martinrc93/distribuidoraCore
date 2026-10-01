@@ -30,7 +30,6 @@ public class ProductCommandService {
     public record ProductPriceInput(UUID priceListId, BigDecimal price) { }
 
     public record ProductInput(
-        String sku,
         String name,
         String category,
         String presentation,
@@ -39,9 +38,9 @@ public class ProductCommandService {
         UUID categoryId,
         UUID brandId
     ) {
-        public ProductInput(String sku, String name, String category, String presentation,
+        public ProductInput(String name, String category, String presentation,
                             BigDecimal cost, List<ProductPriceInput> prices) {
-            this(sku, name, category, presentation, cost, prices, null, null);
+            this(name, category, presentation, cost, prices, null, null);
         }
     }
 
@@ -79,14 +78,11 @@ public class ProductCommandService {
         validateCreatePrices(input.prices());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
         validateActive("catalog.brands", input.brandId());
-        if (!blank(input.sku()) && exists("select exists(select 1 from catalog.products where sku = ?)", input.sku())) {
-            throw new IllegalStateException("Ya existe un producto con ese SKU");
-        }
         UUID id = UUID.randomUUID();
         jdbc.update("""
-            insert into catalog.products(id, sku, name, category, presentation, cost, status, created_at, category_id, brand_id)
-            values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
-            """, id, nullable(input.sku()), input.name().trim(), categoryName.trim(), nullable(input.presentation()),
+            insert into catalog.products(id, name, category, presentation, cost, status, created_at, category_id, brand_id)
+            values (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+            """, id, input.name().trim(), categoryName.trim(), nullable(input.presentation()),
             input.cost(), timestamp(), input.categoryId(), input.brandId());
         jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, 0, ?)", id, timestamp());
 
@@ -107,9 +103,6 @@ public class ProductCommandService {
         validateActive("catalog.brands", input.brandId());
         if (!exists("select exists(select 1 from catalog.products where id = ?)", id)) throw new EmptyResultDataAccessException(1);
         jdbc.queryForObject("select id from catalog.products where id = ? for update", UUID.class, id);
-        if (!blank(input.sku()) && exists("select exists(select 1 from catalog.products where sku = ? and id <> ?)", input.sku(), id)) {
-            throw new IllegalStateException("Ya existe un producto con ese SKU");
-        }
 
         List<ActiveListPrice> activePrices = jdbc.query("""
             select pl.id as price_list_id, pl.code, effective.price
@@ -166,11 +159,11 @@ public class ProductCommandService {
         }
 
         if (input.categoryId() == null && input.brandId() == null) {
-            jdbc.update("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ? where id = ?",
-                nullable(input.sku()), input.name().trim(), categoryName.trim(), nullable(input.presentation()), input.cost(), id);
+            jdbc.update("update catalog.products set name = ?, category = ?, presentation = ?, cost = ? where id = ?",
+                input.name().trim(), categoryName.trim(), nullable(input.presentation()), input.cost(), id);
         } else {
-            jdbc.update("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ?, category_id = coalesce(?, category_id), brand_id = coalesce(?, brand_id) where id = ?",
-                nullable(input.sku()), input.name().trim(), categoryName.trim(), nullable(input.presentation()),
+            jdbc.update("update catalog.products set name = ?, category = ?, presentation = ?, cost = ?, category_id = coalesce(?, category_id), brand_id = coalesce(?, brand_id) where id = ?",
+                input.name().trim(), categoryName.trim(), nullable(input.presentation()),
                 input.cost(), input.categoryId(), input.brandId(), id);
         }
 

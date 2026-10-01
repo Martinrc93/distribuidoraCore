@@ -38,7 +38,7 @@ class ProductCommandServiceTest {
     @Test
     void rejectsNegativePrice() {
         assertThatThrownBy(() -> ProductCommandService.validate(
-            new ProductInput("SKU-1", "Producto", "Bebidas", "Unidad", BigDecimal.ONE,
+            new ProductInput("Producto", "Bebidas", "Unidad", BigDecimal.ONE,
                 List.of(new ProductPriceInput(UUID.randomUUID(), BigDecimal.valueOf(-1))))))
             .isInstanceOf(IllegalArgumentException.class);
     }
@@ -47,18 +47,17 @@ class ProductCommandServiceTest {
     void acceptsCostOnlyWhenNoActiveListPriceIsBelowIt() {
         UUID productId = UUID.randomUUID();
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where id = ?"), eq(Boolean.class), eq(productId))).thenReturn(true);
-        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where sku = ? and id <> ?"), eq(Boolean.class), eq("SKU-1"), eq(productId))).thenReturn(false);
 
         UUID listId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(RowMapper.class), eq(productId)))
             .thenReturn(List.of(new ProductCommandService.ActiveListPrice(listId, "GENERAL", BigDecimal.valueOf(150))));
 
-        ProductInput input = new ProductInput("SKU-1", "Prod", "Cat", "Pres", BigDecimal.valueOf(120), List.of());
+        ProductInput input = new ProductInput("Prod", "Cat", "Pres", BigDecimal.valueOf(120), List.of());
         service.update(productId, input);
 
         ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
-        verify(jdbc).update(updateSql.capture(), eq("SKU-1"), eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(120)), eq(productId));
-        assertThat(updateSql.getValue()).contains("update catalog.products set sku = ?, name = ?, category = ?, presentation = ?, cost = ? where id = ?");
+        verify(jdbc).update(updateSql.capture(), eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(120)), eq(productId));
+        assertThat(updateSql.getValue()).contains("update catalog.products set name = ?, category = ?, presentation = ?, cost = ? where id = ?");
         assertThat(updateSql.getValue()).doesNotContain("price = ?");
     }
 
@@ -66,13 +65,12 @@ class ProductCommandServiceTest {
     void rejectsCostWhenAffectedListPriceIsMissing() {
         UUID productId = UUID.randomUUID();
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where id = ?"), eq(Boolean.class), eq(productId))).thenReturn(true);
-        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where sku = ? and id <> ?"), eq(Boolean.class), eq("SKU-1"), eq(productId))).thenReturn(false);
 
         UUID listId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(RowMapper.class), eq(productId)))
             .thenReturn(List.of(new ProductCommandService.ActiveListPrice(listId, "GENERAL", BigDecimal.valueOf(100))));
 
-        ProductInput input = new ProductInput("SKU-1", "Prod", "Cat", "Pres", BigDecimal.valueOf(110), List.of());
+        ProductInput input = new ProductInput("Prod", "Cat", "Pres", BigDecimal.valueOf(110), List.of());
 
         assertThatThrownBy(() -> service.update(productId, input))
             .isInstanceOf(ProductPriceValidationException.class)
@@ -88,13 +86,12 @@ class ProductCommandServiceTest {
     void rejectsAffectedPriceBelowNewCost() {
         UUID productId = UUID.randomUUID();
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where id = ?"), eq(Boolean.class), eq(productId))).thenReturn(true);
-        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where sku = ? and id <> ?"), eq(Boolean.class), eq("SKU-1"), eq(productId))).thenReturn(false);
 
         UUID listId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(RowMapper.class), eq(productId)))
             .thenReturn(List.of(new ProductCommandService.ActiveListPrice(listId, "GENERAL", BigDecimal.valueOf(100))));
 
-        ProductInput input = new ProductInput("SKU-1", "Prod", "Cat", "Pres", BigDecimal.valueOf(110),
+        ProductInput input = new ProductInput("Prod", "Cat", "Pres", BigDecimal.valueOf(110),
             List.of(new ProductPriceInput(listId, BigDecimal.valueOf(105))));
 
         assertThatThrownBy(() -> service.update(productId, input))
@@ -106,7 +103,6 @@ class ProductCommandServiceTest {
     void updatesCostAndAllAffectedPricesTogether() {
         UUID productId = UUID.randomUUID();
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where id = ?"), eq(Boolean.class), eq(productId))).thenReturn(true);
-        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where sku = ? and id <> ?"), eq(Boolean.class), eq("SKU-1"), eq(productId))).thenReturn(false);
 
         UUID list1Id = UUID.randomUUID();
         UUID list2Id = UUID.randomUUID();
@@ -116,7 +112,7 @@ class ProductCommandServiceTest {
                 new ProductCommandService.ActiveListPrice(list2Id, "LISTA_2", BigDecimal.valueOf(105))
             ));
 
-        ProductInput input = new ProductInput("SKU-1", "Prod", "Cat", "Pres", BigDecimal.valueOf(120),
+        ProductInput input = new ProductInput("Prod", "Cat", "Pres", BigDecimal.valueOf(120),
             List.of(
                 new ProductPriceInput(list1Id, BigDecimal.valueOf(130)),
                 new ProductPriceInput(list2Id, BigDecimal.valueOf(135))
@@ -124,8 +120,8 @@ class ProductCommandServiceTest {
 
         service.update(productId, input);
 
-        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("update catalog.products set sku = ?"),
-            eq("SKU-1"), eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(120)), eq(productId));
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("update catalog.products set name = ?"),
+            eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(120)), eq(productId));
 
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("catalog.product_prices"),
             eq(list1Id), eq(productId), eq(BigDecimal.valueOf(130)), any(), any());
@@ -137,7 +133,6 @@ class ProductCommandServiceTest {
     void doesNotRequireUnaffectedListPrices() {
         UUID productId = UUID.randomUUID();
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where id = ?"), eq(Boolean.class), eq(productId))).thenReturn(true);
-        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where sku = ? and id <> ?"), eq(Boolean.class), eq("SKU-1"), eq(productId))).thenReturn(false);
 
         UUID list1Id = UUID.randomUUID();
         UUID list2Id = UUID.randomUUID();
@@ -147,13 +142,13 @@ class ProductCommandServiceTest {
                 new ProductCommandService.ActiveListPrice(list2Id, "LISTA_2", BigDecimal.valueOf(200))
             ));
 
-        ProductInput input = new ProductInput("SKU-1", "Prod", "Cat", "Pres", BigDecimal.valueOf(110),
+        ProductInput input = new ProductInput("Prod", "Cat", "Pres", BigDecimal.valueOf(110),
             List.of(new ProductPriceInput(list1Id, BigDecimal.valueOf(125))));
 
         service.update(productId, input);
 
-        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("update catalog.products set sku = ?"),
-            eq("SKU-1"), eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(110)), eq(productId));
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("update catalog.products set name = ?"),
+            eq("Prod"), eq("Cat"), eq("Pres"), eq(BigDecimal.valueOf(110)), eq(productId));
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("catalog.product_prices"),
             eq(list1Id), eq(productId), eq(BigDecimal.valueOf(125)), any(), any());
     }
@@ -161,7 +156,7 @@ class ProductCommandServiceTest {
     @Test
     void validatesInitialPricesAgainstCost() {
         UUID listId = UUID.randomUUID();
-        ProductInput input = new ProductInput("SKU-1", "Prod", "Cat", "Pres", BigDecimal.valueOf(100),
+        ProductInput input = new ProductInput("Prod", "Cat", "Pres", BigDecimal.valueOf(100),
             List.of(new ProductPriceInput(listId, BigDecimal.valueOf(90))));
 
         assertThatThrownBy(() -> ProductCommandService.validate(input))
@@ -180,19 +175,19 @@ class ProductCommandServiceTest {
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.price_lists"), eq(Boolean.class), eq(listId)))
             .thenReturn(true);
 
-        ProductInput input = new ProductInput("SKU-REF", "Producto", "Texto legado", "Unidad",
+        ProductInput input = new ProductInput("Producto", "Texto legado", "Unidad",
             BigDecimal.TEN, List.of(new ProductPriceInput(listId, BigDecimal.valueOf(12))), categoryId, brandId);
         service.create(input);
 
         verify(jdbc).update(org.mockito.ArgumentMatchers.contains("category_id, brand_id"),
-            any(UUID.class), eq("SKU-REF"), eq("Producto"), eq("Bebidas"), eq("Unidad"),
+            any(UUID.class), eq("Producto"), eq("Bebidas"), eq("Unidad"),
             eq(BigDecimal.TEN), any(), eq(categoryId), eq(brandId));
     }
 
     @Test
     void rejectsCreateWithoutInitialPrices() {
-        ProductInput missing = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad", BigDecimal.TEN, null);
-        ProductInput empty = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad", BigDecimal.TEN, List.of());
+        ProductInput missing = new ProductInput("Producto", "Bebidas", "Unidad", BigDecimal.TEN, null);
+        ProductInput empty = new ProductInput("Producto", "Bebidas", "Unidad", BigDecimal.TEN, List.of());
 
         assertThatThrownBy(() -> service.create(missing))
             .isInstanceOf(IllegalArgumentException.class)
@@ -207,12 +202,10 @@ class ProductCommandServiceTest {
     @Test
     void rejectsInitialPriceForInactiveList() {
         UUID listId = UUID.randomUUID();
-        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("where sku = ?"), eq(Boolean.class), eq("SKU-REF")))
-            .thenReturn(false);
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.price_lists"), eq(Boolean.class), eq(listId)))
             .thenReturn(false);
 
-        ProductInput input = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad", BigDecimal.TEN,
+        ProductInput input = new ProductInput("Producto", "Bebidas", "Unidad", BigDecimal.TEN,
             List.of(new ProductPriceInput(listId, BigDecimal.valueOf(12))));
 
         assertThatThrownBy(() -> service.create(input))
@@ -230,7 +223,7 @@ class ProductCommandServiceTest {
         when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("catalog.price_lists"), eq(Boolean.class), eq(listId)))
             .thenReturn(true);
 
-        ProductInput input = new ProductInput("SKU-REF", "Producto", "Bebidas", "Unidad",
+        ProductInput input = new ProductInput("Producto", "Bebidas", "Unidad",
             BigDecimal.TEN, List.of(new ProductPriceInput(listId, BigDecimal.valueOf(12))), categoryId, null);
 
         assertThatThrownBy(() -> service.create(input))

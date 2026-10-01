@@ -17,7 +17,7 @@ test('customer and seller pickers share search, keyboard and cancellation across
     else if (url.pathname === '/api/zones') json = []
     else if (url.pathname === '/api/customers/filter-options') json = { sellers: [{ id: lucia.id, name: lucia.displayName }, { id: martin.id, name: martin.displayName }] }
     else if (url.pathname === '/api/pricing/lists') json = paged([{ id: 'list-1', code: 'GENERAL', name: 'General', status: 'ACTIVE' }])
-    else if (url.pathname === '/api/products') json = paged([{ id: 'product-1', sku: 'HAR', name: 'Harina', status: 'ACTIVE' }])
+    else if (url.pathname === '/api/products') json = paged([{ id: 'product-1', name: 'Harina', status: 'ACTIVE' }])
     else if (url.pathname.endsWith('/last-order')) json = { available: false }
     await route.fulfill({ json })
   })

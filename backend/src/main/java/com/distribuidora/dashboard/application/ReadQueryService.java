@@ -98,30 +98,22 @@ public class ReadQueryService {
     }
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search) {
+        return products(page, size, search, true);
+    }
+
+    public PageResponse<Map<String, Object>> products(int page, int size, String search, boolean includeStock) {
         String term = like(search);
-        if (sellerScoped()) {
-            return page("""
-                select p.id, p.sku, p.name, coalesce(cat.name, p.category) as category,
-                       p.category_id as "categoryId", p.brand_id as "brandId", p.presentation,
-                       coalesce(ib.quantity, 0) as stock, p.status
-                from catalog.products p
-                left join catalog.categories cat on cat.id = p.category_id
-                left join inventory.inventory_balances ib on ib.product_id = p.id
-                where lower(p.name) like ? or lower(p.sku) like ? order by p.name
-                """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
-                page, size, term, term);
-        }
+        String costColumn = sellerScoped() ? "" : ", p.cost";
+        String stockColumn = includeStock ? ", coalesce(ib.quantity, 0) as stock" : "";
+        String stockJoin = includeStock ? " left join inventory.inventory_balances ib on ib.product_id = p.id" : "";
         return page("""
-            select p.id, p.sku, p.name, coalesce(cat.name, p.category) as category,
-                   p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.cost,
-                   coalesce(ib.quantity, 0) as stock, p.status
-            from catalog.products p
-            left join catalog.categories cat on cat.id = p.category_id
-            left join inventory.inventory_balances ib on ib.product_id = p.id
-            where lower(p.name) like ? or lower(p.sku) like ?
-            order by p.name
-            """, "select count(*) from catalog.products where lower(name) like ? or lower(sku) like ?",
-            page, size, term, term);
+            select p.id, p.name, coalesce(cat.name, p.category) as category,
+                   p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.status
+            """ + costColumn + stockColumn + """
+             from catalog.products p
+             left join catalog.categories cat on cat.id = p.category_id
+            """ + stockJoin + " where lower(p.name) like ? order by p.name, p.id",
+            "select count(*) from catalog.products where lower(name) like ?", page, size, term);
     }
 
     public PageResponse<Map<String, Object>> inventory(int page, int size, String search) {
@@ -211,11 +203,10 @@ public class ReadQueryService {
         Map<String, Object> order = orders.getFirst();
         List<Map<String, Object>> items = jdbc.queryForList("""
             select oi.product_id as "productId", coalesce(p.name, oi.product_name) as "productName",
-                   p.sku, p.presentation, p.status, coalesce(ib.quantity, 0) as stock,
+                   p.presentation, p.status,
                    oi.quantity, oi.line_discount_percent as "lineDiscountPercent"
             from orders.order_items oi
             left join catalog.products p on p.id = oi.product_id
-            left join inventory.inventory_balances ib on ib.product_id = oi.product_id
             where oi.order_id = ? order by oi.id
             """, order.get("ID"));
         return Map.of("available", !items.isEmpty(), "orderId", order.get("ID"),

@@ -73,7 +73,7 @@ class PricingQueryServiceTest {
     @Test
     void returnsPagedPricesForAList() {
         UUID listId = UUID.randomUUID();
-        Map<String, Object> price = Map.of("productId", UUID.randomUUID(), "sku", "SKU-1", "price", new BigDecimal("10.2500"));
+        Map<String, Object> price = Map.of("productId", UUID.randomUUID(), "price", new BigDecimal("10.2500"));
         when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(price));
         when(jdbc.queryForObject(anyString(), eq(Number.class), any(Object[].class))).thenReturn(4);
 

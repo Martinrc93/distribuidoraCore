@@ -215,10 +215,11 @@ Los productos no disponibles bloquean la carga con un mensaje, y los errores
 de consulta permiten reintentar.
 
 El campo «Producto» reutiliza `SearchableSelect` con ancho completo: escribir
-filtra las opciones por nombre o código, sin distinguir mayúsculas ni acentos.
-Conserva nombre, código y stock en las opciones; excluye productos inactivos o
+filtra las opciones por nombre, sin distinguir mayúsculas ni acentos.
+Las opciones muestran solo el nombre; excluye productos inactivos o
 ya agregados al pedido. Se cargan todas las páginas del catálogo en bloques de
-100 para incluir coincidencias de páginas posteriores. La búsqueda es local,
+100 con `includeStock=false` para incluir coincidencias de páginas posteriores
+sin consultar ni enviar saldos de inventario. La búsqueda es local,
 sin consultas adicionales al escribir, y conserva la navegación con teclado.
 Solo este selector activa `preserveSearch`: al elegir una opción conserva el
 texto de búsqueda y, después de agregarla, vuelve a mostrar ese texto. Al abrir
@@ -227,6 +228,9 @@ vacía limpia la búsqueda; cambiar de cliente también la reinicia. Escape o bl
 descarta texto sin seleccionar y conserva la última búsqueda utilizada.
 El desplegable queda visible sobre el contenido, sin recortes de su contenedor;
 en móvil ocupa el ancho del campo y admite scroll dentro de la lista.
+Las tablas de precios muestran producto, precio de lista, vigencia y acciones,
+sin una columna de código de producto. El nombre recibe el espacio de esa
+columna y el precio conserva su énfasis numérico.
 El selector `.order-product-picker` precarga los precios de los productos
 disponibles al elegir cliente y lista, en lotes de hasta 100 productos. La caché
 se identifica por cliente, lista y productos, y permanece vigente por un minuto.
@@ -253,6 +257,11 @@ responde a tiempo.
 Cantidad y descuento se transfieren a la línea y se restablecen a `1` y `0`
 para la siguiente selección. La cantidad debe ser positiva y múltiplo de `0,5`;
 el descuento debe estar entre `0` y `100`.
+La misma validación de cantidad se aplica al editar líneas y cargar pedidos
+anteriores: acepta coma o punto decimal y solo valores positivos múltiplos de
+`0,5`. Un valor inválido muestra el campo en rojo y un mensaje asociado mediante
+`aria-describedby`, bloquea agregar o confirmar y deja subtotal/total en «—»
+hasta corregirlo. Conserva lo escrito para permitir corregirlo sin redondear.
 
 Las líneas agregadas reutilizan `DataTable` con la variante `.order-lines-table`.
 La tabla permanece visible aunque no haya líneas. En ese caso, conserva los
@@ -526,11 +535,9 @@ estructura reutilizable y documentar su API antes de extenderla a otras features
   de `.table-wrap` antes de su transformación mobile.
 - Las reglas específicas de pricing se encuentran al final de `styles.css`;
   revisar el orden de la cascada al agregar overrides y sus media queries.
-- Límite conservado en la migración: los mínimos de ancho de
-  `.price-products-table-admin` y `.price-products-table-standard`, definidos
-  después de las reglas mobile, vuelven a aplicarse en pantallas pequeñas y
-  pueden provocar desbordamiento. Corregirlo requiere un cambio visual específico;
-  la equivalencia de la migración no implica que la interfaz previa carezca de defectos.
+- Las tablas de precios usan un ancho mínimo de `760px` en escritorio para
+  conservar sus cuatro columnas. A `640px` o menos se elimina ese mínimo y
+  los anchos de columna para usar tarjetas sin desbordar el documento.
 - Respetar `prefers-reduced-motion`. Ya existe una regla global que reduce
   animaciones y transiciones; no introducir movimiento decorativo continuo.
 

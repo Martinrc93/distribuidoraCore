@@ -43,7 +43,6 @@ public class ProductCommandController {
     ) { }
 
     public record ProductPayload(
-        String sku,
         @NotBlank String name,
         String category,
         String presentation,
@@ -56,7 +55,7 @@ public class ProductCommandController {
             List<ProductCommandService.ProductPriceInput> priceInputs = prices != null
                 ? prices.stream().map(p -> new ProductCommandService.ProductPriceInput(p.priceListId(), p.price())).toList()
                 : List.of();
-            return new ProductCommandService.ProductInput(sku, name, category, presentation, cost, priceInputs, categoryId, brandId);
+            return new ProductCommandService.ProductInput(name, category, presentation, cost, priceInputs, categoryId, brandId);
         }
     }
 

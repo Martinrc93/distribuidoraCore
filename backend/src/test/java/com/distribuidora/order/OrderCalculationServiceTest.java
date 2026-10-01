@@ -102,7 +102,7 @@ class OrderCalculationServiceTest {
 
     @Test
     void rejectsZeroNegativeAndNonHalfUnitQuantities() {
-        for (String quantity : List.of("0", "-0.5", "0.25")) {
+        for (String quantity : List.of("0", "-0.5", "0.25", "1.3")) {
             assertThatThrownBy(() -> service.calculate(
                 List.of(line(quantity, "10", "0")), percent("0")))
                 .isInstanceOf(IllegalArgumentException.class);

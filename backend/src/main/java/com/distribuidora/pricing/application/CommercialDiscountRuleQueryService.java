@@ -24,7 +24,7 @@ public class CommercialDiscountRuleQueryService {
         String select = """
             select r.id, r.code, r.description, r.kind, r.percent, r.customer_id as "customerId",
                    c.business_name as "customerName", r.price_list_id as "priceListId",
-                   pl.code as "priceListCode", r.product_id as "productId", p.sku, p.name as "productName",
+                   pl.code as "priceListCode", r.product_id as "productId", p.name as "productName",
                    r.priority, r.status, r.valid_from as "validFrom", r.valid_until as "validUntil",
                    r.created_at as "createdAt", r.updated_at as "updatedAt"
             from catalog.commercial_discount_rules r

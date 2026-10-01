@@ -9,7 +9,7 @@ flowchart TD
     C --> D[Ingresar precios por lista]
     D --> E[Validar costo mayor que cero]
     E --> F[Validar precios mayores o iguales al costo]
-    F --> G[Validar SKU unico]
+    F --> G[Generar identificador UUID]
     G --> H[Generar nombre visible]
     H --> I[Guardar producto y precios por lista]
     I --> J[Auditar alta]

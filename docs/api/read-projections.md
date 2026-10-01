@@ -81,8 +81,8 @@ y comprueba acceso al cliente y al pedido según el alcance del vendedor. Devuel
 `{ "available": false }` si no hay pedidos confirmados o entregados visibles.
 Selecciona el último por fecha de creación y, en empate, ID descendente.
 Cuando existe, devuelve `available`, `orderId`, `orderNumber`,
-`orderDiscountPercent` e `items` con `productId`, `productName`, `sku`,
-`presentation`, `status`, `stock`, `quantity` y `lineDiscountPercent`. Los datos
+`orderDiscountPercent` e `items` con `productId`, `productName`,
+`presentation`, `status`, `quantity` y `lineDiscountPercent`. Los datos
 del producto corresponden al catálogo actual; el nombre histórico sirve de
 respaldo si ya no existe. No se limita a las primeras páginas del catálogo.
 La UI reemplaza los productos del borrador con sus cantidades y resuelve los
@@ -90,6 +90,15 @@ precios de la lista actual, sin copiar precios manuales ni cobros. Solo el
 administrador puede copiar descuentos, tras elegirlo en un modal que aparece
 cuando el pedido anterior los contiene. Cargar sin descuentos los restablece
 a cero. Los productos no activos bloquean la carga.
+
+Los productos se identifican por UUID; los contratos de catálogo, precios y
+descuentos no contienen SKU. La migración V31 elimina la columna del catálogo
+conservando productos, precios y referencias históricas. Las migraciones
+anteriores mantienen sus checksums originales.
+`GET /api/products` admite `includeStock` (por defecto `true`). Con `false`,
+omite el campo `stock` y la consulta a `inventory.inventory_balances`. La creación
+de pedidos usa esta variante en todas las páginas; la gestión de inventario
+conserva la lectura de stock.
 
 ## Deudas abiertas de un cliente
 

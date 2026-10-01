@@ -17,7 +17,7 @@ const lists = { content: [
   { id: 'list-1', code: 'MAYORISTA', name: 'Mayorista', status: 'ACTIVE', isDefault: true },
   { id: 'list-2', code: 'MINORISTA', name: 'Minorista', status: 'INACTIVE', isDefault: false },
 ], page: 0, size: 20, totalElements: 2, totalPages: 1 }
-const prices = { content: [{ priceListId: 'list-1', productId: 'product-1', sku: 'SKU-1', name: 'Harina', price: 150.5, effectiveOn: '2026-09-24' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
+const prices = { content: [{ priceListId: 'list-1', productId: 'product-1', name: 'Harina', price: 150.5, effectiveOn: '2026-09-24' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 function pageHistory(effectiveOn: string) {
   return { content: [{ effectiveOn, price: 150.5, recordedAt: '2026-09-24T12:00:00Z', updatedAt: '2026-09-24T12:00:00Z', scheduled: effectiveOn > '2026-09-24' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 }
@@ -114,7 +114,7 @@ describe('PriceListsPage', () => {
     const queryClient = renderPage()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
-    await user.click(await screen.findByRole('button', { name: /historial de harina/i }))
+    await user.click(await screen.findByRole('button', { name: /historial de precios de harina/i }))
     expect(await screen.findByText('2026-10-01')).toBeInTheDocument()
     expect(screen.getByText('Programado')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /cancelar precio del 2026-10-01/i }))
@@ -138,7 +138,7 @@ describe('PriceListsPage', () => {
     })
     renderPage(['ORDER_CREATE'])
 
-    await user.click(await screen.findByRole('button', { name: /historial de harina/i }))
+    await user.click(await screen.findByRole('button', { name: /historial de precios de harina/i }))
     await screen.findByText(/Página 1 de 2/)
     expect(screen.getAllByText('2026-09-24')).toHaveLength(2)
     await user.click(screen.getByRole('button', { name: 'Siguiente historial' }))
@@ -176,7 +176,7 @@ describe('PriceListsPage', () => {
     await user.click(await screen.findByRole('button', { name: /desactivar mayorista/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/pricing/lists/list-1/status', expect.anything())
-    await user.click(screen.getByRole('button', { name: /confirmar/i }))
+    await user.click(screen.getByRole('button', { name: 'Desactivar lista' }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/status', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ status: 'INACTIVE' }),
     })))

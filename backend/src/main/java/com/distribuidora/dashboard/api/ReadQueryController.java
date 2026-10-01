@@ -52,7 +52,11 @@ public class ReadQueryController {
     }
 
     @GetMapping("/products")
-    public PageResponse<Map<String, Object>> products(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.products(page, size, search); }
+    public PageResponse<Map<String, Object>> products(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "true") boolean includeStock) {
+        return queries.products(page, size, search, includeStock);
+    }
 
     @GetMapping("/inventory")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")

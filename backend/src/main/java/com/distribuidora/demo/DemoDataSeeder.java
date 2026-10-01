@@ -149,9 +149,9 @@ public class DemoDataSeeder implements ApplicationRunner {
             products.add(id);
             BigDecimal cost = BigDecimal.valueOf(500 + (index % 100) * 37L);
             jdbc.update("""
-                insert into catalog.products(id, sku, name, category, presentation, cost, status, created_at)
-                values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
-                """, id, "SKU-%04d".formatted(index), "Producto Demo %03d".formatted(index),
+                insert into catalog.products(id, name, category, presentation, cost, status, created_at)
+                values (?, ?, ?, ?, ?, 'ACTIVE', ?)
+                """, id, "Producto Demo %03d".formatted(index),
                 categories[index % categories.length], "Unidad", cost, timestamp(Instant.now()));
             BigDecimal stock = BigDecimal.valueOf(20 + (index % 80));
             jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, ?, ?)",

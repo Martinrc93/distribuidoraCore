@@ -15,7 +15,7 @@ public class PricingQueryService {
     private static final String RESOLVED_PRICE_CTE = """
         with resolved_prices as (
             select pl.id as "priceListId", pl.code as "priceListCode",
-                   p.id as "productId", p.sku, p.name,
+                   p.id as "productId", p.name,
                    h.price, h.effective_on as "effectiveOn",
                    h.created_at as "createdAt", h.updated_at as "updatedAt"
             from catalog.price_lists pl
@@ -49,11 +49,11 @@ public class PricingQueryService {
 
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size) {
         return page(RESOLVED_PRICE_CTE + """
-            select "priceListId", "priceListCode", "productId", sku, name, price,
+            select "priceListId", "priceListCode", "productId", name, price,
                    "effectiveOn", "createdAt", "updatedAt"
             from resolved_prices
             where price is not null
-            order by name, sku
+            order by name, "productId"
             """, RESOLVED_PRICE_CTE + "select count(*) from resolved_prices where price is not null",
             page, size, listId);
     }

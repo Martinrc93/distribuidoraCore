@@ -37,7 +37,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 ### Catalogo y precios
 
 - [x] Alta, edicion y baja logica de productos.
-- [x] SKU unico y costos no negativos.
+- [x] Productos identificados por UUID, sin SKU, y costos no negativos.
 - [x] Listas de precios con maximo de diez.
 - [x] Precios por producto y lista con `NUMERIC(19,4)`.
 - [x] Resolucion por lista explicita, lista del cliente y fallback documentado.

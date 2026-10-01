@@ -257,6 +257,7 @@
   .order-product-picker .input, .order-product-picker .select { @apply w-full min-w-0; }
   .order-product-picker .order-compact-input, .order-lines-table .order-compact-input { @apply w-[calc(4ch_+_22px)] min-w-0; }
   .order-product-picker > .error-text { @apply col-span-full; }
+  .order-product-picker .input[aria-invalid="true"], .order-lines-table .input[aria-invalid="true"] { @apply border-danger; }
   .order-lines-table .data-table { @apply min-w-[640px] table-fixed; }
   .order-lines-table .data-table th:nth-child(2) { @apply w-[80px]; }
   .order-lines-table .data-table th:nth-child(3), .order-lines-table .data-table th:nth-child(5) { @apply w-[130px]; }
@@ -455,20 +456,22 @@
   .price-lists-page .data-table th { @apply pt-[2px] pb-[12px] text-[#647974] text-[10px] tracking-[.045em] uppercase; }
   .price-lists-page .data-table td { @apply pt-[15px] pb-[15px]; }
   .price-lists-page .data-table tbody tr:hover { @apply bg-[#f8faf8]; }
-  .price-lists-page .data-table td:nth-child(3) { @apply text-[#234f40] font-bold tabular-nums; }
+  .price-products-table .data-table td:nth-child(2) { @apply text-[#234f40] font-bold tabular-nums; }
   .price-products-table .data-table { @apply table-fixed; }
-  .price-products-table-admin .data-table { @apply min-w-[1000px]; }
+  .price-products-table-admin .data-table { @apply min-w-[760px]; }
   .price-products-table-standard .data-table { @apply min-w-[760px]; }
-  .price-products-table-admin .data-table th:nth-child(1), .price-products-table-admin .data-table td:nth-child(1) { @apply w-[29%]; }
-  .price-products-table-admin .data-table th:nth-child(2), .price-products-table-admin .data-table td:nth-child(2) { @apply w-[14%]; }
-  .price-products-table-admin .data-table th:nth-child(3), .price-products-table-admin .data-table td:nth-child(3) { @apply w-[18%]; }
-  .price-products-table-admin .data-table th:nth-child(4), .price-products-table-admin .data-table td:nth-child(4) { @apply w-[14%]; }
-  .price-products-table-admin .data-table th:nth-child(5), .price-products-table-admin .data-table td:nth-child(5) { @apply w-[25%]; }
+  .price-products-table-admin .data-table th:nth-child(1), .price-products-table-admin .data-table td:nth-child(1) { @apply w-[43%]; }
+  .price-products-table-admin .data-table th:nth-child(2), .price-products-table-admin .data-table td:nth-child(2) { @apply w-[18%]; }
+  .price-products-table-admin .data-table th:nth-child(3), .price-products-table-admin .data-table td:nth-child(3) { @apply w-[14%]; }
+  .price-products-table-admin .data-table th:nth-child(4), .price-products-table-admin .data-table td:nth-child(4) { @apply w-[25%]; }
   .price-products-table-standard .data-table th:nth-child(1), .price-products-table-standard .data-table td:nth-child(1) { @apply w-[38%]; }
   .price-products-table-standard .data-table th:nth-child(2), .price-products-table-standard .data-table td:nth-child(2) { @apply w-[18%]; }
   .price-products-table-standard .data-table th:nth-child(3), .price-products-table-standard .data-table td:nth-child(3) { @apply w-[22%]; }
   .price-products-table-standard .data-table th:nth-child(4), .price-products-table-standard .data-table td:nth-child(4) { @apply w-[22%]; }
   .price-products-table .data-table td:first-child { @apply overflow-hidden text-ellipsis; }
+  @media (max-width: 640px) {
+    .price-products-table .data-table { @apply min-w-0; }
+  }
   .price-lists-page .pagination { @apply mt-[17px] pt-[15px]; }
   .price-lists-page .modal-backdrop { @apply z-[30]; }
   .price-lists-page .modal-backdrop .panel { @apply rounded-[8px] border-[#d2ddd7] [box-shadow:0_22px_65px_rgba(25,_58,_67,_.24)]; }
