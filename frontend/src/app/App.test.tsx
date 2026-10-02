@@ -69,7 +69,10 @@ describe('App shell', () => {
     const accessToken = `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
       if (String(input) === '/api/auth/login') return response({ accessToken, refreshToken: 'refresh-token' })
-      if (String(input) === '/api/dashboard') return response({ confirmedOrders: 3, todaySales: 1500, pendingBalance: 200, negativeStock: 0, recentOrders: [] })
+      if (String(input).startsWith('/api/dashboard?')) {
+        const params = new URL(String(input), 'http://localhost').searchParams
+        return response({ dateMin: params.get('dateMin'), dateMax: params.get('dateMax'), totals: { performedOrders: 3, deliveredOrders: 1, totalBilled: 1500, totalPaid: 1300, accountBalance: 200 }, bySeller: [] })
+      }
       if (String(input) === '/api/zones') return response([])
       return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
     })
@@ -81,9 +84,9 @@ describe('App shell', () => {
     await user.click(screen.getByRole('button', { name: 'Ingresar' }))
 
     expect(await screen.findByRole('heading', { name: 'Resumen operativo' })).toBeInTheDocument()
-    expect(await screen.findByText('Ventas del día')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Totales del período' })).toHaveTextContent('Total facturado')
     expect(screen.getByRole('link', { name: 'Resumen' })).toHaveClass('active')
-    expect(fetchMock).toHaveBeenCalledWith('/api/dashboard', expect.any(Object))
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/dashboard\?dateMin=\d{4}-\d{2}-\d{2}&dateMax=\d{4}-\d{2}-\d{2}$/), expect.any(Object))
 
     await user.click(screen.getByRole('link', { name: 'Clientes' }))
     await screen.findByRole('heading', { name: 'Clientes' })

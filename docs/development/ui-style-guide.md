@@ -134,7 +134,7 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Escape, clic en el fondo o selección de un enlace cierran el menú, también
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
-- Las rutas de Resumen, Zonas y Auditoría usan `RequireAdmin` en
+- Las rutas de Resumen, Dashboard, Zonas y Auditoría usan `RequireAdmin` en
   [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
   a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
@@ -151,10 +151,47 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 - Usar [`StatCard`](../../frontend/src/shared/components/StatCard.tsx) con
   `label`, `value`, `detail` y `emphasis` opcional. `.stats-grid` tiene cuatro
   columnas; `.stats-grid.compact`, tres. Borde superior verde y valor de `25px`.
-- Resumen muestra solo «Ventas del día» y «Deuda pendiente», en dos columnas
-  mediante utilidades locales y una a `460px` o menos. «Pedidos recientes» ocupa
-  el ancho completo debajo. No incluye acciones de creación ni acciones rápidas;
-  conserva «Ver todos» para abrir el listado de pedidos.
+- Resumen es exclusivo de `ADMIN_ALL` en menú, ruta y API. El panel «Período»
+  reutiliza `OrderDateFilter`, `OrderCalendar` y `.orders-date-filters` para
+  Desde/Hasta, con ambas fechas requeridas y el día actual de Argentina como
+  valor inicial. Conserva el rango en la URL y ofrece «Hoy» para restablecerlo.
+  Fechas inválidas o invertidas bloquean la consulta y ocultan los resultados.
+  Los cinco `StatCard` usan `.stats-grid.compact`: tres columnas en escritorio,
+  dos a `760px` o menos y una a `460px` o menos. Debajo, `DataTable` presenta las
+  mismas métricas por vendedor; a `640px` se adapta a tarjetas etiquetadas.
+  Incluye carga, error con reintento y vacío dentro de la tabla. No ofrece acciones
+  de creación. El rango selecciona pedidos por fecha de creación, incluidos los
+  dos días completos; los pedidos realizados incluyen cancelados, pero estos
+  se excluyen de importes. Entregas, pagos acumulados y saldo contable muestran
+  su estado actual, sin incluir deuda de otros períodos ni saldo anterior del remito.
+
+### Dashboard comercial
+
+- «Dashboard» aparece inmediatamente debajo de «Resumen», solo para
+  administradores. `/analytics` usa `AnalyticsDashboardPage` y la API
+  `/api/dashboard/analytics`; conserva el Resumen independiente.
+- Reutiliza `PageHeader`, `Panel`, `StatCard`, `DataTable`, `Button`, `Badge`
+  y `OrderDateFilter`. Las cuatro métricas principales siguen `.stats-grid`;
+  la tendencia y los pendientes usan `.content-grid.two-thirds`.
+- Los filtros usan Hoy/Semana/Mes/Personalizado, fechas en la URL y el calendario
+  existente. Ventas y cobros se filtran por período; deuda, entregas y stock
+  indican explícitamente su situación actual. No se muestran porcentajes con
+  base anterior cero. Errores de fechas bloquean la consulta.
+- El gráfico SVG tiene descripción accesible y una tabla de datos expandible
+  mediante teclado. Los rankings reutilizan la transformación de tablas en
+  tarjetas hasta `640px`. La grilla local de paneles pasa de dos columnas a una
+  hasta `760px`; los filtros se apilan hasta `640px`. Estas utilidades son
+  específicas de Dashboard y no cambian los patrones globales.
+- Las tablas dentro de paneles compactos y del gráfico usan ancho mínimo cero,
+  columnas de ancho fijo y texto adaptable, con padding horizontal de `10px`
+  en escritorio. Las tablas completas de pedidos conservan el ancho y scroll
+  compartidos. Los nombres largos no expanden los paneles.
+- Carga y errores se anuncian; se ofrecen reintento y actualización manual.
+  Resumen y Dashboard validan la respuesta antes de mostrar métricas: un contrato
+  incompatible conserva la navegación y los filtros, y muestra un error con reintento.
+  Las alertas usan texto además de color. Se distingue antigüedad de deuda de
+  vencimiento, y cobertura estimada de stock de un mínimo de reposición.
+- Contrato y limitaciones: [dashboard-analytics.md](../api/dashboard-analytics.md).
 
 ## Botones y acciones
 

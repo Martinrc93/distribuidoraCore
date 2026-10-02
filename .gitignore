@@ -2,9 +2,11 @@
 *.dcbak
 *.dump
 /frontend/dist-tailwind-check/
+/frontend/dist-dashboard-check/
 /frontend/test-results/
 /frontend/node_modules/
 /backend/target-order-price/
 /backend/target-sku-check/
+/backend/target-dashboard-check/
 /backend/target/*.log
 /backend/target/surefire-reports/*.dumpstream

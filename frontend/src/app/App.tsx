@@ -1,16 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
 import AppShell from './AppShell'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
-import { apiGet, getAccessToken, login } from '../shared/api/client'
+import { getAccessToken, login } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
-import { Badge, type BadgeTone } from '../shared/components/Badge'
-import { DataTable, type TableColumn } from '../shared/components/DataTable'
 import { EmptyState } from '../shared/components/EmptyState'
 import { PageHeader } from '../shared/components/PageHeader'
 import { Panel } from '../shared/components/Panel'
-import { StatCard } from '../shared/components/StatCard'
+import DashboardPage from '../features/dashboard/DashboardPage'
 import CustomersPage from '../features/customers/CustomersPage'
 import ProductsPage from '../features/products/ProductsPage'
 import PriceListsPage from '../features/pricing/PriceListsPage'
@@ -25,23 +22,7 @@ import CreditLimitPage from '../features/admin/CreditLimitPage'
 import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
 import AuditPage from '../features/admin/AuditPage'
 import ZonesPage from '../features/admin/ZonesPage'
-
-type Row = Record<string, string>
-
-type DashboardData = {
-  todaySales: number
-  pendingBalance: number
-  recentOrders: Array<{ id: string; customer: string; seller: string; total: number; status: string }>
-}
-
-function money(value: unknown) {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value ?? 0))
-}
-
-function LoadState({ error }: { error?: Error | null }) {
-  if (error) return <EmptyState title="No se pudieron cargar los datos" description={error.message} />
-  return <EmptyState title="Cargando datos" description="Consultando PostgreSQL a través de la API." />
-}
+import AnalyticsDashboardPage from '../features/dashboard/AnalyticsDashboardPage'
 
 function RequireAuth() {
   return getAccessToken() ? <Outlet /> : <Navigate to="/login" replace />
@@ -75,44 +56,8 @@ function LoginPage() {
   return <main className="login-page"><Panel title="Ingresar" description="Usá un usuario creado en la base de datos."><form className="login-form" onSubmit={submit}><label className="field"><span>Email</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label className="field"><span>Contraseña</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error-text">{error}</p>}<Button fullWidth disabled={submitting}>{submitting ? 'Ingresando...' : 'Ingresar'}</Button></form></Panel></main>
 }
 
-function DashboardPage() {
-  const query = useQuery({ queryKey: ['dashboard'], queryFn: () => apiGet<DashboardData>('/api/dashboard') })
-  if (query.isLoading || query.isError || !query.data) return <><PageHeader eyebrow="Operación" title="Resumen operativo" description="Una vista rápida de la actividad comercial de hoy." /><LoadState error={query.error} /></>
-  const recentOrders: Row[] = query.data.recentOrders.map((order) => ({ id: order.id, customer: order.customer, seller: order.seller, total: money(order.total), status: order.status }))
-
-  return (
-    <>
-      <PageHeader
-        eyebrow="Datos en tiempo real"
-        title="Resumen operativo"
-        description="Una vista rápida de la actividad comercial de hoy."
-      />
-      <section className="stats-grid grid-cols-2 [@media(max-width:460px)]:grid-cols-1" aria-label="Indicadores principales">
-        <StatCard label="Ventas del día" value={money(query.data.todaySales)} detail="Ventas registradas hoy" />
-        <StatCard label="Deuda pendiente" value={money(query.data.pendingBalance)} detail="Saldo de clientes" />
-      </section>
-      <Panel title="Pedidos recientes" action={<Button variant="link" href="/orders">Ver todos</Button>}>
-        <DataTable columns={orderColumns} rows={recentOrders} />
-      </Panel>
-    </>
-  )
-}
-
-const orderColumns: TableColumn[] = [
-  { key: 'id', label: 'Pedido', emphasis: true },
-  { key: 'customer', label: 'Cliente' },
-  { key: 'seller', label: 'Vendedor' },
-  { key: 'total', label: 'Total', align: 'right' },
-  { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
-]
-
 function PlaceholderPage({ title, description }: { title: string; description: string }) {
   return <><PageHeader eyebrow="Módulo" title={title} description={description} /><Panel><EmptyState title="Página no disponible" description="Volvé al resumen para continuar con una pantalla conectada." action={<Button variant="secondary" href="/dashboard">Volver al resumen</Button>} /></Panel></>
-}
-
-function StatusBadge({ value }: { value: string }) {
-  const tone: BadgeTone = value.toLowerCase().includes('cancel') || value.toLowerCase().includes('bloque') || value === 'Pendiente' ? 'muted' : value.toLowerCase().includes('entreg') || value === 'Pagada' || value === 'Activo' ? 'strong' : 'soft'
-  return <Badge tone={tone}>{value}</Badge>
 }
 
 export default function App() {
@@ -124,6 +69,7 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<RequireAdmin><DashboardPage /></RequireAdmin>} />
+        <Route path="/analytics" element={<RequireAdmin><AnalyticsDashboardPage /></RequireAdmin>} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/orders/new" element={<OrderCreatePage />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />

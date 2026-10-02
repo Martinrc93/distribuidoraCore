@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.math.BigDecimal;
 
 @Service
 public class ReadQueryService {
@@ -30,22 +31,46 @@ public class ReadQueryService {
         this.currentUser = currentUser;
     }
 
-    public Map<String, Object> dashboard() {
-        return Map.of(
-            "confirmedOrders", number("select count(*) from orders.orders where status = 'CONFIRMED'"),
-            "todaySales", number("select coalesce(sum(total), 0) from sale.sales where created_at::date = current_date"),
-            "pendingBalance", number("select coalesce(sum(balance), 0) from customer.customers where balance > 0"),
-            "negativeStock", number("select count(*) from inventory.inventory_balances where quantity < 0"),
-            "recentOrders", jdbc.queryForList("""
-                select o.order_number as id, c.business_name as customer,
-                       coalesce(sp.display_name, 'Sin asignar') as seller,
-                       o.total, o.status
+    public Map<String, Object> dashboard(LocalDate dateMin, LocalDate dateMax) {
+        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
+        LocalDate today = LocalDate.now(zone);
+        LocalDate from = dateMin == null ? today : dateMin;
+        LocalDate to = dateMax == null ? today : dateMax;
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("La fecha desde no puede ser posterior a la fecha hasta");
+        }
+        List<Map<String, Object>> bySeller = jdbc.queryForList("""
+            with period_orders as (
+                select o.seller_id, o.status as order_status, s.status as sale_status,
+                       s.total, s.paid,
+                       (select coalesce(sum(case when l.entry_type = 'DEBIT' then l.amount else -l.amount end), 0)
+                        from customer.account_ledger l where l.sale_id = s.id) as account_debt
                 from orders.orders o
-                join customer.customers c on c.id = o.customer_id
-                left join seller.seller_profiles sp on sp.id = o.seller_id
-                order by o.created_at desc limit 5
-                """)
-        );
+                left join sale.sales s on s.order_id = o.id
+                where o.created_at >= ? and o.created_at < ?
+            )
+            select sp.id as "sellerId", coalesce(sp.display_name, 'Sin asignar') as seller,
+                   count(*) as "performedOrders",
+                   sum(case when p.order_status = 'DELIVERED' then 1 else 0 end) as "deliveredOrders",
+                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
+                       then coalesce(p.total, 0) else 0 end) as "totalBilled",
+                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
+                       then coalesce(p.paid, 0) else 0 end) as "totalPaid",
+                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
+                       then least(greatest(p.account_debt, 0), greatest(p.total - p.paid, 0))
+                       else 0 end) as "accountBalance"
+            from period_orders p
+            left join seller.seller_profiles sp on sp.id = p.seller_id
+            group by sp.id, sp.display_name
+            order by seller, sp.id
+            """, Timestamp.from(from.atStartOfDay(zone).toInstant()),
+                Timestamp.from(to.plusDays(1).atStartOfDay(zone).toInstant()));
+        Map<String, Object> totals = new HashMap<>();
+        for (String key : List.of("performedOrders", "deliveredOrders", "totalBilled", "totalPaid", "accountBalance")) {
+            totals.put(key, bySeller.stream().map(row -> new BigDecimal(row.get(key).toString()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        }
+        return Map.of("dateMin", from, "dateMax", to, "totals", totals, "bySeller", bySeller);
     }
 
     public PageResponse<Map<String, Object>> customers(int page, int size, String search) {

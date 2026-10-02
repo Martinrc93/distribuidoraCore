@@ -30,7 +30,15 @@ El sistema es una aplicación para una empresa por instancia. Incluye:
 
 No se implementan actualmente impuestos, facturación electrónica, proveedores,
 compras, reportes analíticos avanzados, notificaciones generales ni portal de
-clientes. El dashboard operativo básico sí está disponible.
+clientes. El resumen operativo está disponible exclusivamente para administradores:
+permite elegir Desde/Hasta (hoy en Argentina por defecto) y muestra pedidos
+realizados, entregados, total facturado, total pagado y saldo en cuenta corriente,
+tanto globalmente como por vendedor. Selecciona pedidos por fecha de creación;
+entregas, cobros acumulados y saldo reflejan su estado actual. Los pedidos realizados
+incluyen cancelados, pero las ventas canceladas no aportan importes. La cuenta
+corriente corresponde a esas ventas, sin sumar deuda de otros períodos ni el saldo
+anterior incluido en el remito. «Total facturado» representa el total comercial de
+las ventas; no implica emisión de facturas fiscales.
 
 ## Módulos funcionales
 

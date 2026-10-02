@@ -25,7 +25,11 @@ public class ReadQueryController {
 
     @GetMapping("/dashboard")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
-    public Map<String, Object> dashboard() { return queries.dashboard(); }
+    public Map<String, Object> dashboard(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax) {
+        return queries.dashboard(dateMin, dateMax);
+    }
 
     @GetMapping("/customers")
     public PageResponse<Map<String, Object>> customers(@RequestParam(defaultValue = "0") int page,

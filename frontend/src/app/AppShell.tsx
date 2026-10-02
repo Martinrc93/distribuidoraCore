@@ -6,7 +6,7 @@ import { Button } from '../shared/components/Button'
 
 const compactNavigationQuery = '(max-width: 1050px)'
 const menuGroups = [
-  { label: 'Operación', links: [['Resumen', '/dashboard'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Clientes', '/customers'], ['Pagos y deuda', '/payments']] },
+  { label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Clientes', '/customers'], ['Pagos y deuda', '/payments']] },
   { label: 'Catálogo', links: [['Productos', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists']] },
   { label: 'Administración', links: [['Usuarios', '/admin/users'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
 ]
@@ -21,7 +21,7 @@ function NavigationContent({ isAdmin, onNavigate, onSignOut }: { isAdmin: boolea
       {menuGroups.filter((group) => group.label !== 'Administración' || isAdmin).map((group) => (
         <div className="nav-group" key={group.label}>
           <span className="nav-group-label">{group.label}</span>
-          {group.links.filter(([, href]) => href !== '/dashboard' || isAdmin).map(([label, href]) => (
+          {group.links.filter(([, href]) => !['/dashboard', '/analytics'].includes(href) || isAdmin).map(([label, href]) => (
             <NavLink className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} key={href} to={href} onClick={onNavigate}>
               <span className="nav-dot" aria-hidden="true" />{label}
             </NavLink>
