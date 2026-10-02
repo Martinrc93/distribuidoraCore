@@ -13,6 +13,10 @@ test.beforeEach(async ({ page }) => {
       { sellerId: null, seller: 'Sin asignar', performedOrders: 12, deliveredOrders: 6, totalBilled: 234567, totalPaid: 200000, accountBalance: 34567 },
     ],
   } }))
+  await page.route('**/api/dashboard/seller-orders?*', (route) => route.fulfill({ json: {
+    content: [{ id: 'order-1', number: 'PED-001', customer: 'Almacén Norte', date: '2026-09-01T03:00:00Z', deliveredAt: '2026-09-03T03:00:00Z', total: 100, paid: 40, accountBalance: 60, payments: [{ method: 'CASH', amount: 20 }, { method: 'BANK_TRANSFER', amount: 20 }] }],
+    page: 0, size: 20, totalElements: 1, totalPages: 1,
+  } }))
 })
 
 for (const width of [320, 390, 640, 760, 1050, 1440]) {
@@ -23,6 +27,20 @@ for (const width of [320, 390, 640, 760, 1050, 1440]) {
     await expect(page.getByRole('region', { name: 'Totales del período' })).toContainText('1.234.567,89')
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     await page.screenshot({ path: testInfo.outputPath(`summary-${width}.png`), fullPage: true })
+    const view = page.getByRole('button', { name: 'Ver pedidos de Lucía Martínez' })
+    await view.click()
+    const detail = page.getByRole('dialog', { name: 'Pedidos entregados · Lucía Martínez' })
+    await expect(detail.getByText('PED-001')).toBeVisible()
+    await expect(detail.getByText(/Efectivo:.*20,00/)).toBeVisible()
+    await expect(detail.getByText(/Transferencia:.*20,00/)).toBeVisible()
+    const bounds = await detail.boundingBox()
+    expect(bounds!.width).toBeLessThanOrEqual(width)
+    expect(bounds!.height).toBeLessThanOrEqual(900)
+    expect(await detail.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(Math.ceil(bounds!.width))
+    await page.screenshot({ path: testInfo.outputPath(`seller-orders-${width}.png`), fullPage: true })
+    await page.keyboard.press('Escape')
+    await expect(detail).toHaveCount(0)
+    await expect(view).toBeFocused()
     await page.getByRole('button', { name: 'Abrir calendario: Desde' }).click()
     const calendar = page.getByRole('dialog', { name: 'Calendario: Desde' })
     await expect(calendar).toBeVisible()

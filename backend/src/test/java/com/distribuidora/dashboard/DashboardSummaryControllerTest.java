@@ -17,6 +17,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.List;
+import java.util.UUID;
+import com.distribuidora.shared.web.PageResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,6 +62,16 @@ class DashboardSummaryControllerTest {
     }
 
     @Test
+    void bindsSellerOrderFiltersAndPagination() throws Exception {
+        UUID seller = UUID.randomUUID();
+        LocalDate day = LocalDate.of(2026, 9, 30);
+        when(service.dashboardSellerOrders(seller, false, day, day, 1, 20)).thenReturn(PageResponse.of(List.of(), 1, 20, 0));
+        mvc.perform(get("/api/dashboard/seller-orders").param("sellerId", seller.toString()).param("page", "1")
+            .param("dateMin", "2026-09-30").param("dateMax", "2026-09-30")).andExpect(status().isOk());
+        verify(service).dashboardSellerOrders(seller, false, day, day, 1, 20);
+    }
+
+    @Test
     void deniesSellerRequestsBeforeQueryingAndAllowsAdminRequests() {
         try (var context = new AnnotationConfigApplicationContext()) {
             context.register(MethodSecurity.class);
@@ -70,11 +82,14 @@ class DashboardSummaryControllerTest {
             SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
                 "seller", "unused", List.of(new SimpleGrantedAuthority("SELLER"))));
             assertThatThrownBy(() -> controller.dashboard(null, null)).isInstanceOf(AccessDeniedException.class);
+            assertThatThrownBy(() -> controller.dashboardSellerOrders(null, true, null, null, 0, 20)).isInstanceOf(AccessDeniedException.class);
             verifyNoInteractions(service);
             SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
                 "admin", "unused", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
             controller.dashboard(null, null);
+            controller.dashboardSellerOrders(null, true, null, null, 0, 20);
             verify(service).dashboard(null, null);
+            verify(service).dashboardSellerOrders(null, true, null, null, 0, 20);
         } finally {
             SecurityContextHolder.clearContext();
         }

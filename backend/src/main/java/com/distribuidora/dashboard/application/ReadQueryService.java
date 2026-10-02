@@ -73,6 +73,49 @@ public class ReadQueryService {
         return Map.of("dateMin", from, "dateMax", to, "totals", totals, "bySeller", bySeller);
     }
 
+    public PageResponse<Map<String, Object>> dashboardSellerOrders(UUID sellerId, boolean unassigned,
+            LocalDate dateMin, LocalDate dateMax, int page, int size) {
+        if ((sellerId == null) != unassigned) {
+            throw new IllegalArgumentException("Seleccione un vendedor o los pedidos sin asignar");
+        }
+        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
+        LocalDate today = LocalDate.now(zone);
+        LocalDate from = dateMin == null ? today : dateMin;
+        LocalDate to = dateMax == null ? today : dateMax;
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("La fecha desde no puede ser posterior a la fecha hasta");
+        }
+        String source = """
+            from orders.orders o
+            join sale.sales s on s.order_id = o.id
+            join customer.customers c on c.id = o.customer_id
+            where o.status = 'DELIVERED' and s.status <> 'CANCELLED'
+              and o.created_at >= ? and o.created_at < ?
+            """ + (unassigned ? " and o.seller_id is null" : " and o.seller_id = ?");
+        List<Object> parameters = new ArrayList<>(List.of(
+            Timestamp.from(from.atStartOfDay(zone).toInstant()), Timestamp.from(to.plusDays(1).atStartOfDay(zone).toInstant())));
+        if (!unassigned) parameters.add(sellerId);
+        var result = page("""
+            select o.id, o.order_number as number, c.business_name as customer,
+                   o.created_at as date, o.delivered_at as "deliveredAt", s.id as "saleId", s.total, s.paid,
+                   least(greatest((select coalesce(sum(case when l.entry_type = 'DEBIT' then l.amount else -l.amount end), 0)
+                       from customer.account_ledger l where l.sale_id = s.id), 0), greatest(s.total - s.paid, 0)) as "accountBalance"
+            """ + source + " order by o.created_at desc, o.id", "select count(*) " + source,
+            page, size, parameters.toArray());
+        if (result.content().isEmpty()) return result;
+        Object[] saleIds = result.content().stream().map(row -> row.get("saleId")).toArray();
+        String placeholders = String.join(",", java.util.Collections.nCopies(saleIds.length, "?"));
+        var payments = jdbc.queryForList("""
+            select sale_id as "saleId", method, sum(amount) as amount
+            from payment.payments where sale_id in (
+            """ + placeholders + ") group by sale_id, method order by method", saleIds);
+        for (var row : result.content()) {
+            row.put("payments", payments.stream().filter(payment -> row.get("saleId").equals(payment.get("saleId")))
+                .map(payment -> Map.of("method", payment.get("method"), "amount", payment.get("amount"))).toList());
+        }
+        return result;
+    }
+
     public PageResponse<Map<String, Object>> customers(int page, int size, String search) {
         return customers(page, size, search, null, false, "");
     }

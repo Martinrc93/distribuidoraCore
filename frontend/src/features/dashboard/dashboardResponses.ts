@@ -1,5 +1,7 @@
 import type { DashboardData } from './DashboardPage'
 import type { DashboardReport } from './AnalyticsDashboardPage'
+import type { ApiPage } from '../../shared/api/client'
+import type { SellerOrder } from './SellerOrdersDialog'
 
 type Validator = (value: unknown) => boolean
 const numeric: Validator = (value) => typeof value === 'number' && Number.isFinite(value)
@@ -17,6 +19,11 @@ const metrics = { performedOrders: numeric, deliveredOrders: numeric, totalBille
 const summary = fields({
   dateMin: isoDate, dateMax: isoDate, totals: fields(metrics),
   bySeller: list(fields({ ...metrics, sellerId: nullable(text), seller: text })),
+})
+const sellerOrders = fields({
+  page: numeric, size: numeric, totalElements: numeric, totalPages: numeric,
+  content: list(fields({ id: text, number: text, customer: text, date: timestamp, deliveredAt: nullable(timestamp),
+    total: numeric, paid: numeric, accountBalance: numeric, payments: list(fields({ method: text, amount: numeric })) })),
 })
 const sales = fields({ amount: numeric, orders: numeric })
 const collections = fields({ amount: numeric, cash: numeric, transfer: numeric })
@@ -43,6 +50,11 @@ function check(value: unknown, validate: Validator) {
 export function parseDashboardData(value: unknown): DashboardData {
   check(value, summary)
   return value as DashboardData
+}
+
+export function parseSellerOrders(value: unknown): ApiPage<SellerOrder> {
+  check(value, sellerOrders)
+  return value as ApiPage<SellerOrder>
 }
 
 export function parseDashboardReport(value: unknown): DashboardReport {

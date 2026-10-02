@@ -5,6 +5,22 @@ intentos de entrega y auditoría. Las respuestas paginadas usan el contrato
 `content`, `page`, `size`, `totalElements` y `totalPages`; la página comienza en
 0 y el tamaño se limita a 100.
 
+## Pedidos entregados por vendedor en Resumen
+
+`GET /api/dashboard/seller-orders?sellerId=<uuid>&dateMin=2026-09-01&dateMax=2026-09-30&page=0&size=20`
+
+Requiere `ADMIN_ALL`. Para la fila «Sin asignar», omitir `sellerId` y enviar
+`unassigned=true`; combinar ambos o no indicar ninguno devuelve 400. Las fechas
+ISO seleccionan los pedidos por creación, incluyendo ambos días completos de
+Argentina; fechas omitidas usan hoy y un rango invertido devuelve 400.
+Solo incluye pedidos actualmente entregados con ventas no canceladas.
+La respuesta paginada contiene `id`, `number`, `customer`, `date`, `deliveredAt`
+(puede ser null en registros históricos), `saleId`, `total`, `paid`,
+`accountBalance` y `payments` (`method`, `amount`, agrupados por método).
+El saldo contable tiene el mismo cálculo que Resumen: deuda de la venta según
+el libro, limitada al importe impago, sin incorporar deuda de otras ventas.
+Los cobros acumulados incluyen pagos posteriores al rango de creación.
+
 ## Listado de clientes con filtros
 
 ```http

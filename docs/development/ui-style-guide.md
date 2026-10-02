@@ -155,6 +155,10 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   reutiliza `OrderDateFilter`, `OrderCalendar` y `.orders-date-filters` para
   Desde/Hasta, con ambas fechas requeridas y el día actual de Argentina como
   valor inicial. Conserva el rango en la URL y ofrece «Hoy» para restablecerlo.
+  En esta pantalla, título y controles comparten el encabezado del panel para
+  reducir su altura. «Hoy» se ubica inmediatamente después de Desde/Hasta,
+  alineado con los campos; el conjunto se adapta al ancho disponible y solo
+  separa el botón en una segunda fila si no entra junto a las fechas.
   Fechas inválidas o invertidas bloquean la consulta y ocultan los resultados.
   Los cinco `StatCard` usan `.stats-grid.compact`: tres columnas en escritorio,
   dos a `760px` o menos y una a `460px` o menos. Debajo, `DataTable` presenta las
@@ -164,6 +168,15 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   dos días completos; los pedidos realizados incluyen cancelados, pero estos
   se excluyen de importes. Entregas, pagos acumulados y saldo contable muestran
   su estado actual, sin incluir deuda de otros períodos ni saldo anterior del remito.
+  Cada vendedor, incluido «Sin asignar», ofrece «Ver»: abre `SellerOrdersDialog`
+  con pedidos entregados del mismo rango de creación. Incluye cliente, fecha de
+  entrega, total, pagado, importes por método de pago y deuda actual de cada venta.
+  Usa paginación de 20 filas, estados de carga, vacío y error con reintento.
+  El diálogo nativo reutiliza `.confirmation-dialog-*` con ancho local de hasta
+  `1100px`, scroll limitado al viewport y cierre visible en un encabezado fijo.
+  Contiene el foco, bloquea el fondo, admite Escape y restaura el foco en «Ver».
+  La tabla conserva las tarjetas compartidas hasta `640px`. Esta variante es
+  específica de Resumen y no cambia las dimensiones de las confirmaciones.
 
 ### Dashboard comercial
 

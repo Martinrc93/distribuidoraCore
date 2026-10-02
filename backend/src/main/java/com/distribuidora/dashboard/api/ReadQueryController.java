@@ -31,6 +31,17 @@ public class ReadQueryController {
         return queries.dashboard(dateMin, dateMax);
     }
 
+    @GetMapping("/dashboard/seller-orders")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public PageResponse<Map<String, Object>> dashboardSellerOrders(
+            @RequestParam(required = false) UUID sellerId,
+            @RequestParam(defaultValue = "false") boolean unassigned,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return queries.dashboardSellerOrders(sellerId, unassigned, dateMin, dateMax, page, size);
+    }
+
     @GetMapping("/customers")
     public PageResponse<Map<String, Object>> customers(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,

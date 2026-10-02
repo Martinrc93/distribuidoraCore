@@ -10,6 +10,7 @@ import { Panel } from '../../shared/components/Panel'
 import { StatCard } from '../../shared/components/StatCard'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 import { parseDashboardData } from './dashboardResponses'
+import { SellerOrdersDialog, type SellerOrderSelection } from './SellerOrdersDialog'
 
 type Metrics = {
   performedOrders: number
@@ -50,6 +51,7 @@ const columns: TableColumn[] = [
 
 export default function DashboardPage() {
   const [params, setParams] = useSearchParams()
+  const [selectedSeller, setSelectedSeller] = useState<SellerOrderSelection | null>(null)
   const [today] = useState(() => new Intl.DateTimeFormat('es-AR', {
     day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires',
   }).format(new Date()))
@@ -82,19 +84,28 @@ export default function DashboardPage() {
     performedOrders: String(seller.performedOrders), deliveredOrders: String(seller.deliveredOrders),
     totalBilled: money(seller.totalBilled), totalPaid: money(seller.totalPaid), accountBalance: money(seller.accountBalance),
   }))
+  const sellerColumns: TableColumn[] = [...columns, {
+    key: 'action', label: 'Detalle', render: (_value, row) => <div className="table-row-actions"><Button type="button" variant="secondary" aria-label={`Ver pedidos de ${row.seller}`} onClick={() => {
+      const seller = data?.bySeller.find((item) => (item.sellerId ?? 'unassigned') === row.id)
+      if (seller && min && max) setSelectedSeller({ sellerId: seller.sellerId, seller: seller.seller, dateMin: min, dateMax: max })
+    }}>Ver</Button></div>,
+  }]
 
   return <>
     <PageHeader eyebrow="Operación" title="Resumen operativo" description="Totales del período y detalle por vendedor." />
-    <Panel title="Período" description="Se toman los pedidos creados entre Desde y Hasta, incluyendo ambos días.">
-      <form className="toolbar orders-toolbar items-end mb-0" onSubmit={(event) => event.preventDefault()}>
-        <Button type="button" variant="secondary" onClick={showToday}>Hoy</Button>
-        <div className="orders-date-filters">
+    <div className="[&_.panel-header]:mb-0 [&_.panel-header]:items-center [&_.panel-header]:flex-wrap">
+    <Panel title="Período" description="Se toman los pedidos creados entre Desde y Hasta, incluyendo ambos días." action={
+      <form className="flex flex-wrap items-end gap-[9px] max-w-full [@media(max-width:760px)]:w-full" onSubmit={(event) => event.preventDefault()}>
+        <div className="orders-date-filters ml-0 min-w-[240px] [@media(max-width:640px)]:w-auto [@media(max-width:640px)]:flex-1">
           <OrderDateFilter id="dashboard-date-min" label="Desde" value={dateMin} isoValue={min ?? ''} onChange={(value) => setDate('dateMin', value)} invalid={!min || reversed} describedBy={dateError ? 'dashboard-date-error' : undefined} />
           <OrderDateFilter id="dashboard-date-max" label="Hasta" value={dateMax} isoValue={max ?? ''} onChange={(value) => setDate('dateMax', value)} invalid={!max || reversed} describedBy={dateError ? 'dashboard-date-error' : undefined} />
         </div>
+        <Button type="button" variant="secondary" onClick={showToday}>Hoy</Button>
       </form>
+    }>
       {dateError && <p id="dashboard-date-error" className="error-text" role="alert">{dateError}</p>}
     </Panel>
+    </div>
     {!dateError && (query.isLoading ? <div role="status"><EmptyState title="Cargando resumen" description="Consultando pedidos y sus saldos." /></div>
       : query.isError ? <EmptyState title="No se pudo cargar el resumen" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />
       : data && <>
@@ -106,8 +117,9 @@ export default function DashboardPage() {
           <StatCard label="Saldo en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo pendiente actual de esas ventas" />
         </section>
         <Panel title="Detalle por vendedor" description="Entregas, cobros y saldos reflejan el estado actual de los pedidos del período. No incluye deuda de otros períodos ni saldo anterior agregado al remito.">
-          <DataTable columns={columns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos en el período seleccionado.</p>} />
+          <DataTable columns={sellerColumns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos en el período seleccionado.</p>} />
         </Panel>
       </>)}
+    {selectedSeller && !dateError && selectedSeller.dateMin === min && selectedSeller.dateMax === max && <SellerOrdersDialog selection={selectedSeller} onClose={() => setSelectedSeller(null)} />}
   </>
 }
