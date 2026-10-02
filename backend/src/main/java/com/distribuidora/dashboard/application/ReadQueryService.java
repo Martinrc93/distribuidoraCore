@@ -42,11 +42,18 @@ public class ReadQueryService {
         List<Map<String, Object>> bySeller = jdbc.queryForList("""
             with period_orders as (
                 select o.seller_id, o.status as order_status, s.status as sale_status,
-                       s.total, s.paid,
+                       s.total, s.paid, coalesce(pay.cash_paid, 0) as cash_paid,
+                       coalesce(pay.transfer_paid, 0) as transfer_paid,
                        (select coalesce(sum(case when l.entry_type = 'DEBIT' then l.amount else -l.amount end), 0)
                         from customer.account_ledger l where l.sale_id = s.id) as account_debt
                 from orders.orders o
                 left join sale.sales s on s.order_id = o.id
+                left join (
+                    select sale_id,
+                           sum(case when method = 'CASH' then amount else 0 end) as cash_paid,
+                           sum(case when method = 'BANK_TRANSFER' then amount else 0 end) as transfer_paid
+                    from payment.payments group by sale_id
+                ) pay on pay.sale_id = s.id
                 where o.created_at >= ? and o.created_at < ?
             )
             select sp.id as "sellerId", coalesce(sp.display_name, 'Sin asignar') as seller,
@@ -57,6 +64,10 @@ public class ReadQueryService {
                    sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
                        then coalesce(p.paid, 0) else 0 end) as "totalPaid",
                    sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
+                       then p.cash_paid else 0 end) as "cashPaid",
+                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
+                       then p.transfer_paid else 0 end) as "transferPaid",
+                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
                        then least(greatest(p.account_debt, 0), greatest(p.total - p.paid, 0))
                        else 0 end) as "accountBalance"
             from period_orders p
@@ -66,7 +77,7 @@ public class ReadQueryService {
             """, Timestamp.from(from.atStartOfDay(zone).toInstant()),
                 Timestamp.from(to.plusDays(1).atStartOfDay(zone).toInstant()));
         Map<String, Object> totals = new HashMap<>();
-        for (String key : List.of("performedOrders", "deliveredOrders", "totalBilled", "totalPaid", "accountBalance")) {
+        for (String key : List.of("performedOrders", "deliveredOrders", "totalBilled", "totalPaid", "cashPaid", "transferPaid", "accountBalance")) {
             totals.put(key, bySeller.stream().map(row -> new BigDecimal(row.get(key).toString()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         }

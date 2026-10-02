@@ -71,7 +71,7 @@ describe('App shell', () => {
       if (String(input) === '/api/auth/login') return response({ accessToken, refreshToken: 'refresh-token' })
       if (String(input).startsWith('/api/dashboard?')) {
         const params = new URL(String(input), 'http://localhost').searchParams
-        return response({ dateMin: params.get('dateMin'), dateMax: params.get('dateMax'), totals: { performedOrders: 3, deliveredOrders: 1, totalBilled: 1500, totalPaid: 1300, accountBalance: 200 }, bySeller: [] })
+        return response({ dateMin: params.get('dateMin'), dateMax: params.get('dateMax'), totals: { performedOrders: 3, deliveredOrders: 1, totalBilled: 1500, totalPaid: 1300, cashPaid: 1000, transferPaid: 300, accountBalance: 200 }, bySeller: [] })
       }
       if (String(input) === '/api/zones') return response([])
       return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })

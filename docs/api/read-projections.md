@@ -5,6 +5,14 @@ intentos de entrega y auditoría. Las respuestas paginadas usan el contrato
 `content`, `page`, `size`, `totalElements` y `totalPages`; la página comienza en
 0 y el tamaño se limita a 100.
 
+## Totales de Resumen
+
+`GET /api/dashboard?dateMin=2026-09-01&dateMax=2026-09-30` requiere `ADMIN_ALL`.
+`totals` y cada fila de `bySeller` incluyen `cashPaid` y `transferPaid`, además
+de `totalPaid`: suman los pagos `CASH` y `BANK_TRANSFER` asociados a las ventas
+no canceladas de los pedidos del período. Son cobros acumulados al consultar,
+incluidos los posteriores al rango de creación, y no dependen de la entrega.
+
 ## Pedidos entregados por vendedor en Resumen
 
 `GET /api/dashboard/seller-orders?sellerId=<uuid>&dateMin=2026-09-01&dateMax=2026-09-30&page=0&size=20`

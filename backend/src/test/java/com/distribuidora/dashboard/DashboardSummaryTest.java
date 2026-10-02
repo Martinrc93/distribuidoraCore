@@ -32,10 +32,12 @@ class DashboardSummaryTest {
         jdbc.execute("create schema sale");
         jdbc.execute("create schema seller");
         jdbc.execute("create schema customer");
+        jdbc.execute("create schema payment");
         jdbc.execute("create table seller.seller_profiles(id uuid primary key, display_name varchar, status varchar)");
         jdbc.execute("create table orders.orders(id uuid primary key, seller_id uuid, status varchar, created_at timestamp with time zone)");
         jdbc.execute("create table sale.sales(id uuid primary key, order_id uuid unique, status varchar, total decimal(19,4), paid decimal(19,4))");
         jdbc.execute("create table customer.account_ledger(sale_id uuid, entry_type varchar, amount decimal(19,4))");
+        jdbc.execute("create table payment.payments(sale_id uuid, method varchar, amount decimal(19,4))");
         jdbc.update("insert into seller.seller_profiles values (?, 'Lucía', 'ACTIVE'), (?, 'Lucía', 'INACTIVE')", seller, otherSeller);
         service = new ReadQueryService(jdbc);
     }
@@ -43,6 +45,8 @@ class DashboardSummaryTest {
     @Test
     void aggregatesOrdersAndTheirCurrentPaymentsAndLedgerBySellerWithoutMultiplyingRows() {
         UUID delivered = insert(seller, "DELIVERED", "100.1250", "40.0250", "2026-09-30T03:00:00Z");
+        jdbc.update("update payment.payments set amount = 20.0250 where sale_id = ?", delivered);
+        jdbc.update("insert into payment.payments values (?, 'BANK_TRANSFER', 20)", delivered);
         ledger(delivered, "DEBIT", "80.1000");
         ledger(delivered, "CREDIT", "20.0000");
         UUID confirmed = insert(seller, "CONFIRMED", "200", "0", "2026-10-01T02:59:59.999999Z");
@@ -63,6 +67,8 @@ class DashboardSummaryTest {
         assertAmount(totals, "deliveredOrders", "2");
         assertAmount(totals, "totalBilled", "380.1250");
         assertAmount(totals, "totalPaid", "100.0250");
+        assertAmount(totals, "cashPaid", "80.0250");
+        assertAmount(totals, "transferPaid", "20");
         assertAmount(totals, "accountBalance", "280.1000");
         List<Map<String, Object>> rows = rows(result);
         assertThat(rows).hasSize(3);
@@ -70,6 +76,8 @@ class DashboardSummaryTest {
         assertAmount(own, "performedOrders", "3");
         assertAmount(own, "totalBilled", "300.1250");
         assertAmount(own, "accountBalance", "260.1000");
+        assertAmount(own, "cashPaid", "20.0250");
+        assertAmount(own, "transferPaid", "20");
         assertThat(rows).anySatisfy(row -> assertThat(row.get("sellerId")).isEqualTo(otherSeller))
             .anySatisfy(row -> assertThat(row.get("sellerId")).isNull());
     }
@@ -109,6 +117,7 @@ class DashboardSummaryTest {
         UUID saleId = UUID.randomUUID();
         jdbc.update("insert into orders.orders values (?, ?, ?, ?)", orderId, sellerId, status, Timestamp.from(Instant.parse(timestamp)));
         jdbc.update("insert into sale.sales values (?, ?, ?, ?, ?)", saleId, orderId, status, new BigDecimal(total), new BigDecimal(paid));
+        if (new BigDecimal(paid).signum() > 0) jdbc.update("insert into payment.payments values (?, 'CASH', ?)", saleId, new BigDecimal(paid));
         return saleId;
     }
 

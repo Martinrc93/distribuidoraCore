@@ -17,6 +17,8 @@ type Metrics = {
   deliveredOrders: number
   totalBilled: number
   totalPaid: number
+  cashPaid: number
+  transferPaid: number
   accountBalance: number
 }
 
@@ -46,6 +48,8 @@ const columns: TableColumn[] = [
   { key: 'deliveredOrders', label: 'Pedidos entregados', align: 'right' },
   { key: 'totalBilled', label: 'Total facturado', align: 'right' },
   { key: 'totalPaid', label: 'Total pagado', align: 'right' },
+  { key: 'cashPaid', label: 'Pagado en efectivo', align: 'right' },
+  { key: 'transferPaid', label: 'Pagado en transferencia', align: 'right' },
   { key: 'accountBalance', label: 'Saldo en cuenta corriente', align: 'right' },
 ]
 
@@ -82,7 +86,8 @@ export default function DashboardPage() {
   const rows = (data?.bySeller ?? []).map((seller) => ({
     id: seller.sellerId ?? 'unassigned', seller: seller.seller,
     performedOrders: String(seller.performedOrders), deliveredOrders: String(seller.deliveredOrders),
-    totalBilled: money(seller.totalBilled), totalPaid: money(seller.totalPaid), accountBalance: money(seller.accountBalance),
+    totalBilled: money(seller.totalBilled), totalPaid: money(seller.totalPaid), cashPaid: money(seller.cashPaid),
+    transferPaid: money(seller.transferPaid), accountBalance: money(seller.accountBalance),
   }))
   const sellerColumns: TableColumn[] = [...columns, {
     key: 'action', label: 'Detalle', render: (_value, row) => <div className="table-row-actions"><Button type="button" variant="secondary" aria-label={`Ver pedidos de ${row.seller}`} onClick={() => {
@@ -117,7 +122,7 @@ export default function DashboardPage() {
           <StatCard label="Saldo en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo pendiente actual de esas ventas" />
         </section>
         <Panel title="Detalle por vendedor" description="Entregas, cobros y saldos reflejan el estado actual de los pedidos del período. No incluye deuda de otros períodos ni saldo anterior agregado al remito.">
-          <DataTable columns={sellerColumns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos en el período seleccionado.</p>} />
+          <DataTable className="[&_th]:whitespace-normal" columns={sellerColumns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos en el período seleccionado.</p>} />
         </Panel>
       </>)}
     {selectedSeller && !dateError && selectedSeller.dateMin === min && selectedSeller.dateMax === max && <SellerOrdersDialog selection={selectedSeller} onClose={() => setSelectedSeller(null)} />}

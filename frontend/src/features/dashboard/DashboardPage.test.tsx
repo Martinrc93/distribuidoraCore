@@ -6,10 +6,10 @@ import DashboardPage, { type DashboardData } from './DashboardPage'
 
 const data: DashboardData = {
   dateMin: '2026-09-30', dateMax: '2026-09-30',
-  totals: { performedOrders: 5, deliveredOrders: 2, totalBilled: 380.12, totalPaid: 100.02, accountBalance: 280.10 },
+  totals: { performedOrders: 5, deliveredOrders: 2, totalBilled: 380.12, totalPaid: 100.02, cashPaid: 80, transferPaid: 20.02, accountBalance: 280.10 },
   bySeller: [
-    { sellerId: 'seller-1', seller: 'Lucía', performedOrders: 3, deliveredOrders: 1, totalBilled: 300.12, totalPaid: 40.02, accountBalance: 260.10 },
-    { sellerId: null, seller: 'Sin asignar', performedOrders: 2, deliveredOrders: 1, totalBilled: 80, totalPaid: 60, accountBalance: 20 },
+    { sellerId: 'seller-1', seller: 'Lucía', performedOrders: 3, deliveredOrders: 1, totalBilled: 300.12, totalPaid: 40.02, cashPaid: 20, transferPaid: 20.02, accountBalance: 260.10 },
+    { sellerId: null, seller: 'Sin asignar', performedOrders: 2, deliveredOrders: 1, totalBilled: 80, totalPaid: 60, cashPaid: 60, transferPaid: 0, accountBalance: 20 },
   ],
 }
 
@@ -46,6 +46,8 @@ describe('DashboardPage', () => {
     const row = screen.getByText('Lucía').closest('tr')!
     expect(within(row).getByText(/300,12/)).toBeInTheDocument()
     expect(within(row).getByText(/40,02/)).toBeInTheDocument()
+    expect(within(row).getByText(/20,00/)).toBeInTheDocument()
+    expect(within(row).getByText(/20,02/)).toBeInTheDocument()
     expect(within(row).getByText(/260,10/)).toBeInTheDocument()
   })
 
@@ -74,7 +76,7 @@ describe('DashboardPage', () => {
   })
 
   it('shows zero totals and an empty table for a period without orders', async () => {
-    vi.spyOn(global, 'fetch').mockImplementation(() => response({ ...data, totals: { performedOrders: 0, deliveredOrders: 0, totalBilled: 0, totalPaid: 0, accountBalance: 0 }, bySeller: [] }))
+    vi.spyOn(global, 'fetch').mockImplementation(() => response({ ...data, totals: { performedOrders: 0, deliveredOrders: 0, totalBilled: 0, totalPaid: 0, cashPaid: 0, transferPaid: 0, accountBalance: 0 }, bySeller: [] }))
     renderDashboard()
     expect(await screen.findByText('No hay pedidos en el período seleccionado.')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Totales del período' })).not.toHaveTextContent('NaN')

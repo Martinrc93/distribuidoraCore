@@ -20,7 +20,6 @@ export type SellerOrder = {
 }
 
 export type SellerOrderSelection = { sellerId: string | null; seller: string; dateMin: string; dateMax: string }
-const methodNames: Record<string, string> = { CASH: 'Efectivo', BANK_TRANSFER: 'Transferencia', CUSTOMER_ACCOUNT: 'Cuenta corriente' }
 const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
 const date = (value: string | null) => value ? new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(value)) : '—'
 const periodDate = (value: string) => value.split('-').reverse().join('/')
@@ -31,10 +30,8 @@ const columns: TableColumn[] = [
   { key: 'deliveredAt', label: 'Entregado el' },
   { key: 'total', label: 'Total', align: 'right' },
   { key: 'paid', label: 'Pagado', align: 'right' },
-  { key: 'payments', label: 'Métodos de pago', render: (_value, row) => {
-    const payments = JSON.parse(row.payments) as SellerOrder['payments']
-    return payments.length ? <div className="grid gap-[5px]">{payments.map((payment) => <span key={payment.method}>{methodNames[payment.method] ?? payment.method}: {money(payment.amount)}</span>)}</div> : 'Sin cobros'
-  } },
+  { key: 'cashPaid', label: 'Pagado en efectivo', align: 'right' },
+  { key: 'transferPaid', label: 'Pagado en transferencia', align: 'right' },
   { key: 'accountBalance', label: 'Deuda en cuenta corriente', align: 'right' },
 ]
 
@@ -46,7 +43,7 @@ export function SellerOrdersDialog({ selection, onClose }: { selection: SellerOr
   if (selection.sellerId) params.set('sellerId', selection.sellerId)
   else params.set('unassigned', 'true')
   const path = `/api/dashboard/seller-orders?${params}`
-  const query = useQuery<ApiPage<SellerOrder>>({ queryKey: [path], queryFn: async ({ signal }) => parseSellerOrders(await apiGet<unknown>(path, signal)) })
+  const query = useQuery<ApiPage<SellerOrder>>({ queryKey: [path], queryFn: async ({ signal }) => parseSellerOrders(await apiGet<unknown>(path, signal)), retry: false })
 
   useEffect(() => {
     const element = dialog.current!
@@ -64,7 +61,9 @@ export function SellerOrdersDialog({ selection, onClose }: { selection: SellerOr
 
   const rows = (query.data?.content ?? []).map((order) => ({
     id: order.id, number: order.number, customer: order.customer, deliveredAt: date(order.deliveredAt),
-    total: money(order.total), paid: money(order.paid), accountBalance: money(order.accountBalance), payments: JSON.stringify(order.payments),
+    total: money(order.total), paid: money(order.paid), accountBalance: money(order.accountBalance),
+    cashPaid: money(order.payments.filter((payment) => payment.method === 'CASH').reduce((sum, payment) => sum + payment.amount, 0)),
+    transferPaid: money(order.payments.filter((payment) => payment.method === 'BANK_TRANSFER').reduce((sum, payment) => sum + payment.amount, 0)),
   }))
 
   return createPortal(<dialog ref={dialog} className="confirmation-dialog w-[min(1100px,_calc(100vw_-_40px))] [@media(max-width:760px)]:w-[calc(100vw_-_28px)]"

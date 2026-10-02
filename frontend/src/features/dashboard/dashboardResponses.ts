@@ -15,7 +15,7 @@ const fields = (schema: Record<string, Validator>): Validator => (value) => type
   && value !== null && !Array.isArray(value)
   && Object.entries(schema).every(([key, validate]) => validate((value as Record<string, unknown>)[key]))
 
-const metrics = { performedOrders: numeric, deliveredOrders: numeric, totalBilled: numeric, totalPaid: numeric, accountBalance: numeric }
+const metrics = { performedOrders: numeric, deliveredOrders: numeric, totalBilled: numeric, totalPaid: numeric, cashPaid: numeric, transferPaid: numeric, accountBalance: numeric }
 const summary = fields({
   dateMin: isoDate, dateMax: isoDate, totals: fields(metrics),
   bySeller: list(fields({ ...metrics, sellerId: nullable(text), seller: text })),

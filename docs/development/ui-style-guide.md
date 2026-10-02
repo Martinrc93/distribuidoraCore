@@ -162,7 +162,10 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Fechas inválidas o invertidas bloquean la consulta y ocultan los resultados.
   Los cinco `StatCard` usan `.stats-grid.compact`: tres columnas en escritorio,
   dos a `760px` o menos y una a `460px` o menos. Debajo, `DataTable` presenta las
-  mismas métricas por vendedor; a `640px` se adapta a tarjetas etiquetadas.
+  mismas métricas por vendedor y separa «Pagado en efectivo» y «Pagado en
+  transferencia» en columnas; a `640px` se adapta a tarjetas etiquetadas.
+  Los encabezados de esta tabla admiten varias líneas para conservar visible
+  «Ver» con el desglose de cobros en escritorio.
   Incluye carga, error con reintento y vacío dentro de la tabla. No ofrece acciones
   de creación. El rango selecciona pedidos por fecha de creación, incluidos los
   dos días completos; los pedidos realizados incluyen cancelados, pero estos
@@ -170,8 +173,9 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   su estado actual, sin incluir deuda de otros períodos ni saldo anterior del remito.
   Cada vendedor, incluido «Sin asignar», ofrece «Ver»: abre `SellerOrdersDialog`
   con pedidos entregados del mismo rango de creación. Incluye cliente, fecha de
-  entrega, total, pagado, importes por método de pago y deuda actual de cada venta.
-  Usa paginación de 20 filas, estados de carga, vacío y error con reintento.
+  entrega, total, pagado, efectivo, transferencia y deuda actual de cada venta.
+  Usa paginación de 20 filas, estados de carga, vacío y error con reintento manual.
+  Los errores HTTP se muestran sin esperar reintentos automáticos.
   El diálogo nativo reutiliza `.confirmation-dialog-*` con ancho local de hasta
   `1100px`, scroll limitado al viewport y cierre visible en un encabezado fijo.
   Contiene el foco, bloquea el fondo, admite Escape y restaura el foco en «Ver».

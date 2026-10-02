@@ -7,10 +7,10 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/dashboard?*', (route) => route.fulfill({ json: {
     dateMin: new URL(route.request().url()).searchParams.get('dateMin'),
     dateMax: new URL(route.request().url()).searchParams.get('dateMax'),
-    totals: { performedOrders: 42, deliveredOrders: 31, totalBilled: 1234567.89, totalPaid: 950000.50, accountBalance: 284567.39 },
+    totals: { performedOrders: 42, deliveredOrders: 31, totalBilled: 1234567.89, totalPaid: 950000.50, cashPaid: 700000, transferPaid: 250000.50, accountBalance: 284567.39 },
     bySeller: [
-      { sellerId: '1', seller: 'Lucía Martínez', performedOrders: 30, deliveredOrders: 25, totalBilled: 1000000.89, totalPaid: 750000.50, accountBalance: 250000.39 },
-      { sellerId: null, seller: 'Sin asignar', performedOrders: 12, deliveredOrders: 6, totalBilled: 234567, totalPaid: 200000, accountBalance: 34567 },
+      { sellerId: '1', seller: 'Lucía Martínez', performedOrders: 30, deliveredOrders: 25, totalBilled: 1000000.89, totalPaid: 750000.50, cashPaid: 500000, transferPaid: 250000.50, accountBalance: 250000.39 },
+      { sellerId: null, seller: 'Sin asignar', performedOrders: 12, deliveredOrders: 6, totalBilled: 234567, totalPaid: 200000, cashPaid: 200000, transferPaid: 0, accountBalance: 34567 },
     ],
   } }))
   await page.route('**/api/dashboard/seller-orders?*', (route) => route.fulfill({ json: {
@@ -31,8 +31,8 @@ for (const width of [320, 390, 640, 760, 1050, 1440]) {
     await view.click()
     const detail = page.getByRole('dialog', { name: 'Pedidos entregados · Lucía Martínez' })
     await expect(detail.getByText('PED-001')).toBeVisible()
-    await expect(detail.getByText(/Efectivo:.*20,00/)).toBeVisible()
-    await expect(detail.getByText(/Transferencia:.*20,00/)).toBeVisible()
+    await expect(detail.locator('[data-label="Pagado en efectivo"]')).toContainText('20,00')
+    await expect(detail.locator('[data-label="Pagado en transferencia"]')).toContainText('20,00')
     const bounds = await detail.boundingBox()
     expect(bounds!.width).toBeLessThanOrEqual(width)
     expect(bounds!.height).toBeLessThanOrEqual(900)
