@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
@@ -12,21 +13,7 @@ import { SellerSelect } from '../../shared/components/EntitySelect'
 import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
-
-type Customer = {
-  id: string
-  name: string
-  cuitId?: string | null
-  email?: string | null
-  phone?: string | null
-  address?: string | null
-  zone?: string | null
-  seller?: string
-  sellerId?: string
-  priceListId?: string | null
-  balance?: number
-  status: 'ACTIVE' | 'INACTIVE' | string
-}
+import type { Customer } from './customerTypes'
 
 type Seller = { id: string; displayName: string; email: string }
 type PriceList = { id: string; code: string; name: string; status: string }
@@ -164,6 +151,7 @@ function CustomerForm({
 }
 
 export default function CustomersPage() {
+  const location = useLocation()
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
   const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'sellerId', 'hasBalance', 'status'])
@@ -222,7 +210,7 @@ export default function CustomersPage() {
     { key: 'seller', label: 'Vendedor' },
     { key: 'balance', label: 'Saldo', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
-    ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Record<string, string>) => <div className="page-actions"><Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button></div> }] : []),
+    { key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions"><Button variant="secondary" href={`/customers/${row.id}?returnTo=${encodeURIComponent(location.pathname + location.search)}`} aria-label={`Ver cliente ${row.name}`}>Ver cliente</Button>{isAdmin && <Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button>}</div> },
   ]
 
   return <>

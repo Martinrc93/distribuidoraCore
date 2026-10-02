@@ -14,6 +14,7 @@ import { apiGetAllPages } from '../../shared/api/pagination'
 import { loadOrderPrices } from './orderPrice'
 import { PreviousOrderDiscountDialog } from './PreviousOrderDiscountDialog'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
+import { OrderDateFilter } from './OrderDateFilter'
 
 type Customer = { id: string; name: string; sellerId?: string | null; seller?: string | null; priceListId?: string | null; balance?: number }
 type Product = { id: string; name: string; status?: string }
@@ -30,6 +31,7 @@ type Props = { editOrder?: EditableOrder; onSaved?: () => Promise<void>; onCance
 type ConfirmationRequest = {
   idempotencyKey: string
   customerId: string
+  orderDate?: string
   sellerId?: string | null
   priceListId: string
   lines: Array<{ productId: string; quantity: number; lineDiscountPercent: number; unitPriceOverride?: number }>
@@ -61,6 +63,19 @@ function money(value: number) {
 
 function quantityValue(value: string) {
   return Number(value.trim().replace(',', '.'))
+}
+
+function currentOrderDate() {
+  return new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+}
+
+function parseOrderDate(value: string) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value)
+  if (!match) return null
+  const [, day, month, year] = match
+  const iso = `${year}-${month}-${day}`
+  const date = new Date(`${iso}T00:00:00Z`)
+  return Number(year) > 0 && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso ? iso : null
 }
 
 function validQuantity(value: string) {
@@ -96,6 +111,10 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
+  const [initialOrderDate] = useState(currentOrderDate)
+  const [orderDate, setOrderDate] = useState(initialOrderDate)
+  const parsedOrderDate = parseOrderDate(orderDate)
+  const invalidOrderDate = !editOrder && !parsedOrderDate
   const customersQuery = useQuery({ queryKey: CUSTOMER_KEY, queryFn: () => apiGetAllPages<Customer>('/api/customers?page=0&size=20'), enabled: !editOrder })
   const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGetAllPages<Product>('/api/products?page=0&size=100&includeStock=false') })
   const listsQuery = useQuery({ queryKey: ['order-create-price-lists', ...PRICE_LIST_KEY], queryFn: loadPriceLists })
@@ -190,7 +209,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     { key: 'subtotal', label: 'Subtotal', align: 'right', emphasis: true },
     { key: 'remove', label: '', align: 'right', render: (_value, row) => <Button variant="danger" type="button" aria-label={`Quitar ${row.name}`} title={`Quitar ${row.name}`} disabled={submitting} onClick={() => removeLine(row.id)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" /></svg></Button> },
   ]
-  const hasUnsavedDraft = editOrder ? editChanged : Boolean(customerId || sellerId || explicitListId || lines.length || selectedProductId || orderDiscountPercent !== '0' || previousBalanceInput)
+  const hasUnsavedDraft = editOrder ? editChanged : Boolean(customerId || sellerId || explicitListId || lines.length || selectedProductId || orderDiscountPercent !== '0' || previousBalanceInput || orderDate !== initialOrderDate)
   const { requestDiscard, discardDialog } = useDiscardChanges({
     hasChanges: hasUnsavedDraft && !responseData,
     onDiscard: () => onCancel ? onCancel() : navigate('/orders'),
@@ -297,6 +316,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   }
 
   function buildPayload(): ConfirmationRequest | undefined {
+    if (invalidOrderDate) { setError('Ingresá una fecha válida con formato dd/mm/aaaa.'); return undefined }
     if (!customerId) { setError('Seleccioná un cliente.'); return undefined }
     if (!resolvedListId) { setError('Seleccioná una lista de precios.'); return undefined }
     if (!selectedList) { setError('La lista asignada no está disponible. Seleccioná una lista activa.'); return undefined }
@@ -319,7 +339,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
 
     const discount = isAdmin ? orderDiscountValue : 0
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento general debe estar entre 0 y 100%.'); return undefined }
-    return { idempotencyKey: newKey(), customerId, ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments: [] }
+    return { idempotencyKey: newKey(), customerId, ...(!editOrder ? { orderDate: parsedOrderDate! } : {}), ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments: [] }
   }
 
   async function confirm(event: FormEvent) {
@@ -380,9 +400,10 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     {discardDialog}
     {readLoading ? <Panel><EmptyState title="Cargando datos del pedido" description={isAdmin ? 'Consultando clientes, productos, vendedores y listas activas.' : 'Consultando clientes, productos y listas activas.'} /></Panel>
       : readError ? <Panel><EmptyState title="No se pudo preparar el pedido" description={readError.message} action={isAdmin && sellersQuery.isError && readError === sellersQuery.error ? <Button variant="secondary" onClick={() => sellersQuery.refetch()}>Reintentar vendedores</Button> : undefined} /></Panel>
-        : <form onSubmit={confirm}>
+        : <form className="order-form" onSubmit={confirm}>
           {error && <p className="error-text" role="alert">{error}</p>}
-          <Panel title="Datos del pedido">
+          <Panel title="Datos del pedido" action={!editOrder ? <div className="order-form-date"><OrderDateFilter id="order-date" label="Fecha del pedido" value={orderDate} isoValue={parsedOrderDate ?? ''} invalid={invalidOrderDate} describedBy={invalidOrderDate ? 'order-date-error' : undefined} required disabled={submitting} onChange={(value) => { draftChanged(); setOrderDate(value) }} /></div> : undefined}>
+            {invalidOrderDate && <p id="order-date-error" className="error-text" role="alert">Ingresá una fecha válida con formato dd/mm/aaaa.</p>}
             {discountPrompt && <PreviousOrderDiscountDialog orderNumber={discountPrompt.order.orderNumber ?? ''} orderDiscount={Number(discountPrompt.order.orderDiscountPercent ?? 0)} items={discountPrompt.order.items ?? []} anchor={discountPrompt.anchor} onDismiss={() => setDiscountPrompt(undefined)} onChoose={(copyDiscounts) => { applyPreviousOrder(discountPrompt.order, copyDiscounts); setDiscountPrompt(undefined) }} />}
             <div className="order-customer-grid">
               <CustomerSelect mode="selection" label="Cliente" options={customers} value={customerId} onChange={selectCustomer} required disabled={submitting || Boolean(editOrder)} />
@@ -421,7 +442,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
               <dl className="order-totals"><dt>Subtotal</dt><dd>{invalidQuantityLines.length ? '—' : money(previewSubtotal)}</dd>{isAdmin && <><dt>Descuento general</dt><dd className={previewDiscount > 0 ? 'order-discount-value' : undefined}>{previewDiscount > 0 ? '− ' : ''}{money(previewDiscount)}</dd></>}{selectedPreviousBalance > 0 && <><dt>Total del pedido</dt><dd>{invalidQuantityLines.length ? '—' : money(previewTotal)}</dd><dt>Saldo anterior</dt><dd>{money(selectedPreviousBalance)}</dd></>}</dl>
               <div className="order-checkout-actions">
                 <dl className="order-checkout-total"><dt>{selectedPreviousBalance > 0 ? 'Total a cobrar' : 'Total estimado'}</dt><dd className="total-value">{invalidQuantityLines.length ? '—' : money(previewTotal + selectedPreviousBalance)}</dd></dl>
-                <Button type="submit" fullWidth disabled={submitting || invalidOrderDiscount || invalidQuantityLines.length > 0 || resolutions.some((resolution) => resolution.isLoading) || lines.length === 0}>{editOrder ? submitting ? 'Guardando...' : 'Guardar cambios' : submitting ? 'Confirmando...' : attempt ? 'Reintentar confirmación' : 'Confirmar pedido'}</Button>
+                <Button type="submit" fullWidth disabled={submitting || invalidOrderDate || invalidOrderDiscount || invalidQuantityLines.length > 0 || resolutions.some((resolution) => resolution.isLoading) || lines.length === 0}>{editOrder ? submitting ? 'Guardando...' : 'Guardar cambios' : submitting ? 'Confirmando...' : attempt ? 'Reintentar confirmación' : 'Confirmar pedido'}</Button>
               </div>
             </div>
           </Panel>

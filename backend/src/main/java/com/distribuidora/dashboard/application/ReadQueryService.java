@@ -181,18 +181,41 @@ public class ReadQueryService {
     }
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search, boolean includeStock) {
+        return products(page, size, search, includeStock, null, null, StockFilter.ALL);
+    }
+
+    public enum StockFilter { ALL, POSITIVE, NEGATIVE }
+
+    public PageResponse<Map<String, Object>> products(int page, int size, String search, boolean includeStock,
+            UUID brandId, UUID categoryId, StockFilter stock) {
         String term = like(search);
         String costColumn = sellerScoped() ? "" : ", p.cost";
         String stockColumn = includeStock ? ", coalesce(ib.quantity, 0) as stock" : "";
-        String stockJoin = includeStock ? " left join inventory.inventory_balances ib on ib.product_id = p.id" : "";
+        String stockJoin = includeStock || stock != StockFilter.ALL
+            ? " left join inventory.inventory_balances ib on ib.product_id = p.id" : "";
+        String source = """
+             from catalog.products p
+             left join catalog.categories cat on cat.id = p.category_id
+            """ + stockJoin + " where lower(p.name) like ?";
+        List<Object> parameters = new ArrayList<>(List.of(term));
+        if (brandId != null) {
+            source += " and p.brand_id = ?";
+            parameters.add(brandId);
+        }
+        if (categoryId != null) {
+            source += " and p.category_id = ?";
+            parameters.add(categoryId);
+        }
+        source += switch (stock) {
+            case ALL -> "";
+            case POSITIVE -> " and coalesce(ib.quantity, 0) > 0";
+            case NEGATIVE -> " and coalesce(ib.quantity, 0) < 0";
+        };
         return page("""
             select p.id, p.name, coalesce(cat.name, p.category) as category,
                    p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.status
-            """ + costColumn + stockColumn + """
-             from catalog.products p
-             left join catalog.categories cat on cat.id = p.category_id
-            """ + stockJoin + " where lower(p.name) like ? order by p.name, p.id",
-            "select count(*) from catalog.products where lower(name) like ?", page, size, term);
+            """ + costColumn + stockColumn + source + " order by p.name, p.id",
+            "select count(*) " + source, page, size, parameters.toArray());
     }
 
     public PageResponse<Map<String, Object>> inventory(int page, int size, String search) {

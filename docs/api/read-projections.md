@@ -49,6 +49,31 @@ distintas, ordenadas por nombre e ID, de vendedores con clientes visibles.
 No limita las opciones a una página ni al estado activo. La pantalla conserva
 los filtros en la URL y vuelve a la primera página al cambiarlos.
 
+## Ficha e historial del cliente
+
+`GET /api/customers/{customerId}` devuelve `id`, `name`, `cuitId`, `email`,
+`phone`, `address`, `zone`, `sellerId`, `seller`, `priceListId`, `priceListCode`,
+`priceList`, `balance`, `status` y `createdAt`. Los datos opcionales pueden ser
+nulos; conserva clientes inactivos y sin vendedor o lista asignada.
+
+`GET /api/customers/{customerId}/orders?page=0&size=20` devuelve el historial
+paginado por ID exacto del cliente, con `id`, `number`, `seller`, `total`,
+`status` y `date`. Incluye todos los estados, sin un límite de fecha inicial,
+ordenado por fecha e ID descendentes. `total` es el importe del pedido, sin
+sumar el saldo anterior del remito. El tamaño se limita a `1–100` y la página
+negativa se normaliza a cero.
+
+Ambos endpoints requieren autenticación. Los administradores pueden consultar
+cualquier cliente; los vendedores necesitan un perfil activo y la asignación
+del cliente. El historial mantiene además el alcance de pedidos: vendedor del
+pedido o vendedor actual del cliente si el pedido no tiene uno. El conteo usa
+el mismo alcance. Cliente inexistente o ajeno devuelve `404`, no un historial
+vacío. Un UUID mal formado devuelve `400`.
+
+La acción «Ver cliente» del listado abre `/customers/{customerId}`, con los datos,
+saldo actual y pedidos. Permite abrir el detalle de cada pedido, paginar el
+historial y regresar al listado conservando sus filtros.
+
 ## Listado de pedidos por fecha
 
 ```http
@@ -129,9 +154,17 @@ descuentos no contienen SKU. La migración V31 elimina la columna del catálogo
 conservando productos, precios y referencias históricas. Las migraciones
 anteriores mantienen sus checksums originales.
 `GET /api/products` admite `includeStock` (por defecto `true`). Con `false`,
-omite el campo `stock` y la consulta a `inventory.inventory_balances`. La creación
+omite el campo `stock` y, cuando no hay filtro de stock, la consulta a `inventory.inventory_balances`. La creación
 de pedidos usa esta variante en todas las páginas; la gestión de inventario
 conserva la lectura de stock.
+
+El listado combina `search` (nombre del producto), `brandId` y `categoryId`
+(UUID exactos), y `stock`: `ALL` por defecto, `POSITIVE` para cantidades mayores
+a cero y `NEGATIVE` para cantidades menores a cero. `ALL` incluye stock cero y
+productos sin saldo de inventario. El conteo y la paginación aplican los mismos
+filtros. Los valores de stock o UUID inválidos devuelven HTTP 400. Filtrar por
+stock con `includeStock=false` consulta el saldo sin incluirlo en la respuesta;
+los vendedores continúan sin recibir el costo.
 
 ## Deudas abiertas de un cliente
 

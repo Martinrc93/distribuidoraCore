@@ -69,8 +69,10 @@ public class ReadQueryController {
     @GetMapping("/products")
     public PageResponse<Map<String, Object>> products(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
-            @RequestParam(defaultValue = "true") boolean includeStock) {
-        return queries.products(page, size, search, includeStock);
+            @RequestParam(defaultValue = "true") boolean includeStock,
+            @RequestParam(required = false) UUID brandId, @RequestParam(required = false) UUID categoryId,
+            @RequestParam(defaultValue = "ALL") ReadQueryService.StockFilter stock) {
+        return queries.products(page, size, search, includeStock, brandId, categoryId, stock);
     }
 
     @GetMapping("/inventory")

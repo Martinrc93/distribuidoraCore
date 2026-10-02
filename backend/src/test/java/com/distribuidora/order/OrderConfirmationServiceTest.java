@@ -21,6 +21,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.sql.ResultSet;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,6 +50,49 @@ class OrderConfirmationServiceTest {
     @AfterEach
     void clearAuthentication() {
         SecurityContextHolder.clearContext();
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"2026-09-29", "2027-01-10"})
+    void storesChosenOrderAndSaleDateWhileKeepingLedgerExecutionTime(String chosenDate) {
+        authenticate("ORDER_CREATE");
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
+        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
+            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10")));
+        Instant before = Instant.now();
+        service.confirm(new OrderConfirmationDtos.ConfirmationRequest("dated-order", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), null, BigDecimal.ZERO, chosenDate == null ? null : LocalDate.parse(chosenDate)));
+        Instant after = Instant.now();
+        var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        var saleInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        var ledgerInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
+        verify(jdbc).update(contains("insert into sale.sales"), saleInsert.capture());
+        verify(jdbc).update(contains("insert into customer.account_ledger"), ledgerInsert.capture());
+        Timestamp registeredAt = (Timestamp) orderInsert.getValue()[7];
+        Timestamp ledgerAt = (Timestamp) ledgerInsert.getValue()[4];
+        assertThat(saleInsert.getValue()[6]).isEqualTo(registeredAt);
+        assertThat(ledgerAt.toInstant()).isBetween(before, after);
+        if (chosenDate == null) assertThat(registeredAt).isEqualTo(ledgerAt);
+        else assertThat(registeredAt.toInstant().atZone(ZoneId.of("America/Argentina/Buenos_Aires")).toLocalDate())
+            .isEqualTo(LocalDate.parse(chosenDate));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 10000})
+    void rejectsDatesOutsideSupportedYearsBeforeSideEffects(int year) {
+        authenticate("ORDER_CREATE");
+        var request = new OrderConfirmationDtos.ConfirmationRequest("invalid-date", UUID.randomUUID(), null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), null, BigDecimal.ZERO, LocalDate.of(year, 1, 1));
+        assertThatThrownBy(() -> service.confirm(request)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("orderDate");
+        verifyNoInteractions(jdbc, pricing, inventory, audit);
     }
 
     @Test
@@ -181,6 +228,11 @@ class OrderConfirmationServiceTest {
         var second = service.confirm(request);
 
         assertThat(second).isEqualTo(first);
+        var changedDateRequest = new OrderConfirmationDtos.ConfirmationRequest(
+            request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(),
+            request.payments(), null, request.previousBalanceAmount(), LocalDate.of(2026, 9, 29));
+        assertThatThrownBy(() -> service.confirm(changedDateRequest))
+            .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
         assertThat(second.previousBalanceAmount()).isEqualByComparingTo(previousBalance);
         var changedBalanceRequest = new OrderConfirmationDtos.ConfirmationRequest(
             request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(),

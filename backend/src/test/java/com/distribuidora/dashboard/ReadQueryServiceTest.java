@@ -62,13 +62,13 @@ class ReadQueryServiceTest {
         assertThat(sql.getValue()).contains("p.name").doesNotContain("stock", "inventory", "sku");
         assertThat(parameters.getValue()[0]).isEqualTo("%harina%");
         var queries = mock(ReadQueryService.class);
-        when(queries.products(0, 100, "", false)).thenReturn(new PageResponse<>(List.of(), 0, 100, 0, 0));
+        when(queries.products(0, 100, "", false, null, null, ReadQueryService.StockFilter.ALL)).thenReturn(new PageResponse<>(List.of(), 0, 100, 0, 0));
         org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
             new com.distribuidora.dashboard.api.ReadQueryController(queries)).build()
             .perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/products")
                 .param("size", "100").param("includeStock", "false"))
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
-        verify(queries).products(0, 100, "", false);
+        verify(queries).products(0, 100, "", false, null, null, ReadQueryService.StockFilter.ALL);
     }
 
     @Test

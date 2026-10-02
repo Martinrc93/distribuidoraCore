@@ -2,6 +2,30 @@
 
 Ejecutar desde la raíz del proyecto `distribuidora`.
 
+## Seed demo con fechas actuales
+
+```powershell
+.\scripts\seed.ps1
+```
+
+El comando crea los datos demo y distribuye los 1.000 pedidos y ventas entre
+30 días antes y 30 días después de la fecha actual de Buenos Aires, incluyendo
+ambos extremos y el día actual. La fecha se calcula una sola vez por ejecución.
+Si la seed ya existe, actualiza las fechas de esos pedidos, ventas y sus pagos,
+débitos y movimientos de stock originales, sin duplicar datos ni modificar
+importes, saldos o transacciones posteriores.
+
+Requiere Java 21 y Maven. Si no se define `DB_URL`, inicia PostgreSQL con Docker
+Compose y usa `localhost:5433`. Para otra base local, definir `DB_URL`,
+`DB_USERNAME` y `DB_PASSWORD`. `DEMO_PASSWORD` permite configurar la contraseña
+de los usuarios demo nuevos; el perfil local usa `ChangeMe123!` por defecto.
+La ejecución termina al completar la seed y no ocupa el puerto `8080`.
+
+La seed incluye 3 categorías (Bebidas, Almacén y Limpieza), 6 marcas demo y
+10 zonas demo. Los productos demo se distribuyen entre las categorías y marcas,
+y los clientes entre las zonas. Las ejecuciones posteriores completan las
+asignaciones faltantes y reutilizan los registros existentes sin duplicarlos.
+
 ## Iniciar el entorno local
 
 ```powershell

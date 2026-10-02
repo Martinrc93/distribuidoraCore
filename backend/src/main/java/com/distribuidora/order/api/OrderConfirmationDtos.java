@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,8 +28,14 @@ public final class OrderConfirmationDtos {
         BigDecimal orderDiscountPercent,
         List<@NotNull @Valid PaymentRequest> payments,
         UUID sellerId,
-        @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousBalanceAmount
+        @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousBalanceAmount,
+        LocalDate orderDate
     ) implements OrderConfirmationService.ConfirmationCommand {
+        public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
+                                   List<LineRequest> lines, BigDecimal orderDiscountPercent,
+                                   List<PaymentRequest> payments, UUID sellerId, BigDecimal previousBalanceAmount) {
+            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, sellerId, previousBalanceAmount, null);
+        }
         public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
                                    List<LineRequest> lines, BigDecimal orderDiscountPercent,
                                    List<PaymentRequest> payments) {

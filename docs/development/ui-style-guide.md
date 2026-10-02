@@ -210,6 +210,25 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   vencimiento, y cobertura estimada de stock de un mínimo de reposición.
 - Contrato y limitaciones: [dashboard-analytics.md](../api/dashboard-analytics.md).
 
+### Ficha del cliente
+
+El listado ofrece «Ver cliente» para cada cliente visible, junto con «Editar»
+solo para administradores, dentro de `.table-row-actions`. Abre
+`/customers/{customerId}` como página con `PageHeader`, `Panel` y `StatCard`:
+datos de contacto, vendedor, lista, estado, fecha de alta y saldo actual. La
+tarjeta de saldo se alinea arriba sin estirarse a la altura de los datos.
+Los datos usan un `dl.customer-detail-fields` con dos columnas, etiquetas de
+`11px`, valores de `13px` y ajuste de nombres/direcciones largos. A `760px`
+los datos y el resumen de saldo se apilan en una columna.
+
+«Historial de pedidos» reutiliza `DataTable` y la paginación compartida. Incluye
+fecha/hora de Argentina, vendedor, total, estado en español y «Ver pedido»;
+a `640px` adopta las tarjetas compartidas. Consulta por ID exacto, sin restringir
+al día actual. Conserva `ordersPage` en la URL y los filtros del listado al
+volver. Carga y errores se anuncian y ofrecen reintento; un error del historial
+conserva los datos del cliente. Cliente inexistente o ajeno no muestra pedidos.
+La ficha respeta el alcance del vendedor y no abre controles de edición.
+
 ## Botones y acciones
 
 Usar [`Button`](../../frontend/src/shared/components/Button.tsx). Acepta atributos
@@ -255,7 +274,13 @@ nativos, `variant` y `fullWidth`; `href` hace que renderice un enlace.
 ## Tablas, filtros y paginación
 
 La creación de pedidos usa un único `Panel` de ancho completo con los datos y
-productos. El cierre `.order-checkout` usa tres columnas sobre fondo blanco,
+productos. «Fecha del pedido» aparece a la derecha del encabezado en un campo
+de `160px`, con el día actual de Argentina por defecto, formato `dd/mm/aaaa`
+y el calendario compartido en español. A `760px` o menos ocupa todo el ancho
+debajo del título. Es obligatoria; una fecha inválida muestra un error asociado
+y bloquea la confirmación. Se conserva al cambiar de cliente o cargar un pedido
+anterior. La edición conserva la fecha registrada, sin ofrecer este campo.
+El cierre `.order-checkout` usa tres columnas sobre fondo blanco,
 separadas de los productos por un borde superior: descuento general compacto
 de `96px` con sufijo `%`, desglose de subtotal/descuento de hasta `240px` y
 total con confirmación de hasta `340px`. Solo el bloque final usa fondo canvas,
@@ -370,6 +395,17 @@ botón `danger` de `38px` con una papelera de `16px` y nombre accesible «Quitar
 compartida, con etiquetas visibles y la papelera al final.
 
 Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
+
+El listado de productos combina búsqueda por nombre, marca y categoría con
+`SearchableSelect`, y un select de stock con «Ambos» por defecto, «Positivo»
+(mayor a cero) y «Negativo» (menor a cero). «Ambos» incluye cero y productos sin
+saldo registrado. Las opciones de marca/categoría incluyen el catálogo completo,
+también las inactivas, para poder encontrar productos asociados. Conserva los
+filtros en la URL y cada cambio vuelve a la primera página; los aplica la API
+antes de paginar. Ofrece reintento si falla la carga de opciones. A `640px` o
+menos cada campo ocupa una fila completa mediante utilidades locales, sin
+cambiar el patrón global de `.toolbar`.
+
 `columns` define `key`, `label`, `align`, `emphasis` y `render` opcional;
 `rows` recibe `Record<string, string>[]`. Formatear valores antes de pasarlos.
 `className` se agrega al contenedor `.table-wrap`, no al elemento `table`.

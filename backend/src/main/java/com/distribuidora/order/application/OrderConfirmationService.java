@@ -23,6 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -57,6 +59,7 @@ public class OrderConfirmationService {
         List<? extends PaymentCommand> payments();
         default UUID sellerId() { return null; }
         default BigDecimal previousBalanceAmount() { return ZERO; }
+        default LocalDate orderDate() { return null; }
     }
 
     public interface EditCommand {
@@ -199,17 +202,20 @@ public class OrderConfirmationService {
             });
 
         Timestamp now = Timestamp.from(Instant.now());
+        var businessNow = now.toInstant().atZone(ZoneId.of("America/Argentina/Buenos_Aires"));
+        Timestamp registeredAt = request.orderDate() == null ? now : Timestamp.from(
+            request.orderDate().atTime(businessNow.toLocalTime()).atZone(businessNow.getZone()).toInstant());
         String orderNumber = number("ORD");
         String saleNumber = number("SAL");
         jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id, previous_balance_amount) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             orderId, orderNumber, customerId, sellerId, calculated.subtotal(),
-            calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), now,
+            calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), registeredAt,
             request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
             calculated.orderDiscountPercent(), orderDiscount.ruleId(), previousBalanceAmount);
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
         jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent, order_discount_rule_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?)",
-            saleId, saleNumber, orderId, customerId, calculated.total(), monetaryPaid, now,
+            saleId, saleNumber, orderId, customerId, calculated.total(), monetaryPaid, registeredAt,
             calculated.orderDiscountPercent(), orderDiscount.ruleId());
         insertItems("sale.sale_items", saleId, resolved, calculated.lines());
 
@@ -232,6 +238,7 @@ public class OrderConfirmationService {
         auditDetails.put("paid", responsePaid);
         auditDetails.put("balance", response.balance());
         auditDetails.put("previousBalanceAmount", previousBalanceAmount);
+        auditDetails.put("orderDate", registeredAt.toInstant().atZone(businessNow.getZone()).toLocalDate().toString());
         auditDetails.put("creditLimit", creditLimit);
         auditDetails.put("projectedBalance", projectedBalance);
         auditDetails.put("creditLimitExceeded", creditLimitExceeded);
@@ -475,6 +482,9 @@ public class OrderConfirmationService {
             throw new IllegalArgumentException("Los campos obligatorios son inválidos");
         }
         validatePercent(request.orderDiscountPercent(), "orderDiscountPercent");
+        if (request.orderDate() != null && (request.orderDate().getYear() < 1 || request.orderDate().getYear() > 9999)) {
+            throw new IllegalArgumentException("orderDate debe ser una fecha válida entre los años 0001 y 9999");
+        }
         if (request.previousBalanceAmount() != null) {
             if (request.previousBalanceAmount().signum() < 0) throw new IllegalArgumentException("El importe del saldo anterior no puede ser negativo");
             validateScale(request.previousBalanceAmount(), "previousBalanceAmount");
@@ -592,6 +602,10 @@ public class OrderConfirmationService {
             });
         }
         append(canonical, request.sellerId());
+        if (request.orderDate() != null) {
+            append(canonical, "orderDate");
+            append(canonical, request.orderDate());
+        }
         if (previousBalanceAmount(request).signum() > 0) {
             append(canonical, "previousBalanceAmount");
             append(canonical, previousBalanceAmount(request));

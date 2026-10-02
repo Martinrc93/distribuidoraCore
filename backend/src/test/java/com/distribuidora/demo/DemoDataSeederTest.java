@@ -1,6 +1,8 @@
 package com.distribuidora.demo;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,11 +18,80 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.mockito.ArgumentCaptor;
 import java.util.UUID;
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 class DemoDataSeederTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final DemoDataSeeder seeder = new DemoDataSeeder(jdbc, passwordEncoder, true, "secret");
+
+    @Test
+    void disabledSeedDoesNotTouchDatabase() {
+        new DemoDataSeeder(jdbc, passwordEncoder, false, "secret").run(mock(ApplicationArguments.class));
+
+        org.mockito.Mockito.verifyNoInteractions(jdbc, passwordEncoder);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void ensuresThreeCategoriesSixBrandsAndTenZonesForNewAndExistingSeeds(boolean alreadySeeded) {
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(alreadySeeded);
+        when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
+        when(passwordEncoder.encode("secret")).thenReturn("hash");
+        when(jdbc.queryForMap(anyString(), any(Object[].class)))
+            .thenReturn(java.util.Map.of("name", "Product", "price", new java.math.BigDecimal("10.0000")));
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        ArgumentCaptor<Object[]> categories = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, org.mockito.Mockito.times(3)).update(
+            org.mockito.ArgumentMatchers.contains("insert into catalog.categories("), categories.capture());
+        assertThat(categories.getAllValues().stream().map(values -> values[1]).toList())
+            .containsExactly("Bebidas", "Almac\u00e9n", "Limpieza");
+        assertThat(categories.getAllValues().stream().map(values -> values[2]).toList())
+            .containsExactly("DEMO_CAT_01", "DEMO_CAT_02", "DEMO_CAT_03");
+
+        ArgumentCaptor<Object[]> brands = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, org.mockito.Mockito.times(6)).update(
+            org.mockito.ArgumentMatchers.contains("insert into catalog.brands("), brands.capture());
+        assertThat(brands.getAllValues().stream().map(values -> values[1]).toList())
+            .containsExactly("Marca Demo 01", "Marca Demo 02", "Marca Demo 03", "Marca Demo 04", "Marca Demo 05", "Marca Demo 06");
+
+        ArgumentCaptor<Object[]> zones = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, org.mockito.Mockito.times(10)).update(
+            org.mockito.ArgumentMatchers.contains("insert into customer.zones("), zones.capture());
+        assertThat(zones.getAllValues().stream().map(values -> values[1]).toList())
+            .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, 10)
+                .mapToObj(index -> "Zona Demo %02d".formatted(index)).toList());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-10-02T01:00:00Z", "2024-02-29T15:00:00Z", "2026-01-01T15:00:00Z"})
+    void spreadsSalesOverEveryDayOfInclusiveBusinessDateWindow(String instant) {
+        Clock clock = Clock.fixed(Instant.parse(instant), ZoneOffset.UTC);
+        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
+        LocalDate today = LocalDate.now(clock.withZone(zone));
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(false);
+        when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
+        when(passwordEncoder.encode("secret")).thenReturn("hash");
+        when(jdbc.queryForMap(anyString(), any(Object[].class)))
+            .thenReturn(java.util.Map.of("name", "Product", "price", new java.math.BigDecimal("10.0000")));
+        new DemoDataSeeder(jdbc, passwordEncoder, true, "secret", clock).run(mock(ApplicationArguments.class));
+
+        ArgumentCaptor<Object[]> arguments = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, org.mockito.Mockito.times(1000)).update(
+            org.mockito.ArgumentMatchers.startsWith("insert into sale.sales("), arguments.capture());
+        var dates = arguments.getAllValues().stream()
+            .map(values -> ((Timestamp) values[7]).toInstant().atZone(zone).toLocalDate()).toList();
+        assertThat(dates).hasSize(1000).contains(today, today.minusDays(30), today.plusDays(30));
+        assertThat(dates.stream().distinct().sorted().toList())
+            .containsExactlyElementsOf(today.minusDays(30).datesUntil(today.plusDays(31)).toList());
+    }
 
     @Test
     void repairsProductPricesWhenDemoSeedAlreadyExists() {
@@ -137,5 +208,17 @@ class DemoDataSeederTest {
             .allSatisfy(value -> assertThat(value).contains("price_list_id", "price_list_code", "line_discount_percent"));
         assertThat(sql.getAllValues()).anyMatch(value -> value.contains("customer.account_ledger")
             && value.contains("'DEBIT'"));
+
+        ArgumentCaptor<Object[]> products = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, org.mockito.Mockito.times(500)).update(
+            org.mockito.ArgumentMatchers.contains("insert into catalog.products("), products.capture());
+        assertThat(products.getAllValues().stream().map(values -> values[6]).distinct().toList())
+            .containsExactly("Bebidas", "Almac\u00e9n", "Limpieza");
+        assertThat(products.getAllValues().stream().map(values -> values[7]).distinct().toList()).hasSize(6);
+        assertThat(products.getAllValues()).allSatisfy(values -> assertThat(values[2]).isEqualTo(values[6]));
+        ArgumentCaptor<Object[]> customers = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, org.mockito.Mockito.times(300)).update(
+            org.mockito.ArgumentMatchers.contains("insert into customer.customers("), customers.capture());
+        assertThat(customers.getAllValues().stream().map(values -> values[4]).distinct().toList()).hasSize(10);
     }
 }

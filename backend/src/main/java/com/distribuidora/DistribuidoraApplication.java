@@ -9,6 +9,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class DistribuidoraApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(DistribuidoraApplication.class, args);
+        var context = SpringApplication.run(DistribuidoraApplication.class, args);
+        if (context.getEnvironment().getProperty("app.seed-only", Boolean.class, false)) {
+            context.close();
+        }
     }
 }

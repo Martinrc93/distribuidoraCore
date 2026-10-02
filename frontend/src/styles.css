@@ -130,6 +130,8 @@
   .toolbar { @apply flex gap-[9px] flex-wrap mb-[18px]; }
   .orders-toolbar > .field { @apply min-w-0; }
   .orders-date-filters { @apply ml-auto flex gap-[9px]; }
+  .order-form .panel-header { @apply flex-wrap items-center; }
+  .order-form-date { @apply w-[160px]; }
   .orders-date-filters .field { @apply w-[140px] min-w-0; }
   .orders-date-control { @apply relative; }
   .orders-date-control > .input { @apply pr-[34px]; }
@@ -337,6 +339,9 @@
   .customer-modal .panel-header h2 { @apply m-0 text-[20px]; }
   .customer-modal .form-grid { @apply mb-0; }
   .customer-modal .form-grid > .error-text { @apply col-span-full; }
+  .customer-detail-fields { @apply grid grid-cols-[repeat(2,_minmax(0,_1fr))] gap-[18px_24px] m-0; }
+  .customer-detail-fields dt { @apply mb-[6px] text-muted text-[11px] font-semibold; }
+  .customer-detail-fields dd { @apply m-0 text-ink text-[13px] [overflow-wrap:anywhere]; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { @apply [scroll-behavior:auto]! [transition-duration:.01ms]! [animation-duration:.01ms]! [animation-iteration-count:1]!; }
@@ -382,9 +387,11 @@
     .zone-form > .page-actions { @apply justify-stretch; }
     .order-customer-grid { @apply grid-cols-[1fr]; }
     .order-previous-action .button { @apply w-full; }
+    .order-form-date { @apply w-full; }
     .stats-grid, .stats-grid.compact { @apply grid-cols-[1fr_1fr]; }
     .panel { @apply p-[15px]; }
     .customer-modal .panel { @apply p-[16px]; }
+    .customer-detail-fields { @apply grid-cols-[minmax(0,_1fr)]; }
     .catalog-modal-backdrop { @apply p-[14px]; }
     .catalog-modal-backdrop .catalog-modal { @apply max-h-[calc(100vh_-_28px)]; }
     .catalog-modal-header { @apply [padding:20px_20px_17px]; }

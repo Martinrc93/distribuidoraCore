@@ -13,10 +13,10 @@ function response(body: unknown, status = 200) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 }
 
-function renderPage(authorities = ['ADMIN_ALL']) {
+function renderPage(authorities = ['ADMIN_ALL'], initialEntry = '/products') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sessionStorage.setItem('distribuidora.accessToken', token(authorities))
-  render(<QueryClientProvider client={queryClient}><MemoryRouter><ProductsPage /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[initialEntry]}><ProductsPage /></MemoryRouter></QueryClientProvider>)
   return queryClient
 }
 
@@ -53,6 +53,37 @@ describe('ProductsPage', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('combines catalog and stock filters, resets the page and defaults to both stock signs', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => catalogResponse(input))
+    renderPage([], '/products?page=3&search=Harina')
+    await screen.findByText('Harina')
+    expect(screen.getByLabelText('Stock')).toHaveValue('')
+
+    await user.click(screen.getByRole('combobox', { name: 'Buscar por marca' }))
+    await user.clear(screen.getByRole('combobox', { name: 'Buscar por marca' }))
+    await user.type(screen.getByRole('combobox', { name: 'Buscar por marca' }), 'molino')
+    expect(screen.getByRole('option', { name: 'Molino Norte' })).toBeInTheDocument()
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    await user.click(screen.getByRole('combobox', { name: 'Buscar por categoría' }))
+    await user.click(await screen.findByRole('option', { name: 'Almacén' }))
+    await user.selectOptions(screen.getByLabelText('Stock'), 'NEGATIVE')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products?page=0&size=20&search=Harina&brandId=brand-1&categoryId=category-1&stock=NEGATIVE', expect.anything()))
+    await user.selectOptions(screen.getByLabelText('Stock'), 'POSITIVE')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products?page=0&size=20&search=Harina&brandId=brand-1&categoryId=category-1&stock=POSITIVE', expect.anything()))
+    await user.selectOptions(screen.getByLabelText('Stock'), '')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products?page=0&size=20&search=Harina&brandId=brand-1&categoryId=category-1', expect.anything()))
+  })
+
+  it('restores catalog and stock filters from the URL', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => catalogResponse(input))
+    renderPage([], '/products?page=2&brandId=brand-2&categoryId=category-2&stock=NEGATIVE')
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Buscar por marca' })).toHaveValue('Archivada'))
+    expect(screen.getByRole('combobox', { name: 'Buscar por categoría' })).toHaveValue('Bajas')
+    expect(screen.getByLabelText('Stock')).toHaveValue('NEGATIVE')
+    expect(fetchMock).toHaveBeenCalledWith('/api/products?page=2&size=20&brandId=brand-2&categoryId=category-2&stock=NEGATIVE', expect.anything())
   })
 
   it('shows no product-level price or general-price column', async () => {

@@ -44,6 +44,54 @@ function catalogResponse(input: RequestInfo | URL) {
 }
 
 describe('OrderCreatePage', () => {
+  it('defaults to the current Argentine date and selects a date from the Spanish calendar', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-02T01:00:00Z'))
+    vi.spyOn(global, 'fetch').mockImplementation(catalogResponse)
+    const user = userEvent.setup()
+    renderPage()
+    const date = await screen.findByLabelText('Fecha del pedido')
+    expect(date).toHaveValue('01/10/2026')
+    await user.click(date)
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(/Fecha del pedido/)
+    expect(screen.getByText('Octubre de 2026')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'viernes, 2 de octubre de 2026' }))
+    expect(date).toHaveValue('02/10/2026')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('rejects invalid dates and confirms the selected date after changing customers', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      if (String(input) === '/api/orders/confirm') return response({ orderId: 'order-1', saleId: 'sale-1', orderNumber: 'PED-FECHA', saleNumber: 'VEN-FECHA', total: 150.5, paid: 0, balance: 150.5 }, 201)
+      return catalogResponse(input)
+    })
+    renderPage()
+    const date = await screen.findByLabelText('Fecha del pedido')
+    fireEvent.change(date, { target: { value: '29/09/2026' } })
+    await selectEntity(user, 'Cliente', 'Almacén Sur')
+    await selectEntity(user, 'Cliente', 'Almacén Norte')
+    expect(date).toHaveValue('29/09/2026')
+    await selectEntity(user, 'Producto', 'Harina')
+    await screen.findByDisplayValue('150,5')
+    await user.click(screen.getByRole('button', { name: 'Agregar producto' }))
+    const confirm = screen.getByRole('button', { name: 'Confirmar pedido' })
+    for (const invalid of ['', '31/09/2026', '29/02/2026', '2026-09-29', '01/01/0000']) {
+      fireEvent.change(date, { target: { value: invalid } })
+      expect(date).toHaveAttribute('aria-invalid', 'true')
+      expect(date).toHaveAccessibleDescription('Ingresá una fecha válida con formato dd/mm/aaaa.')
+      expect(confirm).toBeDisabled()
+      fireEvent.submit(confirm.closest('form')!)
+      expect(fetchMock.mock.calls.some(([path]) => String(path) === '/api/orders/confirm')).toBe(false)
+    }
+    fireEvent.change(date, { target: { value: '29/09/2026' } })
+    expect(date).toHaveAttribute('aria-invalid', 'false')
+    await user.click(confirm)
+    await screen.findByText('PED-FECHA')
+    const request = JSON.parse(String(fetchMock.mock.calls.find(([path]) => String(path) === '/api/orders/confirm')?.[1]?.body))
+    expect(request.orderDate).toBe('2026-09-29')
+  })
+
   it('blocks non-half-unit quantities in edited lines and confirms decimal-comma quantities', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
@@ -266,6 +314,7 @@ describe('OrderCreatePage', () => {
   const dialogMethods = ['showModal', 'close'] as const
   const originalDialogMethods = dialogMethods.map((method) => Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, method))
   afterEach(() => {
+    vi.useRealTimers()
     cleanup(); sessionStorage.clear()
     dialogMethods.forEach((method, index) => {
       const descriptor = originalDialogMethods[index]

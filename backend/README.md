@@ -19,6 +19,16 @@ persistencia deben utilizar PostgreSQL mediante Testcontainers.
 
 ## Ejecutar la aplicación
 
+Para crear o actualizar los datos demo con fechas entre hoy menos 30 días y
+hoy más 30 días (zona horaria de Buenos Aires), ejecutar desde la raíz:
+
+```powershell
+.\scripts\seed.ps1
+```
+
+El comando termina al completar la seed. Ver `scripts/README.md` para los
+requisitos y la configuración de la base de datos.
+
 Configurar:
 
 ```text

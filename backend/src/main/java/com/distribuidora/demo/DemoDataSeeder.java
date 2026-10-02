@@ -1,5 +1,8 @@
 package com.distribuidora.demo;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -11,8 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -22,26 +28,42 @@ import java.util.UUID;
 @Component
 @Profile("!test")
 public class DemoDataSeeder implements ApplicationRunner {
+    private static final Logger log = LoggerFactory.getLogger(DemoDataSeeder.class);
+    private static final ZoneId ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final int DAYS_BEFORE = 30;
+    private static final int DAYS_AFTER = 30;
     private static final String SEED_NAME = "demo-v1";
     private static final int PRODUCT_COUNT = 500;
     private static final int CUSTOMER_COUNT = 300;
     private static final int SALE_COUNT = 1_000;
+    private static final String[] CATEGORY_NAMES = {"Bebidas", "Almac\u00e9n", "Limpieza"};
+    private static final String[] BRAND_NAMES = {
+        "Marca Demo 01", "Marca Demo 02", "Marca Demo 03", "Marca Demo 04", "Marca Demo 05", "Marca Demo 06"
+    };
+    private static final int ZONE_COUNT = 10;
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
     private final boolean enabled;
     private final String password;
+    private final Clock clock;
 
+    @Autowired
     public DemoDataSeeder(
         JdbcTemplate jdbc,
         PasswordEncoder passwordEncoder,
         @Value("${app.seed-demo:false}") boolean enabled,
         @Value("${app.demo-password:ChangeMe123!}") String password
     ) {
+        this(jdbc, passwordEncoder, enabled, password, Clock.system(ZONE));
+    }
+
+    DemoDataSeeder(JdbcTemplate jdbc, PasswordEncoder passwordEncoder, boolean enabled, String password, Clock clock) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.enabled = enabled;
         this.password = password;
+        this.clock = clock;
     }
 
     @Override
@@ -50,10 +72,16 @@ public class DemoDataSeeder implements ApplicationRunner {
         if (!enabled) {
             return;
         }
+        LocalDate today = LocalDate.now(clock.withZone(ZONE));
+        ensureDemoReferenceData();
         ensureProductPrices();
         if (alreadySeeded()) {
+            repairSeedReferenceAssignments();
             repairSeedRoles();
             repairSeedLedger();
+            if (args.containsOption("refresh-demo-dates")) {
+                refreshDemoDates(today);
+            }
             return;
         }
 
@@ -65,14 +93,70 @@ public class DemoDataSeeder implements ApplicationRunner {
         List<UUID> products = insertProducts();
         ensureProductPrices();
         List<UUID> customers = insertCustomers(sellerProfiles);
-        insertSales(products, customers, sellerProfiles);
+        insertSales(products, customers, sellerProfiles, today);
         jdbc.update("insert into demo.seed_runs(name, created_at) values (?, ?)", SEED_NAME, timestamp(Instant.now()));
+        log.info("Created {} demo orders and sales between {} and {}", SALE_COUNT,
+            today.minusDays(DAYS_BEFORE), today.plusDays(DAYS_AFTER));
     }
 
     private boolean alreadySeeded() {
         return Boolean.TRUE.equals(jdbc.queryForObject(
             "select exists(select 1 from demo.seed_runs where name = ?)", Boolean.class, SEED_NAME
         ));
+    }
+
+    private void ensureDemoReferenceData() {
+        Timestamp now = timestamp(clock.instant());
+        for (int index = 0; index < CATEGORY_NAMES.length; index++) {
+            jdbc.update("""
+                insert into catalog.categories(id, name, code, status, created_at)
+                values (?, ?, ?, 'ACTIVE', ?) on conflict do nothing
+                """, UUID.randomUUID(), CATEGORY_NAMES[index], "DEMO_CAT_%02d".formatted(index + 1), now);
+        }
+        for (int index = 0; index < BRAND_NAMES.length; index++) {
+            jdbc.update("""
+                insert into catalog.brands(id, name, code, status, created_at)
+                values (?, ?, ?, 'ACTIVE', ?) on conflict do nothing
+                """, UUID.randomUUID(), BRAND_NAMES[index], "DEMO_BRAND_%02d".formatted(index + 1), now);
+        }
+        for (int index = 1; index <= ZONE_COUNT; index++) {
+            jdbc.update("""
+                insert into customer.zones(id, name, created_at, updated_at)
+                values (?, ?, ?, ?) on conflict (name) do nothing
+                """, UUID.randomUUID(), zoneName(index), now, now);
+        }
+    }
+
+    private void repairSeedReferenceAssignments() {
+        jdbc.update("""
+            update catalog.products p
+            set category_id = coalesce(p.category_id, c.id), brand_id = coalesce(p.brand_id, b.id),
+                category = case when p.category_id is null then c.name else p.category end
+            from generate_series(1, ?) as seed(index)
+            join (values (0, ?), (1, ?), (2, ?)) as categories(index, name)
+                on categories.index = (seed.index - 1) % 3
+            join catalog.categories c on lower(c.name) = lower(categories.name)
+            join (values (0, ?), (1, ?), (2, ?), (3, ?), (4, ?), (5, ?)) as brands(index, name)
+                on brands.index = (seed.index - 1) % 6
+            join catalog.brands b on lower(b.name) = lower(brands.name)
+            where p.name = 'Producto Demo ' || lpad(seed.index::text, 3, '0')
+              and (p.category_id is null or p.brand_id is null)
+              and exists (select 1 from inventory.stock_movements m
+                          where m.product_id = p.id and m.reference_type = 'DEMO_SEED')
+            """, PRODUCT_COUNT, CATEGORY_NAMES[0], CATEGORY_NAMES[1], CATEGORY_NAMES[2],
+            BRAND_NAMES[0], BRAND_NAMES[1], BRAND_NAMES[2], BRAND_NAMES[3], BRAND_NAMES[4], BRAND_NAMES[5]);
+        jdbc.update("""
+            update customer.customers c set zone = z.name
+            from generate_series(1, ?) as seed(index)
+            join customer.zones z on z.name = 'Zona Demo ' || lpad((((seed.index - 1) % ?) + 1)::text, 2, '0')
+            where c.business_name = 'Cliente Demo ' || lpad(seed.index::text, 3, '0')
+              and c.tax_id = '30-7' || lpad(seed.index::text, 8, '0') || '-' || (seed.index % 10)::text
+              and (c.zone is null or btrim(c.zone) = '')
+            """, CUSTOMER_COUNT, ZONE_COUNT);
+    }
+
+    private String zoneName(int index) {
+        return "Zona Demo %02d".formatted(index);
     }
 
     private void ensureProductPrices() {
@@ -142,17 +226,20 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     private List<UUID> insertProducts() {
-        String[] categories = {"Bebidas", "Almacén", "Limpieza", "Snacks", "Lácteos"};
         List<UUID> products = new ArrayList<>();
         for (int index = 1; index <= PRODUCT_COUNT; index++) {
             UUID id = UUID.randomUUID();
             products.add(id);
             BigDecimal cost = BigDecimal.valueOf(500 + (index % 100) * 37L);
+            String category = CATEGORY_NAMES[(index - 1) % CATEGORY_NAMES.length];
+            String brand = BRAND_NAMES[(index - 1) % BRAND_NAMES.length];
             jdbc.update("""
-                insert into catalog.products(id, name, category, presentation, cost, status, created_at)
-                values (?, ?, ?, ?, ?, 'ACTIVE', ?)
+                insert into catalog.products(id, name, category, presentation, cost, status, created_at, category_id, brand_id)
+                values (?, ?, ?, ?, ?, 'ACTIVE', ?,
+                    (select id from catalog.categories where lower(name) = lower(?)),
+                    (select id from catalog.brands where lower(name) = lower(?)))
                 """, id, "Producto Demo %03d".formatted(index),
-                categories[index % categories.length], "Unidad", cost, timestamp(Instant.now()));
+                category, "Unidad", cost, timestamp(Instant.now()), category, brand);
             BigDecimal stock = BigDecimal.valueOf(20 + (index % 80));
             jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, ?, ?)",
                 id, stock, timestamp(Instant.now()));
@@ -168,15 +255,15 @@ public class DemoDataSeeder implements ApplicationRunner {
             UUID id = UUID.randomUUID();
             customers.add(id);
             jdbc.update("""
-                insert into customer.customers(id, business_name, tax_id, seller_id, balance, status, created_at)
-                values (?, ?, ?, ?, 0, 'ACTIVE', ?)
+                insert into customer.customers(id, business_name, tax_id, seller_id, zone, balance, status, created_at)
+                values (?, ?, ?, ?, ?, 0, 'ACTIVE', ?)
                 """, id, "Cliente Demo %03d".formatted(index), "30-7%08d-%d".formatted(index, index % 10),
-                sellerProfiles.get(index % sellerProfiles.size()), timestamp(Instant.now()));
+                sellerProfiles.get(index % sellerProfiles.size()), zoneName((index - 1) % ZONE_COUNT + 1), timestamp(Instant.now()));
         }
         return customers;
     }
 
-    private void insertSales(List<UUID> products, List<UUID> customers, List<UUID> sellerProfiles) {
+    private void insertSales(List<UUID> products, List<UUID> customers, List<UUID> sellerProfiles, LocalDate today) {
         Random random = new Random(20260918L);
         UUID generalPriceListId = jdbc.queryForObject(
             "select id from catalog.price_lists where code = 'GENERAL' and is_default = true", UUID.class);
@@ -184,7 +271,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             UUID orderId = UUID.randomUUID();
             UUID saleId = UUID.randomUUID();
             UUID customerId = customers.get(index % customers.size());
-            Instant createdAt = Instant.now().minus(index % 90, ChronoUnit.DAYS);
+            Instant createdAt = saleDate(today, index);
             BigDecimal total = BigDecimal.ZERO;
             List<Line> lines = new ArrayList<>();
             int lineCount = 2 + random.nextInt(4);
@@ -238,6 +325,38 @@ public class DemoDataSeeder implements ApplicationRunner {
         }
     }
 
+    private Instant saleDate(LocalDate today, int index) {
+        int dayOffset = (index - 1) % (DAYS_BEFORE + DAYS_AFTER + 1) - DAYS_BEFORE;
+        return today.plusDays(dayOffset).atTime(LocalTime.NOON).atZone(ZONE).toInstant();
+    }
+
+    private void refreshDemoDates(LocalDate today) {
+        List<SeedDates> dates = jdbc.query("""
+            SELECT o.id AS order_id, s.id AS sale_id, seed.index, s.created_at
+            FROM generate_series(1, 1000) AS seed(index)
+            JOIN orders.orders o ON o.order_number = 'PED-' || lpad(seed.index::text, 5, '0')
+            JOIN sale.sales s ON s.order_id = o.id
+                AND s.sale_number = 'V-' || lpad(seed.index::text, 6, '0')
+            """, (rs, rowNum) -> new SeedDates(rs.getObject("order_id", UUID.class),
+                rs.getObject("sale_id", UUID.class), rs.getInt("index"), rs.getTimestamp("created_at")));
+        for (SeedDates entry : dates) {
+            Timestamp date = timestamp(saleDate(today, entry.index()));
+            jdbc.update("update orders.orders set created_at = ? where id = ?", date, entry.orderId());
+            jdbc.update("update sale.sales set created_at = ? where id = ?", date, entry.saleId());
+            // Only move the original seed entries; keep subsequent business activity unchanged.
+            jdbc.update("update payment.payments set created_at = ? where sale_id = ? and created_at = ?",
+                date, entry.saleId(), entry.createdAt());
+            jdbc.update("update customer.account_ledger set created_at = ? where sale_id = ? and entry_type = 'DEBIT' and created_at = ?",
+                date, entry.saleId(), entry.createdAt());
+            jdbc.update("""
+                update inventory.stock_movements set created_at = ?
+                where reference_id = ? and reference_type = 'SALE' and movement_type = 'SALE' and created_at = ?
+                """, date, entry.saleId(), entry.createdAt());
+        }
+        log.info("Refreshed {} demo orders and sales between {} and {}", dates.size(),
+            today.minusDays(DAYS_BEFORE), today.plusDays(DAYS_AFTER));
+    }
+
     private void repairSeedLedger() {
         List<RepairLedgerEntry> missing = jdbc.query("""
             SELECT s.id, s.customer_id, s.total - s.paid AS amount, s.created_at
@@ -273,6 +392,7 @@ public class DemoDataSeeder implements ApplicationRunner {
     private record SeedUser(UUID id, String email) { }
     private record Line(UUID productId, String name, BigDecimal quantity, BigDecimal price, BigDecimal total) { }
     record RepairLedgerEntry(UUID saleId, UUID customerId, BigDecimal amount, Timestamp createdAt) { }
+    record SeedDates(UUID orderId, UUID saleId, int index, Timestamp createdAt) { }
 
     private Timestamp timestamp(Instant instant) {
         return Timestamp.from(instant);

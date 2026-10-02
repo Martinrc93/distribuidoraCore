@@ -9,6 +9,7 @@ import { PageHeader } from '../shared/components/PageHeader'
 import { Panel } from '../shared/components/Panel'
 import DashboardPage from '../features/dashboard/DashboardPage'
 import CustomersPage from '../features/customers/CustomersPage'
+import CustomerDetailPage from '../features/customers/CustomerDetailPage'
 import ProductsPage from '../features/products/ProductsPage'
 import PriceListsPage from '../features/pricing/PriceListsPage'
 import CatalogAdminPage from '../features/catalog/CatalogAdminPage'
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
+        <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/catalog" element={<CatalogAdminPage />} />
         <Route path="/price-lists" element={<PriceListsPage />} />

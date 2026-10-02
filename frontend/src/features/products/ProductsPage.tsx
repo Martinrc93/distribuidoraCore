@@ -8,6 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type Product = {
@@ -215,13 +216,19 @@ export default function ProductsPage() {
   const queryClient = useQueryClient()
   const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
   const search = getFilter('search')
+  const brandId = getFilter('brandId')
+  const categoryId = getFilter('categoryId')
+  const stock = ['POSITIVE', 'NEGATIVE'].includes(getFilter('stock')) ? getFilter('stock') : ''
   const searchParam = search.trim() ? `&search=${encodeURIComponent(search.trim())}` : ''
-  const productPath = `/api/products?page=${page}&size=${pageSize}${searchParam}`
+  const catalogParams = (brandId ? `&brandId=${encodeURIComponent(brandId)}` : '')
+    + (categoryId ? `&categoryId=${encodeURIComponent(categoryId)}` : '')
+    + (stock ? `&stock=${stock}` : '')
+  const productPath = `/api/products?page=${page}&size=${pageSize}${searchParam}${catalogParams}`
   const productQueryKey = [productPath]
   const query = useQuery({ queryKey: productQueryKey, queryFn: () => apiGet<ApiPage<Product>>(productPath) })
   const listsQuery = useQuery({ queryKey: PRICE_LIST_QUERY_KEY, queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20'), enabled: isAdmin })
-  const categoriesQuery = useQuery({ queryKey: CATEGORIES_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/categories'), enabled: isAdmin })
-  const brandsQuery = useQuery({ queryKey: BRANDS_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/brands'), enabled: isAdmin })
+  const categoriesQuery = useQuery({ queryKey: CATEGORIES_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/categories') })
+  const brandsQuery = useQuery({ queryKey: BRANDS_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/brands') })
   const [formProduct, setFormProduct] = useState<Product | undefined>()
   const [showForm, setShowForm] = useState(false)
   const [statusProduct, setStatusProduct] = useState<Product | undefined>()
@@ -241,6 +248,7 @@ export default function ProductsPage() {
   const brands = brandsQuery.data ?? []
   const optionsLoading = listsQuery.isLoading || categoriesQuery.isLoading || brandsQuery.isLoading
   const optionsError = listsQuery.isError || categoriesQuery.isError || brandsQuery.isError
+  const hasFilters = Boolean(search.trim() || brandId || categoryId || stock)
   const brandNames = new Map(brands.map((brand) => [brand.id, brand.name]))
   const movementsPath = selectedProduct ? `/api/inventory/${selectedProduct.id}/movements?page=0&size=20` : ''
   const movementsKey = [movementsPath]
@@ -335,8 +343,16 @@ export default function ProductsPage() {
     {actionError && <p className="error-text" role="alert">{actionError}</p>}
     {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} activeLists={activeLists} categories={categories} brands={brands} optionsLoading={optionsLoading} optionsError={optionsError} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} onChangeStatus={(product) => { setActionError(''); setStatusProduct(product) }} />}
     <Panel>
-      <div className="toolbar"><label className="field"><span>Buscar productos</span><input className="input search-input" aria-label="Buscar productos" placeholder="Nombre o categoría" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label></div>
-      {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title={search ? 'No hay productos para mostrar' : 'Todavía no hay productos'} description={search ? 'Probá otra búsqueda.' : 'Creá el primer producto para comenzar a gestionar el catálogo.'} action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable className={isAdmin ? 'products-table-admin' : 'products-table-standard'} columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+      <div className="toolbar items-end">
+        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar productos</span><input className="input search-input [@media(max-width:640px)]:max-w-none" aria-label="Buscar productos" placeholder="Nombre del producto" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
+        <SearchableSelect label="Buscar por marca" options={brands} value={brandId} onChange={(value) => setFilter('brandId', value)} allLabel="Todas las marcas" unavailableLabel="Marca no disponible" loadingLabel="Cargando marcas…" loading={brandsQuery.isLoading} disabled={brandsQuery.isError} />
+        <SearchableSelect label="Buscar por categoría" options={categories} value={categoryId} onChange={(value) => setFilter('categoryId', value)} allLabel="Todas las categorías" unavailableLabel="Categoría no disponible" loadingLabel="Cargando categorías…" loading={categoriesQuery.isLoading} disabled={categoriesQuery.isError} />
+        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Stock</span><select className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={stock} onChange={(event) => setFilter('stock', event.target.value)}>
+          <option value="">Ambos</option><option value="POSITIVE">Positivo</option><option value="NEGATIVE">Negativo</option>
+        </select></label>
+      </div>
+      {(categoriesQuery.isError || brandsQuery.isError) && <div className="page-actions mb-[18px]"><p className="error-text" role="alert">No se pudieron cargar las marcas o categorías para filtrar.</p><Button variant="secondary" onClick={() => { if (categoriesQuery.isError) void categoriesQuery.refetch(); if (brandsQuery.isError) void brandsQuery.refetch() }}>Reintentar filtros</Button></div>}
+      {query.isLoading ? <EmptyState title="Cargando productos" description="Consultando productos a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los productos" description={query.error.message} /> : products.length === 0 ? <EmptyState title={hasFilters ? 'No hay productos para mostrar' : 'Todavía no hay productos'} description={hasFilters ? 'Probá otra búsqueda o cambiá los filtros.' : 'Creá el primer producto para comenzar a gestionar el catálogo.'} action={isAdmin ? <Button onClick={() => setShowForm(true)} disabled={formSaving || mutating}>+ Nuevo producto</Button> : undefined} /> : <><DataTable className={isAdmin ? 'products-table-admin' : 'products-table-standard'} columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} productos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {selectedProduct && <div role="dialog" aria-modal="true" aria-labelledby="movements-title" className="modal-backdrop"><Panel title="Movimientos del producto" action={<Button variant="link" onClick={() => setSelectedProduct(undefined)}>Cerrar</Button>}>
       <h2 id="movements-title">{selectedProduct.name}</h2>
