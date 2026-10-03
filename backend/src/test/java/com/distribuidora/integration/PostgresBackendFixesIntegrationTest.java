@@ -987,6 +987,95 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void deliveryPaysCurrentSaleThenSelectedPreviousDebtsAtomicallyWithEachPaymentMethod() {
+        UUID actor = createUser("delivery-previous");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customer = createCustomer(null);
+        AccountDebtSale oldest = createAccountDebtSale(customer, new BigDecimal("30"), 7200);
+        AccountDebtSale older = createAccountDebtSale(customer, new BigDecimal("20"), 3600);
+        AccountDebtSale current = createAccountDebtSale(customer, new BigDecimal("100"), 1800);
+        AccountDebtSale newer = createAccountDebtSale(customer, new BigDecimal("70"), 900);
+        Map<String, Object> sale = (Map<String, Object>) readQueryService.orderDetail(current.orderId()).get("sale");
+        assertThat((BigDecimal) sale.get("previousDebtAvailable")).isEqualByComparingTo("50");
+        deliveryLifecycleService.recordAttempt(current.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+            "DELIVERED", null, List.of(
+                new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("110")),
+                new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("BANK_TRANSFER", new BigDecimal("30"))), "TR-PREVIOUS", new BigDecimal("40")));
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, current.saleId())).isEqualByComparingTo("100");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, oldest.saleId())).isEqualByComparingTo("30");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, older.saleId())).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, newer.saleId())).isZero();
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("80");
+        assertThat(jdbc.queryForObject("select sum(amount) from payment.payments where customer_id = ? and method = 'CASH'", BigDecimal.class, customer)).isEqualByComparingTo("110");
+        assertThat(jdbc.queryForObject("select sum(amount) from payment.payments where customer_id = ? and method = 'BANK_TRANSFER' and transfer_reference = 'TR-PREVIOUS'", BigDecimal.class, customer)).isEqualByComparingTo("30");
+        assertThat(jdbc.queryForObject("select sum(amount) from customer.account_ledger where customer_id = ? and entry_type = 'CREDIT'", BigDecimal.class, customer)).isEqualByComparingTo("140");
+        assertThat(jdbc.queryForObject("select status from orders.orders where id = ?", String.class, current.orderId())).isEqualTo("DELIVERED");
+    }
+
+    @Test
+    void deliveryPreviousDebtRejectsForeignSalesAndRollsBackBeforeAcceptingOwnedDebt() {
+        UUID seller = createSeller("delivery-debt-scope");
+        UUID foreignSeller = createSeller("delivery-debt-other");
+        UUID actor = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, seller);
+        UUID customer = createCustomer(seller);
+        AccountDebtSale foreign = createAccountDebtSale(customer, new BigDecimal("100"), 7200);
+        AccountDebtSale own = createAccountDebtSale(customer, new BigDecimal("30"), 3600);
+        AccountDebtSale current = createAccountDebtSale(customer, new BigDecimal("40"), 1800);
+        jdbc.update("update orders.orders set seller_id = ? where id = ?", foreignSeller, foreign.orderId());
+        jdbc.update("update orders.orders set seller_id = ? where id = ?", seller, current.orderId());
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("SALE_DELIVER"))));
+        Map<String, Object> sale = (Map<String, Object>) readQueryService.orderDetail(current.orderId()).get("sale");
+        assertThat((BigDecimal) sale.get("previousDebtAvailable")).isEqualByComparingTo("30");
+        assertThatThrownBy(() -> deliveryLifecycleService.recordAttempt(current.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+            "DELIVERED", null, List.of(new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("80"))), null, new BigDecimal("40"))))
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("deuda anterior disponible");
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where customer_id = ?", Long.class, customer)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from orders.delivery_attempts where order_id = ?", Long.class, current.orderId())).isZero();
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("170");
+        assertThat(jdbc.queryForObject("select status from orders.orders where id = ?", String.class, current.orderId())).isEqualTo("CONFIRMED");
+        deliveryLifecycleService.recordAttempt(current.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+            "DELIVERED", null, List.of(new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("70"))), null, new BigDecimal("30")));
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, foreign.saleId())).isZero();
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, own.saleId())).isEqualByComparingTo("30");
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("100");
+    }
+
+    @Test
+    void deliveryRejectsPreviousDebtAlreadyPaidSinceTheDialogOpened() {
+        UUID actor = createUser("delivery-stale-debt");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customer = createCustomer(null);
+        AccountDebtSale older = createAccountDebtSale(customer, new BigDecimal("30"), 3600);
+        AccountDebtSale current = createAccountDebtSale(customer, new BigDecimal("40"), 1800);
+        accountPaymentService.apply(customer, new AccountPaymentDtos.PaymentRequest(new BigDecimal("30"), "CASH", null, older.saleId()));
+        assertThatThrownBy(() -> deliveryLifecycleService.recordAttempt(current.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+            "DELIVERED", null, List.of(new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("70"))), null, new BigDecimal("30"))))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, current.saleId())).isZero();
+        assertThat(jdbc.queryForObject("select status from orders.orders where id = ?", String.class, current.orderId())).isEqualTo("CONFIRMED");
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("40");
+        assertThat(jdbc.queryForObject("select count(*) from orders.delivery_attempts where order_id = ?", Long.class, current.orderId())).isZero();
+    }
+
+    @Test
+    void partialDeliveryPaymentLeavesSelectedPreviousDebtUntouchedUntilCurrentSaleIsPaid() {
+        UUID actor = createUser("delivery-partial-debt");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customer = createCustomer(null);
+        AccountDebtSale older = createAccountDebtSale(customer, new BigDecimal("30"), 3600);
+        AccountDebtSale current = createAccountDebtSale(customer, new BigDecimal("40"), 1800);
+        deliveryLifecycleService.recordAttempt(current.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+            "DELIVERED", null, List.of(new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("20"))), null, new BigDecimal("30")));
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, older.saleId())).isZero();
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, current.saleId())).isEqualByComparingTo("20");
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("50");
+    }
+
+    @Test
     void accountPaymentSupportsFifoAndSpecificSaleAllocation() {
         UUID actorId = createUser("account-payment");
         SecurityContextHolder.getContext().setAuthentication(

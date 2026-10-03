@@ -1,6 +1,7 @@
 package com.distribuidora.order.application;
 
 import com.distribuidora.audit.application.AuditService;
+import com.distribuidora.customer.application.DeliveryDebtQuery;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -31,6 +32,7 @@ public class DeliveryLifecycleService {
         String observation();
         List<? extends DeliveryPaymentCommand> payments();
         String transferReference();
+        default BigDecimal previousDebtAmount() { return ZERO; }
     }
 
     private final JdbcTemplate jdbc;
@@ -55,6 +57,10 @@ public class DeliveryLifecycleService {
     public void recordAttempt(UUID orderId, DeliveryAttemptCommand request) {
         validateAttempt(orderId, request);
         if (currentUser != null) currentUser.requireOrderAccess(orderId);
+        if (previousDebtAmount(request).signum() > 0) {
+            UUID saleId = jdbc.queryForObject("select id from sale.sales where order_id = ?", UUID.class, orderId);
+            new DeliveryDebtQuery(jdbc, currentUser).lockSales(saleId);
+        }
         Map<String, Object> lifecycle = lockOrderAndSale(orderId);
         requireConfirmed(lifecycle);
 
@@ -84,6 +90,7 @@ public class DeliveryLifecycleService {
         auditDetails.put("result", request.result());
         auditDetails.put("paymentsReceived", paymentResult.received());
         auditDetails.put("paidTotal", paymentResult.paid());
+        auditDetails.put("previousDebtAmount", previousDebtAmount(request));
         if ("DELIVERED".equals(request.result())) {
             auditDetails.put("remainingAccountDebt", paymentResult.remainingAccountDebt());
         }
@@ -94,6 +101,7 @@ public class DeliveryLifecycleService {
     private DeliveryPaymentResult collectDeliveryPayments(Map<String, Object> lifecycle,
                                                            DeliveryAttemptCommand request,
                                                            Timestamp now) {
+        if (previousDebtAmount(request).signum() > 0) return collectWithPreviousDebt(lifecycle, request, now);
         List<? extends DeliveryPaymentCommand> payments = request.payments() == null
             ? List.of() : request.payments();
         BigDecimal received = payments.stream().map(DeliveryPaymentCommand::amount)
@@ -125,6 +133,64 @@ public class DeliveryLifecycleService {
         }
         BigDecimal paid = paidBefore.add(received).setScale(4);
         return new DeliveryPaymentResult(received, paid, debtBefore.subtract(received).setScale(4));
+    }
+
+    private DeliveryPaymentResult collectWithPreviousDebt(Map<String, Object> lifecycle,
+                                                           DeliveryAttemptCommand request, Timestamp now) {
+        UUID saleId = uuid(lifecycle, "sale_id");
+        UUID customerId = uuid(lifecycle, "customer_id");
+        BigDecimal selected = previousDebtAmount(request);
+        Map<String, Object> customer = jdbc.queryForMap(
+            "select id, balance from customer.customers where id = ? for update", customerId);
+        List<DeliveryDebtQuery.Debt> previous = new DeliveryDebtQuery(jdbc, currentUser).previousSales(saleId);
+        BigDecimal availablePrevious = previous.stream().map(DeliveryDebtQuery.Debt::amount).reduce(ZERO, BigDecimal::add);
+        if (selected.compareTo(availablePrevious) > 0) {
+            throw new IllegalStateException("El importe supera la deuda anterior disponible. Actualiza el pedido e intenta nuevamente");
+        }
+        BigDecimal ledgerDue = jdbc.queryForObject(
+            "select coalesce(sum(case when entry_type = 'DEBIT' then amount else -amount end), 0) "
+                + "from customer.account_ledger where sale_id = ?", BigDecimal.class, saleId).setScale(4);
+        BigDecimal currentDue = ledgerDue.max(ZERO).min(decimal(lifecycle.get("total")).subtract(decimal(lifecycle.get("paid"))).max(ZERO));
+        List<? extends DeliveryPaymentCommand> payments = request.payments() == null ? List.of() : request.payments();
+        BigDecimal received = payments.stream().map(DeliveryPaymentCommand::amount).reduce(ZERO, BigDecimal::add).setScale(4);
+        if (received.compareTo(currentDue.add(selected)) > 0 || received.compareTo(decimal(customer.get("balance")).max(ZERO)) > 0) {
+            throw new IllegalStateException("El pago supera el saldo pendiente seleccionado");
+        }
+        List<DeliveryDebtQuery.Debt> debts = new java.util.ArrayList<>();
+        debts.add(new DeliveryDebtQuery.Debt(saleId, currentDue));
+        BigDecimal previousLimit = selected;
+        for (var debt : previous) {
+            BigDecimal amount = debt.amount().min(previousLimit);
+            debts.add(new DeliveryDebtQuery.Debt(debt.saleId(), amount));
+            previousLimit = previousLimit.subtract(amount);
+        }
+        int debtIndex = 0;
+        BigDecimal remainingDue = currentDue;
+        BigDecimal currentApplied = ZERO;
+        for (var payment : payments) {
+            BigDecimal remainingPayment = payment.amount().setScale(4);
+            while (remainingPayment.signum() > 0) {
+                while (remainingDue.signum() == 0 && ++debtIndex < debts.size()) remainingDue = debts.get(debtIndex).amount();
+                if (debtIndex >= debts.size()) throw new IllegalStateException("No hay deuda suficiente para registrar el pago");
+                UUID targetSale = debts.get(debtIndex).saleId();
+                BigDecimal applied = remainingPayment.min(remainingDue);
+                jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, transfer_reference, created_at) values (?, ?, ?, ?, ?, ?, ?)",
+                    UUID.randomUUID(), targetSale, customerId, applied, payment.method(),
+                    "BANK_TRANSFER".equals(payment.method()) ? normalize(request.transferReference()) : null, now);
+                jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'CREDIT', ?, ?)",
+                    UUID.randomUUID(), customerId, targetSale, applied, now);
+                if (targetSale.equals(saleId)) currentApplied = currentApplied.add(applied);
+                else jdbc.update("update sale.sales set paid = paid + ? where id = ?", applied, targetSale);
+                remainingDue = remainingDue.subtract(applied);
+                remainingPayment = remainingPayment.subtract(applied);
+            }
+        }
+        if (received.signum() > 0) jdbc.update("update customer.customers set balance = balance - ? where id = ?", received, customerId);
+        return new DeliveryPaymentResult(received, decimal(lifecycle.get("paid")).add(currentApplied).setScale(4), ledgerDue.subtract(currentApplied).setScale(4));
+    }
+
+    private BigDecimal previousDebtAmount(DeliveryAttemptCommand request) {
+        return request.previousDebtAmount() == null ? ZERO : request.previousDebtAmount().setScale(4);
     }
 
     @Transactional
@@ -236,6 +302,12 @@ public class DeliveryLifecycleService {
         if (orderId == null || request == null || request.result() == null
             || (!"DELIVERED".equals(request.result()) && !"FAILED".equals(request.result()))) {
             throw new IllegalArgumentException("result es inválido");
+        }
+        if (request.previousDebtAmount() != null && (request.previousDebtAmount().signum() < 0 || request.previousDebtAmount().scale() > 4)) {
+            throw new IllegalArgumentException("La deuda anterior debe ser no negativa y tener hasta 4 decimales");
+        }
+        if ("FAILED".equals(request.result()) && previousDebtAmount(request).signum() > 0) {
+            throw new IllegalArgumentException("Una entrega fallida no puede incluir deuda anterior");
         }
         BigDecimal paymentTotal = ZERO;
         boolean hasBankTransfer = false;

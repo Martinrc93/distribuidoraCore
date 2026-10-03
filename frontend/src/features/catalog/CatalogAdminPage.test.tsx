@@ -49,7 +49,7 @@ describe('CatalogAdminPage', () => {
 
     await user.click(screen.getByRole('button', { name: /desactivar marca molino norte/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /confirmar/i }))
+    await user.click(screen.getByRole('button', { name: /^desactivar marca$/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/brands/brand-1', expect.objectContaining({ method: 'DELETE' })))
   })
 

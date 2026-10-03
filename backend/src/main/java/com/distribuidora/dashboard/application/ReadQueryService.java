@@ -1,6 +1,7 @@
 package com.distribuidora.dashboard.application;
 
 import com.distribuidora.shared.web.PageResponse;
+import com.distribuidora.customer.application.DeliveryDebtQuery;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -418,6 +419,8 @@ public class ReadQueryService {
             from sale.sales s where s.order_id = ?
             """, orderId);
         UUID saleId = (UUID) sale.get("id");
+        sale = new HashMap<>(sale);
+        sale.put("previousDebtAvailable", new DeliveryDebtQuery(jdbc, currentUser).previousBalance(saleId));
         Map<String, Object> account = jdbc.queryForMap("""
             select coalesce(sum(amount) filter (where entry_type = 'DEBIT'), 0) as debit,
                    coalesce(sum(amount) filter (where entry_type = 'CREDIT'), 0) as credit,

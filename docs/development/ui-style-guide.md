@@ -328,8 +328,21 @@ crear otra venta ni modificar los cobros. Cancelar vuelve al detalle; si hubo
 cambios, utiliza la confirmación compartida de descarte. Conserva las mismas
 validaciones, tabla, totales y adaptación móvil de creación. Solo admite pedidos
 y ventas confirmados, con una misma lista entre sus líneas.
-En el listado, `.table-row-actions` agrupa «Ver detalle» y «Editar»; la segunda
-acción solo aparece para administradores en pedidos confirmados. El enlace con
+En el listado, `.table-row-actions` agrupa «Ver detalle», «Editar» y «Pasar a
+entregado». «Editar» solo aparece para administradores en pedidos confirmados.
+«Pasar a entregado» aparece en pedidos confirmados con `SALE_DELIVER` o
+`ADMIN_ALL`, tanto en las filas de escritorio como en las tarjetas móviles.
+Consulta el saldo actual antes de abrir `DeliveryAttemptDialog` en modo de
+confirmación de entrega: permite registrar pagos en efectivo o transferencia,
+su número e incluir deuda anterior autorizada, sin superar el total seleccionado.
+No cambia el estado hasta confirmar.
+Durante la consulta bloquea las acciones de entrega y muestra carga; los errores
+permiten repetir la consulta desde el botón. Si el pedido cambió de estado,
+actualiza el listado sin abrir el diálogo. El registro comparte validación y
+mutación con el detalle mediante `useOrderDelivery`; al guardar actualiza los
+pedidos, ventas, pagos y saldos relacionados sin perder filtros ni paginación.
+Al cancelar restaura el foco en el disparador; al guardar lo devuelve a «Ver
+detalle» o a la búsqueda si la fila dejó de estar visible. El enlace de edición con
 `?edit=true` abre el mismo formulario después de verificar permisos y estado
 del detalle. Modificar la URL no concede acceso de edición. Las acciones usan
 el wrap móvil compartido; cancelar o guardar elimina ese parámetro de la URL.
@@ -632,9 +645,26 @@ no bloquea por sí mismo navegación del sidebar ni atrás/adelante del router.
 | `.customer-modal` | Formulario de clientes de ancho adaptable hasta `1040px`, scroll interno y descarte mediante `ConfirmationDialog` |
 | `.price-status-dialog-*` | Confirmación de estado de listas: `480px`, radio `12px`, resumen del cambio, cierre y capa `35` |
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
+| `.sale-detail-backdrop > .panel` | Detalle de venta: hasta `1040px` sobre `760px`, padding `28px`, títulos de `20px` y tablas/datos de `14px`; hasta `760px` conserva el ancho y tipografía compactos. Altura limitada al viewport con scroll interno |
+| `.delivery-attempt-dialog` | Registro de entrega: diálogo nativo de hasta `720px`, encabezado y pie fijos, cuerpo con scroll y pagos con medio, importe y eliminación alineados. Número de transferencia dentro del mismo fondo. Hasta `640px`, los pagos se apilan y las acciones del pie comparten el ancho |
 
 Mantener estas diferencias acotadas. Si se generaliza una variante, extraer la
 estructura reutilizable y documentar su API antes de extenderla a otras features.
+
+[`DeliveryAttemptDialog`](../../frontend/src/features/orders/DeliveryAttemptDialog.tsx)
+pertenece al flujo de entrega de pedidos. Muestra el pedido, el saldo pendiente y
+el resumen del pago antes de confirmar. El título es «Pago», sin «opcional» ni
+subtítulo. Ofrece «Agregar deuda anterior» cuando existe deuda autorizada vigente,
+con importe editable, «Pagar total» y «Pagar solo esta venta». Valida el máximo
+disponible; el pago se aplica primero a esta venta y luego a ventas anteriores.
+Permite quitar incluso el último pago y elimina el número cuando ya no hay
+transferencias. Solicita el número en el mismo bloque de fondo del pago por
+transferencia. Al elegir «No entregado», limpia los pagos y la deuda seleccionada
+y exige una observación; «Entregado» no muestra observación. Contiene el foco, bloquea
+el fondo y su scroll, enfoca el resultado al abrir y restaura el foco al cerrar.
+Escape y todas las acciones/campos quedan bloqueados durante el guardado;
+los errores permanecen dentro del cuerpo sin perder los datos. Hasta `760px`,
+usa márgenes de `14px` y padding reducido. Su cuerpo desplaza sin ocultar el pie.
 
 El modal de alta/edición de clientes usa `min(100%, clamp(640px, 76vw, 1040px))`
 de ancho, altura máxima `calc(100dvh - 40px)` y scroll interno. Conserva dos

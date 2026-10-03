@@ -19,10 +19,14 @@ public final class DeliveryLifecycleDtos {
         @NotBlank @Size(max = 20) String result,
         @Size(max = 2000) String observation,
         List<@NotNull @Valid DeliveryPaymentRequest> payments,
-        @Size(max = 100) String transferReference
+        @Size(max = 100) String transferReference,
+        @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousDebtAmount
     ) implements DeliveryLifecycleService.DeliveryAttemptCommand {
         public DeliveryAttemptRequest(String result, String observation) {
-            this(result, observation, null, null);
+            this(result, observation, null, null, null);
+        }
+        public DeliveryAttemptRequest(String result, String observation, List<DeliveryPaymentRequest> payments, String transferReference) {
+            this(result, observation, payments, transferReference, null);
         }
     }
 

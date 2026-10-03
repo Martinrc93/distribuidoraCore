@@ -2,10 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import OrdersPage from './OrdersPage'
 
-function response(body: unknown) {
-  return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
+function response(body: unknown, status = 200) {
+  return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 }
 
 function renderOrders(entry = '/orders', authorities?: string[]) {
@@ -25,6 +26,90 @@ function mockOrders() {
 }
 
 describe('OrdersPage', () => {
+  it.each([['ADMIN_ALL', true], ['SALE_DELIVER', true], ['ORDER_CREATE', false]] as const)('restricts direct delivery by permission and confirmed status: %s', async (authority, allowed) => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => response({
+      content: ['CONFIRMED', 'DELIVERED', 'CANCELLED'].map(status => ({ id: status, number: `PED-${status}`, customer: 'Almacén Norte', seller: 'Lucía', total: 300, status, date: '2026-10-01T15:00:00Z' })),
+      page: 0, size: 20, totalElements: 3, totalPages: 1,
+    }))
+    renderOrders('/orders', [authority])
+    await screen.findByText('PED-CONFIRMED')
+    expect(screen.queryAllByRole('button', { name: /Pasar a entregado pedido/ })).toHaveLength(allowed ? 1 : 0)
+    if (allowed) expect(screen.getByRole('button', { name: 'Pasar a entregado pedido PED-CONFIRMED' })).toBeEnabled()
+  })
+
+  it('confirms delivery and transfer collection from the list using the current sale balance and refreshes the filtered page', async () => {
+    const user = userEvent.setup()
+    let delivered = false
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path === '/api/orders/order-1') return response({ order: { status: 'CONFIRMED' }, sale: { balance: 150 } })
+      if (path === '/api/orders/order-1/delivery-attempts' && init?.method === 'POST') { delivered = true; return response({}, 204) }
+      return response({ content: [{ id: 'order-1', number: 'PED-001', customer: 'Almacén Norte', seller: 'Lucía', total: 300, status: delivered ? 'DELIVERED' : 'CONFIRMED', date: '2026-09-30T12:00:00Z' }], page: 1, size: 20, totalElements: 21, totalPages: 2 })
+    })
+    renderOrders('/orders?page=1&search=PED&dateMin=01%2F09%2F2026&dateMax=30%2F09%2F2026', ['SALE_DELIVER'])
+    await user.click(await screen.findByRole('button', { name: 'Pasar a entregado pedido PED-001' }))
+    expect(await screen.findByRole('dialog', { name: 'Confirmar entrega' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Resultado de entrega')).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/orders/order-1/delivery-attempts', expect.anything())
+    await user.click(screen.getByRole('button', { name: 'Agregar pago' }))
+    await user.selectOptions(screen.getByLabelText('Medio de pago'), 'BANK_TRANSFER')
+    await user.type(screen.getByLabelText('Número de transferencia'), 'TR-001')
+    await user.type(screen.getByLabelText('Importe del pago'), '200')
+    await user.click(screen.getByRole('button', { name: 'Confirmar entrega' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('El pago supera el saldo pendiente')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/orders/order-1/delivery-attempts', expect.anything())
+    await user.clear(screen.getByLabelText('Importe del pago'))
+    await user.type(screen.getByLabelText('Importe del pago'), '100')
+    await user.click(screen.getByRole('button', { name: 'Confirmar entrega' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders/order-1/delivery-attempts', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ result: 'DELIVERED', observation: null, payments: [{ method: 'BANK_TRANSFER', amount: 100 }], transferReference: 'TR-001' }),
+    })))
+    expect(await screen.findByRole('status')).toHaveTextContent('Entrega del pedido PED-001 registrada.')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pasar a entregado pedido PED-001' })).not.toBeInTheDocument()
+    expect(screen.getByText('DELIVERED')).toBeInTheDocument()
+    const listPath = '/api/orders?page=1&size=20&search=PED&status=&dateMin=2026-09-01&dateMax=2026-09-30'
+    expect(fetchMock.mock.calls.filter(([input]) => input === listPath)).toHaveLength(2)
+    expect(screen.getByLabelText('Buscar pedidos')).toHaveValue('PED')
+    expect(screen.getByText(/Página 2/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Abrir pedido PED-001' })).toHaveFocus())
+  })
+
+  it('allows retrying a failed balance load without opening or submitting a delivery', async () => {
+    const user = userEvent.setup()
+    let available = false
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(input => String(input) === '/api/orders/order-1'
+      ? available ? response({ order: { status: 'CONFIRMED' }, sale: { balance: 0 } }) : response({ detail: 'No se pudo cargar el pedido.' }, 503)
+      : response({ content: [{ id: 'order-1', number: 'PED-001', customer: 'Almacén Norte', seller: 'Lucía', total: 300, status: 'CONFIRMED', date: '2026-09-30T12:00:00Z' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }))
+    renderOrders('/orders', ['SALE_DELIVER'])
+    const trigger = await screen.findByRole('button', { name: 'Pasar a entregado pedido PED-001' })
+    await user.click(trigger)
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar el pedido.')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/orders/order-1/delivery-attempts', expect.anything())
+    available = true
+    await user.click(trigger)
+    expect(await screen.findByRole('dialog', { name: 'Confirmar entrega' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Agregar pago' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(trigger).toHaveFocus()
+  })
+
+  it('refreshes an outdated order status instead of opening a delivery for an already delivered order', async () => {
+    const user = userEvent.setup()
+    let fresh = false
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(input => {
+      if (String(input) === '/api/orders/order-1') { fresh = true; return response({ order: { status: 'DELIVERED' }, sale: { balance: 0 } }) }
+      return response({ content: [{ id: 'order-1', number: 'PED-001', customer: 'Almacén Norte', seller: 'Lucía', total: 300, status: fresh ? 'DELIVERED' : 'CONFIRMED', date: '2026-09-30T12:00:00Z' }], page: 0, size: 20, totalElements: 1, totalPages: 1 })
+    })
+    renderOrders('/orders', ['SALE_DELIVER'])
+    await user.click(await screen.findByRole('button', { name: 'Pasar a entregado pedido PED-001' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('El pedido ya no está confirmado.')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pasar a entregado pedido PED-001' })).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/orders/order-1/delivery-attempts', expect.anything())
+  })
+
   it.each([['ADMIN_ALL'], ['ORDER_CREATE']])('shows direct edit links only for admins: %s', async (authority) => {
     vi.spyOn(global, 'fetch').mockImplementation(() => response({
       content: ['CONFIRMED', 'DELIVERED', 'CANCELLED'].map((status) => ({ id: status, number: `PED-${status}`, customer: 'Almacén Norte', seller: 'Lucía', total: 300, status, date: '2026-10-01T15:00:00Z' })),

@@ -18,7 +18,7 @@ type DeliveryAttempt = { id: string; attemptNumber: number; result: 'DELIVERED' 
 type OrderDetail = {
   order: { id: string; number: string; customerId: string; customer: string; seller?: string; status: string; subtotal: number; discount: number; orderDiscountPercent?: number; total: number; customerBalance: number; date: string; previousBalanceAmount?: number; collectionTotal?: number }
   items: OrderItem[]
-  sale: { id: string; number: string; status: string; total: number; paid: number; balance: number; date: string }
+  sale: { id: string; number: string; status: string; total: number; paid: number; balance: number; previousDebtAvailable?: number; date: string }
   payments: Payment[]
   deliveryAttempts: DeliveryAttempt[]
   account: { debit: number; credit: number; net: number }
@@ -118,7 +118,7 @@ export default function OrderDetailPage() {
         <Panel title="Cuenta corriente"><dl className="account-ledger"><dt>Débitos de esta venta</dt><dd>{money(account.debit)}</dd><dt>Créditos aplicados</dt><dd>{money(account.credit)}</dd><dt>Saldo pendiente</dt><dd>{money(account.net)}</dd><dt>Saldo total del cliente</dt><dd>{money(order.customerBalance)}</dd></dl></Panel>
       </div>
       <Panel title="Resumen"><dl className="order-totals"><dt>Subtotal</dt><dd>{money(order.subtotal)}</dd><dt>Descuentos</dt><dd>{money(order.discount)}</dd><dt className="total-label">Total</dt><dd className="total-value">{money(order.total)}</dd></dl><p className="helper-text">Lista(s) usada(s): {Array.from(new Set(items.map((item) => item.priceListCode))).join(', ') || '—'}</p></Panel>
-      <OrderLifecycleActions orderId={order.id} orderNumber={order.number} orderStatus={order.status} saleBalance={sale.balance} onChanged={() => { void query.refetch() }} />
+      <OrderLifecycleActions orderId={order.id} orderNumber={order.number} orderStatus={order.status} saleBalance={sale.balance} previousDebtAvailable={sale.previousDebtAvailable} onChanged={() => { void query.refetch() }} />
     </>
   </>
 }

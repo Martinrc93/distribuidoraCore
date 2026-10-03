@@ -24,10 +24,30 @@ Un resultado `FAILED` no admite cobros ni referencia de transferencia y sigue ex
 
 ## Cuenta corriente y atomicidad
 
-- La venta y el cliente se bloquean durante el registro.
+`previousDebtAmount` es opcional, no negativo y admite hasta cuatro decimales.
+Permite seleccionar un importe de deuda de ventas anteriores del mismo cliente,
+sin crear un nuevo débito ni aumentar el total de esta venta. El detalle expone
+`sale.previousDebtAvailable`, calculado con deuda contable vigente y `total - paid`.
+Solo incluye ventas confirmadas o entregadas anteriores según `(created_at, id)`;
+para vendedores, solo pedidos propios o sin vendedor del cliente asignado.
+
+Por ejemplo, con saldo de esta venta de 100 y `previousDebtAmount: 40`, un pago
+de 140 cancela esta venta y aplica 40 a las anteriores por antigüedad. Un pago
+de 110 aplica 100 a esta venta y 10 a las anteriores. Cada asignación conserva
+el medio y número de transferencia en su venta, aumenta su `paid`, acredita su
+ledger y reduce una sola vez el saldo del cliente. Seleccionar una deuda anterior
+ya pagada o un importe mayor al disponible devuelve `409` y revierte la entrega.
+`FAILED` no admite deuda anterior. Omitir el campo conserva el comportamiento previo.
+
+La UI usa «Pago», oculta observación para entregas exitosas y solicita el número
+de transferencia dentro del bloque de pago. Ofrece importe editable de deuda
+anterior, «Pagar total» y «Pagar solo esta venta». La API conserva compatibilidad
+con transferencias históricas sin referencia.
+
+- Las ventas afectadas se bloquean por antigüedad antes del cliente durante el registro.
 - Los pagos se agregan a `payment.payments` y aumentan `sale.paid` sin cambiar el total de venta.
 - El importe cobrado se registra como `CREDIT` en el ledger de esa venta y reduce `customer.balance`. La deuda no cobrada permanece en la cuenta corriente.
-- El cobro no puede superar ni el saldo contable positivo de la venta ni `total - paid`.
+- Cada asignación no puede superar ni el saldo contable positivo de su venta ni `total - paid`; el total no puede superar el saldo de esta venta más la deuda anterior seleccionada.
 - El intento, pagos, crédito, balance y cambio de estado a `DELIVERED` se guardan en una sola transacción. Un error revierte todos esos efectos.
 - La operación registra auditoría `DELIVERY_ATTEMPT` con monto recibido, monto pagado acumulado y deuda restante.
 

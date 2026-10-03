@@ -262,3 +262,9 @@ append-only.
 La pantalla `/admin/audit` guarda `search` y `page` en la URL y muestra actor,
 operación, recurso, resultado y request ID. Las rutas y los comandos siguen
 autorizados por el backend.
+
+El detalle de pedido y venta incluye `sale.previousDebtAvailable` para la entrega:
+deuda vigente de ventas anteriores del mismo cliente, limitada al saldo contable
+y al importe sin pagar de cada venta. Para vendedores, solo considera pedidos
+propios o sin vendedor del cliente asignado. Ver
+[pagos de entrega](delivery-collection.md).

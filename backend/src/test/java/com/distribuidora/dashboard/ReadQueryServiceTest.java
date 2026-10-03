@@ -176,7 +176,9 @@ class ReadQueryServiceTest {
 
         Map<String, Object> response = service.orderDetail(orderId);
 
-        assertThat(response).containsEntry("order", order).containsEntry("sale", sale)
+        Map<String, Object> expectedSale = new java.util.HashMap<>(sale);
+        expectedSale.put("previousDebtAvailable", java.math.BigDecimal.ZERO.setScale(4));
+        assertThat(response).containsEntry("order", order).containsEntry("sale", expectedSale)
             .containsEntry("items", List.of(item)).containsEntry("payments", List.of(payment))
             .containsEntry("account", account);
     }

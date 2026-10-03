@@ -95,6 +95,24 @@ class DeliveryLifecycleServiceTest {
     }
 
     @Test
+    void rejectsNegativeOrOverPrecisePreviousDebtBeforeDatabaseAccess() {
+        for (String amount : List.of("-1", "0.00001")) {
+            assertThatThrownBy(() -> service.recordAttempt(UUID.randomUUID(),
+                new DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null, null, null, new BigDecimal(amount))))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+        verifyNoInteractions(jdbc, inventory, audit);
+    }
+
+    @Test
+    void failedAttemptCannotIncludePreviousDebt() {
+        assertThatThrownBy(() -> service.recordAttempt(UUID.randomUUID(),
+            new DeliveryLifecycleDtos.DeliveryAttemptRequest("FAILED", "Closed", null, null, BigDecimal.ONE)))
+            .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(jdbc, inventory, audit);
+    }
+
+    @Test
     void rejectsCancellationOfPaidSale() {
         UUID orderId = UUID.randomUUID();
         authenticate("ADMIN_ALL");
