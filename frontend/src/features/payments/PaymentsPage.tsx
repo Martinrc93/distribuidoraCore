@@ -25,6 +25,7 @@ const date = (value: string) => new Intl.DateTimeFormat('es-AR', { dateStyle: 'm
 const methodName: Record<string, string> = { CASH: 'Efectivo', BANK_TRANSFER: 'Transferencia' }
 
 export default function PaymentsPage() {
+  const isAdmin = hasAuthority('ADMIN_ALL')
   const canPay = hasAuthority('SALE_PAYMENT') || hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
@@ -45,7 +46,7 @@ export default function PaymentsPage() {
   const customersQuery = useQuery({ queryKey: CUSTOMERS_KEY, queryFn: () => apiGetAllPages<Customer>(CUSTOMERS_PATH), enabled: canPay })
   const debtsQuery = useQuery({
     queryKey: ['customer-debts', customerId],
-    queryFn: () => apiGet<ApiPage<CustomerDebt>>(`/api/customers/${customerId}/debts?page=0&size=100`),
+    queryFn: () => apiGetAllPages<CustomerDebt>(`/api/customers/${customerId}/debts?page=0&size=100`),
     enabled: showForm && canPay && Boolean(customerId),
   })
   const customers = customersQuery.data?.content ?? []
@@ -104,19 +105,19 @@ export default function PaymentsPage() {
   const allocationColumns: TableColumn[] = [{ key: 'sale', label: 'Deuda aplicada', emphasis: true }, { key: 'amount', label: 'Importe aplicado', align: 'right' }]
 
   return <>
-    <PageHeader eyebrow="Operación" title="Pagos y cuenta corriente" description="Registrá cobros y consultá el saldo disponible de cada cliente." actions={canPay ? <Button onClick={() => { setShowForm((value) => !value); setError('') }}>+ Registrar pago</Button> : undefined} />
+    <PageHeader eyebrow="Operación" title="Pagos y cuenta corriente" description={isAdmin ? 'Registrá cobros y consultá el saldo disponible de cada cliente.' : 'Consulta los pagos y las deudas de tus pedidos.'} actions={canPay ? <Button onClick={() => { setShowForm((value) => !value); setError('') }}>+ Registrar pago</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback} Saldo anterior {money(result?.balanceBefore)} · saldo nuevo {money(result?.balanceAfter)}.</p>}
     {error && <p className="error-text" role="alert">{error}</p>}
     {showForm && canPay && <Panel title="Registrar pago" description="Elegí una deuda específica o aplicá el importe a las deudas más antiguas (FIFO).">
       {customersQuery.isLoading ? <EmptyState title="Cargando clientes" description="Consultando saldos de cuenta corriente." /> : customersQuery.isError ? <EmptyState title="No se pudieron cargar clientes" description={customersQuery.error.message} /> : <form className="form-grid" onSubmit={submit}>
-        <CustomerSelect mode="selection" label="Cliente del pago" options={customers.map((customer) => ({ id: customer.id, name: `${customer.name} · saldo ${money(customer.balance)}` }))} value={customerId} onChange={(value) => { setCustomerId(value); setSaleId('') }} required disabled={saving} />
+        <CustomerSelect mode="selection" label="Cliente del pago" options={customers.map((customer) => ({ id: customer.id, name: isAdmin ? `${customer.name} · saldo ${money(customer.balance)}` : customer.name }))} value={customerId} onChange={(value) => { setCustomerId(value); setSaleId('') }} required disabled={saving} />
         <label className="field"><span>Imputación</span><select className="select" value={saleId} onChange={(event) => setSaleId(event.target.value)} disabled={!customerId || debtsQuery.isLoading || debtsQuery.isError}><option value="">FIFO · deuda más antigua</option>{debts.map((debt) => <option value={debt.saleId} key={debt.saleId}>{debt.saleNumber} · saldo {money(debt.balance)}</option>)}</select></label>
         {debtsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar las deudas: {debtsQuery.error.message}</p>}
         {debtsQuery.isLoading && customerId && <p className="helper-text" role="status">Cargando deudas abiertas del cliente…</p>}
         <label className="field"><span>Medio del pago</span><select className="select" value={method} onChange={(event) => setMethod(event.target.value as 'CASH' | 'BANK_TRANSFER')}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>
         <label className="field"><span>Importe a registrar</span><input className="input" type="text" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} required disabled={saving} /></label>
         {method === 'BANK_TRANSFER' && <label className="field"><span>Referencia de transferencia (opcional)</span><input className="input" aria-label="Referencia de transferencia" value={transferReference} onChange={(event) => setTransferReference(event.target.value)} maxLength={100} disabled={saving} /></label>}
-        <p className="helper-text">Si no seleccionás una venta, el pago se distribuye por FIFO entre las deudas abiertas.</p>
+        <p className="helper-text">{isAdmin ? 'Si no seleccionás una venta, el pago se distribuye por FIFO entre las deudas abiertas.' : 'El pago se aplica únicamente a las deudas de tus pedidos y, si no se selecciona una venta, comienza por la más antigua.'}</p>
         <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setShowForm(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar pago'}</Button></div>
       </form>}
     </Panel>}

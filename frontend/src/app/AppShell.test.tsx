@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AppShell from './AppShell'
 
@@ -19,7 +20,7 @@ function mockViewport(compact: boolean) {
 }
 
 function renderShell() {
-  render(<MemoryRouter initialEntries={['/orders/new']}><Routes><Route element={<AppShell />}><Route path="*" element={<h1>Page content</h1>} /></Route></Routes></MemoryRouter>)
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={['/orders/new']}><Routes><Route element={<AppShell />}><Route path="*" element={<h1>Page content</h1>} /></Route></Routes></MemoryRouter></QueryClientProvider>)
 }
 
 describe('Responsive navigation', () => {

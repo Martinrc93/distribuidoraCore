@@ -319,33 +319,32 @@ public class ReadQueryService {
     public PageResponse<Map<String, Object>> customerDebts(UUID customerId, int page, int size) {
         if (currentUser != null) currentUser.requireCustomerAccess(customerId);
         jdbc.queryForObject("select id from customer.customers where id = ?", UUID.class, customerId);
+        String source = """
+            from sale.sales s
+            join orders.orders o on o.id = s.order_id
+            join customer.customers c on c.id = s.customer_id
+            left join lateral (
+                select sum(amount) filter (where entry_type = 'DEBIT') as debit,
+                       sum(amount) filter (where entry_type = 'CREDIT') as credit
+                from customer.account_ledger where sale_id = s.id
+            ) l on true
+            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
+              and least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) > 0
+            """;
+        List<Object> parameters = new ArrayList<>(List.of(customerId));
+        if (sellerScoped()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            source += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            parameters.add(sellerId);
+            parameters.add(sellerId);
+        }
         String rows = """
             select s.id as "saleId", s.sale_number as "saleNumber", s.status,
                    s.total, s.paid, o.id as "orderId", o.order_number as "orderNumber",
                    s.created_at as "createdAt",
                    least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) as balance
-            from sale.sales s
-            join orders.orders o on o.id = s.order_id
-            left join lateral (
-                select sum(amount) filter (where entry_type = 'DEBIT') as debit,
-                       sum(amount) filter (where entry_type = 'CREDIT') as credit
-                from customer.account_ledger where sale_id = s.id
-            ) l on true
-            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
-              and least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) > 0
-            order by s.created_at, s.id
-            """;
-        String count = """
-            select count(*) from sale.sales s
-            left join lateral (
-                select sum(amount) filter (where entry_type = 'DEBIT') as debit,
-                       sum(amount) filter (where entry_type = 'CREDIT') as credit
-                from customer.account_ledger where sale_id = s.id
-            ) l on true
-            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
-              and least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) > 0
-            """;
-        return page(rows, count, page, size, customerId);
+            """ + source + " order by s.created_at, s.id";
+        return page(rows, "select count(*) " + source, page, size, parameters.toArray());
     }
 
     public Map<String, Object> orderDetail(UUID orderId) {

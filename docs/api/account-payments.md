@@ -6,6 +6,11 @@
 
 Requiere `SALE_PAYMENT` o `ADMIN_ALL`. Un vendedor solo puede registrar pagos de clientes asignados a su perfil. V17 incorpora `SALE_PAYMENT` y lo concede al rol `SELLER`.
 
+Además, solo puede imputar cobros a ventas de sus pedidos. Los pedidos sin
+vendedor usan la asignación actual del cliente. FIFO aplica el mismo filtro y
+una venta de otro vendedor se rechaza con `404`, aunque el cliente esté asignado
+al usuario. El administrador mantiene acceso a todas las ventas.
+
 ```json
 {
   "amount": 35.00,
@@ -28,6 +33,11 @@ Si `saleId` se informa, el pago se asigna a esa venta. Si se omite, se distribuy
 
 Respuesta `201 Created`:
 
+Para vendedores, `balanceBefore` y `balanceAfter` representan la suma de las
+deudas abiertas de sus pedidos para ese cliente. Para administradores mantienen
+el saldo global del cliente. Las actualizaciones contables siempre modifican el
+saldo global persistido, dentro de la misma transacción.
+
 ```json
 {
   "customerId": "00000000-0000-0000-0000-000000000001",
@@ -46,10 +56,10 @@ Respuesta `201 Created`:
 
 - `400 INVALID_REQUEST`: método, importe o referencia inválidos.
 - `401`: JWT ausente o inválido.
-- `403 FORBIDDEN`: falta `SALE_PAYMENT`/`ADMIN_ALL` o el cliente no está asignado al vendedor.
-- `404 NOT_FOUND`: cliente o venta indicada inexistentes.
+- `403 FORBIDDEN`: falta `SALE_PAYMENT`/`ADMIN_ALL`.
+- `404 NOT_FOUND`: cliente o venta indicada inexistentes o fuera del alcance del vendedor.
 - `409 CONFLICT`: el cliente no tiene deuda positiva suficiente, la asignación excede el saldo o la venta no está abierta.
 
 ## Verificación
 
-Los tests PostgreSQL cubren imputación FIFO, asignación específica, límites por deuda, referencia de transferencia y concurrencia sin doble cobro.
+Los tests PostgreSQL cubren imputación FIFO, asignación específica, límites por deuda, referencia de transferencia y concurrencia sin doble cobro. También verifican aislamiento entre vendedores con ventas del mismo cliente, saldos restringidos y autorización por API.

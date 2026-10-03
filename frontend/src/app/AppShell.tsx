@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { logout } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
@@ -83,6 +84,7 @@ function NavigationDrawer({ isAdmin, onClose, onSignOut }: { isAdmin: boolean; o
 
 export default function AppShell() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const location = useLocation()
   const isAdmin = hasAuthority('ADMIN_ALL')
   const [compact, setCompact] = useState(() => window.matchMedia?.(compactNavigationQuery).matches ?? false)
@@ -104,6 +106,8 @@ export default function AppShell() {
 
   async function signOut() {
     await logout().catch(() => undefined)
+    await queryClient.cancelQueries()
+    queryClient.clear()
     navigate('/login', { replace: true })
   }
 

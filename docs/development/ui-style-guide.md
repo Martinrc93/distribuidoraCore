@@ -139,6 +139,12 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
   a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
   conservar los permisos de la sesión anterior. La API mantiene su autorización.
+- Al ingresar y salir se cancelan las consultas pendientes y se limpia la caché
+  de datos y mutaciones. Cambiar de administrador o vendedor no conserva datos
+  de clientes, ventas, pedidos ni sus detalles de la sesión anterior. La API
+  restringe clientes a su vendedor asignado y ventas/pedidos al vendedor del
+  pedido, usando el vendedor actual del cliente cuando no hay uno en el pedido;
+  también protege búsqueda, opciones, conteos y acceso directo por ID o número.
 - `.page-content`: ancho máximo `1440px`, centrado y padding desktop `38px`.
 - Usar [`PageHeader`](../../frontend/src/shared/components/PageHeader.tsx):
   `eyebrow` y `title` obligatorios; `description` y `actions` opcionales.
@@ -462,6 +468,13 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   admiten límites abiertos y muestran errores para fechas o rangos inválidos.
   La carga fallida de las opciones permite reintentar sin bloquear el listado.
   Esta distribución pertenece a ventas y no cambia el patrón global.
+- En Pagos y deuda, el vendedor consulta pagos y deudas de sus pedidos; los
+  pedidos sin vendedor usan la asignación actual del cliente, como en Pedidos.
+  La API aplica ese alcance también a los conteos, la búsqueda y la imputación
+  de cobros, tanto FIFO como por venta específica. El selector compartido de
+  clientes omite el saldo global para vendedores y carga todas las páginas de
+  deudas autorizadas. Los saldos devueltos después de cobrar corresponden a las
+  deudas del vendedor; el administrador conserva la vista completa del cliente.
 - En pedidos, `.orders-date-filters` agrupa fecha mínima y máxima a la derecha
   de `.orders-toolbar`. Cada campo mide `140px`; a `640px` o menos, búsqueda y
   estado ocupan filas completas y las fechas se distribuyen en dos columnas

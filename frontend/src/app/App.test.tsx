@@ -9,8 +9,7 @@ function response(body: unknown) {
   return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
 }
 
-function renderApp(initialEntry: string) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function renderApp(initialEntry: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
@@ -138,5 +137,62 @@ describe('App shell', () => {
       body: JSON.stringify({ refreshToken: 'refresh-token' }),
     })
     expect(sessionStorage.getItem('distribuidora.accessToken')).toBeNull()
+  })
+
+  it.each([['ADMIN_ALL'], ['ORDER_CREATE']])('does not reuse %s customers, orders or sales after another seller logs in', async (authority) => {
+    const firstToken = `header.${btoa(JSON.stringify({ sub: 'first-user', authorities: [authority] }))}.signature`
+    const secondToken = `header.${btoa(JSON.stringify({ sub: 'second-user', authorities: ['ORDER_CREATE'] }))}.signature`
+    sessionStorage.setItem('distribuidora.accessToken', firstToken)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path === '/api/auth/login') return response({ accessToken: secondToken, refreshToken: null })
+      if (path.includes('filter-options')) return response({ customers: [], sellers: [] })
+      if (path === '/api/zones') return response([])
+      const owner = (init?.headers as Record<string, string> | undefined)?.Authorization === `Bearer ${secondToken}` ? 'Second' : 'First'
+      const kind = path.startsWith('/api/customers?') ? 'customer' : path.startsWith('/api/orders?') ? 'order' : path.startsWith('/api/sales?') ? 'sale' : ''
+      return response({ content: kind ? [{ id: `${owner}-${kind}`, name: `${owner} customer`, number: `${owner} ${kind}`, customer: `${owner} customer`, seller: `${owner} seller`, cuitId: '', balance: 0, total: 10, paid: 10, status: kind === 'customer' ? 'ACTIVE' : 'CONFIRMED', date: '2026-10-02T12:00:00Z' }] : [], page: 0, size: 20, totalElements: kind ? 1 : 0, totalPages: kind ? 1 : 0 })
+    })
+    const user = userEvent.setup()
+    renderApp('/customers', queryClient)
+    await screen.findByText('First customer')
+    await user.click(screen.getByRole('link', { name: 'Ventas' }))
+    await screen.findByText('First sale')
+    await user.click(screen.getByRole('link', { name: 'Pedidos' }))
+    await screen.findByText('First order')
+    await user.click(screen.getByRole('button', { name: 'Salir' }))
+    await screen.findByRole('heading', { name: 'Ingresar' })
+    await user.type(screen.getByLabelText('Email'), 'second-seller@example.test')
+    await user.type(screen.getByLabelText('Contraseña'), 'test-password')
+    await user.click(screen.getByRole('button', { name: 'Ingresar' }))
+    await screen.findByText('Second order')
+    expect(screen.queryByText('First order')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Clientes' }))
+    await screen.findByText('Second customer')
+    expect(screen.queryByText('First customer')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Ventas' }))
+    await screen.findByText('Second sale')
+    expect(screen.queryByText('First sale')).not.toBeInTheDocument()
+  })
+
+  it('discards previously cached customers when logging in after a session ended', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    const customersPath = '/api/customers?page=0&size=20&search=&sellerId=&hasBalance=false&status=ACTIVE'
+    const page = { page: 0, size: 20, totalElements: 1, totalPages: 1 }
+    queryClient.setQueryData([customersPath], { ...page, content: [{ id: 'previous-customer', name: 'Previous account customer', status: 'ACTIVE', balance: 0 }] })
+    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      if (String(input) === '/api/auth/login') return response({ accessToken: `header.${btoa(JSON.stringify({ authorities: ['ORDER_CREATE'] }))}.signature`, refreshToken: null })
+      if (String(input) === customersPath) return response({ ...page, content: [{ id: 'own-customer', name: 'Current seller customer', status: 'ACTIVE', balance: 0 }] })
+      return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+    })
+    const user = userEvent.setup()
+    renderApp('/login', queryClient)
+    await user.type(screen.getByLabelText('Email'), 'seller@example.test')
+    await user.type(screen.getByLabelText('Contraseña'), 'test-password')
+    await user.click(screen.getByRole('button', { name: 'Ingresar' }))
+    await screen.findByRole('heading', { name: 'Pedidos' })
+    await user.click(screen.getByRole('link', { name: 'Clientes' }))
+    expect(await screen.findByText('Current seller customer')).toBeInTheDocument()
+    expect(screen.queryByText('Previous account customer')).not.toBeInTheDocument()
   })
 })

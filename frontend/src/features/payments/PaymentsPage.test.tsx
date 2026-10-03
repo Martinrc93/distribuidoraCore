@@ -92,4 +92,22 @@ describe('PaymentsPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/deuda seleccionada/i)
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['customer-debts', 'customer-1'] })
   })
+
+  it('keeps global customer balances out of seller payment options and loads every authorized debt page', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const path = String(input)
+      if (path.startsWith('/api/payments')) return response(payments)
+      if (path.startsWith('/api/customers?')) return response(customers)
+      const page = path.includes('page=1') ? 1 : 0
+      return response({ content: [{ saleId: `sale-${page}`, saleNumber: `VEN-PAGE-${page}`, balance: 50 }], page, size: 100, totalElements: 2, totalPages: 2 })
+    })
+    renderPage(['SALE_PAYMENT'])
+    await user.click(screen.getByRole('button', { name: /registrar pago/i }))
+    await selectEntity(user, 'Cliente del pago', /Almacén Norte/)
+
+    expect(screen.getByRole('combobox', { name: 'Cliente del pago' })).toHaveValue('Almacén Norte')
+    expect(await screen.findByRole('option', { name: /VEN-PAGE-1/ })).toBeInTheDocument()
+    expect(screen.getByText(/únicamente a las deudas de tus pedidos/)).toBeInTheDocument()
+  })
 })

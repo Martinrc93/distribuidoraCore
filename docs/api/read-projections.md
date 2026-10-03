@@ -44,6 +44,15 @@ Un vendedor autenticado sigue limitado a sus clientes, incluso con otro
 `sellerId`. Todos los filtros se combinan antes de paginar y calcular los totales.
 Un UUID, booleano o estado inválido devuelve `400`.
 
+El alcance se obtiene del perfil activo del usuario autenticado: omitir filtros
+o enviar IDs de otro vendedor o cliente no amplía el acceso. Ventas y pedidos
+usan el vendedor del pedido; si no tiene uno, usan el vendedor actual del
+cliente. Los detalles por ID, por número de pedido y los documentos mantienen
+ese mismo alcance y devuelven `404` para registros ajenos. Sin perfil activo no
+se permite consultar estas proyecciones. El administrador conserva el acceso
+completo. La interfaz cancela consultas y limpia su caché al ingresar y salir
+para no reutilizar datos de otra sesión.
+
 `GET /api/customers/filter-options` devuelve `sellers` con opciones `{ id, name }`
 distintas, ordenadas por nombre e ID, de vendedores con clientes visibles.
 No limita las opciones a una página ni al estado activo. La pantalla conserva
@@ -173,7 +182,10 @@ GET /api/customers/{customerId}/debts?page=0&size=20
 ```
 
 Requiere `SALE_PAYMENT` o `ADMIN_ALL`. Los usuarios seller quedan limitados a
-clientes asignados. Devuelve ventas `CONFIRMED` o `DELIVERED` con saldo positivo,
+clientes asignados y ventas de sus propios pedidos. Si el pedido no tiene
+vendedor, se usa el vendedor actual del cliente. El listado y su conteo aplican
+el mismo alcance; un cliente ajeno devuelve `404`. El administrador conserva
+la vista completa. Devuelve ventas `CONFIRMED` o `DELIVERED` con saldo positivo,
 ordenadas de más antigua a más nueva. Cada elemento contiene `saleId`,
 `saleNumber`, `status`, `total`, `paid`, `orderId`, `orderNumber`, `createdAt` y
 `balance`. El saldo considera débitos y créditos del ledger y se limita al saldo

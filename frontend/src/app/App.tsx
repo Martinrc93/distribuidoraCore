@@ -1,6 +1,7 @@
 import AppShell from './AppShell'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { getAccessToken, login } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
@@ -35,6 +36,7 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 
 function LoginPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -46,6 +48,8 @@ function LoginPage() {
     setError('')
     try {
       await login(email, password)
+      await queryClient.cancelQueries()
+      queryClient.clear()
       navigate('/dashboard', { replace: true })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo iniciar sesión')

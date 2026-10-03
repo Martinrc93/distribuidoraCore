@@ -59,6 +59,7 @@ public class AccountPaymentService {
             "select coalesce(sum(case when entry_type = 'DEBIT' then amount else -amount end), 0) "
                 + "from customer.account_ledger where customer_id = ?", BigDecimal.class, customerId).setScale(4);
         BigDecimal globallyAvailable = balanceBefore.max(ZERO).min(ledgerBalance.max(ZERO));
+        BigDecimal visibleBalanceBefore = currentUser.isAdmin() ? balanceBefore : sellerDebtBalance(customerId);
         BigDecimal amount = request.amount().setScale(4);
         if (amount.compareTo(globallyAvailable) > 0) {
             throw new IllegalStateException("El cobro supera la deuda vigente del cliente");
@@ -114,8 +115,8 @@ public class AccountPaymentService {
         if (transferReference != null) details.put("transferReference", transferReference);
         audit.recordWithinTransaction(actorId(), "ACCOUNT_PAYMENT_APPLY", "CUSTOMER", customerId.toString(), "SUCCESS", details);
 
-        return new PaymentResult(customerId, amount, balanceBefore,
-            balanceAfter, allocationMode, allocations);
+        return new PaymentResult(customerId, amount, visibleBalanceBefore,
+            currentUser.isAdmin() ? balanceAfter : visibleBalanceBefore.subtract(amount).setScale(4), allocationMode, allocations);
     }
 
     private List<Map<String, Object>> lockCandidateSales(UUID customerId, UUID saleId) {
@@ -123,15 +124,42 @@ public class AccountPaymentService {
             List<Map<String, Object>> rows = jdbc.queryForList("select id, sale_number, status, total, paid "
                 + "from sale.sales where id = ? and customer_id = ? for update", saleId, customerId);
             if (rows.isEmpty()) throw new EmptyResultDataAccessException(1);
+            UUID orderId = jdbc.queryForObject("select order_id from sale.sales where id = ?", UUID.class, saleId);
+            currentUser.requireOrderAccess(orderId);
             if (!"CONFIRMED".equals(rows.get(0).get("status")) && !"DELIVERED".equals(rows.get(0).get("status"))) {
                 throw new IllegalStateException("Solo se pueden cobrar ventas confirmadas o entregadas");
             }
             return rows;
         }
-        return jdbc.queryForList("select s.id, s.sale_number, s.status, s.total, s.paid "
-            + "from sale.sales s where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED') "
+        String source = "from sale.sales s join orders.orders o on o.id = s.order_id "
+            + "join customer.customers c on c.id = s.customer_id where s.customer_id = ? "
+            + "and s.status in ('CONFIRMED', 'DELIVERED') ";
+        List<Object> parameters = new ArrayList<>(List.of(customerId));
+        if (!currentUser.isAdmin()) {
+            UUID sellerId = currentUser.requireSellerProfile();
+            source += "and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?)) ";
+            parameters.add(sellerId);
+            parameters.add(sellerId);
+        }
+        return jdbc.queryForList("select s.id, s.sale_number, s.status, s.total, s.paid " + source
             + "and exists (select 1 from customer.account_ledger l where l.sale_id = s.id) "
-            + "order by s.created_at, s.id for update of s", customerId);
+            + "order by s.created_at, s.id for update of s", parameters.toArray());
+    }
+
+    private BigDecimal sellerDebtBalance(UUID customerId) {
+        UUID sellerId = currentUser.requireSellerProfile();
+        return jdbc.queryForObject("""
+            select coalesce(sum(least(greatest(coalesce(l.balance, 0), 0), greatest(s.total - s.paid, 0))), 0)
+            from sale.sales s
+            join orders.orders o on o.id = s.order_id
+            join customer.customers c on c.id = s.customer_id
+            left join lateral (
+                select sum(case when entry_type = 'DEBIT' then amount else -amount end) as balance
+                from customer.account_ledger where sale_id = s.id
+            ) l on true
+            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
+              and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
+            """, BigDecimal.class, customerId, sellerId, sellerId).setScale(4);
     }
 
     private void validate(UUID customerId, PaymentCommand request) {

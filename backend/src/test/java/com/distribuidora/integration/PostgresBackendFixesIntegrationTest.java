@@ -1076,6 +1076,177 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void sellerReadsOnlyAssignedCustomersAndOwnedSalesAndOrdersAcrossApiRoutes() throws Exception {
+        UUID sellerId = createSeller("read-scope");
+        UUID otherSellerId = createSeller("foreign-read-scope");
+        UUID sellerUser = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, sellerId);
+        assignRole(sellerUser, "SELLER");
+        UUID admin = createUser("read-scope-admin");
+        assignRole(admin, "ADMIN");
+        UUID customer = createCustomer(sellerId);
+        UUID secondCustomer = createCustomer(sellerId);
+        UUID foreignCustomer = createCustomer(otherSellerId);
+        UUID unassignedCustomer = createCustomer(null);
+        String prefix = "SCOPE-" + UUID.randomUUID().toString().substring(0, 8);
+        for (UUID id : List.of(customer, secondCustomer, foreignCustomer, unassignedCustomer)) {
+            jdbc.update("update customer.customers set business_name = ? where id = ?", prefix + "-" + id, id);
+        }
+        AccountDebtSale own = createAccountDebtSale(customer, BigDecimal.TEN, 3600);
+        AccountDebtSale inherited = createAccountDebtSale(customer, BigDecimal.TEN, 1800);
+        AccountDebtSale second = createAccountDebtSale(secondCustomer, BigDecimal.TEN, 1800);
+        AccountDebtSale foreignOnAssignedCustomer = createAccountDebtSale(customer, BigDecimal.TEN, 7200);
+        AccountDebtSale foreign = createAccountDebtSale(foreignCustomer, BigDecimal.TEN, 1800);
+        AccountDebtSale foreignInherited = createAccountDebtSale(foreignCustomer, BigDecimal.TEN, 1800);
+        AccountDebtSale unassigned = createAccountDebtSale(unassignedCustomer, BigDecimal.TEN, 1800);
+        for (AccountDebtSale sale : List.of(own, second)) {
+            jdbc.update("update orders.orders set seller_id = ? where id = ?", sellerId, sale.orderId());
+        }
+        for (AccountDebtSale sale : List.of(foreignOnAssignedCustomer, foreign)) {
+            jdbc.update("update orders.orders set seller_id = ? where id = ?", otherSellerId, sale.orderId());
+        }
+        for (AccountDebtSale sale : List.of(own, inherited, second, foreignOnAssignedCustomer, foreign, foreignInherited, unassigned)) {
+            jdbc.update("update orders.orders set order_number = ? where id = ?", prefix + "-" + sale.orderId().toString().substring(0, 12), sale.orderId());
+            jdbc.update("update sale.sales set sale_number = ? where id = ?", prefix + "-" + sale.saleId().toString().substring(0, 12), sale.saleId());
+        }
+        SecurityContextHolder.clearContext();
+        String token = loginHttp(email(sellerUser));
+        mockMvc.perform(get("/api/customers").param("search", prefix).param("size", "1").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2)).andExpect(jsonPath("$.totalPages").value(2));
+        mockMvc.perform(get("/api/customers").param("search", prefix).param("sellerId", otherSellerId.toString()).header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mockMvc.perform(get("/api/customers/filter-options").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.sellers.length()").value(1))
+            .andExpect(jsonPath("$.sellers[0].id").value(sellerId.toString()));
+        mockMvc.perform(get("/api/customers/{id}", customer).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/customers/{id}/orders", customer).param("size", "1").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
+        mockMvc.perform(get("/api/customers/{id}/last-order", customer).header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.orderId").value(inherited.orderId().toString()));
+        for (UUID id : List.of(foreignCustomer, unassignedCustomer)) {
+            for (String suffix : List.of("", "/orders", "/last-order")) {
+                mockMvc.perform(get("/api/customers/" + id + suffix).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+            }
+        }
+        for (String route : List.of("/api/orders", "/api/sales")) {
+            UUID[] expectedIds = route.equals("/api/orders")
+                ? new UUID[] {own.orderId(), inherited.orderId(), second.orderId()}
+                : new UUID[] {own.saleId(), inherited.saleId(), second.saleId()};
+            mockMvc.perform(get(route).param("search", prefix).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[*].id").value(
+                    org.hamcrest.Matchers.containsInAnyOrder(java.util.Arrays.stream(expectedIds).map(UUID::toString).toArray(String[]::new))));
+            mockMvc.perform(get(route).param("search", prefix).param("size", "1").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3)).andExpect(jsonPath("$.totalPages").value(3));
+            mockMvc.perform(get(route).param("search", prefix).param("page", "2").param("size", "1").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1));
+        }
+        mockMvc.perform(get("/api/sales").param("sellerId", otherSellerId.toString()).header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mockMvc.perform(get("/api/sales").param("customerId", foreignCustomer.toString()).header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mockMvc.perform(get("/api/sales/filter-options").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.customers.length()").value(2))
+            .andExpect(jsonPath("$.sellers.length()").value(1)).andExpect(jsonPath("$.sellers[0].id").value(sellerId.toString()));
+        for (AccountDebtSale sale : List.of(own, inherited, foreignOnAssignedCustomer, foreign, foreignInherited, unassigned)) {
+            boolean accessible = sale.equals(own) || sale.equals(inherited);
+            String orderNumber = jdbc.queryForObject("select order_number from orders.orders where id = ?", String.class, sale.orderId());
+            for (String route : List.of("/api/orders/" + sale.orderId(), "/api/orders/by-number/" + orderNumber, "/api/sales/" + sale.saleId())) {
+                mockMvc.perform(get(route).header("Authorization", "Bearer " + token))
+                    .andExpect(accessible ? status().isOk() : status().isNotFound());
+            }
+            if (!accessible) {
+                for (String format : List.of("a4", "ticket")) {
+                    mockMvc.perform(get("/api/orders/" + sale.orderId() + "/documents/" + format).header("Authorization", "Bearer " + token))
+                        .andExpect(status().isNotFound());
+                }
+            }
+        }
+        String adminToken = loginHttp(email(admin));
+        mockMvc.perform(get("/api/customers").param("search", prefix).header("Authorization", "Bearer " + adminToken))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(4));
+        for (String route : List.of("/api/orders", "/api/sales")) {
+            mockMvc.perform(get(route).param("search", prefix).header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(7));
+        }
+        jdbc.update("update seller.seller_profiles set status = 'INACTIVE' where id = ?", sellerId);
+        for (String route : List.of("/api/customers", "/api/orders", "/api/sales", "/api/sales/filter-options", "/api/customers/" + customer, "/api/orders/" + own.orderId())) {
+            mockMvc.perform(get(route).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+        }
+    }
+
+    @Test
+    void sellerPaymentsAndDebtsStayWithinOwnedOrdersEvenForSharedCustomers() throws Exception {
+        UUID sellerId = createSeller("payment-scope");
+        UUID otherSellerId = createSeller("other-payment-scope");
+        UUID userId = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, sellerId);
+        assignRole(userId, "SELLER");
+        UUID customerId = createCustomer(sellerId);
+        AccountDebtSale other = createAccountDebtSale(customerId, new BigDecimal("100.0000"), 7200);
+        AccountDebtSale own = createAccountDebtSale(customerId, new BigDecimal("30.0000"), 3600);
+        AccountDebtSale legacy = createAccountDebtSale(customerId, new BigDecimal("20.0000"), 1800);
+        jdbc.update("update orders.orders set seller_id = ? where id = ?", otherSellerId, other.orderId());
+        jdbc.update("update orders.orders set seller_id = ? where id = ?", sellerId, own.orderId());
+        UUID foreignCustomer = createCustomer(otherSellerId);
+        createAccountDebtSale(foreignCustomer, new BigDecimal("80.0000"), 3600);
+
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(userId.toString(), "test", List.of(new SimpleGrantedAuthority("SALE_PAYMENT"))));
+        var debts = readQueryService.customerDebts(customerId, 0, 1);
+        assertThat(debts.totalElements()).isEqualTo(2);
+        assertThat(debts.totalPages()).isEqualTo(2);
+        assertThat(debts.content()).extracting(row -> row.get("saleId")).containsExactly(own.saleId());
+        assertThat(readQueryService.customerDebts(customerId, 1, 1).content())
+            .extracting(row -> row.get("saleId")).containsExactly(legacy.saleId());
+        assertThatThrownBy(() -> readQueryService.customerDebts(foreignCustomer, 0, 20))
+            .isInstanceOf(org.springframework.dao.EmptyResultDataAccessException.class);
+        assertThatThrownBy(() -> accountPaymentService.apply(customerId,
+            new AccountPaymentDtos.PaymentRequest(new BigDecimal("5.0000"), "CASH", null, other.saleId())))
+            .isInstanceOf(org.springframework.dao.EmptyResultDataAccessException.class);
+        assertThatThrownBy(() -> accountPaymentService.apply(customerId,
+            new AccountPaymentDtos.PaymentRequest(new BigDecimal("51.0000"), "CASH", null, null)))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where customer_id = ?", Long.class, customerId)).isZero();
+
+        var fifo = accountPaymentService.apply(customerId,
+            new AccountPaymentDtos.PaymentRequest(new BigDecimal("35.0000"), "CASH", null, null));
+        assertThat(fifo.allocations()).extracting(AccountPaymentService.AllocationResult::saleId)
+            .containsExactly(own.saleId(), legacy.saleId());
+        assertThat(fifo.balanceBefore()).isEqualByComparingTo("50");
+        assertThat(fifo.balanceAfter()).isEqualByComparingTo("15");
+        var specific = accountPaymentService.apply(customerId,
+            new AccountPaymentDtos.PaymentRequest(new BigDecimal("5.0000"), "CASH", null, legacy.saleId()));
+        assertThat(specific.balanceBefore()).isEqualByComparingTo("15");
+        assertThat(specific.balanceAfter()).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, other.saleId())).isEqualByComparingTo("0");
+
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(userId.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        accountPaymentService.apply(customerId,
+            new AccountPaymentDtos.PaymentRequest(new BigDecimal("10.0000"), "CASH", null, other.saleId()));
+        assertThat(readQueryService.customerDebts(customerId, 0, 20).totalElements()).isEqualTo(2);
+        String search = jdbc.queryForObject("select tax_id from customer.customers where id = ?", String.class, customerId);
+        jdbc.update("update customer.customers set business_name = ? where id = ?", search, customerId);
+        assertThat(readQueryService.payments(0, 20, search).totalElements()).isEqualTo(4);
+
+        SecurityContextHolder.clearContext();
+        String accessToken = loginHttp(email(userId));
+        mockMvc.perform(get("/api/payments").param("search", search).param("size", "1")
+                .header("Authorization", "Bearer " + accessToken))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3));
+        mockMvc.perform(get("/api/payments").param("search", jdbc.queryForObject("select sale_number from sale.sales where id = ?", String.class, other.saleId()))
+                .header("Authorization", "Bearer " + accessToken))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mockMvc.perform(get("/api/customers/{id}/debts", customerId).header("Authorization", "Bearer " + accessToken))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].saleId").value(legacy.saleId().toString()));
+        mockMvc.perform(get("/api/customers/{id}/debts", foreignCustomer).header("Authorization", "Bearer " + accessToken))
+            .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/customers/{id}/account-payments", customerId).header("Authorization", "Bearer " + accessToken)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(
+                    new AccountPaymentDtos.PaymentRequest(new BigDecimal("1.0000"), "CASH", null, other.saleId()))))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
     void accountPaymentSupportsFifoAndSpecificSaleAllocation() {
         UUID actorId = createUser("account-payment");
         SecurityContextHolder.getContext().setAuthentication(
