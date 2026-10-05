@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../../shared/components/Button'
 
@@ -27,6 +27,13 @@ type Props = {
 
 const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
 export const deliveryAmount = (value: string) => /^\d+(?:[.,]\d{1,4})?$/.test(value.trim()) ? Number(value.trim().replace(',', '.')) : NaN
+
+function PaymentAmountField({ amount, disabled, describedBy, onChange }: { amount: string; disabled: boolean; describedBy: string; onChange: (amount: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const number = deliveryAmount(amount)
+  const display = Number.isFinite(number) ? new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(number) : amount
+  return <label className="field delivery-attempt-amount"><span>Importe del pago</span><input className="input" type="text" inputMode="decimal" size={14} value={editing ? amount : display} aria-describedby={describedBy} disabled={disabled} onFocus={() => setEditing(true)} onBlur={() => setEditing(false)} onChange={event => onChange(event.target.value)} /></label>
+}
 
 export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAvailable = 0, value, pending, error, onChange, onSubmit, onClose, mode = 'attempt', returnFocusId }: Props) {
   const id = useId()
@@ -83,15 +90,19 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
               <label className="radio-row"><input type="checkbox" checked={value.includePreviousDebt} disabled={pending} onChange={event => onChange({ ...value, includePreviousDebt: event.target.checked, previousDebtAmount: event.target.checked ? value.previousDebtAmount || String(previousDebtAvailable).replace('.', ',') : '' })} />Agregar deuda anterior</label>
               {value.includePreviousDebt && <label className="field"><span>Importe de deuda anterior</span><input className="input" inputMode="decimal" aria-label="Importe de deuda anterior" value={value.previousDebtAmount} aria-describedby={`${id}-previous-help`} disabled={pending} onChange={event => onChange({ ...value, previousDebtAmount: event.target.value })} /><span className="helper-text" id={`${id}-previous-help`}>Disponible: {money(previousDebtAvailable)}</span></label>}
             </div>}
-            <div className="delivery-attempt-quick-pay"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => fillPayment(totalDue)}>Pagar total</Button>{saleBalance > 0 && selectedPrevious > 0 && <Button type="button" variant="link" disabled={pending} onClick={() => fillPayment(saleBalance)}>Pagar solo esta venta</Button>}</div>
             {value.payments.length === 0 && saleBalance <= 0 && <p className="delivery-attempt-empty">Esta venta no tiene saldo pendiente.</p>}
             <div className="delivery-attempt-payments">
+              {value.payments.length === 0 && <div className="delivery-attempt-quick-pay"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => fillPayment(totalDue)}>Pagar total</Button></div>}
               {value.payments.map((payment, index) => <div className="delivery-attempt-payment" key={index}>
-                <label className="field"><span>Medio de pago</span><select className="select" value={payment.method} disabled={pending} onChange={event => updatePayments(value.payments.map((item, itemIndex) => itemIndex === index ? { ...item, method: event.target.value as typeof payment.method } : item))}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>
-                <label className="field"><span>Importe del pago</span><input className="input" type="text" inputMode="decimal" value={payment.amount} aria-describedby={`${id}-payment-help`} disabled={pending} onChange={event => updatePayments(value.payments.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))} /></label>
-                <Button type="button" variant="link" disabled={pending} aria-label={`Quitar pago ${index + 1}`} onClick={() => updatePayments(value.payments.filter((_item, itemIndex) => itemIndex !== index))}>Quitar</Button>
+                <label className="field delivery-attempt-method"><span>Medio de pago</span><select className="select" value={payment.method} disabled={pending} onChange={event => updatePayments(value.payments.map((item, itemIndex) => itemIndex === index ? { ...item, method: event.target.value as typeof payment.method } : item))}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>
+                <div className="delivery-attempt-amount-actions">
+                  <PaymentAmountField amount={payment.amount} disabled={pending} describedBy={`${id}-payment-help`} onChange={amount => updatePayments(value.payments.map((item, itemIndex) => itemIndex === index ? { ...item, amount } : item))} />
+                  {index === 0 && <Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => fillPayment(totalDue)}>Pagar total</Button>}
+                </div>
+                <Button type="button" variant="danger" disabled={pending} aria-label={`Quitar pago ${index + 1}`} title={`Quitar pago ${index + 1}`} onClick={() => updatePayments(value.payments.filter((_item, itemIndex) => itemIndex !== index))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" /></svg></Button>
                 {index === firstTransfer && <label className="field delivery-attempt-reference"><span>Número de transferencia</span><input className="input" value={value.transferReference} onChange={event => onChange({ ...value, transferReference: event.target.value })} aria-required="true" maxLength={100} disabled={pending} /></label>}
               </div>)}
+              {saleBalance > 0 && selectedPrevious > 0 && <div className="delivery-attempt-quick-pay"><Button type="button" variant="link" disabled={pending} onClick={() => fillPayment(saleBalance)}>Pagar solo esta venta</Button></div>}
             </div>
             <div className="delivery-attempt-add"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => updatePayments([...value.payments, { method: 'CASH', amount: '' }])}>Agregar pago</Button></div>
             <p className="helper-text" id={`${id}-payment-help`}>El pago se aplica primero a esta venta y luego a la deuda anterior seleccionada.</p>

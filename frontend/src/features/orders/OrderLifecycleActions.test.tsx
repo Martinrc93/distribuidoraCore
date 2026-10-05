@@ -9,10 +9,10 @@ function token(authorities: string[]) { return `header.${btoa(JSON.stringify({ a
 function response(body?: unknown, status = 200) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 }
-function renderActions(authorities = ['ADMIN_ALL', 'SALE_DELIVER'], onChanged = vi.fn(), previousDebtAvailable = 0) {
+function renderActions(authorities = ['ADMIN_ALL', 'SALE_DELIVER'], onChanged = vi.fn(), previousDebtAvailable = 0, saleBalance = 100) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sessionStorage.setItem('distribuidora.accessToken', token(authorities))
-  render(<QueryClientProvider client={queryClient}><MemoryRouter><OrderLifecycleActions orderId="order-1" orderNumber="PED-001" orderStatus="CONFIRMED" saleBalance={100} previousDebtAvailable={previousDebtAvailable} onChanged={onChanged} /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter><OrderLifecycleActions orderId="order-1" orderNumber="PED-001" orderStatus="CONFIRMED" saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} onChanged={onChanged} /></MemoryRouter></QueryClientProvider>)
   return { queryClient, onChanged }
 }
 
@@ -92,9 +92,9 @@ describe('OrderLifecycleActions', () => {
     await user.clear(screen.getByLabelText('Importe de deuda anterior'))
     await user.type(screen.getByLabelText('Importe de deuda anterior'), '40,5')
     await user.click(screen.getByRole('button', { name: 'Pagar total' }))
-    expect(screen.getByLabelText('Importe del pago')).toHaveValue('140,5')
+    expect(screen.getByLabelText('Importe del pago')).toHaveValue('140,50')
     await user.click(screen.getByRole('button', { name: 'Pagar solo esta venta' }))
-    expect(screen.getByLabelText('Importe del pago')).toHaveValue('100')
+    expect(screen.getByLabelText('Importe del pago')).toHaveValue('100,00')
     await user.click(screen.getByRole('button', { name: 'Pagar total' }))
     await user.selectOptions(screen.getByLabelText('Medio de pago'), 'BANK_TRANSFER')
     const reference = screen.getByLabelText('Número de transferencia')
@@ -152,8 +152,30 @@ describe('OrderLifecycleActions', () => {
     expect(dialog).toBeInTheDocument()
     finish(new Response(JSON.stringify({ detail: 'No se pudo registrar la entrega.' }), { status: 409, headers: { 'Content-Type': 'application/json' } }))
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo registrar la entrega.')
-    expect(screen.getByLabelText('Importe del pago')).toHaveValue('25')
+    expect(screen.getByLabelText('Importe del pago')).toHaveValue('25,00')
     expect(screen.getByRole('button', { name: 'Confirmar intento' })).toBeEnabled()
+  })
+
+  it.each([
+    ['123456789,12', '123.456.789,12', 123456789.12],
+    ['1234.5678', '1.234,5678', 1234.5678],
+  ])('formats %s on blur while preserving the editable amount and submitted number', async (raw, formatted, amount) => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response(undefined, 204))
+    renderActions(['SALE_DELIVER'], vi.fn(), 0, 999999999.99)
+    await user.click(screen.getByRole('button', { name: 'Registrar entrega' }))
+    await user.click(screen.getByRole('button', { name: 'Agregar pago' }))
+    const input = screen.getByLabelText('Importe del pago')
+    await user.type(input, raw)
+    expect(input).toHaveValue(raw)
+    await user.tab()
+    expect(input).toHaveValue(formatted)
+    await user.click(input)
+    expect(input).toHaveValue(raw)
+    await user.click(screen.getByRole('button', { name: 'Confirmar intento' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders/order-1/delivery-attempts', expect.objectContaining({
+      body: JSON.stringify({ result: 'DELIVERED', observation: null, payments: [{ method: 'CASH', amount }] }),
+    })))
   })
 
   it('requests and displays notification status and downloads authenticated PDFs', async () => {

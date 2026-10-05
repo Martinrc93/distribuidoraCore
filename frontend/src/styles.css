@@ -258,7 +258,7 @@
   .delivery-attempt-previous { @apply grid gap-[12px] mb-[16px]; }
   .delivery-attempt-previous .radio-row { @apply mb-0 text-ink; }
   .delivery-attempt-previous .helper-text { @apply mt-0 font-normal; }
-  .delivery-attempt-quick-pay { @apply flex flex-wrap items-center gap-[10px] mb-[16px]; }
+  .delivery-attempt-quick-pay { @apply flex flex-wrap items-center gap-[10px]; }
   .delivery-attempt-collections-header { @apply flex items-center justify-between gap-[20px] mb-[16px]; }
   .delivery-attempt-collections-header h3 { @apply text-[16px]; }
   .delivery-attempt-collections-header p { @apply m-0 text-muted text-[12px] leading-[1.5]; }
@@ -266,9 +266,15 @@
   .delivery-attempt-balance span { @apply block text-muted text-[11px]; }
   .delivery-attempt-balance strong { @apply block mt-[4px] text-[22px] text-accent-dark tabular-nums; }
   .delivery-attempt-empty { @apply m-0 mb-[14px] text-muted text-[13px] leading-[1.5]; }
-  .delivery-attempt-payments { @apply grid gap-[12px]; }
-  .delivery-attempt-payment { @apply grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)_auto] items-end gap-[12px] p-[14px] rounded-[6px] [border:1px_solid_var(--line)] bg-canvas; }
+  .delivery-attempt-payments { @apply grid gap-[12px] p-[14px] rounded-[6px] [border:1px_solid_var(--line)] bg-canvas; }
+  .delivery-attempt-payment { @apply grid grid-cols-[max-content_minmax(0,_1fr)_44px] items-end gap-[12px]; }
+  .delivery-attempt-amount-actions { @apply flex items-end gap-[8px] min-w-0; }
+  .delivery-attempt-amount-actions > .button { @apply shrink-0 px-[10px]; }
+  .delivery-attempt-dialog .delivery-attempt-amount .input { @apply w-[calc(14ch_+_22px)] max-w-full; }
+  .delivery-attempt-payment + .delivery-attempt-payment { @apply pt-[14px] [border-top:1px_solid_var(--line)]; }
   .delivery-attempt-payment .button { @apply min-h-[44px]; }
+  .delivery-attempt-payment .button-danger { @apply inline-flex items-center justify-center w-[44px] p-0; }
+  .delivery-attempt-dialog .delivery-attempt-method .select { @apply w-auto justify-self-start; }
   .delivery-attempt-add { @apply flex justify-start mt-[12px]; }
   .delivery-attempt-reference { @apply col-span-full; }
   .delivery-attempt-summary { @apply grid grid-cols-[1fr_1fr] gap-[16px] mt-[16px] mb-0 pt-[16px] [border-top:1px_solid_var(--line)]; }
@@ -286,8 +292,11 @@
   @media (max-width: 640px) {
     .delivery-attempt-collections-header { @apply flex-col items-start gap-[12px]; }
     .delivery-attempt-balance { @apply text-left; }
-    .delivery-attempt-payment { @apply grid-cols-[minmax(0,_1fr)]; }
-    .delivery-attempt-payment .button { @apply justify-self-end; }
+    .delivery-attempt-payment { @apply grid-cols-[minmax(0,_1fr)_44px]; }
+    .delivery-attempt-payments { @apply p-[10px]; }
+    .delivery-attempt-amount-actions { @apply col-span-full row-start-2; }
+    .delivery-attempt-payment > .button-danger { @apply col-start-2 row-start-1; }
+    .delivery-attempt-method { @apply col-start-1 row-start-1; }
     .delivery-attempt-footer .button { @apply flex-1; }
   }
   .field { @apply grid gap-[7px] text-[#62625d] text-[11px] font-bold; }

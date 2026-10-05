@@ -687,7 +687,21 @@ estructura reutilizable y documentar su API antes de extenderla a otras features
 pertenece al flujo de entrega de pedidos. Muestra el pedido, el saldo pendiente y
 el resumen del pago antes de confirmar. El título es «Pago», sin «opcional» ni
 subtítulo. Ofrece «Agregar deuda anterior» cuando existe deuda autorizada vigente,
-con importe editable, «Pagar total» y «Pagar solo esta venta». Valida el máximo
+con importe editable, «Pagar total» y «Pagar solo esta venta» dentro del fondo
+compartido de los pagos. El medio de pago conserva el ancho necesario para
+«Transferencia», sin expandirse. La caja del importe mide `14ch + 22px` para
+mostrar nueve dígitos enteros, dos separadores de miles, coma y dos decimales;
+no limita la cantidad de caracteres ingresados. Al perder el foco muestra
+formato argentino con puntos de miles y al menos dos decimales, conservando
+hasta cuatro decimales sin redondearlos. Al enfocar vuelve al texto ingresado;
+el formato no modifica el borrador, la validación ni el importe enviado.
+«Pagar total» se alinea inmediatamente a la derecha del importe del primer pago;
+sin pagos permanece disponible dentro del fondo para crear el pago completo. La
+eliminación usa una papelera roja de `18px` dentro de un botón `danger` de `44px`,
+con nombre accesible «Quitar pago {n}». Hasta `640px`, el medio ocupa su propia
+fila con la papelera, conservando su ancho compacto; el importe y «Pagar total»
+comparten la fila siguiente, también desde `320px`.
+Valida el máximo
 disponible; el pago se aplica primero a esta venta y luego a ventas anteriores.
 Permite quitar incluso el último pago y elimina el número cuando ya no hay
 transferencias. Solicita el número en el mismo bloque de fondo del pago por
