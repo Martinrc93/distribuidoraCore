@@ -1117,14 +1117,15 @@ class PostgresBackendFixesIntegrationTest {
         mockMvc.perform(get("/api/customers/filter-options").header("Authorization", "Bearer " + token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.sellers.length()").value(1))
             .andExpect(jsonPath("$.sellers[0].id").value(sellerId.toString()));
-        mockMvc.perform(get("/api/customers/{id}", customer).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/customers/{id}", customer).header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
         mockMvc.perform(get("/api/customers/{id}/orders", customer).param("size", "1").header("Authorization", "Bearer " + token))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
+            .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/customers/{id}/last-order", customer).header("Authorization", "Bearer " + token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.orderId").value(inherited.orderId().toString()));
         for (UUID id : List.of(foreignCustomer, unassignedCustomer)) {
             for (String suffix : List.of("", "/orders", "/last-order")) {
-                mockMvc.perform(get("/api/customers/" + id + suffix).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+                mockMvc.perform(get("/api/customers/" + id + suffix).header("Authorization", "Bearer " + token))
+                    .andExpect(suffix.equals("/last-order") ? status().isNotFound() : status().isForbidden());
             }
         }
         for (String route : List.of("/api/orders", "/api/sales")) {
@@ -1168,7 +1169,8 @@ class PostgresBackendFixesIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(7));
         }
         jdbc.update("update seller.seller_profiles set status = 'INACTIVE' where id = ?", sellerId);
-        for (String route : List.of("/api/customers", "/api/orders", "/api/sales", "/api/sales/filter-options", "/api/customers/" + customer, "/api/orders/" + own.orderId())) {
+        mockMvc.perform(get("/api/customers/" + customer).header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        for (String route : List.of("/api/customers", "/api/orders", "/api/sales", "/api/sales/filter-options", "/api/orders/" + own.orderId())) {
             mockMvc.perform(get(route).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
         }
     }

@@ -98,11 +98,16 @@ test('compact navigation respects permissions and reduced motion', async ({ page
   await page.evaluate(() => sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`))
   // Init scripts reset the session on reload, so use an in-app route transition.
   await page.getByRole('button', { name: 'Abrir menú' }).click()
-  await page.getByRole('link', { name: 'Productos', exact: true }).click()
+  await page.getByRole('link', { name: 'Ventas', exact: true }).click()
   await page.getByRole('button', { name: 'Abrir menú' }).click()
   const dialog = page.getByRole('dialog', { name: 'Menú principal' })
   await expect(dialog.getByRole('link', { name: 'Resumen' })).toHaveCount(0)
   await expect(dialog.getByRole('link', { name: 'Usuarios' })).toHaveCount(0)
+  await expect(dialog.getByRole('link', { name: 'Clientes' })).toHaveCount(0)
+  for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+    await expect(dialog.getByRole('link', { name })).toHaveCount(0)
+  }
+  await expect(dialog.getByText('Catálogo', { exact: true })).toHaveCount(0)
   await expect(dialog.getByRole('link', { name: 'Pedidos' })).toBeVisible()
   await page.getByRole('button', { name: 'Cerrar menú' }).click()
   await expect(dialog).toHaveCount(0)

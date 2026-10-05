@@ -153,10 +153,11 @@ public class OrderConfirmationService {
         UUID customerId = request.customerId();
         if (currentUser != null) currentUser.requireCustomerAccess(customerId);
         Map<String, Object> customer = jdbc.queryForMap(
-            "select id, status, seller_id, balance from customer.customers where id = ?", customerId);
+            "select id, status, seller_id, balance, price_list_id from customer.customers where id = ?", customerId);
         if (!"ACTIVE".equals(customer.get("status"))) {
             throw new IllegalStateException("El cliente no está activo");
         }
+        validatePriceList(request, customer);
         BigDecimal balanceBeforeOrder = decimalOrZero(customer.get("balance"));
         BigDecimal previousBalanceAmount = previousBalanceAmount(request);
         if (previousBalanceAmount.signum() > 0) {
@@ -461,6 +462,18 @@ public class OrderConfirmationService {
                 existing.projectedBalance().subtract(existing.creditLimit()).setScale(4)) : null;
         return new ConfirmationResult(existing.orderId(), existing.saleId(), existing.orderNumber(),
             existing.saleNumber(), existing.total(), existing.paid(), existing.total().subtract(existing.paid()).setScale(4), warning, previousBalanceAmount(request));
+    }
+
+    private void validatePriceList(ConfirmationCommand request, Map<String, Object> customer) {
+        if (hasAuthority("ADMIN_ALL") || request.priceListId() == null) return;
+        UUID assignedListId = (UUID) customer.get("price_list_id");
+        if (assignedListId == null) {
+            assignedListId = jdbc.queryForObject(
+                "select id from catalog.price_lists where code = 'GENERAL' and status = 'ACTIVE'", UUID.class);
+        }
+        if (!request.priceListId().equals(assignedListId)) {
+            throw new AccessDeniedException("ADMIN_ALL es requerido para cambiar la lista de precios del cliente");
+        }
     }
 
     private void validateOverrides(ConfirmationCommand request) {

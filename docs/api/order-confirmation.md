@@ -1,4 +1,14 @@
-# Fecha de registro del pedido
+# Confirmación del pedido
+
+## Lista de precios
+
+`priceListId` es opcional. Sin el campo o con `null`, se usa la lista asignada
+al cliente, o `GENERAL` si no tiene asignación. Un vendedor puede enviar esa
+misma lista, pero enviar otra produce `403 FORBIDDEN` antes de crear el pedido
+o mover stock. Solo `ADMIN_ALL` puede elegir una lista diferente. Se mantienen
+la validación de lista activa y el fallback de precios definido en pricing.
+
+## Fecha de registro
 
 `POST /api/orders/confirm` acepta el campo opcional `orderDate` en formato ISO
 `yyyy-MM-dd`, por ejemplo `"orderDate": "2026-09-29"`. Requiere los permisos

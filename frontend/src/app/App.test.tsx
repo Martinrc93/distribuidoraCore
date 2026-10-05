@@ -40,7 +40,7 @@ describe('App shell', () => {
     ['/catalog', 'Marcas y categorías', 'Marcas y categorías'],
     ['/price-lists', 'Listas de precios', 'Listas de precios'],
   ])('renders the extracted %s route inside the authenticated shell', async (route, heading, linkName) => {
-    sessionStorage.setItem('distribuidora.accessToken', 'test-token')
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`)
     vi.spyOn(global, 'fetch').mockImplementation((input) => {
       const path = String(input)
       if (path.startsWith('/api/customers')) return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
@@ -98,14 +98,18 @@ describe('App shell', () => {
     expect(await screen.findByRole('heading', { name: 'Auditoría' })).toBeInTheDocument()
   })
 
-  it.each(['/dashboard', '/admin/zones', '/admin/audit'])('keeps %s restricted to administrators', async (route) => {
+  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/customers', '/customers/customer-1', '/products', '/catalog', '/price-lists'])('keeps %s restricted to administrators', async (route) => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`)
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
     renderApp(route)
 
     expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
-    expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/zones', '/api/audit'].some((path) => String(input).split('?')[0] === path))).toBe(false)
+    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
+    expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/zones', '/api/audit', '/api/customers', '/api/products', '/api/brands', '/api/categories', '/api/pricing'].some((path) => String(input).split('?')[0].startsWith(path)))).toBe(false)
   })
 
   it('hides administrative navigation when the session has no readable admin authority', () => {
@@ -115,7 +119,8 @@ describe('App shell', () => {
     expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Vendedores' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Auditoría' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Productos' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Productos' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Pedidos' })).toBeInTheDocument()
   })
 
   it('revokes the refresh session and returns to login when signing out', async () => {
@@ -144,6 +149,8 @@ describe('App shell', () => {
     const secondToken = `header.${btoa(JSON.stringify({ sub: 'second-user', authorities: ['ORDER_CREATE'] }))}.signature`
     sessionStorage.setItem('distribuidora.accessToken', firstToken)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    const customersKey = ['/api/customers?page=0&size=20']
+    queryClient.setQueryData(customersKey, { content: [{ id: 'first-customer', name: 'First customer' }] })
     vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
       const path = String(input)
       if (path === '/api/auth/login') return response({ accessToken: secondToken, refreshToken: null })
@@ -154,8 +161,8 @@ describe('App shell', () => {
       return response({ content: kind ? [{ id: `${owner}-${kind}`, name: `${owner} customer`, number: `${owner} ${kind}`, customer: `${owner} customer`, seller: `${owner} seller`, cuitId: '', balance: 0, total: 10, paid: 10, status: kind === 'customer' ? 'ACTIVE' : 'CONFIRMED', date: '2026-10-02T12:00:00Z' }] : [], page: 0, size: 20, totalElements: kind ? 1 : 0, totalPages: kind ? 1 : 0 })
     })
     const user = userEvent.setup()
-    renderApp('/customers', queryClient)
-    await screen.findByText('First customer')
+    renderApp(authority === 'ADMIN_ALL' ? '/customers' : '/orders', queryClient)
+    await screen.findByText(authority === 'ADMIN_ALL' ? 'First customer' : 'First order')
     await user.click(screen.getByRole('link', { name: 'Ventas' }))
     await screen.findByText('First sale')
     await user.click(screen.getByRole('link', { name: 'Pedidos' }))
@@ -167,9 +174,8 @@ describe('App shell', () => {
     await user.click(screen.getByRole('button', { name: 'Ingresar' }))
     await screen.findByText('Second order')
     expect(screen.queryByText('First order')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('link', { name: 'Clientes' }))
-    await screen.findByText('Second customer')
-    expect(screen.queryByText('First customer')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(queryClient.getQueryData(customersKey)).toBeUndefined()
     await user.click(screen.getByRole('link', { name: 'Ventas' }))
     await screen.findByText('Second sale')
     expect(screen.queryByText('First sale')).not.toBeInTheDocument()
@@ -191,8 +197,7 @@ describe('App shell', () => {
     await user.type(screen.getByLabelText('Contraseña'), 'test-password')
     await user.click(screen.getByRole('button', { name: 'Ingresar' }))
     await screen.findByRole('heading', { name: 'Pedidos' })
-    await user.click(screen.getByRole('link', { name: 'Clientes' }))
-    expect(await screen.findByText('Current seller customer')).toBeInTheDocument()
-    expect(screen.queryByText('Previous account customer')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(queryClient.getQueryData([customersPath])).toBeUndefined()
   })
 })

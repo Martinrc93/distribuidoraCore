@@ -35,6 +35,11 @@ describe('Responsive navigation', () => {
     mockViewport(false)
     renderShell()
     expect(screen.getByRole('navigation', { name: 'Navegación principal' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
+    expect(screen.queryByText('Catálogo')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Pedidos' })).toHaveAttribute('aria-current', 'page')
     expect(document.querySelector('.breadcrumbs')).toHaveTextContent('Operación/Pedidos')
     expect(screen.queryByRole('button', { name: 'Abrir menú' })).not.toBeInTheDocument()
@@ -62,6 +67,7 @@ describe('Responsive navigation', () => {
 
   it('closes when selecting a route and updates the current section', async () => {
     mockViewport(true)
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`)
     renderShell()
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Abrir menú' }))
@@ -81,6 +87,11 @@ describe('Responsive navigation', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Abrir menú' }))
     expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
+    expect(screen.queryByText('Catálogo')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Pedidos' })).toBeInTheDocument()
   })
 })

@@ -134,11 +134,16 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Escape, clic en el fondo o selección de un enlace cierran el menú, también
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
-- Las rutas de Resumen, Dashboard, Zonas y Auditoría usan `RequireAdmin` en
+- Las rutas de Resumen, Dashboard, Clientes (listado y ficha), Productos, Marcas
+  y categorías, Listas de precios, Zonas y Auditoría usan `RequireAdmin` en
   [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
   a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
   conservar los permisos de la sesión anterior. La API mantiene su autorización.
+- Para vendedores, el menú muestra Pedidos, Ventas y Pagos y deuda. Oculta
+  Clientes y los grupos Catálogo y Administración, en escritorio y móvil.
+  El formulario de pedidos conserva los productos, la lista asignada y los
+  precios necesarios para operar; esto no habilita las pantallas de catálogo.
 - Al ingresar y salir se cancelan las consultas pendientes y se limpia la caché
   de datos y mutaciones. Cambiar de administrador o vendedor no conserva datos
   de clientes, ventas, pedidos ni sus detalles de la sesión anterior. La API
@@ -233,7 +238,11 @@ a `640px` adopta las tarjetas compartidas. Consulta por ID exacto, sin restringi
 al día actual. Conserva `ordersPage` en la URL y los filtros del listado al
 volver. Carga y errores se anuncian y ofrecen reintento; un error del historial
 conserva los datos del cliente. Cliente inexistente o ajeno no muestra pedidos.
-La ficha respeta el alcance del vendedor y no abre controles de edición.
+Clientes (listado y ficha) es exclusivo de `ADMIN_ALL`. El enlace se oculta para
+vendedores tanto en escritorio como en el menú compacto; entrar por URL redirige
+a Pedidos sin consultar datos de la ficha o del listado. La API de ficha e
+historial también exige `ADMIN_ALL`. Los selectores de cliente para pedidos y
+pagos mantienen sus opciones autorizadas y el acceso al último pedido.
 
 ## Botones y acciones
 
@@ -323,6 +332,13 @@ o Escape conserva el borrador, y el foco vuelve al botón. No copia cobros ni pr
 Los productos no disponibles bloquean la carga con un mensaje, y los errores
 de consulta permiten reintentar.
 
+Al crear pedidos, «Lista de precios» usa la lista asignada al cliente o
+`GENERAL` si no hay asignación. Para vendedores, el selector está deshabilitado
+y cambia automáticamente al seleccionar otro cliente. Solo `ADMIN_ALL` puede
+elegir otra lista activa; la API rechaza cambios de lista no autorizados. Si la
+lista asignada no está disponible, el vendedor ve un mensaje para solicitar
+revisión administrativa y no puede agregar productos ni confirmar.
+
 La creación y edición de pedidos comparten `OrderForm`. En edición, cliente y
 vendedor usan `CustomerSelect` y `SellerSelect` deshabilitados con los nombres
 del pedido, sin cargar opciones para modificarlos. Se precargan productos,
@@ -379,7 +395,10 @@ pantalla en celular. Los productos importados del pedido anterior se incluyen
 en la carga. Cambiar cliente o lista cancela la consulta anterior; no se muestran
 precios de otro contexto. La confirmación valida nuevamente los precios en el servidor.
 El campo «Precio» se carga con el precio de
-lista; solo el administrador puede editarlo y aplicar descuentos. La modificación
+lista; para vendedores se presenta como texto con `.read-only-field`, igual que
+«Vendedor», sin caja editable. Conserva «—», «Consultando...» y «No disponible»
+para los estados vacío, carga y error, y anuncia los cambios de precio.
+Solo el administrador tiene un input para editarlo y aplicar descuentos. La modificación
 se envía como `unitPriceOverride` de la línea y solo afecta a ese pedido, sin
 actualizar la lista. Cambiar cliente, lista o producto restablece el precio de
 lista. Cantidad y «Descuento» utilizan cajas de `4ch + 22px` con `size=4`, sin

@@ -72,12 +72,11 @@ ordenado por fecha e ID descendentes. `total` es el importe del pedido, sin
 sumar el saldo anterior del remito. El tamaño se limita a `1–100` y la página
 negativa se normaliza a cero.
 
-Ambos endpoints requieren autenticación. Los administradores pueden consultar
-cualquier cliente; los vendedores necesitan un perfil activo y la asignación
-del cliente. El historial mantiene además el alcance de pedidos: vendedor del
-pedido o vendedor actual del cliente si el pedido no tiene uno. El conteo usa
-el mismo alcance. Cliente inexistente o ajeno devuelve `404`, no un historial
-vacío. Un UUID mal formado devuelve `400`.
+Ambos endpoints requieren `ADMIN_ALL`. Los vendedores reciben `403` sin
+consultar la ficha ni el historial. Cliente inexistente devuelve `404`, no un
+historial vacío. Un UUID mal formado devuelve `400`. La lectura paginada de
+clientes para selectores y `GET /api/customers/{customerId}/last-order`
+conservan el alcance del vendedor y siguen disponibles para crear pedidos.
 
 La acción «Ver cliente» del listado abre `/customers/{customerId}`, con los datos,
 saldo actual y pedidos. Permite abrir el detalle de cada pedido, paginar el
@@ -118,7 +117,11 @@ para el pedido y reutiliza el resultado al seleccionar y agregar líneas.
 
 En la creación de pedidos, la UI selecciona automáticamente `priceListId` del
 cliente; si es nulo, usa la lista activa `GENERAL`, conforme al criterio de
-pricing. La confirmación envía `payments: []`: el pedido se registra sin cobro
+pricing. Para vendedores, el selector permanece deshabilitado y la confirmación
+rechaza con `403` una lista diferente a la asignada (o `GENERAL` si no hay
+asignación). Solo `ADMIN_ALL` puede elegir otra lista activa. Si la lista
+asignada no está disponible, se bloquea la creación y se solicita revisión
+administrativa. La confirmación envía `payments: []`: el pedido se registra sin cobro
 inicial y su importe queda pendiente en cuenta corriente. El resumen de totales
 y el botón de confirmación aparecen debajo de los productos.
 

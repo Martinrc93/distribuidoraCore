@@ -79,11 +79,11 @@ export default function App() {
         <Route path="/orders/new" element={<OrderCreatePage />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
-        <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
-        <Route path="/products" element={<ProductsPage />} />
-        <Route path="/catalog" element={<CatalogAdminPage />} />
-        <Route path="/price-lists" element={<PriceListsPage />} />
+        <Route path="/customers" element={<RequireAdmin><CustomersPage /></RequireAdmin>} />
+        <Route path="/customers/:customerId" element={<RequireAdmin><CustomerDetailPage /></RequireAdmin>} />
+        <Route path="/products" element={<RequireAdmin><ProductsPage /></RequireAdmin>} />
+        <Route path="/catalog" element={<RequireAdmin><CatalogAdminPage /></RequireAdmin>} />
+        <Route path="/price-lists" element={<RequireAdmin><PriceListsPage /></RequireAdmin>} />
         <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/sellers" element={<SellersPage />} />

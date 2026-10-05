@@ -19,10 +19,10 @@ function Brand() {
 function NavigationContent({ isAdmin, onNavigate, onSignOut }: { isAdmin: boolean; onNavigate?: () => void; onSignOut: () => void }) {
   return <>
     <nav id="primary-navigation" className="main-nav" aria-label="Navegación principal">
-      {menuGroups.filter((group) => group.label !== 'Administración' || isAdmin).map((group) => (
+      {menuGroups.filter((group) => group.label === 'Operación' || isAdmin).map((group) => (
         <div className="nav-group" key={group.label}>
           <span className="nav-group-label">{group.label}</span>
-          {group.links.filter(([, href]) => !['/dashboard', '/analytics'].includes(href) || isAdmin).map(([label, href]) => (
+          {group.links.filter(([, href]) => !['/dashboard', '/analytics', '/customers'].includes(href) || isAdmin).map(([label, href]) => (
             <NavLink className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} key={href} to={href} onClick={onNavigate}>
               <span className="nav-dot" aria-hidden="true" />{label}
             </NavLink>

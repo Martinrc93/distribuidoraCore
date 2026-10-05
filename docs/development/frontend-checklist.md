@@ -39,6 +39,8 @@ Estado actualizado: 2026-09-25
 
 ## Customers
 
+- [x] Sección, listado y ficha exclusivos de `ADMIN_ALL`; los vendedores conservan la selección autorizada de clientes para pedidos y pagos.
+
 - [x] Listado real desde `/api/customers`.
 - [x] Alta de cliente con formulario controlado.
 - [x] Edición de cliente.
@@ -49,6 +51,8 @@ Estado actualizado: 2026-09-25
 - [ ] Vista de detalle de cliente con ventas, pagos y cuenta corriente (falta consulta dedicada por `customerId`).
 
 ## Catalog Y Pricing
+
+- [x] Secciones de productos, marcas/categorías y listas de precios exclusivas de `ADMIN_ALL`, sin menú ni acceso por URL para vendedores; se conservan los datos necesarios para crear pedidos.
 
 - [x] Listado real de productos desde `/api/products`.
 - [x] Alta básica de producto.
@@ -84,6 +88,7 @@ Estado actualizado: 2026-09-25
 - [x] Mostrar stock disponible y resolver precios con `/api/pricing/resolve`.
 - [x] Preview de líneas/descuentos sin sustituir el backend.
 - [x] Mostrar descuentos y precios manuales solo a `ADMIN_ALL`.
+- [x] Mantener fija la lista asignada al cliente para vendedores al crear pedidos; validar en la API que solo `ADMIN_ALL` pueda elegir otra lista.
 - [x] `idempotencyKey` por intento, bloqueo de doble envío y retry con clave/payload iguales.
 - [x] Crear pedidos sin subtítulo ni selector de depósito; todos los usuarios usan el stock único del backend.
 - [x] Confirmación contra `/api/orders/confirm`; render de números, total, cobrado, saldo y warning de crédito.

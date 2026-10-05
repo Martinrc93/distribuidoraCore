@@ -150,6 +150,52 @@ class OrderConfirmationServiceTest {
         verifyNoInteractions(jdbc, pricing, inventory);
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void sellerCannotConfirmWithAnotherPriceList(boolean assigned) {
+        authenticate("ORDER_CREATE");
+        UUID customerId = UUID.randomUUID();
+        UUID allowedListId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), eq(customerId))).thenReturn(assigned
+            ? Map.of("id", customerId, "status", "ACTIVE", "price_list_id", allowedListId)
+            : Map.of("id", customerId, "status", "ACTIVE"));
+        if (!assigned) when(jdbc.queryForObject(contains("code = 'GENERAL'"), eq(UUID.class))).thenReturn(allowedListId);
+        var request = new OrderConfirmationDtos.ConfirmationRequest("wrong-list", customerId, UUID.randomUUID(),
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of());
+
+        assertThatThrownBy(() -> service.confirm(request))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+            .hasMessageContaining("lista de precios");
+        verifyNoInteractions(pricing, inventory, audit);
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"assigned", "general", "admin"})
+    void confirmsAuthorizedExplicitPriceList(String scenario) {
+        authenticate(scenario.equals("admin") ? "ADMIN_ALL" : "ORDER_CREATE");
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), eq(customerId))).thenReturn(scenario.equals("general")
+            ? Map.of("id", customerId, "status", "ACTIVE")
+            : Map.of("id", customerId, "status", "ACTIVE", "price_list_id", scenario.equals("admin") ? UUID.randomUUID() : listId));
+        if (scenario.equals("general")) when(jdbc.queryForObject(contains("code = 'GENERAL'"), eq(UUID.class))).thenReturn(listId);
+        when(pricing.resolve(customerId, productId, listId)).thenReturn(Map.of(
+            "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN));
+
+        var result = service.confirm(new OrderConfirmationDtos.ConfirmationRequest("allowed-list", customerId, listId,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of()));
+
+        assertThat(result.total()).isEqualByComparingTo("10");
+        verify(pricing).resolve(customerId, productId, listId);
+        verify(inventory).apply(eq(productId), any(), eq("SALE"), eq(result.orderId()), anyString());
+    }
+
     @Test
     void confirmsCashOrderAndPersistsSnapshots() {
         authenticate("ORDER_CREATE");
