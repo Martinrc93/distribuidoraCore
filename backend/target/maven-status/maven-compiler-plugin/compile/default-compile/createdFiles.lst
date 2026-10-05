@@ -1,5 +1,5 @@
-com\distribuidora\audit\domain\AuditEvent.class
-com\distribuidora\catalog\api\BrandController.class
 com\distribuidora\DistribuidoraApplication.class
 com\distribuidora\audit\application\AuditService.class
 com\distribuidora\audit\infrastructure\AuditEventRepository.class
+com\distribuidora\catalog\api\BrandController.class
+com\distribuidora\audit\domain\AuditEvent.class

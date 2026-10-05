@@ -19,9 +19,14 @@ P:\dev\distribuidora\backend\src\main\java\com\distribuidora\customer\api\Custom
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\customer\api\ZoneController.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\customer\application\AccountPaymentService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\customer\application\CustomerCommandService.java
+P:\dev\distribuidora\backend\src\main\java\com\distribuidora\customer\application\DeliveryDebtQuery.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\customer\application\ZoneService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\customer\package-info.java
+P:\dev\distribuidora\backend\src\main\java\com\distribuidora\dashboard\api\CustomerDetailController.java
+P:\dev\distribuidora\backend\src\main\java\com\distribuidora\dashboard\api\DashboardAnalyticsController.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\dashboard\api\ReadQueryController.java
+P:\dev\distribuidora\backend\src\main\java\com\distribuidora\dashboard\application\CustomerReadService.java
+P:\dev\distribuidora\backend\src\main\java\com\distribuidora\dashboard\application\DashboardAnalyticsService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\dashboard\application\ReadQueryService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\demo\DemoDataSeeder.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\DistribuidoraApplication.java

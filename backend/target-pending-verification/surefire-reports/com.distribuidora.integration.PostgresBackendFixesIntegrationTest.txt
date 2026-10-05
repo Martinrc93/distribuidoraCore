@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.distribuidora.integration.PostgresBackendFixesIntegrationTest
+-------------------------------------------------------------------------------
+Tests run: 29, Failures: 0, Errors: 0, Skipped: 29, Time elapsed: 0.003 s -- in com.distribuidora.integration.PostgresBackendFixesIntegrationTest

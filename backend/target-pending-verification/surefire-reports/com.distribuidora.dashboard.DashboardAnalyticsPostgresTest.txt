@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.distribuidora.dashboard.DashboardAnalyticsPostgresTest
+-------------------------------------------------------------------------------
+Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.165 s -- in com.distribuidora.dashboard.DashboardAnalyticsPostgresTest
