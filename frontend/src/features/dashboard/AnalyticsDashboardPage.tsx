@@ -33,6 +33,7 @@ export type DashboardReport = {
 type Row = Record<string, string>
 const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
 const number = (value: number) => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(value)
+const debtShare = (balance: number, total: number) => total > 0 ? `${number(balance / total * 100)}%` : 'Sin deuda'
 const date = (value: string) => new Intl.DateTimeFormat('es-AR', { timeZone: businessTimeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value))
 const stateNames: Record<string, string> = { CONFIRMED: 'Confirmado', DELIVERED: 'Entregado', CANCELLED: 'Cancelado' }
 export function comparison(current: number, previous: number) {
@@ -83,6 +84,8 @@ export default function AnalyticsDashboardPage() {
   const path = `/api/dashboard/analytics?dateMin=${start ?? ''}&dateMax=${end ?? ''}`
   const query = useQuery({ queryKey: ['dashboard', 'analytics', start, end], queryFn: async ({ signal }) => parseDashboardReport(await apiGet<unknown>(path, signal)), enabled: !error })
   const data = query.data
+  const topDebtors = data ? [...data.topDebtors].sort((a, b) => b.balance - a.balance).slice(0, 5) : []
+  const topDebt = topDebtors.reduce((total, debtor) => total + debtor.balance, 0)
   function changeDate(key: string, value: string) {
     const next = new URLSearchParams(params)
     next.set(key, value)
@@ -135,8 +138,9 @@ export default function AnalyticsDashboardPage() {
         </Panel>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-[20px] [@media(max-width:760px)]:grid-cols-1">
-        <Panel title="Clientes con mayor deuda" description="Los cinco saldos actuales más altos." action={<Button variant="link" href="/customers?hasBalance=true&status=ALL">Ver clientes</Button>}>
-          <DataTable className={compactTable} columns={[{ key: 'name', label: 'Cliente', emphasis: true }, { key: 'balance', label: 'Deuda', align: 'right' }, { key: 'action', label: 'Cuenta', render: (_, row) => <Button variant="link" href={`/sales?customerId=${row.id}&pendingBalance=true`} aria-label={`Ver deuda de ${row.name}`}>Ver deuda</Button> }]} rows={data.topDebtors.map((item) => ({ id: item.id, name: item.name, balance: money(item.balance) }))} emptyContent={empty('No hay clientes con deuda pendiente.')} />
+        <Panel title="Clientes con mayor deuda" description="Cinco mayores saldos actuales y su porcentaje de la deuda total. No depende del período." action={<Button variant="link" aria-label="Ver todos los deudores" href="/customers?hasBalance=true&status=ALL">Ver deudores</Button>}>
+          {topDebtors.length > 0 && <p className="mb-[16px] mt-0 text-[13px]" role="status">{topDebtors.length === 1 ? 'Este cliente concentra' : `Estos ${topDebtors.length} clientes concentran`} <strong>{money(topDebt)}</strong>, el <strong>{debtShare(topDebt, data.current.debt)}</strong> de la deuda total.</p>}
+          <DataTable className={compactTable} columns={[{ key: 'name', label: 'Cliente', emphasis: true }, { key: 'balance', label: 'Deuda', align: 'right' }, { key: 'share', label: '% del total', align: 'right' }, { key: 'action', label: 'Cuenta', render: (_, row) => <Button variant="link" href={`/sales?customerId=${row.id}&pendingBalance=true`} aria-label={`Ver deuda de ${row.name}`}>Ver deuda</Button> }]} rows={topDebtors.map((item) => ({ id: item.id, name: item.name, balance: money(item.balance), share: debtShare(item.balance, data.current.debt) }))} emptyContent={empty('No hay clientes con deuda pendiente.')} />
         </Panel>
         <Panel title="Antigüedad de deuda" description="Saldo abierto por fecha de venta, a la fecha actual. No indica vencimiento.">
           <DataTable className={compactTable} columns={[{ key: 'age', label: 'Antigüedad' }, { key: 'amount', label: 'Saldo', align: 'right' }]} rows={[

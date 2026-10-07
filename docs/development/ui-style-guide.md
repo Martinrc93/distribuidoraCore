@@ -134,16 +134,18 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Escape, clic en el fondo o selección de un enlace cierran el menú, también
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
-- Las rutas de Resumen, Dashboard, Clientes (listado y ficha), Productos, Marcas
-  y categorías, Listas de precios, Zonas y Auditoría usan `RequireAdmin` en
+- Las rutas de Resumen, Dashboard, ficha de cliente, Productos, Marcas
+  y categorías, Listas de precios, Proveedores, Zonas y Auditoría usan `RequireAdmin` en
   [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
   a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
   conservar los permisos de la sesión anterior. La API mantiene su autorización.
 - Pagos y deuda se retiró de la navegación para todos los usuarios, incluido el
   acceso desde Dashboard. `/payments` redirige a Pedidos y no carga esa pantalla.
-- Para vendedores, el menú muestra Pedidos y Ventas. Oculta
-  Clientes y los grupos Catálogo y Administración, en escritorio y móvil.
+- Para vendedores, el menú muestra Pedidos, Ventas y Clientes. El listado de
+  Clientes contiene únicamente los clientes asignados al vendedor autenticado,
+  como consulta sin alta, edición, cambios de estado ni acceso a ficha. Oculta
+  los grupos Catálogo y Administración, en escritorio y móvil.
   El formulario de pedidos conserva los productos, la lista asignada y los
   precios necesarios para operar; esto no habilita las pantallas de catálogo.
 - Al ingresar y salir se cancelan las consultas pendientes y se limpia la caché
@@ -200,6 +202,12 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 - «Dashboard» aparece inmediatamente debajo de «Resumen», solo para
   administradores. `/analytics` usa `AnalyticsDashboardPage` y la API
   `/api/dashboard/analytics`; conserva el Resumen independiente.
+- «Clientes con mayor deuda» ordena los cinco mayores saldos actuales por importe,
+  muestra el porcentaje de cada cliente sobre la deuda total y el importe y
+  porcentaje concentrados entre esos clientes. «Ver deuda» abre las ventas del
+  cliente con saldo pendiente; «Ver deudores» abre el listado filtrado.
+  Estas prioridades no dependen del período de análisis. Reutiliza `DataTable`
+  y las tarjetas compartidas hasta `640px`, sin un umbral arbitrario de importancia.
 - Reutiliza `PageHeader`, `Panel`, `StatCard`, `DataTable`, `Button`, `Badge`
   y `OrderDateFilter`. Las cuatro métricas principales siguen `.stats-grid`;
   la tendencia y los pendientes usan `.content-grid.two-thirds`.
@@ -225,8 +233,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 
 ### Ficha del cliente
 
-El listado ofrece «Ver cliente» para cada cliente visible, junto con «Editar»
-solo para administradores, dentro de `.table-row-actions`. Abre
+El listado ofrece «Ver cliente» y «Editar» solo para administradores,
+dentro de `.table-row-actions`. Abre
 `/customers/{customerId}` como página con `PageHeader`, `Panel` y `StatCard`:
 datos de contacto, vendedor, lista, estado, fecha de alta y saldo actual. La
 tarjeta de saldo se alinea arriba sin estirarse a la altura de los datos.
@@ -240,10 +248,11 @@ a `640px` adopta las tarjetas compartidas. Consulta por ID exacto, sin restringi
 al día actual. Conserva `ordersPage` en la URL y los filtros del listado al
 volver. Carga y errores se anuncian y ofrecen reintento; un error del historial
 conserva los datos del cliente. Cliente inexistente o ajeno no muestra pedidos.
-Clientes (listado y ficha) es exclusivo de `ADMIN_ALL`. El enlace se oculta para
-vendedores tanto en escritorio como en el menú compacto; entrar por URL redirige
-a Pedidos sin consultar datos de la ficha o del listado. La API de ficha e
-historial también exige `ADMIN_ALL`. Los selectores de cliente para pedidos y
+El listado de Clientes está disponible para vendedores en escritorio y móvil,
+con búsqueda, estado y saldo; la API limita filas y conteos a sus clientes
+asignados. El filtro de vendedor y las acciones son exclusivos de `ADMIN_ALL`.
+La ficha y el historial también exigen `ADMIN_ALL`: entrar a la ficha por URL
+como vendedor redirige a Pedidos sin consultarla. Los selectores de cliente para pedidos y
 pagos mantienen sus opciones autorizadas y el acceso al último pedido.
 
 ## Botones y acciones
@@ -480,6 +489,10 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   utilizan `SearchableSelect` por ID con opciones de las ventas visibles para el
   usuario. Permiten escribir parte del nombre, sin distinguir mayúsculas ni
   acentos; escribir reduce las opciones y elegir una aplica el filtro.
+  Para vendedores, la API devuelve únicamente sus ventas `DELIVERED`, aplicando
+  esta condición antes de paginar y contar. Las opciones de cliente y vendedor
+  pertenecen a esas ventas entregadas. La descripción y la opción «Todas las
+  entregadas» explicitan el alcance. El administrador conserva todos los estados.
   El select Saldo pendiente alterna todas las ventas y solo
   ventas con saldo impago (excluye canceladas). Se combinan los filtros y se
   conservan en la URL; cada cambio vuelve a la primera página. A `640px` o menos
@@ -532,6 +545,17 @@ const columns: TableColumn[] = [
 
 ## Formularios
 
+En Productos, el alta y la edición requieren categoría, marca y descripción
+(hasta 200 caracteres). «Nombre» es un `output.read-only-field` con nombre
+accesible y actualización anunciada: concatena marca y descripción separadas
+por un espacio. La API calcula y guarda el nombre, sin aceptar un nombre manual.
+Al editar se carga la descripción separada; los productos antiguos sin marca
+deben seleccionarla antes de guardar. El formulario reutiliza `.form-grid` y
+sus dos columnas, apiladas a `760px` o menos. El costo y los precios por lista
+conservan sus validaciones. Renombrar una marca actualiza los nombres del catálogo
+y refresca las consultas relacionadas, preservando los nombres históricos de
+pedidos y ventas.
+
 [`SearchableSelect`](../../frontend/src/shared/components/SearchableSelect.tsx)
 combina un campo editable y una lista desplegable con búsqueda local por nombre.
 Recibe opciones `{ id, name }` y conserva el ID elegido, incluso con nombres
@@ -578,10 +602,9 @@ vendedores siguen usando un input: buscan texto, no seleccionan una entidad.
   sus opciones de la página visible de vendedores. Si la carga falla, permitir
   reintentar sin ofrecer un conjunto incompleto como si estuviera completo.
 
-Aplicado a ventas, filtro y formulario de clientes, creación de pedidos, pagos,
-reglas de descuento y reasignación de clientes/pedidos. Las reglas de negocio
-(clientes activos para descuentos, vendedores activos de destino, vendedor
-heredado del cliente y selección obligatoria en pedidos/pagos) pertenecen a cada
+Aplicado a ventas, filtro y formulario de clientes, creación de pedidos, pagos
+y reasignación de clientes/pedidos. Las reglas de negocio (vendedores activos de
+destino, vendedor heredado del cliente y selección obligatoria en pedidos/pagos) pertenecen a cada
 pantalla; la interacción de búsqueda y selección es siempre la misma.
 
 - `.form-grid`: dos columnas, gap `14px`; una columna a `760px` o menos.
@@ -648,7 +671,8 @@ centraliza las confirmaciones destructivas. Montarlo solo cuando se requiere
 confirmación. Recibe `title`, `description`, `confirmLabel`, `onConfirm` y
 `onCancel`; opcionalmente `cancelLabel`, `pendingLabel`, `pending` y `error`.
 Usa `<dialog>` con `showModal()` en un portal a `document.body`: contiene el foco,
-impide interacción con el fondo y queda sobre los formularios existentes. Enfoca
+impide interacción con el fondo y queda sobre los formularios existentes. Tab y
+Shift+Tab recorren sus acciones de forma circular sin salir del diálogo. Enfoca
 la acción segura al abrir y devuelve el foco al disparador si sigue montado.
 Escape conserva los datos. Mientras `pending` está activo, ambas acciones y
 Escape quedan bloqueados; los errores se muestran dentro con `role="alert"`.

@@ -56,6 +56,13 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Auditar altas, modificaciones, estados y asignaciones.
 - [x] Filtrar lecturas seller por clientes asignados.
 
+### Proveedores
+
+- [x] Listado paginado con búsqueda por nombre, alta y edición de proveedores.
+- [x] Nombre obligatorio; teléfono, mail y dirección opcionales con validación de formato y longitud.
+- [x] Acceso exclusivo `ADMIN_ALL`, persistencia Flyway y auditoría de altas y modificaciones.
+- [ ] Compras y recepciones vinculadas a proveedores.
+
 ### Catálogo y pricing
 
 - [x] Crear productos.
@@ -71,12 +78,11 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
   cancelación de programaciones. Contrato en `docs/api/pricing.md`.
 - [x] La resolución comercial usa el historial efectivo en fecha de Buenos
   Aires; V21 agrega la línea base sin alterar snapshots existentes.
-- [x] Reglas persistidas `LINE`/`ORDER`, vigencias, prioridad y scopes por
-  cliente/lista/producto. La confirmación y edición usan reglas vigentes; los
-  porcentajes e IDs aplicados quedan en snapshots de pedido y venta.
+- [x] V32 elimina reglas comerciales y referencias de línea/pedido. Confirmación
+  y edición usan porcentajes manuales con `ADMIN_ALL`; conserva importes históricos.
 - [x] Resolver precio explícito, asignado al cliente o fallback `GENERAL`.
 - [x] Autorizar mutaciones de catálogo/pricing con `ADMIN_ALL`.
-- [x] CRUD administrativo de marcas y categorías y referencias activas opcionales desde productos.
+- [x] CRUD administrativo de marcas y categorías; el alta y la edición de productos requieren marca y categoría activas y una descripción. El nombre se genera como marca + descripción.
 
 ### Inventario
 
@@ -190,7 +196,7 @@ roadmap, no como funcionalidad backend pendiente.
 ### Catálogo y pricing
 
 - [x] Historial de precios y vigencias futuras implementados y verificados en PostgreSQL; contrato en `docs/api/pricing.md`.
-- [x] Reglas de descuentos comerciales persistidas, aplicadas en confirmación/edición y visibles en snapshots; contrato en `docs/api/pricing.md`.
+- [x] Reglas de descuentos comerciales retiradas en V32; se conservan descuentos manuales e importes históricos. Contrato en `docs/api/pricing.md`.
 
 ### Inventario y modificaciones comerciales
 

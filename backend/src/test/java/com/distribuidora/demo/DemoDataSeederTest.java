@@ -212,10 +212,13 @@ class DemoDataSeederTest {
         ArgumentCaptor<Object[]> products = ArgumentCaptor.forClass(Object[].class);
         verify(jdbc, org.mockito.Mockito.times(500)).update(
             org.mockito.ArgumentMatchers.contains("insert into catalog.products("), products.capture());
-        assertThat(products.getAllValues().stream().map(values -> values[6]).distinct().toList())
+        assertThat(products.getAllValues().stream().map(values -> values[7]).distinct().toList())
             .containsExactly("Bebidas", "Almac\u00e9n", "Limpieza");
-        assertThat(products.getAllValues().stream().map(values -> values[7]).distinct().toList()).hasSize(6);
-        assertThat(products.getAllValues()).allSatisfy(values -> assertThat(values[2]).isEqualTo(values[6]));
+        assertThat(products.getAllValues().stream().map(values -> values[8]).distinct().toList()).hasSize(6);
+        assertThat(products.getAllValues()).allSatisfy(values -> {
+            assertThat(values[3]).isEqualTo(values[7]);
+            assertThat(values[1]).isEqualTo(values[8] + " " + values[2]);
+        });
         ArgumentCaptor<Object[]> customers = ArgumentCaptor.forClass(Object[].class);
         verify(jdbc, org.mockito.Mockito.times(300)).update(
             org.mockito.ArgumentMatchers.contains("insert into customer.customers("), customers.capture());

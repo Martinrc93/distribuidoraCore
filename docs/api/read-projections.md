@@ -44,6 +44,10 @@ Un vendedor autenticado sigue limitado a sus clientes, incluso con otro
 `sellerId`. Todos los filtros se combinan antes de paginar y calcular los totales.
 Un UUID, booleano o estado inválido devuelve `400`.
 
+El listado de Clientes está habilitado para vendedores como consulta de sus
+clientes asignados. La pantalla no ofrece alta, edición, cambios de estado ni
+acceso a ficha para esos usuarios; la ficha e historial mantienen `ADMIN_ALL`.
+
 El alcance se obtiene del perfil activo del usuario autenticado: omitir filtros
 o enviar IDs de otro vendedor o cliente no amplía el acceso. Ventas y pedidos
 usan el vendedor del pedido; si no tiene uno, usan el vendedor actual del
@@ -165,6 +169,19 @@ Los productos se identifican por UUID; los contratos de catálogo, precios y
 descuentos no contienen SKU. La migración V31 elimina la columna del catálogo
 conservando productos, precios y referencias históricas. Las migraciones
 anteriores mantienen sus checksums originales.
+`POST /api/products` y `PUT /api/products/{id}` requieren `description`
+(no vacía, máximo 200 caracteres), `categoryId` y `brandId` de entidades activas.
+El servidor genera `name` como `marca + " " + descripción`, quitando espacios
+en los extremos. No se envía un nombre manual. El listado devuelve `description`
+por separado y permite buscar el nombre generado. Costo y precios por lista
+mantienen sus reglas actuales.
+
+V34 recupera la descripción desde el nombre anterior, separando el prefijo de
+marca cuando corresponde, y amplía el nombre a 301 caracteres. Los productos
+antiguos sin marca conservan su nombre y deben completar la marca al editarse.
+Renombrar una marca recalcula el nombre de sus productos sin modificar los
+snapshots históricos de pedidos o ventas, los precios ni el stock.
+
 `GET /api/products` admite `includeStock` (por defecto `true`). Con `false`,
 omite el campo `stock` y, cuando no hay filtro de stock, la consulta a `inventory.inventory_balances`. La creación
 de pedidos usa esta variante en todas las páginas; la gestión de inventario
@@ -208,6 +225,12 @@ distinguir mayúsculas. `customerId` y `sellerId` son UUID opcionales y filtran
 por identidad exacta. El vendedor es el del pedido; si no tiene uno asignado,
 se usa el vendedor del cliente. Los filtros se combinan entre sí.
 
+Para vendedores, el listado incluye únicamente ventas con estado `DELIVERED`
+dentro de su alcance. La condición se aplica siempre en el servidor, antes de
+paginar y al conteo total, incluso cuando no se envían filtros. El administrador
+conserva el listado de todos los estados. Esta restricción corresponde al
+listado de Ventas y a sus opciones de filtros; Pedidos conserva sus estados.
+
 `dateMin` y `dateMax` son opcionales en formato ISO `yyyy-MM-dd`. Filtran la
 fecha de creación de la venta por días completos de
 `America/Argentina/Buenos_Aires`, incluyendo ambos extremos. Omitir o vaciar
@@ -222,7 +245,7 @@ conservan el alcance del vendedor autenticado.
 `GET /api/sales/filter-options` devuelve `customers` y `sellers`, cada uno con
 opciones `{ id, name }` distintas y ordenadas por nombre. Incluye las entidades
 con ventas visibles para el usuario, sin limitar las opciones a una página de
-resultados. Un vendedor solo recibe opciones dentro de su alcance.
+resultados. Un vendedor solo recibe opciones de sus ventas entregadas.
 
 La pantalla utiliza desplegables de cliente y vendedor con búsqueda local por
 nombre (ignora mayúsculas y acentos). Elegir una opción aplica su ID; escribir

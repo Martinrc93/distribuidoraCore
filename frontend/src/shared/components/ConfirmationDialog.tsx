@@ -34,7 +34,20 @@ export function ConfirmationDialog({ title, description, confirmLabel, cancelLab
   }, [])
 
   return createPortal(
-    <dialog ref={dialog} className="confirmation-dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-busy={pending} onCancel={(event) => { event.preventDefault(); if (!pending) onCancel() }}>
+    <dialog ref={dialog} className="confirmation-dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-busy={pending} onCancel={(event) => { event.preventDefault(); if (!pending) onCancel() }} onKeyDown={(event) => {
+      if (event.key !== 'Tab') return
+      const controls = event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not([disabled])')
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (!first) event.preventDefault()
+      else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }}>
       <header className="confirmation-dialog-header"><h2 id={`${id}-title`}>{title}</h2></header>
       <div className="confirmation-dialog-body">
         <p id={`${id}-description`}>{description}</p>

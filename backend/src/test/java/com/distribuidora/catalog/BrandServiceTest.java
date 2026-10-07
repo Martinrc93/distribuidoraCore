@@ -121,6 +121,7 @@ class BrandServiceTest {
         service.update(brandId, new CatalogAdminDtos.UpdateBrandRequest("Pepsi"));
 
         verify(jdbc).update(eq("update catalog.brands set name = ? where id = ?"), eq("Pepsi"), eq(brandId));
+        verify(jdbc).update(eq("update catalog.products set name = ? || ' ' || description where brand_id = ? and description is not null"), eq("Pepsi"), eq(brandId));
         verify(audit).record(eq(adminUserId), eq("BRAND_UPDATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
     }
 

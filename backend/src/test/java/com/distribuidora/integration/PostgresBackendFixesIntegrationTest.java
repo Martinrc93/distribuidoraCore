@@ -3,7 +3,6 @@ package com.distribuidora.integration;
 import com.distribuidora.catalog.application.ProductCommandService;
 import com.distribuidora.pricing.application.PricingCommandService;
 import com.distribuidora.pricing.application.PricingQueryService;
-import com.distribuidora.pricing.application.CommercialDiscountRuleCommandService;
 import com.distribuidora.dashboard.application.ReadQueryService;
 import com.distribuidora.customer.api.AccountPaymentDtos;
 import com.distribuidora.customer.application.AccountPaymentService;
@@ -114,7 +113,6 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired RoleAdminService roleAdminService;
     @Autowired SellerCommandService sellerCommandService;
     @Autowired ProductCommandService productCommandService;
-    @Autowired CommercialDiscountRuleCommandService discountRuleCommandService;
     @Autowired PricingCommandService pricingCommandService;
     @Autowired PricingQueryService pricingQueryService;
     @Autowired InventoryMovementService inventoryMovementService;
@@ -142,7 +140,6 @@ class PostgresBackendFixesIntegrationTest {
     private final Set<UUID> sales = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> saleItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> products = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final Set<UUID> discountRules = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> brands = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> categories = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> notificationRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -163,7 +160,6 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from notification.outbox_events where aggregate_id in (%s)", notificationRequests);
         deleteIds("delete from notification.outbox_events where aggregate_id in (%s)", orders);
         deleteIds("delete from orders.orders where id in (%s)", orders);
-        deleteIds("delete from catalog.commercial_discount_rules where id in (%s)", discountRules);
         deleteIds("delete from customer.customers where id in (%s)", customers);
         deleteIds("delete from inventory.stock_movements where product_id in (%s)", products);
         deleteIds("delete from inventory.inventory_balances where product_id in (%s)", products);
@@ -202,7 +198,6 @@ class PostgresBackendFixesIntegrationTest {
         sales.clear();
         saleItems.clear();
         products.clear();
-        discountRules.clear();
         brands.clear();
         categories.clear();
         notificationRequests.clear();
@@ -443,7 +438,10 @@ class PostgresBackendFixesIntegrationTest {
         assignRole(adminId, "ADMIN");
         String token = loginHttp(email(adminId));
         String productName = "HTTP-" + UUID.randomUUID().toString().substring(0, 12);
-        String base = "\"name\":\"" + productName + "\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":10";
+        UUID categoryId = createCategory();
+        UUID brandId = createBrand();
+        String base = "\"description\":\"" + productName + "\",\"categoryId\":\"" + categoryId
+            + "\",\"brandId\":\"" + brandId + "\",\"presentation\":\"Unidad\",\"cost\":10";
 
         mockMvc.perform(post("/api/products")
                 .header("Authorization", "Bearer " + token)
@@ -503,10 +501,12 @@ class PostgresBackendFixesIntegrationTest {
         UUID customerId = UUID.fromString(objectMapper.readTree(customerResponse.getResponse().getContentAsString()).path("id").asText());
         customers.add(customerId);
 
+        UUID categoryId = createCategory();
+        UUID brandId = createBrand();
         MvcResult productResponse = mockMvc.perform(post("/api/products")
                 .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Commercial E2E product\",\"category\":\"Bebidas\",\"presentation\":\"Unidad\",\"cost\":5,\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
+                .content("{\"description\":\"Commercial E2E product\",\"categoryId\":\"" + categoryId + "\",\"brandId\":\"" + brandId + "\",\"presentation\":\"Unidad\",\"cost\":5,\"prices\":[{\"priceListId\":\"00000000-0000-0000-0000-000000000001\",\"price\":25}]}"))
             .andExpect(status().isCreated())
             .andReturn();
         UUID productId = UUID.fromString(objectMapper.readTree(productResponse.getResponse().getContentAsString()).path("id").asText());
@@ -630,13 +630,13 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(jdbc.queryForObject("select category from catalog.products where id = ?", String.class, productId)).isEqualTo("PG category");
 
         productCommandService.update(productId, new ProductCommandService.ProductInput(
-            "PG integration product updated", "legacy update", "unit", BigDecimal.ONE, null));
+            "PG integration product updated", "legacy update", "unit", BigDecimal.ONE, null, categoryId, brandId));
         assertThat(jdbc.queryForObject("select category_id from catalog.products where id = ?", UUID.class, productId)).isEqualTo(categoryId);
         assertThat(jdbc.queryForObject("select brand_id from catalog.products where id = ?", UUID.class, productId)).isEqualTo(brandId);
 
         jdbc.update("update catalog.categories set status = 'INACTIVE' where id = ?", categoryId);
         assertThatThrownBy(() -> productCommandService.create(new ProductCommandService.ProductInput(
-            "Inactive category", "legacy", "unit", BigDecimal.ONE, null, categoryId, null)))
+            "Inactive category", "legacy", "unit", BigDecimal.ONE, null, categoryId, brandId)))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -684,35 +684,19 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
-    void persistsScopedDiscountRulesAndSnapshotsAppliedRulesOnOrderAndSale() {
+    void manualDiscountsPersistWithoutCommercialRuleReferences() {
         UUID customerId = createCustomer(null);
-        UUID productId = createProduct("discount-rule");
+        UUID productId = createProduct("manual-discount");
         UUID generalListId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         putGeneralPrice(productId, new BigDecimal("100.0000"));
-        UUID actorId = UUID.randomUUID();
         SecurityContextHolder.getContext().setAuthentication(
-            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+            UsernamePasswordAuthenticationToken.authenticated(UUID.randomUUID().toString(), "test",
                 List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
-        LocalDate businessToday = jdbc.queryForObject(
-            "select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date", LocalDate.class);
-
-        UUID generalLineRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
-            "PG-LINE-GENERAL-" + UUID.randomUUID().toString().substring(0, 8), "Producto 3%", "LINE",
-            new BigDecimal("3.0000"), null, null, productId, businessToday, null, 0));
-        UUID customerLineRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
-            "PG-LINE-CUSTOMER-" + UUID.randomUUID().toString().substring(0, 8), "Producto cliente 10%", "LINE",
-            new BigDecimal("10.0000"), customerId, null, productId, businessToday, null, 0));
-        UUID generalOrderRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
-            "PG-ORDER-GENERAL-" + UUID.randomUUID().toString().substring(0, 8), "Orden 2.5%", "ORDER",
-            new BigDecimal("2.5000"), null, null, null, businessToday, null, 0));
-        UUID customerOrderRule = createDiscountRule(new CommercialDiscountRuleCommandService.RuleInput(
-            "PG-ORDER-CUSTOMER-" + UUID.randomUUID().toString().substring(0, 8), "Orden cliente 5%", "ORDER",
-            new BigDecimal("5.0000"), customerId, null, null, businessToday, null, 0));
 
         var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
-            "discount-rules-" + UUID.randomUUID(), customerId, generalListId,
-            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
-            BigDecimal.ZERO, List.of()));
+            "manual-discounts-" + UUID.randomUUID(), customerId, generalListId,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, new BigDecimal("10"), null)),
+            new BigDecimal("5"), List.of()));
         orders.add(result.orderId());
         sales.add(result.saleId());
 
@@ -720,31 +704,21 @@ class PostgresBackendFixesIntegrationTest {
         Map<String, Object> detail = readQueryService.orderDetail(result.orderId());
         Map<String, Object> orderSnapshot = (Map<String, Object>) detail.get("order");
         assertThat(orderSnapshot).containsEntry("orderDiscountPercent", new BigDecimal("5.0000"))
-            .containsEntry("orderDiscountRuleId", customerOrderRule);
+            .doesNotContainKey("orderDiscountRuleId");
         Map<String, Object> itemSnapshot = (Map<String, Object>) ((List<?>) detail.get("items")).getFirst();
         assertThat(itemSnapshot).containsEntry("lineDiscountPercent", new BigDecimal("10.0000"))
-            .containsEntry("discountRuleId", customerLineRule);
+            .doesNotContainKey("discountRuleId");
         Map<String, Object> saleSnapshot = (Map<String, Object>) detail.get("sale");
         assertThat(saleSnapshot).containsEntry("orderDiscountPercent", new BigDecimal("5.0000"))
-            .containsEntry("orderDiscountRuleId", customerOrderRule);
+            .doesNotContainKey("orderDiscountRuleId");
+        assertThat(jdbc.queryForObject("select to_regclass('catalog.commercial_discount_rules')", String.class)).isNull();
 
-        discountRuleCommandService.setStatus(customerLineRule, "INACTIVE");
-        discountRuleCommandService.setStatus(customerOrderRule, "INACTIVE");
-        Map<String, Object> unchanged = readQueryService.orderDetail(result.orderId());
-        Map<String, Object> unchangedOrder = (Map<String, Object>) unchanged.get("order");
-        Map<String, Object> unchangedItem = (Map<String, Object>) ((List<?>) unchanged.get("items")).getFirst();
-        assertThat(unchangedOrder.get("orderDiscountRuleId")).isEqualTo(customerOrderRule);
-        assertThat(unchangedItem.get("discountRuleId")).isEqualTo(customerLineRule);
-        assertThat(List.of(generalLineRule, generalOrderRule)).allSatisfy(ruleId ->
-            assertThat(jdbc.queryForObject("select status from catalog.commercial_discount_rules where id = ?",
-                String.class, ruleId)).isEqualTo("ACTIVE"));
-    }
-
-    private UUID createDiscountRule(CommercialDiscountRuleCommandService.RuleInput input) {
-        UUID id = discountRuleCommandService.create(input);
-        discountRules.add(id);
-        auditResources.add(id.toString());
-        return id;
+        var edited = orderConfirmationService.editConfirmed(result.orderId(), new OrderEditDtos.EditRequest(
+            generalListId, List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO));
+        assertThat(edited.total()).isEqualByComparingTo("100.0000");
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId))
+            .isEqualByComparingTo("100.0000");
     }
 
     @Test
@@ -1098,6 +1072,10 @@ class PostgresBackendFixesIntegrationTest {
         AccountDebtSale foreign = createAccountDebtSale(foreignCustomer, BigDecimal.TEN, 1800);
         AccountDebtSale foreignInherited = createAccountDebtSale(foreignCustomer, BigDecimal.TEN, 1800);
         AccountDebtSale unassigned = createAccountDebtSale(unassignedCustomer, BigDecimal.TEN, 1800);
+        for (AccountDebtSale sale : List.of(own, inherited)) {
+            jdbc.update("update orders.orders set status = 'DELIVERED' where id = ?", sale.orderId());
+            jdbc.update("update sale.sales set status = 'DELIVERED' where id = ?", sale.saleId());
+        }
         for (AccountDebtSale sale : List.of(own, second)) {
             jdbc.update("update orders.orders set seller_id = ? where id = ?", sellerId, sale.orderId());
         }
@@ -1131,21 +1109,22 @@ class PostgresBackendFixesIntegrationTest {
         for (String route : List.of("/api/orders", "/api/sales")) {
             UUID[] expectedIds = route.equals("/api/orders")
                 ? new UUID[] {own.orderId(), inherited.orderId(), second.orderId()}
-                : new UUID[] {own.saleId(), inherited.saleId(), second.saleId()};
+                : new UUID[] {own.saleId(), inherited.saleId()};
             mockMvc.perform(get(route).param("search", prefix).header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[*].id").value(
                     org.hamcrest.Matchers.containsInAnyOrder(java.util.Arrays.stream(expectedIds).map(UUID::toString).toArray(String[]::new))));
             mockMvc.perform(get(route).param("search", prefix).param("size", "1").header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3)).andExpect(jsonPath("$.totalPages").value(3));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(expectedIds.length)).andExpect(jsonPath("$.totalPages").value(expectedIds.length));
             mockMvc.perform(get(route).param("search", prefix).param("page", "2").param("size", "1").header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(route.equals("/api/orders") ? 1 : 0));
         }
         mockMvc.perform(get("/api/sales").param("sellerId", otherSellerId.toString()).header("Authorization", "Bearer " + token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
         mockMvc.perform(get("/api/sales").param("customerId", foreignCustomer.toString()).header("Authorization", "Bearer " + token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
         mockMvc.perform(get("/api/sales/filter-options").header("Authorization", "Bearer " + token))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.customers.length()").value(2))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.customers.length()").value(1))
+            .andExpect(jsonPath("$.customers[0].id").value(customer.toString()))
             .andExpect(jsonPath("$.sellers.length()").value(1)).andExpect(jsonPath("$.sellers[0].id").value(sellerId.toString()));
         for (AccountDebtSale sale : List.of(own, inherited, foreignOnAssignedCustomer, foreign, foreignInherited, unassigned)) {
             boolean accessible = sale.equals(own) || sale.equals(inherited);
@@ -1556,24 +1535,28 @@ class PostgresBackendFixesIntegrationTest {
     private UUID createCategory() {
         UUID id = UUID.randomUUID();
         categories.add(id);
-        jdbc.update("insert into catalog.categories(id, name, status, created_at) values (?, 'PG category', 'ACTIVE', ?)",
-            id, java.sql.Timestamp.from(Instant.now()));
+        jdbc.update("insert into catalog.categories(id, name, code, status, created_at) values (?, 'PG category', ?, 'ACTIVE', ?)",
+            id, "TEST_" + id, java.sql.Timestamp.from(Instant.now()));
         return id;
     }
 
     private UUID createBrand() {
         UUID id = UUID.randomUUID();
         brands.add(id);
-        jdbc.update("insert into catalog.brands(id, name, status, created_at) values (?, 'PG brand', 'ACTIVE', ?)",
-            id, java.sql.Timestamp.from(Instant.now()));
+        jdbc.update("insert into catalog.brands(id, name, code, status, created_at) values (?, 'PG brand', ?, 'ACTIVE', ?)",
+            id, "TEST_" + id, java.sql.Timestamp.from(Instant.now()));
         return id;
     }
 
     private UUID createProduct(String suffix) {
+        List<UUID> availableCategories = jdbc.queryForList("select id from catalog.categories where name = 'PG category' and status = 'ACTIVE'", UUID.class);
+        List<UUID> availableBrands = jdbc.queryForList("select id from catalog.brands where name = 'PG brand' and status = 'ACTIVE'", UUID.class);
+        UUID categoryId = availableCategories.isEmpty() ? createCategory() : availableCategories.getFirst();
+        UUID brandId = availableBrands.isEmpty() ? createBrand() : availableBrands.getFirst();
         UUID id = productCommandService.create(new ProductCommandService.ProductInput(
             "PG " + suffix,
             "PG category", "unit", BigDecimal.ONE, List.of(new ProductCommandService.ProductPriceInput(
-                UUID.fromString("00000000-0000-0000-0000-000000000001"), BigDecimal.ONE))));
+                UUID.fromString("00000000-0000-0000-0000-000000000001"), BigDecimal.ONE)), categoryId, brandId));
         products.add(id);
         return id;
     }

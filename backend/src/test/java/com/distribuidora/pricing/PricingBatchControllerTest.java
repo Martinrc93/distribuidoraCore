@@ -2,7 +2,6 @@ package com.distribuidora.pricing;
 
 import com.distribuidora.pricing.api.PricingQueryController;
 import com.distribuidora.pricing.application.PricingQueryService;
-import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -18,7 +17,7 @@ class PricingBatchControllerTest {
     void checksCustomerScopeBeforeResolvingPrices() {
         var queries = mock(PricingQueryService.class);
         var access = mock(CurrentUserAccess.class);
-        var controller = new PricingQueryController(queries, mock(CommercialDiscountRuleQueryService.class), access);
+        var controller = new PricingQueryController(queries, access);
         UUID customer = UUID.randomUUID();
         var products = List.of(UUID.randomUUID());
         controller.resolveBatch(customer, products, null);
@@ -31,7 +30,7 @@ class PricingBatchControllerTest {
     void doesNotResolveAnInaccessibleCustomer() {
         var queries = mock(PricingQueryService.class);
         var access = mock(CurrentUserAccess.class);
-        var controller = new PricingQueryController(queries, mock(CommercialDiscountRuleQueryService.class), access);
+        var controller = new PricingQueryController(queries, access);
         UUID customer = UUID.randomUUID();
         doThrow(new EmptyResultDataAccessException(1)).when(access).requireCustomerAccess(customer);
         assertThatThrownBy(() -> controller.resolveBatch(customer, List.of(UUID.randomUUID()), null))

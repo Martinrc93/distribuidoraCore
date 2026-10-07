@@ -83,55 +83,13 @@ Al aumentar el costo del producto, el backend bloquea el producto y rechaza el
 cambio si alguna vigencia futura activa queda por debajo del nuevo costo; se
 debe ajustar o cancelar primero esa vigencia.
 
-## Reglas de descuento comerciales
+## Descuentos manuales
 
-Las reglas se administran desde:
+Solo se aplican los porcentajes explícitos de línea y pedido, con autorización
+`ADMIN_ALL`. Un porcentaje cero conserva el precio completo; no existen reglas
+comerciales automáticas ni endpoints para administrarlas.
 
-- `GET /api/pricing/discount-rules?page=0&size=20`
-- `POST /api/pricing/discount-rules` devuelve `201` y el ID creado.
-- `PUT /api/pricing/discount-rules/{id}` actualiza una regla.
-- `PATCH /api/pricing/discount-rules/{id}/status` activa o desactiva la regla.
-
-Las consultas requieren autenticación; las mutaciones requieren `ADMIN_ALL` y
-se auditan como `DISCOUNT_RULE_CREATE`, `DISCOUNT_RULE_UPDATE` y
-`DISCOUNT_RULE_STATUS`. No hay borrado físico.
-
-```json
-{
-  "code": "CLIENTE_LINEA10",
-  "description": "10% para este cliente y producto",
-  "kind": "LINE",
-  "percent": 10.0000,
-  "customerId": "<uuid cliente>",
-  "priceListId": null,
-  "productId": "<uuid producto>",
-  "validFrom": "2026-09-24",
-  "validUntil": null,
-  "priority": 0
-}
-```
-
-`kind` acepta `LINE` u `ORDER`. Una regla `LINE` requiere `productId`; una
-regla `ORDER` no admite producto. `customerId` y `priceListId` son opcionales;
-si no se informan, la regla aplica a todos los clientes o listas dentro de su
-alcance. `validFrom` es inclusiva y, si se omite, toma la fecha comercial de
-Buenos Aires; `validUntil` también es inclusiva. `priority` va de -1000 a 1000
-y por defecto es 0.
-
-Al confirmar o editar un pedido, se elige como máximo una regla por línea y una
-regla de orden. Gana la mayor prioridad; a igual prioridad gana el alcance más
-específico (cliente y lista), seguido por la regla más nueva y su ID para
-desempatar. La regla de línea compara producto, cliente y la lista efectiva
-resuelta para ese producto. La regla de orden usa lista explícita, lista del
-cliente o `GENERAL`, en ese orden.
-
-Las reglas elegidas se aplican automáticamente cuando el request envía
-`lineDiscountPercent`/`orderDiscountPercent` en cero. Un porcentaje manual
-mayor que cero sigue siendo un override administrativo y requiere `ADMIN_ALL`;
-reemplaza la regla automática del mismo nivel. El descuento de línea se aplica
-al importe bruto de cada línea y el descuento de orden al subtotal restante.
-No se apilan varias reglas del mismo nivel.
-
-El porcentaje efectivo y el ID de regla se guardan en los snapshots de
-`orders.orders`, `orders.order_items`, `sale.sales` y `sale.sale_items`. Cambiar
-o desactivar una regla no modifica pedidos ni ventas ya confirmados.
+La migración V32 elimina las reglas guardadas y sus referencias en pedidos y
+ventas. Conserva los porcentajes e importes históricos, los pagos y los saldos;
+no recalcula operaciones ya confirmadas. V22 permanece en el historial de
+migraciones para permitir actualizar instalaciones existentes.

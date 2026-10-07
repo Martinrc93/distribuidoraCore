@@ -14,6 +14,7 @@ import { useUrlListState } from '../../shared/useUrlListState'
 type Product = {
   id: string
   name: string
+  description?: string | null
   category: string
   categoryId?: string | null
   brandId?: string | null
@@ -28,7 +29,7 @@ type Row = Record<string, string>
 type PriceList = { id: string; code: string; name: string; status: string }
 type CatalogOption = { id: string; name: string; status: string }
 type ProductFormValues = {
-  name: string
+  description: string
   categoryId: string
   brandId: string
   cost: string
@@ -41,7 +42,7 @@ const BRANDS_QUERY_KEY = ['/api/brands']
 
 function initialFormValues(initial?: Product): ProductFormValues {
   return {
-    name: initial?.name ?? '',
+    description: initial?.description ?? initial?.name ?? '',
     categoryId: initial?.categoryId ?? '',
     brandId: initial?.brandId ?? '',
     cost: initial?.cost === undefined ? '' : String(initial.cost),
@@ -109,6 +110,8 @@ function ProductForm({
   const [affectedLists, setAffectedLists] = useState<AffectedPriceList[]>([])
   const categoryOptions = categories.filter((category) => category.status === 'ACTIVE' || category.id === initial?.categoryId)
   const brandOptions = brands.filter((brand) => brand.status === 'ACTIVE' || brand.id === initial?.brandId)
+  const brandName = brands.find((brand) => brand.id === form.brandId)?.name ?? ''
+  const generatedName = brandName && form.description.trim() ? `${brandName} ${form.description.trim()}` : ''
 
   useEffect(() => {
     setForm(initialFormValues(initial))
@@ -135,8 +138,8 @@ function ProductForm({
     event.preventDefault()
     if (saving) return
     const cost = Number(form.cost)
-    if (!form.name.trim() || !form.categoryId) {
-      setError('Completá el nombre y seleccioná una categoría.')
+    if (!form.description.trim() || !form.categoryId || !form.brandId) {
+      setError('Completa la descripción y selecciona una categoría y una marca.')
       return
     }
     if (!form.cost.trim() || !Number.isFinite(cost) || cost < 0) {
@@ -167,7 +170,7 @@ function ProductForm({
     setError('')
     try {
       const body = {
-        name: form.name.trim(),
+        description: form.description.trim(),
         cost,
         ...(prices.length > 0 ? { prices } : {}),
         categoryId: form.categoryId || null,
@@ -195,13 +198,14 @@ function ProductForm({
 
   return <Panel title={initial ? 'Editar producto' : 'Nuevo producto'}>
     <form className="form-grid" onSubmit={submit}>
-      <label className="field"><span>Nombre</span><input className="input" value={form.name} onChange={(event) => change('name', event.target.value)} required disabled={saving} /></label>
+      <label className="field"><span>Descripción</span><input className="input" value={form.description} onChange={(event) => change('description', event.target.value)} maxLength={200} required disabled={saving} /></label>
       <label className="field"><span>Categoría</span><select className="select" value={form.categoryId} onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))} required disabled={saving || optionsLoading}>
         <option value="">Seleccionar categoría...</option>{categoryOptions.map((category) => <option value={category.id} key={category.id}>{category.name}{category.status !== 'ACTIVE' ? ' · Inactiva' : ''}</option>)}
       </select></label>
-      <label className="field"><span>Marca</span><select className="select" value={form.brandId} onChange={(event) => change('brandId', event.target.value)} disabled={saving || optionsLoading}>
-        <option value="">Sin marca</option>{brandOptions.map((brand) => <option value={brand.id} key={brand.id}>{brand.name}{brand.status !== 'ACTIVE' ? ' · Inactiva' : ''}</option>)}
+      <label className="field content-start"><span>Marca</span><select className="select" value={form.brandId} onChange={(event) => change('brandId', event.target.value)} required disabled={saving || optionsLoading}>
+        <option value="">Seleccionar marca...</option>{brandOptions.map((brand) => <option value={brand.id} key={brand.id}>{brand.name}{brand.status !== 'ACTIVE' ? ' · Inactiva' : ''}</option>)}
       </select></label>
+      <div className="field min-w-0 content-start"><span>Nombre</span><output className="read-only-field min-w-0 [overflow-wrap:anywhere]" aria-label="Nombre" aria-describedby="product-name-help" aria-live="polite">{generatedName || 'Marca + descripción'}</output><small id="product-name-help" className="helper-text m-0 font-normal">Se genera automáticamente con la marca y la descripción.</small></div>
       <label className="field"><span>Costo</span><input className="input" type="text" inputMode="decimal" value={form.cost} onChange={(event) => change('cost', event.target.value)} required disabled={saving} /></label>
       {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}</span><input className="input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required disabled={saving} /></label>)}
       {optionsError && <p className="error-text" role="alert">No se pudieron cargar las listas, marcas o categorías activas.</p>}

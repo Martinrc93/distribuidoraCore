@@ -82,8 +82,8 @@ Ampliaciones incorporadas y completadas (2026-09-24):
 - Historial de precios y vigencias futuras, con resolución por fecha comercial,
   cancelación de programaciones y snapshots históricos; V21. Contrato y
   verificación en `docs/api/pricing.md` y `docs/development/backend-checklist.md`.
-- Reglas persistidas de descuento de línea y pedido, aplicadas al confirmar y
-  editar, con prioridad, vigencia y snapshots; V22. Contrato en
+- V32 retira las reglas de descuento de V22, su API y aplicación automática;
+  conserva descuentos manuales e importes históricos. Contrato en
   `docs/api/pricing.md`.
 
 Criterios:

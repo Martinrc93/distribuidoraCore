@@ -36,6 +36,7 @@ describe('App shell', () => {
 
   it.each([
     ['/customers', 'Clientes', 'Clientes'],
+    ['/suppliers', 'Proveedores', 'Proveedores'],
     ['/products', 'Productos', 'Productos'],
     ['/catalog', 'Marcas y categorías', 'Marcas y categorías'],
     ['/price-lists', 'Listas de precios', 'Listas de precios'],
@@ -43,7 +44,7 @@ describe('App shell', () => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`)
     vi.spyOn(global, 'fetch').mockImplementation((input) => {
       const path = String(input)
-      if (path.startsWith('/api/customers')) return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+      if (path.startsWith('/api/customers') || path.startsWith('/api/suppliers')) return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
       if (path.startsWith('/api/sellers') || path.startsWith('/api/pricing/lists')) return response({ content: [] })
       if (path.startsWith('/api/brands') || path.startsWith('/api/categories')) return response([])
       if (path.startsWith('/api/products')) return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
@@ -110,14 +111,26 @@ describe('App shell', () => {
     expect(await screen.findByRole('heading', { name: 'Auditoría' })).toBeInTheDocument()
   })
 
-  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/customers', '/customers/customer-1', '/products', '/catalog', '/price-lists'])('keeps %s restricted to administrators', async (route) => {
+  it('opens the assigned customer list for sellers without loading administration data', async () => {
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ORDER_CREATE'] }))}.signature`)
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [{ id: 'own-customer', name: 'Assigned customer', seller: 'Current seller', balance: 0, status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }))
+    renderApp('/customers')
+    expect(await screen.findByRole('heading', { name: 'Clientes' })).toBeInTheDocument()
+    expect(await screen.findByText('Assigned customer')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Clientes' })).toHaveClass('active')
+    expect(screen.queryByRole('button', { name: '+ Nuevo cliente' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Ver cliente Assigned customer' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith('/api/customers?'))).toBe(true)
+  })
+
+  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/customers/customer-1', '/products', '/catalog', '/price-lists', '/suppliers'])('keeps %s restricted to administrators', async (route) => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`)
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
     renderApp(route)
 
     expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
@@ -186,8 +199,11 @@ describe('App shell', () => {
     await user.click(screen.getByRole('button', { name: 'Ingresar' }))
     await screen.findByText('Second order')
     expect(screen.queryByText('First order')).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     expect(queryClient.getQueryData(customersKey)).toBeUndefined()
+    await user.click(screen.getByRole('link', { name: 'Clientes' }))
+    expect(await screen.findByText('Second customer')).toBeInTheDocument()
+    expect(screen.queryByText('First customer')).not.toBeInTheDocument()
     await user.click(screen.getByRole('link', { name: 'Ventas' }))
     await screen.findByText('Second sale')
     expect(screen.queryByText('First sale')).not.toBeInTheDocument()
@@ -209,7 +225,10 @@ describe('App shell', () => {
     await user.type(screen.getByLabelText('Contraseña'), 'test-password')
     await user.click(screen.getByRole('button', { name: 'Ingresar' }))
     await screen.findByRole('heading', { name: 'Pedidos' })
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     expect(queryClient.getQueryData([customersPath])).toBeUndefined()
+    await user.click(screen.getByRole('link', { name: 'Clientes' }))
+    expect(await screen.findByText('Current seller customer')).toBeInTheDocument()
+    expect(screen.queryByText('Previous account customer')).not.toBeInTheDocument()
   })
 })

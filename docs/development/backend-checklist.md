@@ -47,9 +47,9 @@ Estado actualizado: 2026-09-25
 - [x] Asignación opcional de lista a clientes.
 - [x] Resolución explícita, asignada y fallback `GENERAL`.
 - [x] Auditoría y autorización `ADMIN_ALL`.
-- [x] Configurar descuentos manuales o reglas comerciales requiere `ADMIN_ALL`; los overrides manuales siguen protegidos.
+- [x] Los descuentos manuales requieren `ADMIN_ALL`.
 - [x] Historial de precios y vigencias futuras: V21, consulta/cancelación de programaciones, resolución por fecha comercial de Buenos Aires, límite costo-precio y snapshots históricos intactos. Verificación específica: 31 tests dirigidos y 22 casos PostgreSQL.
-- [x] Reglas de descuentos comerciales persistidas: scopes `LINE`/`ORDER`, prioridad, vigencias, selección automática y snapshots con regla/porcentaje. API en `docs/api/pricing.md`; 31 tests dirigidos y 23 casos PostgreSQL.
+- [x] V32 retira reglas comerciales, endpoints y aplicación automática; conserva porcentajes manuales e importes históricos. Contrato en `docs/api/pricing.md`.
 
 ## Inventory
 
@@ -179,7 +179,7 @@ no tenía `POSTGRES_TEST_URL`.
 
 Estado del backlog autorizado (2026-09-24): historial/vigencias de precios,
 reglas de descuentos persistidas y multi-depósito completados, probados y
-documentados entonces; V24 retiró luego multi-depósito. Los tres ítems de este lote están cerrados. La verificación
+documentados entonces; V24 retiró luego multi-depósito y V32 retiró reglas de descuento. Los tres ítems de este lote están cerrados. La verificación
 completa final pasó con 350 tests. Los tres ítems de implementación de este
 lote quedaron cerrados. La configuración operativa de URLs y credenciales
 reales del proveedor de notificaciones sigue pendiente; no se habilitaron

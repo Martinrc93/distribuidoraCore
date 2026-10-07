@@ -42,6 +42,18 @@ describe('SalesPage', () => {
     expect(screen.getByLabelText('Fecha máx.')).toHaveValue('')
   })
 
+  it.each([
+    ['ORDER_CREATE', 'Todas las entregadas', 'Consultá importes cobrados y saldos de tus ventas entregadas.'],
+    ['ADMIN_ALL', 'Todas las ventas', 'Consultá importes cobrados, saldos y estado de las ventas.'],
+  ])('describes the sales scope for %s', async (authority, option, description) => {
+    sessionStorage.setItem('distribuidora.accessToken', token([authority]))
+    vi.spyOn(global, 'fetch').mockImplementation(input => response(String(input) === '/api/sales/filter-options' ? filterOptions : sales))
+    renderSales()
+    await screen.findByText('VEN-001')
+    expect(screen.getByText(description)).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: option })).toBeInTheDocument()
+  })
+
   it('combines dropdown and date filters and preserves them across pages', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => response(String(input) === '/api/sales/filter-options' ? filterOptions : sales))

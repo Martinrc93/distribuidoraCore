@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -43,19 +44,19 @@ public class ProductCommandController {
     ) { }
 
     public record ProductPayload(
-        @NotBlank String name,
+        @NotBlank @Size(max = 200) String description,
         String category,
         String presentation,
         @NotNull @DecimalMin("0") BigDecimal cost,
         @Valid List<ProductPricePayload> prices,
         @NotNull UUID categoryId,
-        UUID brandId
+        @NotNull UUID brandId
     ) {
         public ProductCommandService.ProductInput input() {
             List<ProductCommandService.ProductPriceInput> priceInputs = prices != null
                 ? prices.stream().map(p -> new ProductCommandService.ProductPriceInput(p.priceListId(), p.price())).toList()
                 : List.of();
-            return new ProductCommandService.ProductInput(name, category, presentation, cost, priceInputs, categoryId, brandId);
+            return new ProductCommandService.ProductInput(description, category, presentation, cost, priceInputs, categoryId, brandId);
         }
     }
 

@@ -50,7 +50,8 @@ class ProductCommandControllerTest {
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "name": "Producto Test",
+                        "description": "Producto Test",
+                        "brandId": "00000000-0000-0000-0000-000000000777",
                         "categoryId": "%s",
                         "cost": 100.00,
                         "prices": [{"priceListId":"%s","price":125.00}]
@@ -70,7 +71,7 @@ class ProductCommandControllerTest {
         mockMvc.perform(post("/api/products")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"name":"Producto","categoryId":"%s","cost":100}
+                    {"description":"Producto","categoryId":"%s","brandId":"00000000-0000-0000-0000-000000000777","cost":100}
                     """.formatted(UUID.randomUUID())))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
@@ -78,7 +79,7 @@ class ProductCommandControllerTest {
         mockMvc.perform(post("/api/products")
                 .contentType(APPLICATION_JSON)
                 .content("""
-                    {"name":"Producto","categoryId":"%s","cost":100,"prices":[]}
+                    {"description":"Producto","categoryId":"%s","brandId":"00000000-0000-0000-0000-000000000777","cost":100,"prices":[]}
                     """.formatted(UUID.randomUUID())))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
@@ -92,7 +93,8 @@ class ProductCommandControllerTest {
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "name": "Producto Actualizado",
+                        "description": "Producto Actualizado",
+                        "brandId": "00000000-0000-0000-0000-000000000777",
                         "categoryId": "%s",
                         "cost": 150.00,
                         "prices": []
@@ -114,7 +116,7 @@ class ProductCommandControllerTest {
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "name": "Producto",
+                        "description": "Producto",
                         "categoryId": "%s",
                         "brandId": "%s",
                         "cost": 100
@@ -126,6 +128,7 @@ class ProductCommandControllerTest {
         verify(service).create(input.capture());
         assertThat(input.getValue().categoryId()).isEqualTo(categoryId);
         assertThat(input.getValue().brandId()).isEqualTo(brandId);
+        assertThat(input.getValue().description()).isEqualTo("Producto");
     }
 
     @Test
@@ -141,9 +144,10 @@ class ProductCommandControllerTest {
                 .contentType(APPLICATION_JSON)
                 .content("""
                     {
-                        "name": "Producto Test",
+                        "description": "Producto Test",
                         "categoryId": "%s",
-                        "cost": 120.00
+                        "cost": 120.00,
+                        "brandId": "00000000-0000-0000-0000-000000000777"
                     }
                     """.formatted(UUID.randomUUID())))
             .andExpect(status().isBadRequest())
@@ -166,5 +170,17 @@ class ProductCommandControllerTest {
             .andExpect(status().isNoContent());
 
         verify(service).setStatus(id, "INACTIVE");
+    }
+
+    @Test
+    void rejectsMissingBrandAndMissingOrBlankDescriptionForBothWrites() throws Exception {
+        for (String payload : List.of(
+                "{\"description\":\"Product\",\"categoryId\":\"%s\",\"cost\":1}",
+                "{\"name\":\"Manual name\",\"brandId\":\"%s\",\"categoryId\":\"%s\",\"cost\":1}",
+                "{\"description\":\" \",\"brandId\":\"%s\",\"categoryId\":\"%s\",\"cost\":1}")) {
+            String body = payload.formatted(UUID.randomUUID(), UUID.randomUUID());
+            mockMvc.perform(post("/api/products").contentType(APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+            mockMvc.perform(put("/api/products/{id}", UUID.randomUUID()).contentType(APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        }
     }
 }

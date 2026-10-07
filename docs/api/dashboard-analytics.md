@@ -34,6 +34,10 @@ These are current balances, not historical balances at the selected date:
   delivery, their value and oldest creation time, pending orders whose latest
   delivery attempt failed, and the number of active products with stock <= 0.
 - `topDebtors`: five highest positive customer balances, including inactive customers.
+  The dashboard shows each balance's share of `current.debt`, plus the total
+  amount and share concentrated among those customers. These are current balances,
+  independent of the selected analysis period. Links open pending sales for the
+  customer or the full customer list filtered to debtors.
 - `debtAging`: current open account debt grouped by sale age (0–30, 31–60,
   61–90 and over 90 days). Each sale is capped at the smaller of its positive
   ledger balance and `total - paid`. This is age, not overdue debt.

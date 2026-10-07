@@ -125,13 +125,13 @@ export default function SalesPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Operación" title="Ventas" description="Consultá importes cobrados, saldos y estado de las ventas." />
+    <PageHeader eyebrow="Operación" title="Ventas" description={isAdmin ? 'Consultá importes cobrados, saldos y estado de las ventas.' : 'Consultá importes cobrados y saldos de tus ventas entregadas.'} />
     <Panel>
       <form className="toolbar" onSubmit={(event) => event.preventDefault()}>
         <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar ventas</span><input className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Número de venta" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
         <CustomerSelect options={customers} value={customerId} onChange={(value) => setFilter('customerId', value)} loading={optionsQuery.isLoading} disabled={optionsQuery.isError} />
         <SellerSelect options={sellers} value={sellerId} onChange={(value) => setFilter('sellerId', value)} loading={optionsQuery.isLoading} disabled={optionsQuery.isError} />
-        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Saldo pendiente</span><select className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={pendingBalance ? 'true' : ''} onChange={(event) => setFilter('pendingBalance', event.target.value)}><option value="">Todas las ventas</option><option value="true">Solo con saldo impago</option></select></label>
+        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Saldo pendiente</span><select className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={pendingBalance ? 'true' : ''} onChange={(event) => setFilter('pendingBalance', event.target.value)}><option value="">{isAdmin ? 'Todas las ventas' : 'Todas las entregadas'}</option><option value="true">Solo con saldo impago</option></select></label>
         <div className="orders-date-filters">
           <OrderDateFilter id="sales-date-min" label="Fecha mín." value={dateMin} isoValue={min ?? ''} onChange={(value) => setFilter('dateMin', value)} invalid={min === null || invalidRange} describedBy={dateError ? 'sales-date-error' : undefined} />
           <OrderDateFilter id="sales-date-max" label="Fecha máx." value={dateMax} isoValue={max ?? ''} onChange={(value) => setFilter('dateMax', value)} invalid={max === null || invalidRange} describedBy={dateError ? 'sales-date-error' : undefined} />

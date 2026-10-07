@@ -95,10 +95,10 @@ class SalesFiltersTest {
         ReadQueryService scoped = new ReadQueryService(jdbc, access);
         assertThat(scoped.sales(0, 20, "", null, lucia, true).totalElements()).isZero();
         assertThat(scoped.sales(0, 20, "", null, null, true).content())
-            .extracting(row -> row.get("number")).containsExactly("SAL-001");
+            .isEmpty();
         when(access.requireSellerProfile()).thenReturn(lucia);
         assertThat(scoped.sales(0, 20, "", null, lucia, true).content())
-            .extracting(row -> row.get("number")).containsExactlyInAnyOrder("SAL-002", "SAL-005");
+            .extracting(row -> row.get("number")).containsExactly("SAL-002");
     }
 
     @Test
@@ -131,12 +131,48 @@ class SalesFiltersTest {
             .extracting(row -> row.get("id")).containsExactlyInAnyOrder(ana, lucia);
         CurrentUserAccess access = mock(CurrentUserAccess.class);
         when(access.isAdmin()).thenReturn(false);
-        when(access.requireSellerProfile()).thenReturn(ana);
+        when(access.requireSellerProfile()).thenReturn(lucia);
         var scoped = new ReadQueryService(jdbc, access).saleFilterOptions();
         assertThat((java.util.List<Map<String, Object>>) scoped.get("customers"))
-            .extracting(row -> row.get("id")).containsExactly(north);
+            .extracting(row -> row.get("id")).containsExactlyInAnyOrder(north, south);
         assertThat((java.util.List<Map<String, Object>>) scoped.get("sellers"))
-            .extracting(row -> row.get("id")).containsExactly(ana);
+            .extracting(row -> row.get("id")).containsExactly(lucia);
+        when(access.requireSellerProfile()).thenReturn(ana);
+        var withoutDeliveredSales = new ReadQueryService(jdbc, access).saleFilterOptions();
+        assertThat((java.util.List<?>) withoutDeliveredSales.get("customers")).isEmpty();
+        assertThat((java.util.List<?>) withoutDeliveredSales.get("sellers")).isEmpty();
+    }
+
+    @Test
+    void sellerListsOnlyDeliveredSalesBeforePaginationIncludingCustomerFallback() {
+        sale("SAL-DELIVERED-OWN", north, ana, 25, "DELIVERED");
+        sale("SAL-DELIVERED-INHERITED", north, null, 0, "DELIVERED");
+        CurrentUserAccess access = mock(CurrentUserAccess.class);
+        when(access.isAdmin()).thenReturn(false);
+        when(access.requireSellerProfile()).thenReturn(ana);
+        ReadQueryService scoped = new ReadQueryService(jdbc, access);
+        var first = scoped.sales(0, 1, "", null, null, false);
+        var second = scoped.sales(1, 1, "", null, null, false);
+        assertThat(first.totalElements()).isEqualTo(2);
+        assertThat(first.totalPages()).isEqualTo(2);
+        assertThat(first.content()).hasSize(1).allSatisfy(row -> assertThat(row.get("status")).isEqualTo("DELIVERED"));
+        assertThat(second.content()).hasSize(1).doesNotContainAnyElementsOf(first.content());
+        assertThat(scoped.sales(0, 20, "", north, ana, true).content())
+            .extracting(row -> row.get("number")).containsExactlyInAnyOrder("SAL-DELIVERED-OWN", "SAL-DELIVERED-INHERITED");
+        assertThat(scoped.sales(0, 20, "SAL-001", null, null, false).totalElements()).isZero();
+        assertThat(scoped.sales(0, 20, "SAL-004", null, null, false).totalElements()).isZero();
+        assertThat(scoped.sales(0, 20, "", null, lucia, false).totalElements()).isZero();
+    }
+
+    @Test
+    void administratorsStillSeeAllSaleStatusesAndFilterOptions() {
+        CurrentUserAccess access = mock(CurrentUserAccess.class);
+        when(access.isAdmin()).thenReturn(true);
+        ReadQueryService admin = new ReadQueryService(jdbc, access);
+        assertThat(admin.sales(0, 20, "").totalElements()).isEqualTo(5);
+        assertThat(admin.sales(0, 20, "").content()).extracting(row -> row.get("status"))
+            .contains("CONFIRMED", "CANCELLED", "DELIVERED");
+        assertThat((java.util.List<?>) admin.saleFilterOptions().get("sellers")).hasSize(2);
     }
 
     @Test

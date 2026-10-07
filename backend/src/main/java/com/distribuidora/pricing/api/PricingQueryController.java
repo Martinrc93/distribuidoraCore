@@ -1,7 +1,6 @@
 package com.distribuidora.pricing.api;
 
 import com.distribuidora.pricing.application.PricingQueryService;
-import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import com.distribuidora.shared.web.PageResponse;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,12 +19,10 @@ import java.util.UUID;
 @RequestMapping("/api/pricing")
 public class PricingQueryController {
     private final PricingQueryService queries;
-    private final CommercialDiscountRuleQueryService discountRules;
     private final CurrentUserAccess access;
 
-    public PricingQueryController(PricingQueryService queries, CommercialDiscountRuleQueryService discountRules, CurrentUserAccess access) {
+    public PricingQueryController(PricingQueryService queries, CurrentUserAccess access) {
         this.queries = queries;
-        this.discountRules = discountRules;
         this.access = access;
     }
 
@@ -64,14 +61,6 @@ public class PricingQueryController {
         @RequestParam(required = false) LocalDate asOf
     ) {
         return queries.resolveAsOf(customerId, productId, priceListId, asOf);
-    }
-
-    @GetMapping("/discount-rules")
-    public PageResponse<Map<String, Object>> discountRules(
-        @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "20") int size
-    ) {
-        return discountRules.rules(page, size);
     }
 
     @GetMapping("/resolve-batch")

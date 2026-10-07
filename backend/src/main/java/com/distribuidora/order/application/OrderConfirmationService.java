@@ -6,7 +6,6 @@ import com.distribuidora.notification.application.OutboxService;
 
 
 import com.distribuidora.pricing.application.PricingQueryService;
-import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -88,7 +87,6 @@ public class OrderConfirmationService {
 
     private final JdbcTemplate jdbc;
     private final PricingQueryService pricing;
-    private final CommercialDiscountRuleQueryService discountRules;
     private final OrderCalculationService calculation;
     private final InventoryMovementService inventory;
     private final AuditService audit;
@@ -97,46 +95,28 @@ public class OrderConfirmationService {
 
     @Autowired
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
-                                    CommercialDiscountRuleQueryService discountRules,
                                     OrderCalculationService calculation, InventoryMovementService inventory,
                                     AuditService audit, OutboxService outbox, CurrentUserAccess currentUser) {
-        this(jdbc, pricing, discountRules, calculation, inventory, audit, currentUser, outbox);
+        this.jdbc = jdbc;
+        this.pricing = pricing;
+        this.calculation = calculation;
+        this.inventory = inventory;
+        this.audit = audit;
+        this.currentUser = currentUser;
+        this.outbox = outbox;
     }
 
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
                                     OrderCalculationService calculation,
                                     InventoryMovementService inventory, AuditService audit,
                                     CurrentUserAccess currentUser) {
-        this(jdbc, pricing, null, calculation, inventory, audit, currentUser, null);
+        this(jdbc, pricing, calculation, inventory, audit, null, currentUser);
     }
 
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
                                     OrderCalculationService calculation,
                                     InventoryMovementService inventory, AuditService audit) {
-        this(jdbc, pricing, null, calculation, inventory, audit, (CurrentUserAccess) null, (OutboxService) null);
-    }
-
-    public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
-                                    CommercialDiscountRuleQueryService discountRules,
-                                    OrderCalculationService calculation,
-                                    InventoryMovementService inventory, AuditService audit) {
-        this(jdbc, pricing, discountRules, calculation, inventory, audit,
-            (CurrentUserAccess) null, (OutboxService) null);
-    }
-
-    private OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
-                                     CommercialDiscountRuleQueryService discountRules,
-                                     OrderCalculationService calculation,
-                                     InventoryMovementService inventory, AuditService audit,
-                                     CurrentUserAccess currentUser, OutboxService outbox) {
-        this.jdbc = jdbc;
-        this.pricing = pricing;
-        this.discountRules = discountRules;
-        this.calculation = calculation;
-        this.inventory = inventory;
-        this.audit = audit;
-        this.currentUser = currentUser;
-        this.outbox = outbox;
+        this(jdbc, pricing, calculation, inventory, audit, null, null);
     }
 
     @Transactional
@@ -176,11 +156,10 @@ public class OrderConfirmationService {
         }
 
         List<ResolvedLine> resolved = resolveLines(request);
-        AppliedDiscount orderDiscount = resolveOrderDiscount(request);
         OrderCalculationService.OrderCalculation calculated = calculation.calculate(
             resolved.stream().map(line -> new OrderCalculationService.CalculatedLine(
                 line.productId(), line.quantity(), line.unitPrice(), line.discount())).toList(),
-            orderDiscount.percent(), request.payments());
+            request.orderDiscountPercent(), request.payments());
 
         BigDecimal monetaryPaid = monetaryPaid(request.payments());
         List<BigDecimal> accountDebits = accountDebits(request.payments(), calculated.total(), monetaryPaid);
@@ -208,16 +187,16 @@ public class OrderConfirmationService {
             request.orderDate().atTime(businessNow.toLocalTime()).atZone(businessNow.getZone()).toInstant());
         String orderNumber = number("ORD");
         String saleNumber = number("SAL");
-        jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, order_discount_rule_id, previous_balance_amount) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, previous_balance_amount) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             orderId, orderNumber, customerId, sellerId, calculated.subtotal(),
             calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), registeredAt,
             request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
-            calculated.orderDiscountPercent(), orderDiscount.ruleId(), previousBalanceAmount);
+            calculated.orderDiscountPercent(), previousBalanceAmount);
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent, order_discount_rule_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?)",
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)",
             saleId, saleNumber, orderId, customerId, calculated.total(), monetaryPaid, registeredAt,
-            calculated.orderDiscountPercent(), orderDiscount.ruleId());
+            calculated.orderDiscountPercent());
         insertItems("sale.sale_items", saleId, resolved, calculated.lines());
 
         insertPayments(saleId, customerId, request.payments());
@@ -243,9 +222,6 @@ public class OrderConfirmationService {
         auditDetails.put("creditLimit", creditLimit);
         auditDetails.put("projectedBalance", projectedBalance);
         auditDetails.put("creditLimitExceeded", creditLimitExceeded);
-        auditDetails.put("orderDiscountRuleId", orderDiscount.ruleId() == null ? null : orderDiscount.ruleId().toString());
-        auditDetails.put("lineDiscountRuleIds", resolved.stream().map(ResolvedLine::discountRuleId)
-            .filter(Objects::nonNull).map(UUID::toString).distinct().toList());
         audit.recordWithinTransaction(actorId(), "ORDER_CONFIRM", "ORDER", orderId.toString(), "SUCCESS", auditDetails);
         if (creditWarning != null) {
             audit.recordWithinTransaction(actorId(), "CREDIT_LIMIT_WARNING", "CUSTOMER", customerId.toString(), "SUCCESS",
@@ -297,11 +273,10 @@ public class OrderConfirmationService {
         validateRequest(pricingRequest);
         validateOverrides(pricingRequest);
         List<ResolvedLine> resolved = resolveLines(pricingRequest);
-        AppliedDiscount orderDiscount = resolveOrderDiscount(pricingRequest);
         OrderCalculationService.OrderCalculation calculated = calculation.calculate(
             resolved.stream().map(line -> new OrderCalculationService.CalculatedLine(
                 line.productId(), line.quantity(), line.unitPrice(), line.discount())).toList(),
-            orderDiscount.percent());
+            request.orderDiscountPercent());
 
         UUID saleId = uuidOrNull(lifecycle.get("sale_id"));
         BigDecimal paid = decimal(lifecycle.get("paid")).setScale(4);
@@ -349,11 +324,11 @@ public class OrderConfirmationService {
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
         insertItems("sale.sale_items", saleId, resolved, calculated.lines());
         BigDecimal discount = calculated.lineDiscount().add(calculated.orderDiscount()).setScale(4);
-        jdbc.update("update orders.orders set subtotal = ?, discount = ?, total = ?, order_discount_percent = ?, order_discount_rule_id = ?, previous_balance_amount = ? where id = ?",
+        jdbc.update("update orders.orders set subtotal = ?, discount = ?, total = ?, order_discount_percent = ?, previous_balance_amount = ? where id = ?",
             calculated.subtotal(), discount, calculated.total(), calculated.orderDiscountPercent(),
-            orderDiscount.ruleId(), previousBalance, orderId);
-        jdbc.update("update sale.sales set total = ?, order_discount_percent = ?, order_discount_rule_id = ? where id = ?",
-            calculated.total(), calculated.orderDiscountPercent(), orderDiscount.ruleId(), saleId);
+            previousBalance, orderId);
+        jdbc.update("update sale.sales set total = ?, order_discount_percent = ? where id = ?",
+            calculated.total(), calculated.orderDiscountPercent(), saleId);
 
         audit.recordWithinTransaction(actorId(), "ORDER_EDIT", "ORDER", orderId.toString(), "SUCCESS",
             Map.of("saleId", saleId.toString(), "previousTotal", decimal(lifecycle.get("sale_total")),
@@ -391,31 +366,12 @@ public class OrderConfirmationService {
             Map<String, Object> price = pricing.resolve(request.customerId(), line.productId(), request.priceListId());
             BigDecimal unitPrice = line.unitPriceOverride() == null
                 ? decimal(price.get("unitPrice")) : line.unitPriceOverride();
-            BigDecimal discountPercent = line.lineDiscountPercent();
-            UUID discountRuleId = null;
-            if (discountPercent.signum() == 0 && discountRules != null) {
-                var rule = discountRules.lineDiscount(request.customerId(), line.productId(),
-                    (UUID) price.get("priceListId"));
-                if (rule.isPresent()) {
-                    discountPercent = rule.get().percent();
-                    discountRuleId = rule.get().ruleId();
-                }
-            }
             String productName = jdbc.queryForObject(
                 "select name from catalog.products where id = ?", String.class, line.productId());
             lines.add(new ResolvedLine(line.productId(), productName, line.quantity(), unitPrice,
-                discountPercent, discountRuleId, (UUID) price.get("priceListId"), String.valueOf(price.get("priceListCode"))));
+                line.lineDiscountPercent(), (UUID) price.get("priceListId"), String.valueOf(price.get("priceListCode"))));
         }
         return lines;
-    }
-
-    private AppliedDiscount resolveOrderDiscount(ConfirmationCommand request) {
-        if (request.orderDiscountPercent().signum() > 0 || discountRules == null) {
-            return new AppliedDiscount(request.orderDiscountPercent(), null);
-        }
-        return discountRules.orderDiscount(request.customerId(), request.priceListId())
-            .map(rule -> new AppliedDiscount(rule.percent(), rule.ruleId()))
-            .orElseGet(() -> new AppliedDiscount(request.orderDiscountPercent(), null));
     }
 
     private void insertItems(String table, UUID parentId, List<ResolvedLine> resolved,
@@ -424,9 +380,9 @@ public class OrderConfirmationService {
             ResolvedLine line = resolved.get(i);
             var result = calculated.get(i);
             jdbc.update("insert into " + table + "(id, " + (table.startsWith("orders") ? "order_id" : "sale_id")
-                    + ", product_id, product_name, quantity, unit_price, line_total, price_list_id, price_list_code, line_discount_percent, discount_rule_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    + ", product_id, product_name, quantity, unit_price, line_total, price_list_id, price_list_code, line_discount_percent) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID(), parentId, line.productId(), line.productName(), result.quantity(), result.unitPrice(),
-                result.lineTotal(), line.priceListId(), line.priceListCode(), result.lineDiscountPercent(), line.discountRuleId());
+                result.lineTotal(), line.priceListId(), line.priceListCode(), result.lineDiscountPercent());
         }
     }
 
@@ -666,9 +622,7 @@ public class OrderConfirmationService {
     }
 
     private record ResolvedLine(UUID productId, String productName, BigDecimal quantity, BigDecimal unitPrice,
-                                BigDecimal discount, UUID discountRuleId, UUID priceListId, String priceListCode) { }
-
-    private record AppliedDiscount(BigDecimal percent, UUID ruleId) { }
+                                BigDecimal discount, UUID priceListId, String priceListCode) { }
 
     private record ExistingOrder(UUID orderId, UUID saleId, UUID customerId, String orderNumber, String saleNumber,
                                  BigDecimal total, BigDecimal paid, String fingerprint, boolean creditLimitExceeded,

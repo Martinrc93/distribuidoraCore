@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -14,6 +14,34 @@ function renderDashboard(entry = '/analytics?dateMin=01%2F09%2F2026&dateMax=30%2
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Analytics dashboard', () => {
+  it('orders major debtors by balance and shows their share of all current debt', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      ...report,
+      current: { ...report.current, debt: 1000, debtorCount: 8 },
+      topDebtors: [
+        { id: 'small', name: 'Cliente menor', balance: 100 },
+        { id: 'large', name: 'Cliente mayor', balance: 500 },
+        { id: 'medium', name: 'Cliente medio', balance: 200 },
+      ],
+    }), { status: 200 })))
+    renderDashboard()
+    const panel = (await screen.findByRole('heading', { name: 'Clientes con mayor deuda' })).closest('section')!
+    const rows = within(panel).getAllByRole('row').slice(1)
+    expect(rows.map((row) => within(row).getAllByRole('cell')[0].textContent)).toEqual(['Cliente mayor', 'Cliente medio', 'Cliente menor'])
+    expect(rows.map((row) => within(row).getAllByRole('cell')[2].textContent)).toEqual(['50%', '20%', '10%'])
+    expect(within(panel).getByRole('status')).toHaveTextContent('Estos 3 clientes concentran $ 800,00, el 80% de la deuda total.')
+    expect(within(panel).getByRole('link', { name: 'Ver todos los deudores' })).toHaveAttribute('href', '/customers?hasBalance=true&status=ALL')
+  })
+  it('keeps a clear empty state when there is no debt', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      ...report, current: { ...report.current, debt: 0, debtorCount: 0 }, topDebtors: [],
+    }), { status: 200 })))
+    renderDashboard()
+    const panel = (await screen.findByRole('heading', { name: 'Clientes con mayor deuda' })).closest('section')!
+    expect(within(panel).getByText('No hay clientes con deuda pendiente.')).toBeInTheDocument()
+    expect(within(panel).queryByRole('status')).not.toBeInTheDocument()
+    expect(panel.textContent).not.toMatch(/NaN|Infinity/)
+  })
   it('shows period metrics separately from current priorities and links to their details', async () => {
     const fetch = vi.spyOn(global, 'fetch').mockImplementation(() => Promise.resolve(new Response(JSON.stringify(report), { status: 200 })))
     renderDashboard()

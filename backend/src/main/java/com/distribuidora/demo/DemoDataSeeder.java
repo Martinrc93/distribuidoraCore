@@ -131,7 +131,9 @@ public class DemoDataSeeder implements ApplicationRunner {
         jdbc.update("""
             update catalog.products p
             set category_id = coalesce(p.category_id, c.id), brand_id = coalesce(p.brand_id, b.id),
-                category = case when p.category_id is null then c.name else p.category end
+                category = case when p.category_id is null then c.name else p.category end,
+                description = coalesce(p.description, p.name),
+                name = coalesce((select name from catalog.brands where id = p.brand_id), b.name) || ' ' || coalesce(p.description, p.name)
             from generate_series(1, ?) as seed(index)
             join (values (0, ?), (1, ?), (2, ?)) as categories(index, name)
                 on categories.index = (seed.index - 1) % 3
@@ -139,7 +141,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             join (values (0, ?), (1, ?), (2, ?), (3, ?), (4, ?), (5, ?)) as brands(index, name)
                 on brands.index = (seed.index - 1) % 6
             join catalog.brands b on lower(b.name) = lower(brands.name)
-            where p.name = 'Producto Demo ' || lpad(seed.index::text, 3, '0')
+            where coalesce(p.description, p.name) = 'Producto Demo ' || lpad(seed.index::text, 3, '0')
               and (p.category_id is null or p.brand_id is null)
               and exists (select 1 from inventory.stock_movements m
                           where m.product_id = p.id and m.reference_type = 'DEMO_SEED')
@@ -234,11 +236,11 @@ public class DemoDataSeeder implements ApplicationRunner {
             String category = CATEGORY_NAMES[(index - 1) % CATEGORY_NAMES.length];
             String brand = BRAND_NAMES[(index - 1) % BRAND_NAMES.length];
             jdbc.update("""
-                insert into catalog.products(id, name, category, presentation, cost, status, created_at, category_id, brand_id)
-                values (?, ?, ?, ?, ?, 'ACTIVE', ?,
+                insert into catalog.products(id, name, description, category, presentation, cost, status, created_at, category_id, brand_id)
+                values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?,
                     (select id from catalog.categories where lower(name) = lower(?)),
                     (select id from catalog.brands where lower(name) = lower(?)))
-                """, id, "Producto Demo %03d".formatted(index),
+                """, id, brand + " " + "Producto Demo %03d".formatted(index), "Producto Demo %03d".formatted(index),
                 category, "Unidad", cost, timestamp(Instant.now()), category, brand);
             BigDecimal stock = BigDecimal.valueOf(20 + (index % 80));
             jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, ?, ?)",

@@ -21,7 +21,7 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 }
 ```
 
-`priceListId` es opcional. Si se omite, cada precio se resuelve con la lista asignada al cliente o `GENERAL`; también aplica el fallback de listas ya definido por pricing. Si los porcentajes por línea y orden son cero, la edición usa las reglas persistidas vigentes definidas en [`pricing.md`](pricing.md). Un porcentaje manual mayor que cero o un override de precio requiere `ADMIN_ALL`. Las cantidades deben ser positivas y múltiplos de `0.5`; una solicitud vacía no está permitida.
+`priceListId` es opcional. Si se omite, cada precio se resuelve con la lista asignada al cliente o `GENERAL`; también aplica el fallback de listas ya definido por pricing. Solo se aplican los porcentajes manuales enviados: cero conserva el precio completo y no activa reglas automáticas. Los descuentos y overrides de precio requieren `ADMIN_ALL`, como toda edición. Las cantidades deben ser positivas y múltiplos de `0.5`; una solicitud vacía no está permitida.
 
 ## Reglas comerciales
 

@@ -44,6 +44,8 @@ describe('PriceListsPage', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     await user.click(await screen.findByRole('button', { name: /nueva lista/i }))
+    expect(screen.queryByRole('tab', { name: 'Reglas de descuento' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/discount-rules'))).toBe(false)
     await user.type(screen.getByLabelText('Código'), 'PROMO')
     await user.type(screen.getByLabelText('Nombre de lista'), 'Promoción')
     await user.click(screen.getByRole('button', { name: /guardar lista/i }))

@@ -44,7 +44,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Eliminar el precio almacenado directamente en la tabla de productos (migración V11).
 - [x] Usar exclusivamente `catalog.product_prices` como fuente de precios (esquema, seed, comandos y lecturas migrados).
 - [x] Historial de precios y vigencias futuras con resolución por fecha comercial; migración V21.
-- [x] Reglas persistidas de descuentos de línea y pedido con prioridad, vigencia y snapshots; migración V22.
+- [x] V32 retira las reglas de descuentos de V22 y sus referencias, conservando importes históricos.
 - [x] Editar costo sin precio cuando no supera ninguna lista activa.
 - [x] Exigir nuevos precios para todas las listas afectadas cuando el costo las supera.
 - [x] Actualizar costo y precios afectados en una sola transaccion.
@@ -131,7 +131,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Mostrar errores de listas faltantes o precios menores al costo.
 - [x] Pantalla de administración de listas, marcas y categorías.
 - [x] Programar vigencias de precios; consultar historial paginado y cancelar precios futuros.
-- [x] Administrar reglas de descuentos por línea/pedido con vigencia, alcance y prioridad (`ADMIN_ALL`).
+- [x] Retirar reglas automáticas de descuentos; conservar descuentos manuales con `ADMIN_ALL`.
 
 ### Inventario
 
@@ -152,7 +152,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Detalle de pedido/venta con snapshots, pagos y ledger por venta.
 - [x] Registrar pagos parciales/combinados y cobros durante la entrega.
 - [x] Imputación FIFO de pagos de cuenta corriente.
-- [~] Edición administrativa solo para pedidos sin descuentos guardados y con una sola lista; falta diseñar preservación/reaplicación de reglas automáticas.
+- [x] Edición administrativa de pedidos confirmados con una sola lista, conservando descuentos manuales. Las reglas automáticas fueron retiradas.
 - [x] Imputación de pago a deuda específica mediante la proyección del cliente.
 - [x] Devolución UI con líneas reales consultadas por `saleId`.
 
@@ -241,7 +241,7 @@ El detalle de funciones completas y ausencias de API se mantiene en
 5. [x] Añadir tickets y notificaciones configurables de WhatsApp/email con auditoría.
 6. [x] Implementar endurecimiento operativo: CI PostgreSQL, métricas/logs estructurados, backup/restauración, rollback, retención/purga y escrow KeePassXC sincronizado están verificados.
 7. [x] Implementar historial de precios y vigencias futuras (V21), con resolución temporal y snapshots históricos.
-8. [x] Implementar reglas de descuentos comerciales por línea y pedido (V22), aplicadas en confirmaciones y ediciones.
+8. [x] V32 retira las reglas comerciales de V22, su administración y aplicación automática; conserva importes históricos.
 9. [x] V24 reemplaza el modelo multi-depósito de V23 por stock único consolidado por producto.
 
 Verificación PostgreSQL previa (2026-09-24): 314 tests, 0 fallos, 0 errores y 0

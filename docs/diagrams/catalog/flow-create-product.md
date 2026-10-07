@@ -1,16 +1,16 @@
 # Alta de producto
 
-> La persistencia de precios por lista en el alta está implementada en backend; la adaptación del formulario en frontend está en desarrollo.
+El formulario y la API requieren marca, categoría y descripción; generan el nombre automáticamente y guardan precios por lista.
 
 ```mermaid
 flowchart TD
-    A[Ingresar producto] --> B[Seleccionar marca]
-    B --> C[Ingresar presentacion y categoria]
+    A[Ingresar descripción] --> B[Seleccionar marca obligatoria]
+    B --> C[Seleccionar categoría obligatoria]
     C --> D[Ingresar precios por lista]
-    D --> E[Validar costo mayor que cero]
+    D --> E[Validar costo no negativo]
     E --> F[Validar precios mayores o iguales al costo]
     F --> G[Generar identificador UUID]
-    G --> H[Generar nombre visible]
+    G --> H[Generar nombre como marca más descripción]
     H --> I[Guardar producto y precios por lista]
     I --> J[Auditar alta]
 ```

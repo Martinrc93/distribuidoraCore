@@ -31,7 +31,7 @@ class ProductFiltersTest {
         jdbc.execute("create schema catalog");
         jdbc.execute("create schema inventory");
         jdbc.execute("create table catalog.categories(id uuid primary key, name varchar)");
-        jdbc.execute("create table catalog.products(id uuid primary key, name varchar, category varchar, category_id uuid, brand_id uuid, presentation varchar, status varchar, cost decimal)");
+        jdbc.execute("create table catalog.products(id uuid primary key, name varchar, category varchar, category_id uuid, brand_id uuid, presentation varchar, status varchar, cost decimal, description varchar)");
         jdbc.execute("create table inventory.inventory_balances(product_id uuid primary key, quantity decimal(12, 2))");
         jdbc.update("insert into catalog.categories values (?, 'Grocery')", category);
         addProduct("Flour A", brand, category, 3.5);
@@ -47,7 +47,7 @@ class ProductFiltersTest {
 
     private void addProduct(String name, UUID brandId, UUID categoryId, Double stock) {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into catalog.products values (?, ?, 'Legacy', ?, ?, 'Bag', 'ACTIVE', 10)", id, name, categoryId, brandId);
+        jdbc.update("insert into catalog.products values (?, ?, 'Legacy', ?, ?, 'Bag', 'ACTIVE', 10, ?)", id, name, categoryId, brandId, name);
         if (stock != null) jdbc.update("insert into inventory.inventory_balances values (?, ?)", id, stock);
     }
 

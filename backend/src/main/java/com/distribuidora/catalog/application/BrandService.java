@@ -83,6 +83,8 @@ public class BrandService {
         }
 
         jdbc.update("update catalog.brands set name = ? where id = ?", name, id);
+        jdbc.update("update catalog.products set name = ? || ' ' || description where brand_id = ? and description is not null",
+            name, id);
         audit.record(actorId(), "BRAND_UPDATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
     }
 

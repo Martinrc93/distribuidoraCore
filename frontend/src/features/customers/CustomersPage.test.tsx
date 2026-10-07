@@ -12,6 +12,7 @@ function token(authorities: string[]) {
 }
 
 function renderPage(authorities = ['ADMIN_ALL']) {
+  sessionStorage.setItem('distribuidora.accessToken', token(authorities))
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
@@ -36,6 +37,18 @@ function mockFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Pr
 const customers = { content: [{ id: 'customer-1', name: 'Almacén Norte', cuitId: '30-123', seller: 'Lucía', balance: 1000, status: 'ACTIVE', priceListId: 'list-1' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
 describe('CustomersPage', () => {
+  it('shows assigned customers as a read-only list for sellers', async () => {
+    const fetchMock = mockFetch(() => response(customers))
+    renderPage(['ORDER_CREATE'])
+    expect(await screen.findByText('Almacén Norte')).toBeInTheDocument()
+    expect(screen.getByText('Consultá únicamente los clientes asignados a tu vendedor.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /nuevo cliente|editar|activar cliente|desactivar cliente/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /ver cliente/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Buscar por vendedor' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader')).toHaveLength(5)
+    expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith('/api/customers?'))).toBe(true)
+  })
+
   it('preserves customer edits until discard is confirmed through the shared dialog', async () => {
     const user = userEvent.setup()
     mockFetch((input) => String(input).startsWith('/api/customers') ? response(customers) : response({ content: [] }))
@@ -219,7 +232,7 @@ describe('CustomersPage', () => {
   it('hides admin-only seller and mutation actions for non-admins', async () => {
     sessionStorage.setItem('distribuidora.accessToken', token([]))
     mockFetch((input) => String(input).startsWith('/api/customers') ? response(customers) : response({ content: [] }))
-    renderPage()
+    renderPage([])
 
     expect(await screen.findByText('Almacén Norte')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /nuevo cliente/i })).not.toBeInTheDocument()

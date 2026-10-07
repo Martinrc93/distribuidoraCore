@@ -22,7 +22,7 @@ function renderPage(authorities = ['ADMIN_ALL'], initialEntry = '/products') {
 
 const products = {
   content: [{
-    id: 'product-1', name: 'Harina', category: 'Almacén', categoryId: 'category-1',
+    id: 'product-1', name: 'Harina', description: 'Harina', category: 'Almacén', categoryId: 'category-1',
     brandId: 'brand-1', presentation: 'Bolsa', cost: 100.5, stock: 4, status: 'ACTIVE',
   }],
   page: 0, size: 20, totalElements: 1, totalPages: 1,
@@ -41,7 +41,7 @@ function catalogResponse(input: RequestInfo | URL) {
   if (path.startsWith('/api/products')) return response(products)
   if (path.startsWith('/api/pricing/lists')) return response(lists)
   if (path.startsWith('/api/categories')) return response([{ id: 'category-1', name: 'Almacén', status: 'ACTIVE' }, { id: 'category-2', name: 'Bajas', status: 'INACTIVE' }])
-  if (path.startsWith('/api/brands')) return response([{ id: 'brand-1', name: 'Molino Norte', status: 'ACTIVE' }, { id: 'brand-2', name: 'Archivada', status: 'INACTIVE' }])
+  if (path.startsWith('/api/brands')) return response([{ id: 'brand-1', name: 'Molino Norte', status: 'ACTIVE' }, { id: 'brand-2', name: 'Archivada', status: 'INACTIVE' }, { id: 'brand-3', name: 'Molino Sur', status: 'ACTIVE' }])
   return response({})
 }
 
@@ -108,18 +108,20 @@ describe('ProductsPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /nuevo producto/i }))
-    await user.type(screen.getByLabelText('Nombre'), 'Arroz')
+    await user.type(screen.getByLabelText('Descripción'), 'Arroz')
     await user.clear(screen.getByLabelText('Costo'))
     await user.type(screen.getByLabelText('Costo'), '12.5')
     await user.clear(screen.getByLabelText('Precio para MAYORISTA'))
     await user.type(screen.getByLabelText('Precio para MAYORISTA'), '20.75')
     await user.selectOptions(screen.getByLabelText('Categoría'), 'category-1')
     await user.selectOptions(screen.getByLabelText('Marca'), 'brand-1')
+    expect(screen.getByLabelText('Nombre')).toHaveTextContent('Molino Norte Arroz')
+    expect(screen.getByLabelText('Nombre').tagName).toBe('OUTPUT')
     await user.click(screen.getByRole('button', { name: /guardar producto/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ name: 'Arroz', cost: 12.5, prices: [{ priceListId: 'list-1', price: 20.75 }], categoryId: 'category-1', brandId: 'brand-1' }),
+      body: JSON.stringify({ description: 'Arroz', cost: 12.5, prices: [{ priceListId: 'list-1', price: 20.75 }], categoryId: 'category-1', brandId: 'brand-1' }),
     })))
     expect(await screen.findByText('Producto creado correctamente.')).toBeInTheDocument()
   })
@@ -134,13 +136,15 @@ describe('ProductsPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /editar/i }))
+    expect(screen.getByLabelText('Descripción')).toHaveValue('Harina')
+    expect(screen.getByLabelText('Nombre')).toHaveTextContent('Molino Norte Harina')
     await user.clear(screen.getByLabelText('Costo'))
     await user.type(screen.getByLabelText('Costo'), '110')
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({
       method: 'PUT',
-      body: JSON.stringify({ name: 'Harina', cost: 110, categoryId: 'category-1', brandId: 'brand-1' }),
+      body: JSON.stringify({ description: 'Harina', cost: 110, categoryId: 'category-1', brandId: 'brand-1' }),
     })))
     expect(await screen.findByText('Producto actualizado correctamente.')).toBeInTheDocument()
   })
@@ -179,7 +183,7 @@ describe('ProductsPage', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({
       method: 'PUT',
-      body: JSON.stringify({ name: 'Harina', cost: 130, prices: [{ priceListId: 'list-1', price: 140 }], categoryId: 'category-1', brandId: 'brand-1' }),
+      body: JSON.stringify({ description: 'Harina', cost: 130, prices: [{ priceListId: 'list-1', price: 140 }], categoryId: 'category-1', brandId: 'brand-1' }),
     })))
     expect(await screen.findByText('Producto actualizado correctamente.')).toBeInTheDocument()
   })
@@ -193,8 +197,9 @@ describe('ProductsPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /nuevo producto/i }))
-    await user.type(screen.getByLabelText('Nombre'), 'Arroz')
+    await user.type(screen.getByLabelText('Descripción'), 'Arroz')
     await user.selectOptions(screen.getByLabelText('Categoría'), 'category-1')
+    await user.selectOptions(screen.getByLabelText('Marca'), 'brand-1')
     await user.clear(screen.getByLabelText('Costo'))
     await user.type(screen.getByLabelText('Costo'), '10')
     await user.clear(screen.getByLabelText('Precio para MAYORISTA'))
@@ -227,5 +232,24 @@ describe('ProductsPage', () => {
     expect(await screen.findByText('Harina')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /nuevo producto/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /editar/i })).not.toBeInTheDocument()
+  })
+
+  it('requires a brand for legacy products and recalculates the name from description and brand', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/products')
+      ? response({ ...products, content: [{ ...products.content[0], brandId: null }] }) : catalogResponse(input))
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar Harina' }))
+    expect(screen.getByLabelText('Marca')).toBeRequired()
+    expect(screen.getByLabelText('Descripción')).toBeRequired()
+    expect(screen.getByLabelText('Categoría')).toBeRequired()
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({ method: 'PUT' }))
+    await user.selectOptions(screen.getByLabelText('Marca'), 'brand-1')
+    expect(screen.getByLabelText('Nombre')).toHaveTextContent('Molino Norte Harina')
+    await user.clear(screen.getByLabelText('Descripción'))
+    await user.type(screen.getByLabelText('Descripción'), '  Harina 1 kg  ')
+    await user.selectOptions(screen.getByLabelText('Marca'), 'brand-3')
+    expect(screen.getByLabelText('Nombre')).toHaveTextContent('Molino Sur Harina 1 kg')
   })
 })

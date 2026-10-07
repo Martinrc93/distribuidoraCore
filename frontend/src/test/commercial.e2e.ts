@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test'
 test('admin can create a customer, price a product, confirm an order and open its sale', async ({ page }, testInfo) => {
   const suffix = `${testInfo.project.name}-${Date.now()}`
   const customerName = `E2E ${suffix}`
-  const productName = `000 E2E product ${suffix}`
+  const productDescription = `000 E2E product ${suffix}`
+  let productName = productDescription
 
   await page.goto('/login')
   await page.keyboard.press('Tab')
@@ -23,8 +24,12 @@ test('admin can create a customer, price a product, confirm an order and open it
 
   await page.goto('/products')
   await page.getByRole('button', { name: '+ Nuevo producto' }).first().click()
-  await page.getByLabel('Nombre', { exact: true }).fill(productName)
-  await page.getByLabel('Categoría', { exact: true }).selectOption({ label: 'Almacén' })
+  await page.getByLabel('Descripción', { exact: true }).fill(productDescription)
+  const brand = page.getByRole('combobox', { name: 'Marca', exact: true })
+  await expect(brand.locator('option').nth(1)).toHaveAttribute('value', /.+/)
+  await brand.selectOption(await brand.locator('option').nth(1).getAttribute('value') ?? '')
+  productName = await page.getByLabel('Nombre', { exact: true }).textContent() ?? ''
+  await page.getByRole('combobox', { name: 'Categoría', exact: true }).selectOption({ label: 'Almacén' })
   await page.getByLabel('Costo').fill('5')
   const initialPrices = page.getByLabel(/^Precio para /)
   await expect(initialPrices.first()).toBeVisible()

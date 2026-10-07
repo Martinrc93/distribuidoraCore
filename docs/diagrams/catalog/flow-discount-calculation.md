@@ -1,21 +1,19 @@
-# Cálculo de descuentos comerciales
+# Cálculo de descuentos manuales
 
-> Configurar reglas comerciales o enviar overrides manuales requiere `ADMIN_ALL`. Las reglas persistidas vigentes se aplican automáticamente durante la confirmación/edición del pedido y el backend conserva sus snapshots.
+> Enviar descuentos manuales requiere `ADMIN_ALL`. Solo se aplican los porcentajes explícitos durante la confirmación/edición del pedido; cero conserva el precio completo. V32 retira las reglas automáticas sin recalcular los importes históricos.
 
 ```mermaid
 flowchart TD
-    A[Resolver precio y lista efectiva] --> B{Override manual de descuento?}
-    B -->|Sí, ADMIN_ALL| C[Usar porcentaje manual]
-    B -->|No, cero| D[Buscar regla LINE vigente]
-    D --> E[Elegir prioridad y alcance más específico]
-    C --> F[Aplicar descuento de línea]
+    A[Resolver precio y lista efectiva] --> B{Descuento manual positivo?}
+    B -->|Sí| C[Validar ADMIN_ALL y porcentaje]
+    B -->|No, cero| D[Conservar precio completo]
+    C --> E[Aplicar descuento de línea]
+    D --> F[Sumar líneas]
     E --> F
-    F --> G[Sumar líneas después del descuento]
-    G --> H{Override manual de orden?}
-    H -->|Sí, ADMIN_ALL| I[Usar porcentaje manual]
-    H -->|No, cero| J[Buscar regla ORDER vigente]
-    J --> K[Elegir prioridad y alcance más específico]
-    I --> L[Aplicar descuento al subtotal restante]
-    K --> L
-    L --> M[Guardar porcentaje e ID en snapshots]
+    F --> G{Descuento manual de pedido positivo?}
+    G -->|Sí| H[Validar ADMIN_ALL y porcentaje]
+    G -->|No, cero| I[Conservar subtotal]
+    H --> J[Aplicar descuento al subtotal restante]
+    I --> K[Guardar porcentajes e importes en snapshots]
+    J --> K
 ```

@@ -73,6 +73,9 @@ export default function CatalogAdminPage() {
       if (editing) await apiPut(`${resource.endpoint}/${editing.id}`, body)
       else await apiPost(resource.endpoint, body)
       await queryClient.invalidateQueries({ queryKey: resource.queryKey })
+      if (kind === 'brands' && editing) {
+        await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') || String(queryKey[0]).startsWith('/api/pricing/') || String(queryKey[0]).startsWith('/api/inventory') })
+      }
       setFeedback(editing ? `${capitalize(resource.singular)} actualizada correctamente.` : `${capitalize(resource.singular)} creada correctamente.`)
       setShowForm(false)
       setEditing(undefined)

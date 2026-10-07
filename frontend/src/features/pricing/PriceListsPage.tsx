@@ -8,7 +8,6 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import DiscountRulesSection from './DiscountRulesSection'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean }
@@ -95,7 +94,6 @@ export default function PriceListsPage() {
   const historyKey = [historyPath]
   const historyQuery = useQuery({ queryKey: historyKey, queryFn: () => apiGet<ApiPage<PriceHistory>>(historyPath), enabled: Boolean(historyPath) })
   const [showCreate, setShowCreate] = useState(false)
-  const [pricingView, setPricingView] = useState<'prices' | 'discounts'>('prices')
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [renameList, setRenameList] = useState<PriceList | undefined>()
@@ -237,14 +235,9 @@ export default function PriceListsPage() {
   const nextStatusIsActive = statusList?.status !== 'ACTIVE'
 
   return <div className="price-lists-page">
-    <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin && pricingView === 'prices' ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
+    <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && <p className="error-text" role="alert">{error}</p>}
-    <div className="pricing-section-tabs" role="tablist" aria-label="Secciones de precios">
-      <button className={`pricing-section-tab${pricingView === 'prices' ? ' selected' : ''}`} type="button" role="tab" aria-selected={pricingView === 'prices'} onClick={() => setPricingView('prices')}>Listas y precios</button>
-      <button className={`pricing-section-tab${pricingView === 'discounts' ? ' selected' : ''}`} type="button" role="tab" aria-selected={pricingView === 'discounts'} onClick={() => { setPricingView('discounts'); setShowCreate(false); setError('') }}>Reglas de descuento</button>
-    </div>
-    {pricingView === 'discounts' ? <DiscountRulesSection /> : <>
     {showCreate && isAdmin && <Panel title="Nueva lista de precios"><form className="form-grid" onSubmit={submitCreate}>
       <label className="field"><span>Código</span><input className="input" value={code} onChange={(event) => setCode(event.target.value)} required maxLength={40} disabled={createMutation.isPending} /></label>
       <label className="field"><span>Nombre de lista</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} disabled={createMutation.isPending} /></label>
@@ -335,6 +328,5 @@ export default function PriceListsPage() {
         </footer>
       </section>
     </div>}
-    </>}
   </div>
 }

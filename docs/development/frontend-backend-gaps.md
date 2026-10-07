@@ -8,8 +8,8 @@ de usuario final. La interfaz no simula respuestas faltantes.
 
 - Programación de vigencias de precios, historial paginado y cancelación de
   precios futuros por lista/producto.
-- Administración `ADMIN_ALL` de reglas de descuentos por línea/pedido, incluyendo
-  alcance, fechas y prioridad. El backend resuelve el descuento al confirmar.
+- Reglas comerciales de descuento retiradas de interfaz, API y persistencia
+  mediante V32; se mantienen los descuentos manuales de pedidos.
 - Inventario de producto único conectado a lecturas, ajustes y movimientos.
 - Pedidos conectados al stock único; el contrato no recibe ubicación.
 - Roles de usuarios visibles como datos de solo lectura.

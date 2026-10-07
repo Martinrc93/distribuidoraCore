@@ -36,7 +36,7 @@ describe('Responsive navigation', () => {
     renderShell()
     expect(screen.getByRole('navigation', { name: 'Navegación principal' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Pagos y deuda' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
@@ -89,7 +89,7 @@ describe('Responsive navigation', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Abrir menú' }))
     expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Pagos y deuda' })).not.toBeInTheDocument()
     for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()

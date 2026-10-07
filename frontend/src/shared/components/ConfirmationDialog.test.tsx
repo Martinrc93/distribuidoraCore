@@ -40,3 +40,15 @@ it('blocks actions and Escape while pending and keeps recovery errors accessible
   await user.click(screen.getByRole('button', { name: 'Confirmar cancelación' }))
   expect(onConfirm).toHaveBeenCalledOnce()
 })
+
+it('contains keyboard focus in both directions between its actions', async () => {
+  const user = userEvent.setup()
+  render(<><button>Background action</button><ConfirmationDialog title="Discard" description="Unsaved changes" confirmLabel="Discard changes" onCancel={vi.fn()} onConfirm={vi.fn()} /></>)
+  const safe = screen.getByRole('button', { name: 'Volver' })
+  const destructive = screen.getByRole('button', { name: 'Discard changes' })
+  expect(safe).toHaveFocus()
+  await user.tab({ shift: true })
+  expect(destructive).toHaveFocus()
+  await user.tab()
+  expect(safe).toHaveFocus()
+})

@@ -44,9 +44,13 @@ class ProductSkuRemovalPostgresTest {
         assertThat(jdbc.queryForObject("select price from catalog.product_prices where product_id = ? and price_list_id = ?", BigDecimal.class, id, listId)).isEqualByComparingTo("25");
 
         var commands = new ProductCommandService(jdbc, mock(AuditService.class));
+        UUID categoryId = UUID.randomUUID();
+        UUID brandId = UUID.randomUUID();
+        jdbc.update("insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', current_timestamp)", categoryId, "Test category " + categoryId, "TEST_" + categoryId);
+        jdbc.update("insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', current_timestamp)", brandId, "Test brand " + brandId, "TEST_" + brandId);
         UUID created = commands.create(new ProductCommandService.ProductInput("New product", "General", "Unit",
-            BigDecimal.TEN, List.of(new ProductCommandService.ProductPriceInput(listId, BigDecimal.valueOf(25)))));
-        commands.update(created, new ProductCommandService.ProductInput("Updated product", "General", "Unit", BigDecimal.TEN, List.of()));
-        assertThat(jdbc.queryForObject("select name from catalog.products where id = ?", String.class, created)).isEqualTo("Updated product");
+            BigDecimal.TEN, List.of(new ProductCommandService.ProductPriceInput(listId, BigDecimal.valueOf(25))), categoryId, brandId));
+        commands.update(created, new ProductCommandService.ProductInput("Updated product", "General", "Unit", BigDecimal.TEN, List.of(), categoryId, brandId));
+        assertThat(jdbc.queryForObject("select name from catalog.products where id = ?", String.class, created)).isEqualTo("Test brand " + brandId + " Updated product");
     }
 }

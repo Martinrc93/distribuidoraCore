@@ -39,7 +39,7 @@ Estado actualizado: 2026-09-25
 
 ## Customers
 
-- [x] Sección, listado y ficha exclusivos de `ADMIN_ALL`; los vendedores conservan la selección autorizada de clientes para pedidos y pagos.
+- [x] Listado de clientes disponible para vendedores solo con sus clientes asignados, sin acciones administrativas; ficha y administración exclusivas de `ADMIN_ALL`.
 
 - [x] Listado real desde `/api/customers`.
 - [x] Alta de cliente con formulario controlado.
@@ -49,6 +49,14 @@ Estado actualizado: 2026-09-25
 - [x] Asignación de lista de precios.
 - [x] Baja lógica/reactivación desde la UI.
 - [ ] Vista de detalle de cliente con ventas, pagos y cuenta corriente (falta consulta dedicada por `customerId`).
+
+## Proveedores
+
+- [x] Pantalla `/suppliers` y menú Catálogo disponibles solo para `ADMIN_ALL`.
+- [x] Alta y edición: nombre obligatorio, teléfono/mail/dirección opcionales.
+- [x] Listado, búsqueda y paginación reales; estado de consulta en la URL.
+- [x] Feedback de guardado, reintento de consultas y descarte confirmado sin perder datos ante errores.
+- [x] Pruebas de componentes y flujo con API simulada en desktop y mobile.
 
 ## Catalog Y Pricing
 
@@ -66,7 +74,7 @@ Estado actualizado: 2026-09-25
 - [x] Editar costo y solicitar reemplazo solo para listas activas afectadas.
 - [x] Administrar marcas/categorías y asociarlas opcionalmente al producto.
 - [x] Programar vigencias de precios por fecha efectiva; consultar historial paginado y cancelar vigencias futuras.
-- [x] Administrar reglas de descuento por línea/pedido, alcance, vigencia y prioridad (`ADMIN_ALL`).
+- [x] Retirar la sección de reglas de descuento; las listas conservan precios e historial.
 - [x] Manejar `403`, `404` y `409` con mensajes accionables.
 
 ## Inventory
@@ -93,7 +101,7 @@ Estado actualizado: 2026-09-25
 - [x] Crear pedidos sin subtítulo ni selector de depósito; todos los usuarios usan el stock único del backend.
 - [x] Confirmación contra `/api/orders/confirm`; render de números, total, cobrado, saldo y warning de crédito.
 - [x] Detalle de pedido/venta con snapshots, pagos y ledger asociado a la venta.
-- [~] Edición administrativa disponible si no hay descuentos guardados y se usa una sola lista; el detalle ya expone descuento/regla general, pero la UI aún no preserva reglas automáticas al editar.
+- [x] Edición administrativa de pedidos confirmados con una sola lista; preserva porcentajes manuales de línea y pedido. Las reglas automáticas fueron retiradas.
 - [~] Advertencia antes de abandonar cubre navegación del navegador, no toda navegación interna.
 
 ## Sales, Payments Y Cuenta Corriente
@@ -104,6 +112,7 @@ el cobro independiente con imputación FIFO o a venta específica y su resultado
 ya no están disponibles como pantalla; la API conserva esas capacidades.
 
 - [x] Listado real de ventas con total, cobrado, saldo y estado.
+- [x] Mostrar únicamente ventas entregadas para vendedores, con conteos, paginación y opciones de filtros restringidos en la API; administradores conservan todos los estados.
 - [x] Cobros parciales/combinados al confirmar pedido o durante la entrega.
 - [x] Devolver venta desde la UI con las líneas de `saleId`.
 - [ ] Corregir/revertir pago (no existe endpoint de comando).

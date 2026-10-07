@@ -213,7 +213,7 @@ public class ReadQueryService {
             case NEGATIVE -> " and coalesce(ib.quantity, 0) < 0";
         };
         return page("""
-            select p.id, p.name, coalesce(cat.name, p.category) as category,
+            select p.id, p.name, coalesce(p.description, p.name) as description, coalesce(cat.name, p.category) as category,
                    p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.status
             """ + costColumn + stockColumn + source + " order by p.name, p.id",
             "select count(*) " + source, page, size, parameters.toArray());
@@ -355,7 +355,6 @@ public class ReadQueryService {
                    coalesce(assigned_seller.display_name, customer_seller.display_name, 'Sin asignar') as seller,
                    o.status, o.subtotal, o.discount, o.total,
                    o.order_discount_percent as "orderDiscountPercent",
-                   o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    c.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
@@ -393,7 +392,6 @@ public class ReadQueryService {
                    coalesce(assigned_seller.display_name, customer_seller.display_name, 'Sin asignar') as seller,
                    o.status, o.subtotal, o.discount, o.total,
                    o.order_discount_percent as "orderDiscountPercent",
-                   o.order_discount_rule_id as "orderDiscountRuleId",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    c.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
@@ -413,7 +411,6 @@ public class ReadQueryService {
         Map<String, Object> sale = jdbc.queryForMap("""
             select s.id, s.sale_number as number, s.status, s.total, s.paid,
                    s.order_discount_percent as "orderDiscountPercent",
-                   s.order_discount_rule_id as "orderDiscountRuleId",
                    (s.total - s.paid) as balance, s.created_at as date
             from sale.sales s where s.order_id = ?
             """, orderId);
@@ -433,8 +430,7 @@ public class ReadQueryService {
                 select oi.product_id as "productId", oi.product_name as "productName",
                        oi.quantity, oi.unit_price as "unitPrice", oi.line_total as "lineTotal",
                        oi.price_list_id as "priceListId", oi.price_list_code as "priceListCode",
-                       oi.line_discount_percent as "lineDiscountPercent",
-                       oi.discount_rule_id as "discountRuleId"
+                       oi.line_discount_percent as "lineDiscountPercent"
                 from orders.order_items oi where oi.order_id = ? order by oi.id
                 """, orderId),
             "sale", sale,
@@ -485,7 +481,7 @@ public class ReadQueryService {
         }
         if (sellerScoped()) {
             UUID scopedSellerId = currentUser.requireSellerProfile();
-            from += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            from += " and s.status = 'DELIVERED' and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
             parameters.add(scopedSellerId);
             parameters.add(scopedSellerId);
         }
@@ -517,7 +513,7 @@ public class ReadQueryService {
         List<Object> parameters = new ArrayList<>();
         if (sellerScoped()) {
             UUID sellerId = currentUser.requireSellerProfile();
-            from += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            from += " and s.status = 'DELIVERED' and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
             parameters.add(sellerId);
             parameters.add(sellerId);
         }

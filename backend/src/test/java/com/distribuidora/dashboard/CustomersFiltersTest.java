@@ -66,6 +66,13 @@ class CustomersFiltersTest {
         when(access.isAdmin()).thenReturn(false);
         when(access.requireSellerProfile()).thenReturn(ana);
         var scoped = new ReadQueryService(jdbc, access);
+        var first = scoped.customers(0, 1, "", null, false, "");
+        var second = scoped.customers(1, 1, "", null, false, "");
+        assertThat(first.totalElements()).isEqualTo(4);
+        assertThat(first.totalPages()).isEqualTo(4);
+        assertThat(first.content()).hasSize(1).doesNotContainAnyElementsOf(second.content());
+        assertThat(scoped.customers(0, 20, "South", null, false, "").content()).isEmpty();
+        assertThat(scoped.customers(0, 20, "Unassigned", null, false, "").content()).isEmpty();
         assertThat(scoped.customers(0, 20, "", lucia, false, "").totalElements()).isZero();
         assertThat(scoped.customers(0, 20, "", null, true, "ACTIVE").totalElements()).isEqualTo(2);
         assertThat(scoped.customers(0, 20, "", null, true, "INACTIVE").totalElements()).isEqualTo(1);

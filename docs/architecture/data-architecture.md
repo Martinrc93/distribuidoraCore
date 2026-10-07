@@ -11,11 +11,11 @@ Ejemplo conceptual:
 identity.users
 seller.seller_profiles
 customer.customers
+supplier.suppliers
 catalog.products
 catalog.price_lists
 catalog.product_price_history
 catalog.product_prices (compatibilidad)
-catalog.commercial_discount_rules
 inventory.inventory_balances (product_id)
 inventory.stock_movements
 order.orders
@@ -52,12 +52,16 @@ Se utilizarán constraints para reglas estructurales:
 - `UNIQUE` para username, email y códigos de negocio.
 - `CHECK` para costos (`cost >= 0`), precios (`price >= 0`), cantidades y estados válidos.
 - `catalog.product_price_history` es la fuente de verdad de precios por lista,
-  producto y fecha; `catalog.products` conserva solo el costo.
+  producto y fecha; `catalog.products` conserva el costo, la descripción y las
+  referencias de marca/categoría. El nombre se genera como marca + descripción;
+  V34 adapta nombres existentes sin alterar precios, inventario ni snapshots.
 - `catalog.product_prices` se mantiene por compatibilidad con escrituras
   inmediatas antiguas y no se usa para resolver precios de negocio.
-- Las reglas comerciales guardan porcentaje, scope y vigencias inclusivas;
-  pedido y venta copian el porcentaje e ID usados para preservar el snapshot.
+- V32 elimina las reglas comerciales y sus referencias; pedidos y ventas
+  conservan porcentajes manuales e importes históricos sin recalcularlos.
 - Índices para búsquedas, estados, fechas y referencias.
+- V33 agrega proveedores con nombre obligatorio, contactos opcionales y fechas
+  de creación/actualización; su índice `(name, id)` mantiene el orden del listado.
 - Optimistic locking mediante `version` en entidades editables.
 - Locking pesimista para balances de stock.
 - `inventory.inventory_balances` mantiene un saldo por producto. V24 suma los

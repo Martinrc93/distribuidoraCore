@@ -6,7 +6,6 @@ import com.distribuidora.order.api.OrderConfirmationDtos;
 import com.distribuidora.order.application.OrderCalculationService;
 import com.distribuidora.order.application.OrderConfirmationService;
 import com.distribuidora.pricing.application.PricingQueryService;
-import com.distribuidora.pricing.application.CommercialDiscountRuleQueryService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -43,9 +42,6 @@ class OrderConfirmationServiceTest {
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
     private final OrderConfirmationService service = new OrderConfirmationService(jdbc, pricing, calculation, inventory, audit);
-    private final CommercialDiscountRuleQueryService discountRules = mock(CommercialDiscountRuleQueryService.class);
-    private final OrderConfirmationService serviceWithDiscountRules = new OrderConfirmationService(
-        jdbc, pricing, discountRules, calculation, inventory, audit);
 
     @AfterEach
     void clearAuthentication() {
@@ -503,40 +499,33 @@ class OrderConfirmationServiceTest {
     }
 
     @Test
-    void appliesPersistedLineAndOrderDiscountRulesAndStoresRuleSnapshots() {
+    void zeroDiscountsUseTheFullPriceWithoutAutomaticAdjustments() {
         authenticate("ORDER_CREATE");
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         UUID listId = UUID.randomUUID();
-        UUID lineRuleId = UUID.randomUUID();
-        UUID orderRuleId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
         when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
             "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("100.0000")));
-        when(discountRules.lineDiscount(customerId, productId, listId))
-            .thenReturn(java.util.Optional.of(new CommercialDiscountRuleQueryService.DiscountSnapshot(
-                lineRuleId, new BigDecimal("10.0000"))));
-        when(discountRules.orderDiscount(customerId, null))
-            .thenReturn(java.util.Optional.of(new CommercialDiscountRuleQueryService.DiscountSnapshot(
-                orderRuleId, new BigDecimal("5.0000"))));
-
-        var response = serviceWithDiscountRules.confirm(new OrderConfirmationDtos.ConfirmationRequest(
-            "discount-rule-order", customerId, null,
+        var response = service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "full-price-order", customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
             BigDecimal.ZERO, List.of()));
 
-        assertThat(response.total()).isEqualByComparingTo("85.5000");
+        assertThat(response.total()).isEqualByComparingTo("100.0000");
         var orderInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
-        assertThat(orderInsert.getValue()).contains(orderRuleId, new BigDecimal("5.0000"));
+        assertThat((BigDecimal) orderInsert.getValue()[5]).isEqualByComparingTo("0");
+        assertThat((BigDecimal) orderInsert.getValue()[13]).isEqualByComparingTo("0");
         var itemInserts = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc, times(2)).update(argThat(sql -> sql.contains("order_items") || sql.contains("sale_items")),
             itemInserts.capture());
         assertThat(itemInserts.getAllValues()).allSatisfy(args ->
-            assertThat(java.util.Arrays.asList(args)).contains(lineRuleId));
+            assertThat((BigDecimal) args[9]).isEqualByComparingTo("0"));
+        verify(jdbc, never()).queryForList(contains("commercial_discount_rules"), any(Object[].class));
     }
 
     @Test
@@ -585,7 +574,7 @@ class OrderConfirmationServiceTest {
         assertThat(result.balance()).isEqualByComparingTo("8");
         var update = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("update orders.orders set subtotal"), update.capture());
-        assertThat((BigDecimal) update.getValue()[5]).isEqualByComparingTo(amount == null ? "30" : amount);
+        assertThat((BigDecimal) update.getValue()[4]).isEqualByComparingTo(amount == null ? "30" : amount);
         verify(jdbc, never()).update(contains("account_ledger"), any(Object[].class));
         verify(jdbc, never()).update(contains("customer.customers"), any(Object[].class));
         verify(jdbc, never()).update(contains("payment.payments"), any(Object[].class));
