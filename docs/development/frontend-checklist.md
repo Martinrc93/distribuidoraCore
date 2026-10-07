@@ -98,12 +98,13 @@ Estado actualizado: 2026-09-25
 
 ## Sales, Payments Y Cuenta Corriente
 
+La pantalla independiente «Pagos y deuda» está retirada para todos los usuarios
+desde el 2026-10-07. `/payments` redirige a Pedidos. El listado global de pagos,
+el cobro independiente con imputación FIFO o a venta específica y su resultado
+ya no están disponibles como pantalla; la API conserva esas capacidades.
+
 - [x] Listado real de ventas con total, cobrado, saldo y estado.
-- [x] Listado real de pagos con referencia opcional de transferencia.
 - [x] Cobros parciales/combinados al confirmar pedido o durante la entrega.
-- [x] Pagos `CASH`/`BANK_TRANSFER` a cuenta corriente con imputación FIFO.
-- [x] Mostrar resultado de imputación y saldos anterior/actualizado.
-- [x] Aplicar pago a una deuda específica consultada por `customerId`.
 - [x] Devolver venta desde la UI con las líneas de `saleId`.
 - [ ] Corregir/revertir pago (no existe endpoint de comando).
 
@@ -140,7 +141,7 @@ Estado actualizado: 2026-09-25
 1. [x] Conectar `Nuevo pedido` al endpoint de confirmación atómica.
 2. [x] Crear UI de Pricing, marcas/categorías y precios por lista.
 3. [x] Completar edición/baja de productos y ajustes de inventario.
-4. [~] Completar ventas/pagos y cuenta corriente; pago a deuda y devolución con líneas completados, aún falta vista integral de estado de cuenta.
+4. [~] Completar ventas y cuenta corriente; cobros durante entrega y devolución con líneas disponibles, aún falta vista integral de estado de cuenta. La pantalla independiente de pagos está retirada.
 5. [~] Implementar entrega, cancelación, documentos y notificaciones; historial de intentos completado, dashboard global de outbox sigue pendiente.
 6. [x] Conectar vigencias/reglas de precio y flujos de inventario de stock único al frontend.
 7. [x] Mostrar rol actual en usuarios; conservar edición de roles/permisos como pendiente aplazado.

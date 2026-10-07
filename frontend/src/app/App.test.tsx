@@ -57,6 +57,18 @@ describe('App shell', () => {
     expect(screen.getByRole('link', { name: linkName })).toHaveClass('active')
   })
 
+  it.each(['ADMIN_ALL', 'ORDER_CREATE'])('redirects the retired payments route to orders for %s without loading payments', async (authority) => {
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: [authority] }))}.signature`)
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
+    renderApp('/payments')
+
+    expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Pedidos' })).toHaveClass('active')
+    expect(screen.queryByRole('link', { name: 'Pagos y deuda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ Registrar pago' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/payments') || String(input).startsWith('/api/customers'))).toBe(false)
+  })
+
   it('redirects unauthenticated customer-route visits to login', () => {
     renderApp('/customers')
 

@@ -140,7 +140,9 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
   a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
   conservar los permisos de la sesión anterior. La API mantiene su autorización.
-- Para vendedores, el menú muestra Pedidos, Ventas y Pagos y deuda. Oculta
+- Pagos y deuda se retiró de la navegación para todos los usuarios, incluido el
+  acceso desde Dashboard. `/payments` redirige a Pedidos y no carga esa pantalla.
+- Para vendedores, el menú muestra Pedidos y Ventas. Oculta
   Clientes y los grupos Catálogo y Administración, en escritorio y móvil.
   El formulario de pedidos conserva los productos, la lista asignada y los
   precios necesarios para operar; esto no habilita las pantallas de catálogo.
@@ -487,7 +489,8 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   admiten límites abiertos y muestran errores para fechas o rangos inválidos.
   La carga fallida de las opciones permite reintentar sin bloquear el listado.
   Esta distribución pertenece a ventas y no cambia el patrón global.
-- En Pagos y deuda, el vendedor consulta pagos y deudas de sus pedidos; los
+- La pantalla independiente Pagos y deuda está retirada de la interfaz. En la
+  API de pagos y deudas, el vendedor consulta los datos de sus pedidos; los
   pedidos sin vendedor usan la asignación actual del cliente, como en Pedidos.
   La API aplica ese alcance también a los conteos, la búsqueda y la imputación
   de cobros, tanto FIFO como por venta específica. El selector compartido de

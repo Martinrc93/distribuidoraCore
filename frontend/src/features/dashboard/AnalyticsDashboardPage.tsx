@@ -131,7 +131,7 @@ export default function AnalyticsDashboardPage() {
         </Panel>
         <Panel title="Cobros y pendientes" description="Ingresos del período y prioridades actuales.">
           <dl className="m-0 grid gap-[14px] text-[13px]">{[['Efectivo', money(data.collections.cash)], ['Transferencias', money(data.collections.transfer)], ['Productos sin stock o con saldo negativo', number(data.current.stockAlertCount)], ['Pedido pendiente más antiguo', data.current.oldestPendingAt ? date(data.current.oldestPendingAt) : 'Sin pendientes']].map(([label, value]) => <div className="flex flex-wrap justify-between gap-[8px] border-b border-line pb-[12px]" key={label}><dt className="max-w-[230px] text-muted">{label}</dt><dd className="m-0 font-bold">{value}</dd></div>)}</dl>
-          <div className="mt-[16px] flex flex-wrap gap-[8px]"><Button variant="secondary" href="/payments">Ver pagos y deuda</Button><Button variant="link" href="/orders?status=CONFIRMED&dateMin=&dateMax=">Ver pendientes</Button></div>
+          <div className="mt-[16px] flex flex-wrap gap-[8px]"><Button variant="link" href="/orders?status=CONFIRMED&dateMin=&dateMax=">Ver pendientes</Button></div>
         </Panel>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-[20px] [@media(max-width:760px)]:grid-cols-1">

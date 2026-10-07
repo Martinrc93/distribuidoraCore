@@ -7,7 +7,7 @@ import { Button } from '../shared/components/Button'
 
 const compactNavigationQuery = '(max-width: 1050px)'
 const menuGroups = [
-  { label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Clientes', '/customers'], ['Pagos y deuda', '/payments']] },
+  { label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Clientes', '/customers']] },
   { label: 'Catálogo', links: [['Productos', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists']] },
   { label: 'Administración', links: [['Usuarios', '/admin/users'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
 ]

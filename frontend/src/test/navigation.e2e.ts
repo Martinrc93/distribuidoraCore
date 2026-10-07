@@ -16,7 +16,8 @@ test.beforeEach(async ({ page }) => {
 for (const width of [320, 390, 640, 760, 761, 1024, 1050, 1051, 1280, 1366, 1440, 1920]) {
   test(`navigation fits and remains usable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 })
-    await page.goto('/orders')
+    await page.goto('/payments')
+    await expect(page).toHaveURL(/\/orders$/)
     await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     const nav = page.getByRole('navigation', { name: 'Navegación principal' })
@@ -26,6 +27,7 @@ for (const width of [320, 390, 640, 760, 761, 1024, 1050, 1051, 1280, 1366, 1440
       await trigger.click()
       const dialog = page.getByRole('dialog', { name: 'Menú principal' })
       await expect(dialog).toBeVisible()
+      await expect(dialog.getByRole('link', { name: 'Pagos y deuda' })).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Cerrar menú' })).toBeFocused()
       await expect(page.getByRole('button', { name: 'Salir' })).toBeVisible()
       await expect(dialog.getByRole('link', { name: 'Pedidos' })).toHaveAttribute('aria-current', 'page')
@@ -49,6 +51,7 @@ for (const width of [320, 390, 640, 760, 761, 1024, 1050, 1051, 1280, 1366, 1440
       await expect(page.locator('.compact-brand')).toContainText('Productos')
     } else {
       await expect(nav).toBeVisible()
+      await expect(nav.getByRole('link', { name: 'Pagos y deuda' })).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Abrir menú' })).toHaveCount(0)
       await nav.getByRole('link', { name: 'Auditoría' }).scrollIntoViewIfNeeded()
       await expect(nav.getByRole('link', { name: 'Auditoría' })).toBeInViewport()
@@ -104,6 +107,7 @@ test('compact navigation respects permissions and reduced motion', async ({ page
   await expect(dialog.getByRole('link', { name: 'Resumen' })).toHaveCount(0)
   await expect(dialog.getByRole('link', { name: 'Usuarios' })).toHaveCount(0)
   await expect(dialog.getByRole('link', { name: 'Clientes' })).toHaveCount(0)
+  await expect(dialog.getByRole('link', { name: 'Pagos y deuda' })).toHaveCount(0)
   for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
     await expect(dialog.getByRole('link', { name })).toHaveCount(0)
   }

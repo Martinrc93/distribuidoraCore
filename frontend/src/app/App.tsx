@@ -18,7 +18,6 @@ import OrderCreatePage from '../features/orders/OrderCreatePage'
 import OrdersPage from '../features/orders/OrdersPage'
 import OrderDetailPage from '../features/orders/OrderDetailPage'
 import SalesPage from '../features/sales/SalesPage'
-import PaymentsPage from '../features/payments/PaymentsPage'
 import SellersPage from '../features/admin/SellersPage'
 import CreditLimitPage from '../features/admin/CreditLimitPage'
 import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
@@ -84,7 +83,7 @@ export default function App() {
         <Route path="/products" element={<RequireAdmin><ProductsPage /></RequireAdmin>} />
         <Route path="/catalog" element={<RequireAdmin><CatalogAdminPage /></RequireAdmin>} />
         <Route path="/price-lists" element={<RequireAdmin><PriceListsPage /></RequireAdmin>} />
-        <Route path="/payments" element={<PaymentsPage />} />
+        <Route path="/payments" element={<Navigate to="/orders" replace />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/sellers" element={<SellersPage />} />
         <Route path="/admin/zones" element={<RequireAdmin><ZonesPage /></RequireAdmin>} />

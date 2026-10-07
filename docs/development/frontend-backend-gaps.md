@@ -1,6 +1,6 @@
 # Funcionalidades frontend pendientes por soporte/API
 
-Estado actualizado: 2026-09-25. Este documento distingue funciones ya conectadas,
+Estado actualizado: 2026-10-07. Este documento distingue funciones ya conectadas,
 funciones con comandos pero sin una lectura suficiente y operaciones que no son
 de usuario final. La interfaz no simula respuestas faltantes.
 
@@ -18,7 +18,9 @@ de usuario final. La interfaz no simula respuestas faltantes.
 
 - **Deudas por cliente y pago a deuda específica:** `GET
   /api/customers/{customerId}/debts` entrega saldos abiertos paginados por ID;
-  `PaymentsPage` ofrece la imputación por venta además de FIFO. Requiere
+  la API permite imputación por venta además de FIFO. La pantalla independiente
+  `PaymentsPage` se retiró de la navegación y `/payments` redirige a Pedidos
+  desde el 2026-10-07. La API requiere
   `SALE_PAYMENT` o `ADMIN_ALL` y aplica alcance seller. Contrato:
   [`read-projections.md`](../api/read-projections.md).
 - **Detalle y devolución de venta:** `GET /api/sales/{saleId}` devuelve IDs y
