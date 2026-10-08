@@ -92,11 +92,11 @@ export default function OrderDetailPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Operación" title={order.number} description={`${order.customer} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href="/orders">Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} />
+    <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href="/orders">Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {Number(order.previousBalanceAmount ?? 0) > 0 && <Panel title="Importe para la entrega"><dl className="confirmation-result"><dt>Total del pedido</dt><dd>{money(order.total)}</dd><dt>Saldo anterior incluido</dt><dd>{money(order.previousBalanceAmount)}</dd><dt>Total a cobrar</dt><dd>{money(order.collectionTotal ?? order.total + Number(order.previousBalanceAmount))}</dd></dl></Panel>}
     <div className="stats-grid compact">
-      <article className="stat-card"><span>Estado del pedido</span><strong><Badge tone="soft">{order.status}</Badge></strong><small>{order.customer}</small></article>
+      <article className="stat-card"><span>Estado del pedido</span><strong><Badge tone="soft">{order.status}</Badge></strong><small className="[overflow-wrap:anywhere]">{order.customer}</small></article>
       <article className="stat-card"><span>Total de la venta</span><strong>{money(sale.total)}</strong><small>Venta {sale.number}</small></article>
       <article className="stat-card"><span>Saldo de la venta</span><strong>{money(sale.balance)}</strong><small>{money(sale.paid)} cobrados</small></article>
     </div>

@@ -18,9 +18,11 @@ try {
         $env:DB_PASSWORD = $database.POSTGRES_PASSWORD
     }
 
-    Write-Host 'Ejecutando la seed demo: fecha actual de Buenos Aires, desde 30 días antes hasta 30 días después.'
+    Write-Host 'Ejecutando la seed demo: ventas con fechas actuales y pedidos a proveedores del último mes.'
     $seedArguments = '--spring.profiles.active=local --app.seed-demo=true --refresh-demo-dates --app.seed-only=true --server.port=0 --app.outbox.worker.enabled=false --app.notifications.retention.enabled=false'
-    & mvn -f (Join-Path $ProjectRoot 'backend\pom.xml') spring-boot:run "-Dspring-boot.run.arguments=$seedArguments"
+    # Keep compilation separate from any running backend's mapped class files.
+    $seedBuildDirectory = Join-Path $ProjectRoot 'frontend\test-results\seed-runtime'
+    & mvn -f (Join-Path $ProjectRoot 'backend\pom.xml') "-Disolated.build.dir=$seedBuildDirectory" spring-boot:run "-Dspring-boot.run.arguments=$seedArguments"
     if ($LASTEXITCODE -ne 0) { throw 'La ejecución de la seed falló.' }
 }
 finally {

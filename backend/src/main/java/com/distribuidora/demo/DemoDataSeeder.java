@@ -13,6 +13,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
@@ -20,6 +23,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -41,6 +46,9 @@ public class DemoDataSeeder implements ApplicationRunner {
         "Marca Demo 01", "Marca Demo 02", "Marca Demo 03", "Marca Demo 04", "Marca Demo 05", "Marca Demo 06"
     };
     private static final int ZONE_COUNT = 10;
+    private static final int SUPPLIER_COUNT = 12;
+    private static final int SUPPLIER_ORDER_COUNT = 120;
+    private static final String PURCHASING_SEED_PREFIX = "demo-supplier-orders-v1:";
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
@@ -82,6 +90,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             if (args.containsOption("refresh-demo-dates")) {
                 refreshDemoDates(today);
             }
+            ensureDemoPurchasing(today, args.containsOption("refresh-demo-dates"));
             return;
         }
 
@@ -94,6 +103,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         ensureProductPrices();
         List<UUID> customers = insertCustomers(sellerProfiles);
         insertSales(products, customers, sellerProfiles, today);
+        ensureDemoPurchasing(today, false);
         jdbc.update("insert into demo.seed_runs(name, created_at) values (?, ?)", SEED_NAME, timestamp(Instant.now()));
         log.info("Created {} demo orders and sales between {} and {}", SALE_COUNT,
             today.minusDays(DAYS_BEFORE), today.plusDays(DAYS_AFTER));
@@ -159,6 +169,113 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     private String zoneName(int index) {
         return "Zona Demo %02d".formatted(index);
+    }
+
+    private void ensureDemoPurchasing(LocalDate today, boolean refreshDates) {
+        for (int index = 1; index <= SUPPLIER_COUNT; index++) {
+            UUID supplierId = demoSupplierId(index);
+            jdbc.update("""
+                insert into supplier.suppliers(id, name, phone, email, address, created_at, updated_at)
+                values (?, ?, ?, ?, ?, ?, ?) on conflict (id) do nothing
+                """, supplierId, "Proveedor Demo %02d".formatted(index), "+54 11 4000-%04d".formatted(index),
+                "proveedor%02d@distribuidora.local".formatted(index), "Dirección Demo %03d".formatted(index),
+                timestamp(clock.instant()), timestamp(clock.instant()));
+            // Keep a fifth of demo products without suppliers, and give some two suppliers.
+            jdbc.update("""
+                insert into catalog.product_suppliers(product_id, supplier_id)
+                select p.id, ? from generate_series(1, ?) as seed(index)
+                join catalog.products p on p.description = 'Producto Demo ' || lpad(seed.index::text, 3, '0')
+                where seed.index % 5 <> 0
+                  and ((seed.index - 1) % ? + 1 = ?
+                    or (seed.index % 3 = 0 and seed.index % ? + 1 = ?))
+                  and exists (select 1 from inventory.stock_movements m
+                              where m.product_id = p.id and m.reference_type = 'DEMO_SEED')
+                on conflict do nothing
+                """, supplierId, PRODUCT_COUNT, SUPPLIER_COUNT, index, SUPPLIER_COUNT, index);
+        }
+        for (int index = 1; index <= SUPPLIER_ORDER_COUNT; index++) {
+            UUID supplierId = demoSupplierId((index - 1) % SUPPLIER_COUNT + 1);
+            String key = PURCHASING_SEED_PREFIX + "%03d".formatted(index);
+            LocalDate date = supplierOrderDate(today, index);
+            var existing = jdbc.queryForList("select id, supplier_id from purchasing.supplier_orders where idempotency_key = ?", key);
+            if (!existing.isEmpty()) {
+                if (refreshDates) {
+                    UUID orderId = (UUID) existing.getFirst().get("id");
+                    var lines = jdbc.queryForList("select product_id, quantity, unit_cost from purchasing.supplier_order_items where order_id = ?", orderId);
+                    jdbc.update("""
+                        update purchasing.supplier_orders set order_date = ?, created_at = ?, request_fingerprint = ?
+                        where id = ?
+                        """, date, timestamp(date.atTime(LocalTime.NOON).atZone(ZONE).toInstant()),
+                        purchasingFingerprint((UUID) existing.getFirst().get("supplier_id"), date, lines), orderId);
+                }
+                continue;
+            }
+            var products = jdbc.queryForList("""
+                select p.id, p.name, p.cost from catalog.products p
+                join catalog.product_suppliers ps on ps.product_id = p.id
+                where ps.supplier_id = ? and p.status = 'ACTIVE'
+                  and exists (select 1 from inventory.stock_movements m
+                              where m.product_id = p.id and m.reference_type = 'DEMO_SEED')
+                order by p.description, p.id
+                """, supplierId);
+            if (products.isEmpty()) continue;
+            var lines = new ArrayList<Map<String, Object>>();
+            BigDecimal total = BigDecimal.ZERO.setScale(4);
+            for (int line = 0; line < Math.min(2 + index % 4, products.size()); line++) {
+                var product = products.get((index + line) % products.size());
+                BigDecimal quantity = BigDecimal.valueOf(5 + (index + line) % 20);
+                BigDecimal cost = ((BigDecimal) product.get("cost"))
+                    .multiply(BigDecimal.valueOf(90 + index % 6, 2)).setScale(4, RoundingMode.HALF_UP);
+                BigDecimal lineTotal = quantity.multiply(cost).setScale(4, RoundingMode.HALF_UP);
+                lines.add(Map.of("product_id", product.get("id"), "name", product.get("name"),
+                    "quantity", quantity, "unit_cost", cost, "line_total", lineTotal));
+                total = total.add(lineTotal);
+            }
+            UUID orderId = UUID.randomUUID();
+            var inserted = jdbc.queryForList("""
+                insert into purchasing.supplier_orders(id, order_number, supplier_id, supplier_name, order_date,
+                    total, idempotency_key, request_fingerprint, created_by, created_at)
+                values (?, 'PRV-' || lpad(nextval('purchasing.supplier_order_number_seq')::text, 8, '0'), ?,
+                    (select name from supplier.suppliers where id = ?), ?, ?, ?, ?,
+                    (select id from identity.users where email = 'admin1@distribuidora.local'), ?)
+                on conflict (idempotency_key) do nothing returning id
+                """, orderId, supplierId, supplierId, date, total, key, purchasingFingerprint(supplierId, date, lines),
+                timestamp(date.atTime(LocalTime.NOON).atZone(ZONE).toInstant()));
+            if (inserted.isEmpty()) continue;
+            for (var line : lines) {
+                jdbc.update("""
+                    insert into purchasing.supplier_order_items(id, order_id, product_id, product_name, quantity, unit_cost, line_total)
+                    values (?, ?, ?, ?, ?, ?, ?)
+                    """, UUID.randomUUID(), orderId, line.get("product_id"), line.get("name"), line.get("quantity"),
+                    line.get("unit_cost"), line.get("line_total"));
+            }
+        }
+        log.info("Updated demo purchasing: {} suppliers, up to {} supplier orders between {} and {}",
+            SUPPLIER_COUNT, SUPPLIER_ORDER_COUNT, today.minusDays(29), today);
+    }
+
+    private UUID demoSupplierId(int index) {
+        return UUID.nameUUIDFromBytes(("demo-supplier-v1:" + index).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private LocalDate supplierOrderDate(LocalDate today, int index) {
+        // Every supplier has ten orders across the month, including one today.
+        int batch = (index - 1) / SUPPLIER_COUNT;
+        return today.minusDays(29 - batch * 29 / (SUPPLIER_ORDER_COUNT / SUPPLIER_COUNT - 1));
+    }
+
+    private String purchasingFingerprint(UUID supplierId, LocalDate date, List<Map<String, Object>> lines) {
+        String values = lines.stream().sorted(Comparator.comparing(line -> line.get("product_id").toString()))
+            .map(line -> "|" + line.get("product_id") + ":"
+                + ((BigDecimal) line.get("quantity")).stripTrailingZeros().toPlainString() + ":"
+                + ((BigDecimal) line.get("unit_cost")).stripTrailingZeros().toPlainString())
+            .reduce("", String::concat);
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest((supplierId + "|" + date + values).getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private void ensureProductPrices() {
@@ -299,8 +416,9 @@ public class DemoDataSeeder implements ApplicationRunner {
                 lines.add(new Line(productId, (String) product.get("name"), quantity, price, lineTotal));
             }
             String status = index % 10 == 0 ? "DELIVERED" : "CONFIRMED";
-            jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at) values (?, ?, ?, ?, ?, ?, 0, ?, ?)",
-                orderId, "PED-%05d".formatted(index), customerId, sellerProfiles.get(index % sellerProfiles.size()), status, total, total, timestamp(createdAt));
+            String orderNumber = jdbc.queryForObject("select orders.next_customer_order_number(?)", String.class, customerId);
+            jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, legacy_order_number) values (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+                orderId, orderNumber, customerId, sellerProfiles.get(index % sellerProfiles.size()), status, total, total, timestamp(createdAt), "PED-%05d".formatted(index));
             jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
                 saleId, "V-%06d".formatted(index), orderId, customerId, status, total, total.multiply(BigDecimal.valueOf(index % 3 == 0 ? 0.5 : 1)), timestamp(createdAt));
             for (Line line : lines) {
@@ -336,7 +454,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         List<SeedDates> dates = jdbc.query("""
             SELECT o.id AS order_id, s.id AS sale_id, seed.index, s.created_at
             FROM generate_series(1, 1000) AS seed(index)
-            JOIN orders.orders o ON o.order_number = 'PED-' || lpad(seed.index::text, 5, '0')
+            JOIN orders.orders o ON o.legacy_order_number = 'PED-' || lpad(seed.index::text, 5, '0')
             JOIN sale.sales s ON s.order_id = o.id
                 AND s.sale_number = 'V-' || lpad(seed.index::text, 6, '0')
             """, (rs, rowNum) -> new SeedDates(rs.getObject("order_id", UUID.class),

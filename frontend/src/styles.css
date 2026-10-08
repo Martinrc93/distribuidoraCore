@@ -100,6 +100,8 @@
   h2 { @apply mb-[5px] text-[15px] tracking-[-.015em]; }
   h3 { @apply text-[14px] mb-[5px]; }
   .page-header p, .panel-header p, .section-heading p { @apply text-muted text-[13px] mb-[0]; }
+  .order-customer-header .page-header > div:first-child { @apply min-w-0; }
+  .order-customer-header h1 { @apply [overflow-wrap:anywhere]; }
   .page-actions { @apply flex gap-[8px] flex-wrap; }
   .customer-form-actions { @apply [grid-column:1_/_-1] items-center justify-between flex-nowrap [border-top:1px_solid_var(--line)] pt-[16px] mt-[4px]; }
   .customer-form-actions-right { @apply flex justify-end gap-[10px] ml-auto; }

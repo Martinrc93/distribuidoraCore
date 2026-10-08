@@ -51,6 +51,7 @@ class CustomerReadServiceTest {
         jdbc.update("insert into customer.customers values (?, 'Almacén Norte', '30-123', 'cliente@example.test', '123456', 'San Martín 100', 'Centro', ?, ?, 100.50, 'INACTIVE', ?)", customerId, sellerId, priceList, Timestamp.from(Instant.parse("2025-01-01T12:00:00Z")));
         jdbc.update("insert into customer.customers (id, business_name, seller_id, balance, status) values (?, 'Almacén Norte', ?, 0, 'ACTIVE')", otherCustomer, otherSeller);
         service = new CustomerReadService(jdbc, new CurrentUserAccess(jdbc));
+        jdbc.execute("alter table customer.customers add customer_number integer default 1");
         authenticate(userId, "ADMIN_ALL");
     }
 
@@ -61,6 +62,7 @@ class CustomerReadServiceTest {
     void returnsAllStoredDetailsIncludingInactiveCustomerAndAssignedList() {
         var result = service.customer(customerId);
         assertThat(result.get("id")).isEqualTo(customerId);
+        assertThat(result.get("number")).isEqualTo("0001");
         assertThat(result.get("email")).isEqualTo("cliente@example.test");
         assertThat(result.get("phone")).isEqualTo("123456");
         assertThat(result.get("address")).isEqualTo("San Martín 100");

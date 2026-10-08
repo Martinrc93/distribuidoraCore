@@ -72,7 +72,8 @@ test('admin can create a customer, price a product, confirm an order and open it
   const orderResponse = page.waitForResponse((response) => response.url().endsWith('/api/orders/confirm') && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Confirmar pedido' }).click()
   expect((await orderResponse).ok()).toBeTruthy()
-  await expect(page.getByRole('heading', { name: /ORD-/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: customerName, exact: true })).toBeVisible()
+  await expect(page.locator('.order-customer-header p')).toContainText(/Pedido \d{9}/)
   await page.getByRole('link', { name: 'Ver pedido' }).click()
   await expect(page.getByText(productName)).toBeVisible()
 

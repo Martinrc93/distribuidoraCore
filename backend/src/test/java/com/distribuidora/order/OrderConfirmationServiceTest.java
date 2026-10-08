@@ -8,6 +8,7 @@ import com.distribuidora.order.application.OrderConfirmationService;
 import com.distribuidora.pricing.application.PricingQueryService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -43,6 +44,12 @@ class OrderConfirmationServiceTest {
     private final AuditService audit = mock(AuditService.class);
     private final OrderConfirmationService service = new OrderConfirmationService(jdbc, pricing, calculation, inventory, audit);
 
+    @BeforeEach
+    void numberOrders() {
+        when(jdbc.queryForObject(eq("select orders.next_customer_order_number(?)"), eq(String.class), any(UUID.class)))
+            .thenReturn("000100004");
+    }
+
     @AfterEach
     void clearAuthentication() {
         SecurityContextHolder.clearContext();
@@ -69,6 +76,7 @@ class OrderConfirmationServiceTest {
         var saleInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
         var ledgerInsert = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
+        assertThat(orderInsert.getValue()[1]).isEqualTo("000100004");
         verify(jdbc).update(contains("insert into sale.sales"), saleInsert.capture());
         verify(jdbc).update(contains("insert into customer.account_ledger"), ledgerInsert.capture());
         Timestamp registeredAt = (Timestamp) orderInsert.getValue()[7];

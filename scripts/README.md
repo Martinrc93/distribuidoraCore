@@ -26,6 +26,27 @@ La seed incluye 3 categorías (Bebidas, Almacén y Limpieza), 6 marcas demo y
 y los clientes entre las zonas. Las ejecuciones posteriores completan las
 asignaciones faltantes y reutilizan los registros existentes sin duplicarlos.
 
+También incluye 12 proveedores demo y 120 pedidos a proveedores, con 10 pedidos
+por proveedor entre hoy menos 29 días y hoy. Los productos demo tienen cero, uno
+o dos proveedores: una quinta parte queda sin asociación para probar el campo
+opcional. Los pedidos guardan cantidades, nombres y costos históricos inferiores
+a los actuales, para probar «Cargar pedido anterior» con costos actualizados.
+La gestión de proveedores y sus pedidos conserva el acceso exclusivo del admin.
+No se crean reglas de descuento, pagos ni movimientos de stock por compras.
+
+Al repetir el comando, se agregan los datos de compras faltantes y se actualizan
+solo las fechas de sus pedidos demo, conservando IDs, líneas e importes. Los
+proveedores y pedidos cargados manualmente se conservan. Las contraseñas de
+usuarios existentes no se cambian. La compilación utiliza una carpeta aislada
+en `frontend/test-results/seed-runtime` para poder ejecutar la seed con el
+backend abierto sin bloquear sus archivos `.class`.
+
+Cada cliente tiene un número estable de cuatro dígitos. Sus pedidos concatenan
+ese número y un correlativo propio de cinco dígitos, sin separadores; por ejemplo,
+cliente `0001`, cuarto pedido `00004`: `000100004`. La seed usa la misma
+numeración que el alta normal. Las referencias `PED-…` se conservan internamente
+como alias para identificar sus registros al actualizar fechas sin renumerarlos.
+
 ## Iniciar el entorno local
 
 ```powershell

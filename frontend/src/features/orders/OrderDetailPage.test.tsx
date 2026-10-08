@@ -15,7 +15,7 @@ function response(body: unknown, status = 200) {
 }
 
 const detail = {
-  order: { id: 'order-1', number: 'PED-001', customerId: 'customer-1', customer: 'Almacén Norte', seller: 'Lucía', status: 'CONFIRMED', subtotal: 300, discount: 0, total: 300, customerBalance: 300, date: '2026-09-24T10:00:00Z' },
+  order: { id: 'order-1', number: '000100004', customerId: 'customer-1', customer: 'Almacén Norte', seller: 'Lucía', status: 'CONFIRMED', subtotal: 300, discount: 0, total: 300, customerBalance: 300, date: '2026-09-24T10:00:00Z' },
   items: [{ productId: 'product-1', productName: 'Harina', quantity: 2, unitPrice: 150, lineTotal: 300, priceListId: 'list-1', priceListCode: 'MAYORISTA', lineDiscountPercent: 0 }],
   sale: { id: 'sale-1', number: 'VEN-001', status: 'CONFIRMED', total: 300, paid: 100, balance: 200, date: '2026-09-24T10:00:00Z' },
   payments: [{ id: 'payment-1', amount: 100, method: 'CASH', transferReference: null, date: '2026-09-24T10:00:00Z' }],
@@ -47,6 +47,14 @@ describe('OrderDetailPage', () => {
   afterEach(() => { cleanup(); sessionStorage.clear() })
   beforeEach(() => { vi.restoreAllMocks() })
 
+  it('uses the customer as the main heading and keeps the order number underneath', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => response(detail))
+    renderPage()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Almacén Norte' })).toBeInTheDocument()
+    expect(document.querySelector('.order-customer-header p')).toHaveTextContent('Pedido 000100004')
+    expect(screen.queryByRole('heading', { name: '000100004' })).not.toBeInTheDocument()
+  })
+
   it('opens the editing form directly from its URL for an admin', async () => {
     vi.spyOn(global, 'fetch').mockImplementation((input) => String(input) === '/api/orders/order-1' ? response(detail) : catalogResponse(input))
     renderPage(['ADMIN_ALL'], '/orders/order-1?edit=true')
@@ -75,7 +83,7 @@ describe('OrderDetailPage', () => {
     vi.spyOn(global, 'fetch').mockImplementation(() => response({ ...detail, deliveryAttempts }))
     renderPage(['ORDER_CREATE'])
 
-    await screen.findByRole('heading', { name: 'PED-001' })
+    await screen.findByRole('heading', { name: 'Almacén Norte', level: 1 })
     expect(screen.queryByRole('heading', { name: 'Intentos de entrega' })).not.toBeInTheDocument()
     expect(screen.queryByText('Todavía no hay intentos')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Productos del pedido' })).toBeInTheDocument()
@@ -101,8 +109,8 @@ describe('OrderDetailPage', () => {
     vi.spyOn(global, 'fetch').mockImplementation(() => response(detail))
     renderPage(['ORDER_CREATE'])
 
-    expect(await screen.findByRole('heading', { name: 'PED-001' })).toBeInTheDocument()
-    expect(screen.getByText('Almacén Norte')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Almacén Norte', level: 1 })).toBeInTheDocument()
+    expect(screen.getAllByText('Almacén Norte')).toHaveLength(2)
     expect(screen.getByText('Harina')).toBeInTheDocument()
     expect(screen.getByText(/VEN-001/)).toBeInTheDocument()
     expect(screen.getByText('MAYORISTA')).toBeInTheDocument()

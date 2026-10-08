@@ -46,6 +46,33 @@ class DemoDataSeederPostgresTest {
         transaction.executeWithoutResult(status -> seeder.run(new DefaultApplicationArguments()));
         assertDateWindow(jdbc, LocalDate.of(2026, 10, 1));
         assertReferenceData(jdbc);
+        assertPurchasingData(jdbc, LocalDate.of(2026, 10, 1));
+
+        UUID realSupplierId = UUID.randomUUID();
+        UUID realPurchaseId = UUID.randomUUID();
+        Timestamp realPurchaseDate = Timestamp.from(Instant.parse("2026-10-10T16:00:00Z"));
+        jdbc.update("""
+            insert into supplier.suppliers(id, name, email, created_at, updated_at)
+            values (?, 'Real supplier', 'real@example.test', ?, ?)
+            """, realSupplierId, realPurchaseDate, realPurchaseDate);
+        jdbc.update("""
+            insert into purchasing.supplier_orders(id, order_number, supplier_id, supplier_name, order_date,
+                total, idempotency_key, request_fingerprint, created_at)
+            values (?, 'REAL-PURCHASE', ?, 'Real supplier', '2026-10-10', 10, 'real-purchase', repeat('a', 64), ?)
+            """, realPurchaseId, realSupplierId, realPurchaseDate);
+        jdbc.update("""
+            insert into purchasing.supplier_order_items(id, order_id, product_id, product_name, quantity, unit_cost, line_total)
+            select ?, ?, id, name, 1, 10, 10 from catalog.products order by id limit 1
+            """, UUID.randomUUID(), realPurchaseId);
+        var realSupplierBefore = jdbc.queryForMap("select * from supplier.suppliers where id = ?", realSupplierId);
+        var realPurchaseBefore = jdbc.queryForMap("select * from purchasing.supplier_orders where id = ?", realPurchaseId);
+        var purchasingBefore = jdbc.queryForList("""
+            select id, order_number, supplier_id, supplier_name, total, idempotency_key, created_by
+            from purchasing.supplier_orders order by id
+            """);
+        var purchaseItemsBefore = jdbc.queryForList("select * from purchasing.supplier_order_items order by id");
+        var associationsBefore = jdbc.queryForList("select * from catalog.product_suppliers order by product_id, supplier_id");
+        var usersBefore = jdbc.queryForList("select id, password_hash, status, failed_login_attempts from identity.users order by id");
 
         // Emulate products and customers from the old seed without normalized assignments.
         jdbc.update("update catalog.products set category_id = null, brand_id = null");
@@ -61,7 +88,7 @@ class DemoDataSeederPostgresTest {
         jdbc.update("""
             insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at)
             select ?, 'ORD-REAL', customer_id, seller_id, 'CONFIRMED', 10, 0, 10, ?
-            from orders.orders where order_number = 'PED-00003'
+            from orders.orders where legacy_order_number = 'PED-00003'
             """, realOrderId, realDate);
         jdbc.update("""
             insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at)
@@ -85,7 +112,7 @@ class DemoDataSeederPostgresTest {
         var stockBefore = jdbc.queryForList("select product_id, quantity from inventory.inventory_balances order by product_id");
 
         // Simulate the old seed's historical dates before using the explicit refresh command.
-        jdbc.update("update orders.orders set created_at = created_at - interval '90 days' where order_number like 'PED-%'");
+        jdbc.update("update orders.orders set created_at = created_at - interval '90 days' where legacy_order_number like 'PED-%'");
         jdbc.update("update sale.sales set created_at = created_at - interval '90 days' where sale_number like 'V-%'");
         jdbc.update("update payment.payments set created_at = created_at - interval '90 days' where id <> ?", extraPaymentId);
         jdbc.update("update customer.account_ledger set created_at = created_at - interval '90 days' where id <> ?", extraLedgerId);
@@ -98,6 +125,16 @@ class DemoDataSeederPostgresTest {
 
         assertDateWindow(jdbc, LocalDate.of(2026, 11, 2));
         assertReferenceData(jdbc);
+        assertPurchasingData(jdbc, LocalDate.of(2026, 11, 2));
+        assertThat(jdbc.queryForMap("select * from supplier.suppliers where id = ?", realSupplierId)).isEqualTo(realSupplierBefore);
+        assertThat(jdbc.queryForMap("select * from purchasing.supplier_orders where id = ?", realPurchaseId)).isEqualTo(realPurchaseBefore);
+        assertThat(jdbc.queryForList("""
+            select id, order_number, supplier_id, supplier_name, total, idempotency_key, created_by
+            from purchasing.supplier_orders order by id
+            """)).isEqualTo(purchasingBefore);
+        assertThat(jdbc.queryForList("select * from purchasing.supplier_order_items order by id")).isEqualTo(purchaseItemsBefore);
+        assertThat(jdbc.queryForList("select * from catalog.product_suppliers order by product_id, supplier_id")).isEqualTo(associationsBefore);
+        assertThat(jdbc.queryForList("select id, password_hash, status, failed_login_attempts from identity.users order by id")).isEqualTo(usersBefore);
         assertThat(jdbc.queryForList("select id from sale.sales order by id", UUID.class)).isEqualTo(idsBefore);
         assertThat(jdbc.queryForObject("select count(*) from orders.orders", Integer.class)).isEqualTo(1001);
         assertThat(jdbc.queryForObject("select count(*) from demo.seed_runs", Integer.class)).isEqualTo(1);
@@ -137,6 +174,48 @@ class DemoDataSeederPostgresTest {
         });
         assertDateWindow(jdbc, LocalDate.now(ZONE));
         assertReferenceData(jdbc);
+        assertPurchasingData(jdbc, LocalDate.now(ZONE));
+    }
+
+    private void assertPurchasingData(JdbcTemplate jdbc, LocalDate today) {
+        assertThat(jdbc.queryForObject("select count(*) from supplier.suppliers where name like 'Proveedor Demo %'", Integer.class)).isEqualTo(12);
+        assertThat(jdbc.queryForObject("select count(*) from catalog.product_suppliers", Integer.class)).isEqualTo(533);
+        assertThat(jdbc.queryForObject("select count(distinct product_id) from catalog.product_suppliers", Integer.class)).isEqualTo(400);
+        assertThat(jdbc.queryForList("""
+            select count(*) from purchasing.supplier_orders where idempotency_key like 'demo-supplier-orders-v1:%'
+            group by supplier_id
+            """, Integer.class)).hasSize(12).containsOnly(10);
+        assertThat(jdbc.queryForObject("""
+            select min(order_date) from purchasing.supplier_orders where idempotency_key like 'demo-supplier-orders-v1:%'
+            """, LocalDate.class)).isEqualTo(today.minusDays(29));
+        assertThat(jdbc.queryForObject("""
+            select max(order_date) from purchasing.supplier_orders where idempotency_key like 'demo-supplier-orders-v1:%'
+            """, LocalDate.class)).isEqualTo(today);
+        assertThat(jdbc.queryForObject("""
+            select count(*) from purchasing.supplier_orders o
+            where o.idempotency_key like 'demo-supplier-orders-v1:%'
+              and (o.total <> (select sum(line_total) from purchasing.supplier_order_items where order_id = o.id)
+                or o.created_by <> (select id from identity.users where email = 'admin1@distribuidora.local')
+                or o.created_by is null or length(o.request_fingerprint) <> 64)
+            """, Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+            select count(*) from purchasing.supplier_order_items i
+            join purchasing.supplier_orders o on o.id = i.order_id
+            join catalog.products p on p.id = i.product_id
+            where o.idempotency_key like 'demo-supplier-orders-v1:%'
+              and (i.unit_cost >= p.cost or i.line_total <> i.quantity * i.unit_cost
+                or not exists (select 1 from catalog.product_suppliers ps
+                               where ps.product_id = i.product_id and ps.supplier_id = o.supplier_id))
+            """, Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+            select count(*) from purchasing.supplier_order_items i join purchasing.supplier_orders o on o.id = i.order_id
+            where o.idempotency_key like 'demo-supplier-orders-v1:%'
+            """, Integer.class)).isEqualTo(420);
+        assertThat(jdbc.queryForObject("""
+            select count(*) from identity.role_permissions rp join identity.roles r on r.id = rp.role_id
+            join identity.permissions p on p.id = rp.permission_id
+            where r.code = 'SELLER' and p.code = 'ADMIN_ALL'
+            """, Integer.class)).isZero();
     }
 
     private void assertReferenceData(JdbcTemplate jdbc) {

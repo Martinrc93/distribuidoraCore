@@ -1,5 +1,6 @@
 export type Customer = {
   id: string
+  number?: string
   name: string
   cuitId?: string | null
   email?: string | null

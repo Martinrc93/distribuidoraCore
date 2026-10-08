@@ -94,11 +94,8 @@ P:\dev\distribuidora\backend\src\main\java\com\distribuidora\order\application\O
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\order\application\OrderConfirmationService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\order\package-info.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\payment\package-info.java
-P:\dev\distribuidora\backend\src\main\java\com\distribuidora\pricing\api\CommercialDiscountRuleCommandController.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\pricing\api\PricingCommandController.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\pricing\api\PricingQueryController.java
-P:\dev\distribuidora\backend\src\main\java\com\distribuidora\pricing\application\CommercialDiscountRuleCommandService.java
-P:\dev\distribuidora\backend\src\main\java\com\distribuidora\pricing\application\CommercialDiscountRuleQueryService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\pricing\application\PricingCommandService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\pricing\application\PricingQueryService.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\sale\api\SaleReturnController.java
@@ -120,3 +117,5 @@ P:\dev\distribuidora\backend\src\main\java\com\distribuidora\shared\security\Cur
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\shared\web\PageResponse.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\shared\web\RequestIdContext.java
 P:\dev\distribuidora\backend\src\main\java\com\distribuidora\shared\web\RequestIdFilter.java
+P:\dev\distribuidora\backend\src\main\java\com\distribuidora\supplier\api\SupplierController.java
+P:\dev\distribuidora\backend\src\main\java\com\distribuidora\supplier\application\SupplierService.java

@@ -45,6 +45,7 @@ export default function CustomerDetailPage() {
 
   const customer = customerQuery.data
   const details = [
+    ['N.º de cliente', customer.number],
     ['Razón social', customer.name], ['CUIT', customer.cuitId], ['Mail', customer.email],
     ['Celular', customer.phone], ['Dirección', customer.address], ['Zona', customer.zone],
     ['Vendedor asignado', customer.seller || 'Sin asignar'],

@@ -174,6 +174,7 @@ public class OrderConfirmationService {
 
         UUID orderId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
+        String orderNumber = jdbc.queryForObject("select orders.next_customer_order_number(?)", String.class, customerId);
         resolved.stream().map(ResolvedLine::productId).distinct().sorted(Comparator.comparing(UUID::toString))
             .forEach(productId -> {
                 BigDecimal quantity = resolved.stream().filter(line -> line.productId().equals(productId))
@@ -185,7 +186,6 @@ public class OrderConfirmationService {
         var businessNow = now.toInstant().atZone(ZoneId.of("America/Argentina/Buenos_Aires"));
         Timestamp registeredAt = request.orderDate() == null ? now : Timestamp.from(
             request.orderDate().atTime(businessNow.toLocalTime()).atZone(businessNow.getZone()).toInstant());
-        String orderNumber = number("ORD");
         String saleNumber = number("SAL");
         jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, previous_balance_amount) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             orderId, orderNumber, customerId, sellerId, calculated.subtotal(),

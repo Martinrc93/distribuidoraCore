@@ -1,6 +1,7 @@
 package com.distribuidora.demo;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.ApplicationArguments;
@@ -29,6 +30,12 @@ class DemoDataSeederTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final DemoDataSeeder seeder = new DemoDataSeeder(jdbc, passwordEncoder, true, "secret");
+
+    @BeforeEach
+    void numberOrders() {
+        when(jdbc.queryForObject(eq("select orders.next_customer_order_number(?)"), eq(String.class), any(UUID.class)))
+            .thenReturn("000100001");
+    }
 
     @Test
     void disabledSeedDoesNotTouchDatabase() {
@@ -68,6 +75,13 @@ class DemoDataSeederTest {
         assertThat(zones.getAllValues().stream().map(values -> values[1]).toList())
             .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, 10)
                 .mapToObj(index -> "Zona Demo %02d".formatted(index)).toList());
+
+        ArgumentCaptor<Object[]> suppliers = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc, org.mockito.Mockito.times(12)).update(
+            org.mockito.ArgumentMatchers.contains("insert into supplier.suppliers("), suppliers.capture());
+        assertThat(suppliers.getAllValues().stream().map(values -> values[1]).toList())
+            .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, 12)
+                .mapToObj(index -> "Proveedor Demo %02d".formatted(index)).toList());
     }
 
     @ParameterizedTest

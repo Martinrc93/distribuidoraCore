@@ -37,6 +37,7 @@ class CustomersFiltersTest {
         customer("North inactive", "30-333", ana, 50, "INACTIVE");
         customer("South debt", "30-444", lucia, 200, "ACTIVE");
         customer("Unassigned", null, null, 10, "ACTIVE");
+        jdbc.execute("alter table customer.customers add customer_number integer default 1");
     }
 
     @Test

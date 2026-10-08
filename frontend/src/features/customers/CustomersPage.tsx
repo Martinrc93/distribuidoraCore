@@ -197,6 +197,7 @@ export default function CustomersPage() {
 
   const rows = (query.data?.content ?? []).map((customer) => ({
     id: customer.id,
+    number: customer.number ?? '',
     name: customer.name,
     cuitId: customer.cuitId ?? '-',
     seller: customer.seller ?? 'Sin asignar',
@@ -205,7 +206,7 @@ export default function CustomersPage() {
     priceListId: customer.priceListId ?? '',
   }))
   const columns: TableColumn[] = [
-    { key: 'name', label: 'Cliente', emphasis: true },
+    { key: 'name', label: 'Cliente', emphasis: true, render: (value, row) => <div className="min-w-0"><span>{value}</span>{row.number && <span className="block text-[11px] font-normal text-muted">Cliente {row.number}</span>}</div> },
     { key: 'cuitId', label: 'CUIT' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'balance', label: 'Saldo', align: 'right' },

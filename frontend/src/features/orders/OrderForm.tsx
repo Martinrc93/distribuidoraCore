@@ -384,7 +384,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   }
 
   if (responseData) return <>
-    <PageHeader eyebrow="Pedido confirmado" title={responseData.orderNumber} description="El pedido y la venta quedaron registrados." />
+    <div className="order-customer-header"><PageHeader eyebrow="Pedido confirmado" title={customer?.name ?? 'Pedido confirmado'} description={`Pedido ${responseData.orderNumber} · El pedido y la venta quedaron registrados.`} /></div>
     <Panel title="Resultado de la confirmación">
       <dl className="confirmation-result"><dt>Venta</dt><dd>{responseData.saleNumber}</dd><dt>Total</dt><dd>{money(responseData.total)}</dd><dt>Cobrado</dt><dd>{money(responseData.paid)}</dd><dt>Saldo pendiente</dt><dd>{money(responseData.balance)}</dd></dl>
       {Number(responseData.previousBalanceAmount ?? 0) > 0 && <dl className="confirmation-result"><dt>Saldo anterior para entrega</dt><dd>{money(responseData.previousBalanceAmount!)}</dd><dt>Total a cobrar con la entrega</dt><dd>{money(responseData.collectionTotal ?? responseData.total + responseData.previousBalanceAmount!)}</dd></dl>}

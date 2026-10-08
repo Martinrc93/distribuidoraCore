@@ -405,6 +405,17 @@ crear otra venta ni modificar los cobros. Cancelar vuelve al detalle; si hubo
 cambios, utiliza la confirmación compartida de descarte. Conserva las mismas
 validaciones, tabla, totales y adaptación móvil de creación. Solo admite pedidos
 y ventas confirmados, con una misma lista entre sus líneas.
+
+El detalle del pedido y el resultado de confirmación usan el nombre del cliente
+como `h1` de `PageHeader`. Debajo muestran «Pedido» y su número con la fuente
+secundaria de `13px`; el detalle también muestra la fecha. La variante local
+`.order-customer-header` permite partir nombres largos sin desbordar en móvil,
+sin cambiar encabezados de otras pantallas. El número concatena los cuatro
+dígitos del cliente y cinco del correlativo por cliente (ejemplo `000100004`).
+El listado de clientes muestra su número debajo del nombre en `11px`, y la ficha
+lo incluye como dato «N.º de cliente». Contrato en
+[`order-numbering.md`](../api/order-numbering.md).
+
 En el listado, `.table-row-actions` agrupa «Ver detalle», «Editar» y «Pasar a
 entregado». «Editar» solo aparece para administradores en pedidos confirmados.
 «Pasar a entregado» aparece en pedidos confirmados con `SALE_DELIVER` o

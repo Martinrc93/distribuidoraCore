@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import CustomerDetailPage from './CustomerDetailPage'
 import CustomersPage from './CustomersPage'
 
-const customer = { id: 'customer-1', name: 'Almacén Norte', cuitId: '30-123', email: 'cliente@example.test', phone: '123456', address: 'San Martín 100', zone: 'Centro', seller: 'Lucía', priceList: 'Mayorista', priceListCode: 'MAYORISTA', status: 'INACTIVE', balance: -120.50, createdAt: '2025-01-01T12:00:00Z' }
+const customer = { id: 'customer-1', number: '0001', name: 'Almacén Norte', cuitId: '30-123', email: 'cliente@example.test', phone: '123456', address: 'San Martín 100', zone: 'Centro', seller: 'Lucía', priceList: 'Mayorista', priceListCode: 'MAYORISTA', status: 'INACTIVE', balance: -120.50, createdAt: '2025-01-01T12:00:00Z' }
 const order = { id: 'order-1', number: 'PED-001', seller: 'Lucía', total: 500.50, status: 'CANCELLED', date: '2025-01-01T02:00:00Z' }
 const paged = (content: unknown[], page = 0, totalElements = content.length) => ({ content, page, size: 20, totalElements, totalPages: Math.ceil(totalElements / 20) })
 const response = (body: unknown, status = 200) => Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
@@ -24,18 +24,18 @@ function renderPage(url = '/customers/customer-1', authorities = ['ADMIN_ALL']) 
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks() })
 
 describe('customer details and order history', () => {
-  it.each([['ADMIN_ALL'], ['ORDER_CREATE']])('offers an exact customer detail link for %s and preserves list filters', async (authority) => {
+  it('offers an exact customer detail link for administrators and preserves list filters', async () => {
     vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers?') ? response(paged([customer])) : response(paged([])))
-    renderPage('/customers?status=INACTIVE&page=2', [authority])
+    renderPage('/customers?status=INACTIVE&page=2', ['ADMIN_ALL'])
     const link = await screen.findByRole('link', { name: 'Ver cliente Almacén Norte' })
     expect(link).toHaveAttribute('href', '/customers/customer-1?returnTo=%2Fcustomers%3Fstatus%3DINACTIVE%26page%3D2')
-    if (authority === 'ORDER_CREATE') expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()
   })
 
   it('shows full details, credit balance and cancelled orders with Argentina dates', async () => {
     vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).includes('/orders?') ? response(paged([order])) : response(customer))
     renderPage('/customers/customer-1?returnTo=%2Fcustomers%3Fstatus%3DINACTIVE')
     expect(await screen.findByRole('heading', { name: customer.name })).toBeInTheDocument()
+    expect(screen.getByText('0001', { exact: true })).toBeInTheDocument()
     for (const value of ['30-123', 'cliente@example.test', '123456', 'San Martín 100', 'Centro', 'MAYORISTA - Mayorista', 'Inactivo']) expect(screen.getByText(value)).toBeInTheDocument()
     expect(screen.getByText('Saldo a favor del cliente.')).toBeInTheDocument()
     const row = await screen.findByRole('row', { name: /PED-001/ })

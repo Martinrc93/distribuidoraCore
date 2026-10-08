@@ -23,7 +23,7 @@ public class CustomerReadService {
     public Map<String, Object> customer(UUID customerId) {
         currentUser.requireCustomerAccess(customerId);
         return jdbc.queryForMap("""
-            select c.id, c.business_name as name, c.tax_id as "cuitId",
+            select c.id, lpad(cast(c.customer_number as varchar), 4, '0') as "number", c.business_name as name, c.tax_id as "cuitId",
                    c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                    coalesce(sp.display_name, 'Sin asignar') as seller,
                    c.price_list_id as "priceListId", pl.code as "priceListCode", pl.name as "priceList",
