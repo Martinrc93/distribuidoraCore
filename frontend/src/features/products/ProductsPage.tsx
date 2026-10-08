@@ -9,6 +9,8 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { SearchableSelect } from '../../shared/components/SearchableSelect'
+import { SupplierSelect } from '../../shared/components/EntitySelect'
+import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type Product = {
@@ -22,6 +24,7 @@ type Product = {
   cost?: number
   stock?: number
   status?: string
+  suppliers?: Array<{ id: string; name: string }>
 }
 type Movement = { id: string; movementType: string; quantity: number; reason: string; referenceType?: string; referenceId?: string; date: string }
 type Row = Record<string, string>
@@ -34,6 +37,7 @@ type ProductFormValues = {
   brandId: string
   cost: string
   prices: Record<string, string>
+  supplierIds: string[]
 }
 
 const PRICE_LIST_QUERY_KEY = ['/api/pricing/lists?page=0&size=20']
@@ -47,6 +51,7 @@ function initialFormValues(initial?: Product): ProductFormValues {
     brandId: initial?.brandId ?? '',
     cost: initial?.cost === undefined ? '' : String(initial.cost),
     prices: {},
+    supplierIds: initial?.suppliers?.map((supplier) => supplier.id) ?? [],
   }
 }
 
@@ -108,6 +113,9 @@ function ProductForm({
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [affectedLists, setAffectedLists] = useState<AffectedPriceList[]>([])
+  const suppliersQuery = useQuery({ queryKey: ['/api/suppliers', 'product-options'], queryFn: () => apiGetAllPages<{ id: string; name: string }>('/api/suppliers?page=0&size=100'), retry: false })
+  const supplierOptions = [...new Map([...(initial?.suppliers ?? []), ...(suppliersQuery.data?.content ?? [])].map((supplier) => [supplier.id, supplier])).values()]
+  const suppliersChanged = [...form.supplierIds].sort().join(',') !== [...(initial?.suppliers?.map((supplier) => supplier.id) ?? [])].sort().join(',')
   const categoryOptions = categories.filter((category) => category.status === 'ACTIVE' || category.id === initial?.categoryId)
   const brandOptions = brands.filter((brand) => brand.status === 'ACTIVE' || brand.id === initial?.brandId)
   const brandName = brands.find((brand) => brand.id === form.brandId)?.name ?? ''
@@ -119,7 +127,7 @@ function ProductForm({
     setError('')
   }, [initial])
 
-  function change(field: keyof Omit<ProductFormValues, 'prices'>, value: string) {
+  function change(field: keyof Omit<ProductFormValues, 'prices' | 'supplierIds'>, value: string) {
     setForm((current) => ({
       ...current,
       [field]: value,
@@ -175,6 +183,7 @@ function ProductForm({
         ...(prices.length > 0 ? { prices } : {}),
         categoryId: form.categoryId || null,
         brandId: form.brandId || null,
+        ...(suppliersChanged ? { supplierIds: form.supplierIds } : {}),
       }
       if (initial) await apiPut(`/api/products/${initial.id}`, body)
       else await apiPost('/api/products', body)
@@ -208,6 +217,15 @@ function ProductForm({
       <div className="field min-w-0 content-start"><span>Nombre</span><output className="read-only-field min-w-0 [overflow-wrap:anywhere]" aria-label="Nombre" aria-describedby="product-name-help" aria-live="polite">{generatedName || 'Marca + descripción'}</output><small id="product-name-help" className="helper-text m-0 font-normal">Se genera automáticamente con la marca y la descripción.</small></div>
       <label className="field"><span>Costo</span><input className="input" type="text" inputMode="decimal" value={form.cost} onChange={(event) => change('cost', event.target.value)} required disabled={saving} /></label>
       {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}</span><input className="input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required disabled={saving} /></label>)}
+      <div className="col-span-full min-w-0 grid gap-[8px]">
+        <SupplierSelect mode="selection" label="Proveedores (opcional)" emptyLabel="Agregar proveedor..." value="" options={supplierOptions.filter((supplier) => !form.supplierIds.includes(supplier.id))}
+          loading={suppliersQuery.isLoading} disabled={saving || suppliersQuery.isError} onChange={(id) => { if (id) setForm((current) => ({ ...current, supplierIds: [...current.supplierIds, id] })) }} />
+        {suppliersQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los proveedores. <Button variant="link" type="button" disabled={saving} onClick={() => void suppliersQuery.refetch()}>Reintentar proveedores</Button></p>}
+        {form.supplierIds.length > 0 ? <ul className="m-0 grid gap-[6px] list-none p-0">{form.supplierIds.map((id) => <li className="flex items-center justify-between gap-[8px] rounded-[5px] border border-line bg-canvas px-[12px] py-[6px]" key={id}>
+          <span className="min-w-0 text-[13px] [overflow-wrap:anywhere]">{supplierOptions.find((supplier) => supplier.id === id)?.name ?? 'Proveedor no disponible'}</span>
+          <Button variant="link" type="button" disabled={saving} aria-label={`Quitar proveedor ${supplierOptions.find((supplier) => supplier.id === id)?.name ?? id}`} onClick={() => setForm((current) => ({ ...current, supplierIds: current.supplierIds.filter((supplierId) => supplierId !== id) }))}>Quitar</Button>
+        </li>)}</ul> : <p className="helper-text m-0">El producto puede guardarse sin proveedores asignados.</p>}
+      </div>
       {optionsError && <p className="error-text" role="alert">No se pudieron cargar las listas, marcas o categorías activas.</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="page-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar producto' : 'Desactivar producto'}</Button>}<Button variant="secondary" type="button" onClick={onDone} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || optionsLoading}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
@@ -307,9 +325,10 @@ export default function ProductsPage() {
     cost: money(product.cost),
     stock: String(product.stock ?? 0),
     status: product.status ?? 'ACTIVE',
+    suppliers: product.suppliers?.map((supplier) => supplier.name).join(', ') ?? '',
   }))
   const columns: TableColumn[] = [
-    { key: 'name', label: 'Producto', emphasis: true },
+    { key: 'name', label: 'Producto', emphasis: true, render: (value, row) => <div className="min-w-0"><span className="block truncate" title={value}>{value}</span>{isAdmin && row.suppliers && <span className="block truncate text-[11px] font-normal text-muted" title={row.suppliers}>Proveedores: {row.suppliers}</span>}</div> },
     { key: 'category', label: 'Categoría' },
     { key: 'brand', label: 'Marca' },
     ...(isAdmin ? [{ key: 'cost', label: 'Costo', align: 'right' as const }] : []),

@@ -30,6 +30,9 @@ class ProductFiltersTest {
         jdbc = new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1", "sa", ""));
         jdbc.execute("create schema catalog");
         jdbc.execute("create schema inventory");
+        jdbc.execute("create schema supplier");
+        jdbc.execute("create table supplier.suppliers(id uuid primary key, name varchar)");
+        jdbc.execute("create table catalog.product_suppliers(product_id uuid, supplier_id uuid)");
         jdbc.execute("create table catalog.categories(id uuid primary key, name varchar)");
         jdbc.execute("create table catalog.products(id uuid primary key, name varchar, category varchar, category_id uuid, brand_id uuid, presentation varchar, status varchar, cost decimal, description varchar)");
         jdbc.execute("create table inventory.inventory_balances(product_id uuid primary key, quantity decimal(12, 2))");
@@ -71,6 +74,18 @@ class ProductFiltersTest {
         assertThat(negative.content()).extracting(row -> row.get("name")).containsExactly("Flour Negative");
         assertThat(negative.totalElements()).isEqualTo(1);
         assertThat(service.products(0, 20, "", true, null, null, StockFilter.ALL).totalElements()).isEqualTo(8);
+    }
+
+    @Test
+    void includesOptionalSupplierNamesAndIdsForOnlyTheVisibleProductPage() {
+        UUID supplier = UUID.randomUUID();
+        UUID product = jdbc.queryForObject("select id from catalog.products where name='Flour A'", UUID.class);
+        jdbc.update("insert into supplier.suppliers values (?, 'North supplier')", supplier);
+        jdbc.update("insert into catalog.product_suppliers values (?, ?)", product, supplier);
+        var first = service.products(0,1,"flour",true,brand,category,StockFilter.POSITIVE);
+        var second = service.products(1,1,"flour",true,brand,category,StockFilter.POSITIVE);
+        assertThat(first.content().getFirst().get("suppliers")).isEqualTo(List.of(java.util.Map.of("id",supplier,"name","North supplier")));
+        assertThat(second.content().getFirst().get("suppliers")).isEqualTo(List.of());
     }
 
     @Test

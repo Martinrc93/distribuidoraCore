@@ -15,13 +15,19 @@ type EntitySelectProps = {
   describedBy?: string
 }
 
-function EntitySelect({ entity, label, mode = 'filter', emptyLabel, ...props }: EntitySelectProps & { entity: 'customer' | 'seller' }) {
-  const customer = entity === 'customer'
+const entityLabels = {
+  customer: { filter: 'Buscar por cliente', all: 'Todos los clientes', select: 'Seleccionar cliente...', unavailable: 'Cliente no disponible', loading: 'Cargando clientes…' },
+  seller: { filter: 'Buscar por vendedor', all: 'Todos los vendedores', select: 'Seleccionar vendedor...', unavailable: 'Vendedor no disponible', loading: 'Cargando vendedores…' },
+  supplier: { filter: 'Buscar por proveedor', all: 'Todos los proveedores', select: 'Seleccionar proveedor...', unavailable: 'Proveedor no disponible', loading: 'Cargando proveedores…' },
+}
+
+function EntitySelect({ entity, label, mode = 'filter', emptyLabel, ...props }: EntitySelectProps & { entity: keyof typeof entityLabels }) {
+  const labels = entityLabels[entity]
   return <SearchableSelect {...props}
-    label={label ?? (customer ? 'Buscar por cliente' : 'Buscar por vendedor')}
-    allLabel={emptyLabel ?? (mode === 'filter' ? customer ? 'Todos los clientes' : 'Todos los vendedores' : customer ? 'Seleccionar cliente...' : 'Seleccionar vendedor...')}
-    unavailableLabel={customer ? 'Cliente no disponible' : 'Vendedor no disponible'}
-    loadingLabel={customer ? 'Cargando clientes…' : 'Cargando vendedores…'}
+    label={label ?? labels.filter}
+    allLabel={emptyLabel ?? (mode === 'filter' ? labels.all : labels.select)}
+    unavailableLabel={labels.unavailable}
+    loadingLabel={labels.loading}
     fullWidth={mode === 'selection'} />
 }
 
@@ -31,4 +37,8 @@ export function CustomerSelect(props: EntitySelectProps) {
 
 export function SellerSelect(props: EntitySelectProps) {
   return <EntitySelect {...props} entity="seller" />
+}
+
+export function SupplierSelect(props: EntitySelectProps) {
+  return <EntitySelect {...props} entity="supplier" />
 }

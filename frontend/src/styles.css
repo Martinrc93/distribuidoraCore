@@ -55,7 +55,7 @@
   .nav-group { @apply grid gap-[4px]; }
   .nav-group-toggle { @apply appearance-none flex w-full items-center justify-between gap-[10px] min-h-[44px] [border:0] rounded-[5px] bg-transparent text-[#afc2bc] text-[14px] font-bold text-left [padding:8px_12px] cursor-pointer [transition:background_.15s,_color_.15s]; }
   .nav-group-toggle:hover { @apply bg-[#28505a] text-white; }
-  .nav-group-toggle.is-current { @apply text-white; }
+  .nav-group-toggle.is-current { @apply bg-[#28505a] text-white; }
   .nav-group-chevron { @apply shrink-0 -rotate-90 [transition:transform_.15s]; }
   .nav-group-toggle[aria-expanded="true"] .nav-group-chevron { @apply rotate-0; }
   .nav-group-links { @apply grid gap-[3px]; }

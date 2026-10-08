@@ -12,6 +12,9 @@ identity.users
 seller.seller_profiles
 customer.customers
 supplier.suppliers
+catalog.product_suppliers
+purchasing.supplier_orders
+purchasing.supplier_order_items
 catalog.products
 catalog.price_lists
 catalog.product_price_history

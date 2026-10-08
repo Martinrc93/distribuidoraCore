@@ -50,13 +50,14 @@ public class ProductCommandController {
         @NotNull @DecimalMin("0") BigDecimal cost,
         @Valid List<ProductPricePayload> prices,
         @NotNull UUID categoryId,
-        @NotNull UUID brandId
+        @NotNull UUID brandId,
+        List<@NotNull UUID> supplierIds
     ) {
         public ProductCommandService.ProductInput input() {
             List<ProductCommandService.ProductPriceInput> priceInputs = prices != null
                 ? prices.stream().map(p -> new ProductCommandService.ProductPriceInput(p.priceListId(), p.price())).toList()
                 : List.of();
-            return new ProductCommandService.ProductInput(description, category, presentation, cost, priceInputs, categoryId, brandId);
+            return new ProductCommandService.ProductInput(description, category, presentation, cost, priceInputs, categoryId, brandId, supplierIds);
         }
     }
 

@@ -135,6 +135,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   foco y de la navegación accesible. Los permisos se aplican también a los títulos.
   Si el grupo actual está cerrado al pasar a escritorio, el foco vuelve a su
   título visible. Se reutilizan colores, radios y foco del shell existente.
+  El título del grupo actual conserva el fondo `#28505a` y texto blanco, tanto
+  abierto como cerrado, en escritorio y en el menú compacto.
 - Hasta `1050px`, la barra superior fija de `66px` muestra marca, sección actual
   y «Menú», con área táctil mínima de `44px`. El menú abre un `dialog` nativo
   lateral de hasta `320px`, limitado al viewport y sus áreas seguras. Conserva
@@ -146,7 +148,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
 - Las rutas de Resumen, Dashboard, ficha de cliente, Productos, Marcas
-  y categorías, Listas de precios, Proveedores, Zonas y Auditoría usan `RequireAdmin` en
+  y categorías, Listas de precios, Proveedores, Pedidos a proveedores (listado y
+  detalle), Zonas y Auditoría usan `RequireAdmin` en
   [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
   a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
@@ -265,6 +268,36 @@ asignados. El filtro de vendedor y las acciones son exclusivos de `ADMIN_ALL`.
 La ficha y el historial también exigen `ADMIN_ALL`: entrar a la ficha por URL
 como vendedor redirige a Pedidos sin consultarla. Los selectores de cliente para pedidos y
 pagos mantienen sus opciones autorizadas y el acceso al último pedido.
+
+### Pedidos a proveedores
+
+«Pedidos a proveedores» aparece entre Ventas y Clientes, solo para `ADMIN_ALL`.
+`/supplier-orders` reutiliza `PageHeader`, `Panel`, `DataTable`, la paginación,
+`OrderDateFilter`/`OrderCalendar` y `SupplierSelect` del selector compartido.
+Los filtros por proveedor, Desde y Hasta se combinan y conservan en la URL;
+sin fechas incluyen todo el historial. «Todas las fechas» limpia solo el rango.
+Fechas inválidas o invertidas bloquean la consulta y ocultan datos anteriores.
+La tabla presenta número, proveedor, fecha, total estimado y enlace al detalle;
+hasta `640px` usa las tarjetas compartidas. Al volver del detalle conserva filtros.
+
+La solicitud se crea en un panel en la misma página, con proveedor, fecha,
+selector de productos activos, cantidades y costos editables. Reutiliza
+`.form-grid` y `.product-picker`, que se apilan a `760px`, sin variantes globales.
+La fecha inicia en el día de Argentina. «Cargar pedido anterior» consulta el
+último del ID exacto del proveedor: copia cantidades con costos actuales,
+requiere confirmación para reemplazar productos y bloquea productos inactivos.
+Cancelar un borrador modificado pide confirmación. Durante guardado/carga se
+bloquean campos y acciones; errores conservan el borrador y el intento para
+reintentar. Proveedores y productos cargan todas sus páginas y ofrecen reintento.
+Crear una solicitud no cambia stock ni envía mensajes; contrato y alcance en
+[`supplier-orders.md`](../api/supplier-orders.md).
+
+En productos, «Proveedores (opcional)» permite agregar varios mediante
+`SupplierSelect`, sin repetir, y quitarlos individualmente. El listado muestra
+sus nombres debajo del producto, manteniendo las columnas y anchos existentes.
+Un producto se puede guardar sin asociaciones. Un error de carga de opciones
+no borra asociaciones existentes ni impide guardar campos ajenos al proveedor.
+Las filas de selección se adaptan al ancho y admiten nombres largos.
 
 ## Botones y acciones
 

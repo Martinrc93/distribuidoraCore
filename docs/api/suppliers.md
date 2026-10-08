@@ -4,6 +4,10 @@ El catálogo de proveedores permite listar, buscar, crear y editar datos de
 contacto. Todos los endpoints requieren autenticación y `ADMIN_ALL`.
 La pantalla está disponible en Catálogo → Proveedores (`/suppliers`).
 
+Los productos pueden asociarse opcionalmente a varios proveedores. Las
+solicitudes de compra se registran en Operación → Pedidos a proveedores;
+contrato y alcance en [`supplier-orders.md`](supplier-orders.md).
+
 | Campo | Requerido | Límite |
 | --- | --- | --- |
 | `name` | Sí | 200 caracteres |

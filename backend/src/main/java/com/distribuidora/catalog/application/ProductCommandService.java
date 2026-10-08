@@ -36,8 +36,14 @@ public class ProductCommandService {
         BigDecimal cost,
         List<ProductPriceInput> prices,
         UUID categoryId,
-        UUID brandId
-    ) { }
+        UUID brandId,
+        List<UUID> supplierIds
+    ) {
+        public ProductInput(String description, String category, String presentation, BigDecimal cost,
+                            List<ProductPriceInput> prices, UUID categoryId, UUID brandId) {
+            this(description, category, presentation, cost, prices, categoryId, brandId, null);
+        }
+    }
 
     public record ActiveListPrice(UUID priceListId, String code, BigDecimal price) { }
 
@@ -50,6 +56,10 @@ public class ProductCommandService {
         }
         if (input.cost() == null || input.cost().signum() < 0) {
             throw new IllegalArgumentException("cost no puede ser negativo");
+        }
+        if (input.supplierIds() != null && (input.supplierIds().stream().anyMatch(java.util.Objects::isNull)
+            || new HashSet<>(input.supplierIds()).size() != input.supplierIds().size())) {
+            throw new IllegalArgumentException("La lista de proveedores contiene identificadores inválidos o repetidos");
         }
         if (input.prices() != null) {
             Set<UUID> seenLists = new HashSet<>();
@@ -73,6 +83,7 @@ public class ProductCommandService {
     @Transactional
     public UUID create(ProductInput input) {
         validate(input);
+        validateSuppliers(input.supplierIds());
         validateCreatePrices(input.prices());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
         String name = productName(input);
@@ -90,6 +101,7 @@ public class ProductCommandService {
             }
         }
 
+        replaceSuppliers(id, input.supplierIds());
         audit.record(actorId(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS", Map.of("name", name));
         return id;
     }
@@ -97,6 +109,7 @@ public class ProductCommandService {
     @Transactional
     public void update(UUID id, ProductInput input) {
         validate(input);
+        validateSuppliers(input.supplierIds());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
         String name = productName(input);
         if (!exists("select exists(select 1 from catalog.products where id = ?)", id)) throw new EmptyResultDataAccessException(1);
@@ -166,6 +179,7 @@ public class ProductCommandService {
             }
         }
 
+        replaceSuppliers(id, input.supplierIds());
         audit.record(actorId(), "PRODUCT_UPDATE", "PRODUCT", id.toString(), "SUCCESS", Map.of());
     }
 
@@ -177,6 +191,21 @@ public class ProductCommandService {
     }
 
     private boolean exists(String sql, Object... args) { return Boolean.TRUE.equals(jdbc.queryForObject(sql, Boolean.class, args)); }
+    private void validateSuppliers(List<UUID> supplierIds) {
+        if (supplierIds == null) return;
+        for (UUID supplierId : supplierIds) {
+            if (!exists("select exists(select 1 from supplier.suppliers where id = ?)", supplierId)) {
+                throw new IllegalArgumentException("Uno de los proveedores seleccionados no existe");
+            }
+        }
+    }
+
+    private void replaceSuppliers(UUID productId, List<UUID> supplierIds) {
+        if (supplierIds == null) return;
+        jdbc.update("delete from catalog.product_suppliers where product_id = ?", productId);
+        for (UUID supplierId : supplierIds) jdbc.update(
+            "insert into catalog.product_suppliers(product_id, supplier_id) values (?, ?)", productId, supplierId);
+    }
     private void validateCreatePrices(List<ProductPriceInput> prices) {
         if (prices == null || prices.isEmpty()) {
             throw new IllegalArgumentException("Se requiere al menos un precio para una lista activa");

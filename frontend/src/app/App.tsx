@@ -11,6 +11,8 @@ import { Panel } from '../shared/components/Panel'
 import DashboardPage from '../features/dashboard/DashboardPage'
 import CustomersPage from '../features/customers/CustomersPage'
 import SuppliersPage from '../features/suppliers/SuppliersPage'
+import SupplierOrdersPage from '../features/purchasing/SupplierOrdersPage'
+import SupplierOrderDetailPage from '../features/purchasing/SupplierOrderDetailPage'
 import CustomerDetailPage from '../features/customers/CustomerDetailPage'
 import ProductsPage from '../features/products/ProductsPage'
 import PriceListsPage from '../features/pricing/PriceListsPage'
@@ -79,6 +81,8 @@ export default function App() {
         <Route path="/orders/new" element={<OrderCreatePage />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
+        <Route path="/supplier-orders" element={<RequireAdmin><SupplierOrdersPage /></RequireAdmin>} />
+        <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/suppliers" element={<RequireAdmin><SuppliersPage /></RequireAdmin>} />
         <Route path="/customers/:customerId" element={<RequireAdmin><CustomerDetailPage /></RequireAdmin>} />

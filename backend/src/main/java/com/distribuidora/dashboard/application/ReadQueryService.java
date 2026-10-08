@@ -212,11 +212,24 @@ public class ReadQueryService {
             case POSITIVE -> " and coalesce(ib.quantity, 0) > 0";
             case NEGATIVE -> " and coalesce(ib.quantity, 0) < 0";
         };
-        return page("""
+        PageResponse<Map<String, Object>> result = page("""
             select p.id, p.name, coalesce(p.description, p.name) as description, coalesce(cat.name, p.category) as category,
                    p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.status
             """ + costColumn + stockColumn + source + " order by p.name, p.id",
             "select count(*) " + source, page, size, parameters.toArray());
+        if (sellerScoped() || result.content().isEmpty()) return result;
+        String ids = String.join(",", java.util.Collections.nCopies(result.content().size(), "?"));
+        var associations = jdbc.queryForList("select ps.product_id, s.id, s.name from catalog.product_suppliers ps "
+            + "join supplier.suppliers s on s.id = ps.supplier_id where ps.product_id in (" + ids + ") order by s.name, s.id",
+            result.content().stream().map(product -> product.get("id")).toArray());
+        var content = result.content().stream().map(product -> {
+            Map<String, Object> row = new org.springframework.util.LinkedCaseInsensitiveMap<>();
+            row.putAll(product);
+            row.put("suppliers", associations.stream().filter(association -> product.get("id").equals(association.get("product_id")))
+                .map(association -> Map.of("id", association.get("id"), "name", association.get("name"))).toList());
+            return row;
+        }).toList();
+        return new PageResponse<>(content, result.page(), result.size(), result.totalElements(), result.totalPages());
     }
 
     public PageResponse<Map<String, Object>> inventory(int page, int size, String search) {

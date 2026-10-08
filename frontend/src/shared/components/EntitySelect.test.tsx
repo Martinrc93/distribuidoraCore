@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CustomerSelect, SellerSelect } from './EntitySelect'
+import { CustomerSelect, SellerSelect, SupplierSelect } from './EntitySelect'
 
 afterEach(cleanup)
 
@@ -10,6 +10,7 @@ describe('shared customer and seller selection', () => {
   it.each([
     { Component: CustomerSelect, label: 'Buscar por cliente', empty: 'Todos los clientes' },
     { Component: SellerSelect, label: 'Buscar por vendedor', empty: 'Todos los vendedores' },
+    { Component: SupplierSelect, label: 'Buscar por proveedor', empty: 'Todos los proveedores' },
   ])('uses the same name search, keyboard selection and cancellation for $label', async ({ Component, label, empty }) => {
     const user = userEvent.setup()
     const changed = vi.fn()

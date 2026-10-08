@@ -148,7 +148,7 @@ describe('App shell', () => {
     expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith('/api/customers?'))).toBe(true)
   })
 
-  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/customers/customer-1', '/products', '/catalog', '/price-lists', '/suppliers'])('keeps %s restricted to administrators', async (route) => {
+  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/customers/customer-1', '/products', '/catalog', '/price-lists', '/suppliers', '/supplier-orders', '/supplier-orders/order-1'])('keeps %s restricted to administrators', async (route) => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`)
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
     renderApp(route)

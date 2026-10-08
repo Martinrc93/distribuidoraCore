@@ -7,7 +7,7 @@ import { Button } from '../shared/components/Button'
 
 const compactNavigationQuery = '(max-width: 1050px)'
 const menuGroups = [
-  { id: 'operation', label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Clientes', '/customers']] },
+  { id: 'operation', label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Pedidos a proveedores', '/supplier-orders'], ['Clientes', '/customers']] },
   { id: 'catalog', label: 'Catálogo', links: [['Productos', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists'], ['Proveedores', '/suppliers']] },
   { id: 'administration', label: 'Administración', links: [['Usuarios', '/admin/users'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
 ]
@@ -34,7 +34,7 @@ function NavigationContent({ isAdmin, expandedGroups, activeGroupId, onToggleGro
             <svg className="nav-group-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
           <div id={`navigation-${group.id}-links`} className="nav-group-links" hidden={!expandedGroups.includes(group.id)}>
-            {group.links.filter(([, href]) => !['/dashboard', '/analytics'].includes(href) || isAdmin).map(([label, href]) => (
+            {group.links.filter(([, href]) => !['/dashboard', '/analytics', '/supplier-orders'].includes(href) || isAdmin).map(([label, href]) => (
             <NavLink className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} key={href} to={href} onClick={onNavigate}>
               <span className="nav-dot" aria-hidden="true" />{label}
             </NavLink>

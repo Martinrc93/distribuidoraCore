@@ -46,6 +46,41 @@ function catalogResponse(input: RequestInfo | URL) {
 }
 
 describe('ProductsPage', () => {
+  it('loads optional suppliers from every page and saves multiple associations without duplicates', async () => {
+    const fetch = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/suppliers')) return response({ content: [{ id: path.includes('page=1') ? 'supplier-2' : 'supplier-1', name: path.includes('page=1') ? 'Proveedor Sur' : 'Proveedor Norte' }], page: path.includes('page=1') ? 1 : 0, totalPages: 2, totalElements: 2, size: 100 })
+      if (init?.method === 'PUT') return response({}, 204)
+      return catalogResponse(input)
+    })
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Editar Harina' }))
+    const selector = screen.getByRole('combobox', { name: 'Proveedores (opcional)' })
+    await waitFor(() => expect(selector).toBeEnabled())
+    await user.click(selector)
+    await user.click(await screen.findByRole('option', { name: 'Proveedor Norte' }))
+    await user.click(selector)
+    expect(screen.queryByRole('option', { name: 'Proveedor Norte' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: 'Proveedor Sur' }))
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({ method: 'PUT', body: expect.stringContaining('"supplierIds":["supplier-1","supplier-2"]') })))
+    expect(fetch).toHaveBeenCalledWith('/api/suppliers?page=1&size=100', expect.anything())
+  })
+  it('can clear all associated suppliers while keeping the product valid', async () => {
+    const fetch = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (init?.method === 'PUT') return response({}, 204)
+      if (String(input).startsWith('/api/suppliers')) return response({ content: [{ id: 'supplier-1', name: 'Proveedor Norte' }], page: 0, size: 100, totalElements: 1, totalPages: 1 })
+      if (String(input).startsWith('/api/products')) return response({ ...products, content: [{ ...products.content[0], suppliers: [{ id: 'supplier-1', name: 'Proveedor Norte' }] }] })
+      return catalogResponse(input)
+    })
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Editar Harina' }))
+    await user.click(screen.getByRole('button', { name: 'Quitar proveedor Proveedor Norte' }))
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({ method: 'PUT', body: expect.stringContaining('"supplierIds":[]') })))
+  })
   afterEach(() => {
     cleanup()
     sessionStorage.clear()
