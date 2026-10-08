@@ -56,12 +56,19 @@ export function clearAccessToken() {
 }
 
 export async function login(email: string, password: string) {
-  const response = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  })
-  if (!response.ok) throw new Error('Credenciales inválidas')
+  let response: Response
+  try {
+    response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
+  } catch {
+    throw new Error('No se pudo conectar con el servidor. Verifica la conexión e intenta nuevamente.')
+  }
+  if (response.status === 401 || response.status === 403) throw new Error('Credenciales inválidas')
+  if (response.status >= 500) throw new Error('El servidor no está disponible. Intenta nuevamente en unos momentos.')
+  if (!response.ok) throw await apiErrorFromResponse(response, 'No se pudo iniciar sesión. Intenta nuevamente.')
   const result = await response.json() as LoginResponse
   storeTokens(result)
   return result

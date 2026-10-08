@@ -77,6 +77,30 @@ describe('App shell', () => {
     expect(screen.queryByRole('navigation', { name: /navegación principal/i })).not.toBeInTheDocument()
   })
 
+  it('keeps login data after a proxy failure and allows retrying when the server recovers', async () => {
+    const accessToken = `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('Proxy error', { status: 500 }))
+      .mockImplementation((input) => String(input) === '/api/auth/login'
+        ? response({ accessToken, refreshToken: null })
+        : response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
+    const user = userEvent.setup()
+    renderApp('/login')
+    await user.type(screen.getByLabelText('Email'), 'admin@example.test')
+    await user.type(screen.getByLabelText('Contraseña'), 'test-password')
+    await user.click(screen.getByRole('button', { name: 'Ingresar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('El servidor no está disponible')
+    expect(screen.queryByText('Credenciales inválidas')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Email')).toHaveValue('admin@example.test')
+    expect(screen.getByLabelText('Contraseña')).toHaveValue('test-password')
+    expect(screen.getByRole('button', { name: 'Ingresar' })).toBeEnabled()
+    expect(sessionStorage.getItem('distribuidora.accessToken')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Ingresar' }))
+    expect(await screen.findByRole('heading', { name: 'Resumen operativo' })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([input]) => input === '/api/auth/login')).toHaveLength(2)
+  })
+
   it('opens the dashboard after an administrator logs in without reloading', async () => {
     const accessToken = `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
@@ -105,6 +129,7 @@ describe('App shell', () => {
     await user.click(screen.getByRole('link', { name: 'Resumen' }))
 
     expect(await screen.findByRole('heading', { name: 'Resumen operativo' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Administración' }))
     await user.click(screen.getByRole('link', { name: 'Zonas' }))
     expect(await screen.findByRole('heading', { name: 'Zonas' })).toBeInTheDocument()
     await user.click(screen.getByRole('link', { name: 'Auditoría' }))

@@ -7,26 +7,39 @@ import { Button } from '../shared/components/Button'
 
 const compactNavigationQuery = '(max-width: 1050px)'
 const menuGroups = [
-  { label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Clientes', '/customers']] },
-  { label: 'Catálogo', links: [['Productos', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists'], ['Proveedores', '/suppliers']] },
-  { label: 'Administración', links: [['Usuarios', '/admin/users'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
+  { id: 'operation', label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Clientes', '/customers']] },
+  { id: 'catalog', label: 'Catálogo', links: [['Productos', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists'], ['Proveedores', '/suppliers']] },
+  { id: 'administration', label: 'Administración', links: [['Usuarios', '/admin/users'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
 ]
+
+type NavigationState = {
+  expandedGroups: string[]
+  activeGroupId?: string
+  onToggleGroup: (id: string) => void
+}
 
 function Brand() {
   return <div className="brand-block"><span className="brand-mark" aria-hidden="true">D</span><div><strong>Distribuidora</strong><span>Gestión comercial</span></div></div>
 }
 
-function NavigationContent({ isAdmin, onNavigate, onSignOut }: { isAdmin: boolean; onNavigate?: () => void; onSignOut: () => void }) {
+function NavigationContent({ isAdmin, expandedGroups, activeGroupId, onToggleGroup, onNavigate, onSignOut }: NavigationState & { isAdmin: boolean; onNavigate?: () => void; onSignOut: () => void }) {
   return <>
     <nav id="primary-navigation" className="main-nav" aria-label="Navegación principal">
-      {menuGroups.filter((group) => group.label === 'Operación' || isAdmin).map((group) => (
-        <div className="nav-group" key={group.label}>
-          <span className="nav-group-label">{group.label}</span>
-          {group.links.filter(([, href]) => !['/dashboard', '/analytics'].includes(href) || isAdmin).map(([label, href]) => (
+      {menuGroups.filter((group) => group.id === 'operation' || isAdmin).map((group) => (
+        <div className="nav-group" key={group.id}>
+          <button type="button" className={`nav-group-toggle${activeGroupId === group.id ? ' is-current' : ''}`}
+            data-current={activeGroupId === group.id} aria-expanded={expandedGroups.includes(group.id)}
+            aria-controls={`navigation-${group.id}-links`} onClick={() => onToggleGroup(group.id)}>
+            <span>{group.label}</span>
+            <svg className="nav-group-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <div id={`navigation-${group.id}-links`} className="nav-group-links" hidden={!expandedGroups.includes(group.id)}>
+            {group.links.filter(([, href]) => !['/dashboard', '/analytics'].includes(href) || isAdmin).map(([label, href]) => (
             <NavLink className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} key={href} to={href} onClick={onNavigate}>
               <span className="nav-dot" aria-hidden="true" />{label}
             </NavLink>
-          ))}
+            ))}
+          </div>
         </div>
       ))}
     </nav>
@@ -37,7 +50,7 @@ function NavigationContent({ isAdmin, onNavigate, onSignOut }: { isAdmin: boolea
   </>
 }
 
-function NavigationDrawer({ isAdmin, onClose, onSignOut }: { isAdmin: boolean; onClose: () => void; onSignOut: () => void }) {
+function NavigationDrawer({ isAdmin, onClose, onSignOut, ...navigationState }: NavigationState & { isAdmin: boolean; onClose: () => void; onSignOut: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -51,7 +64,8 @@ function NavigationDrawer({ isAdmin, onClose, onSignOut }: { isAdmin: boolean; o
       element.close()
       document.body.style.overflow = previousOverflow
       const target = window.matchMedia?.(compactNavigationQuery).matches === false
-        ? document.querySelector<HTMLElement>('.sidebar .nav-link.active')
+        ? document.querySelector<HTMLElement>('.sidebar .nav-group-links:not([hidden]) .nav-link.active')
+          ?? document.querySelector<HTMLElement>('.sidebar .nav-group-toggle[data-current="true"]')
         : trigger
       if (target?.isConnected) target.focus({ preventScroll: true })
     }
@@ -78,7 +92,7 @@ function NavigationDrawer({ isAdmin, onClose, onSignOut }: { isAdmin: boolean; o
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose()
     }}>
     <div className="navigation-drawer-header"><Brand /><button type="button" className="navigation-close" aria-label="Cerrar menú" data-navigation-close onClick={onClose}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg></button></div>
-    <NavigationContent isAdmin={isAdmin} onNavigate={onClose} onSignOut={onSignOut} />
+    <NavigationContent {...navigationState} isAdmin={isAdmin} onNavigate={onClose} onSignOut={onSignOut} />
   </dialog>
 }
 
@@ -92,6 +106,17 @@ export default function AppShell() {
   const drawerOpen = compact && drawerLocationKey === location.key
   const currentGroup = menuGroups.find((group) => group.links.some(([, href]) => location.pathname === href || location.pathname.startsWith(`${href}/`)))
   const currentLabel = currentGroup?.links.find(([, href]) => location.pathname === href || location.pathname.startsWith(`${href}/`))?.[0] ?? 'Gestión comercial'
+  const activeGroupId = currentGroup?.id
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(() => [activeGroupId ?? 'operation'])
+  const navigationState: NavigationState = {
+    expandedGroups,
+    activeGroupId,
+    onToggleGroup: (id) => setExpandedGroups((groups) => groups.includes(id) ? groups.filter((group) => group !== id) : [...groups, id]),
+  }
+
+  useEffect(() => {
+    if (activeGroupId) setExpandedGroups((groups) => groups.includes(activeGroupId) ? groups : [...groups, activeGroupId])
+  }, [activeGroupId, location.pathname])
 
   useEffect(() => {
     const media = window.matchMedia?.(compactNavigationQuery)
@@ -112,7 +137,7 @@ export default function AppShell() {
   }
 
   return <div className="app-shell">
-    {!compact && <aside className="sidebar"><Brand /><NavigationContent isAdmin={isAdmin} onSignOut={signOut} /></aside>}
+    {!compact && <aside className="sidebar"><Brand /><NavigationContent {...navigationState} isAdmin={isAdmin} onSignOut={signOut} /></aside>}
     <div className="main-area">
       <header className="topbar">
         <div className="breadcrumbs"><span>{currentGroup?.label ?? 'Empresa'}</span><span aria-hidden="true">/</span><strong>{currentLabel}</strong></div>
@@ -124,6 +149,6 @@ export default function AppShell() {
       </header>
       <main className="page-content"><Outlet /></main>
     </div>
-    {drawerOpen && <NavigationDrawer isAdmin={isAdmin} onClose={() => setDrawerLocationKey(null)} onSignOut={signOut} />}
+    {drawerOpen && <NavigationDrawer {...navigationState} isAdmin={isAdmin} onClose={() => setDrawerLocationKey(null)} onSignOut={signOut} />}
   </div>
 }

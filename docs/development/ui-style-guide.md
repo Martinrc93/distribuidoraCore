@@ -124,6 +124,17 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Sobre `1050px`, el sidebar conserva `250px`, permanece visible al desplazar la
   página y ocupa `100dvh`. Solo la navegación tiene scroll interno; marca y sesión
   quedan disponibles. Hasta `820px` de altura reduce espacios entre grupos y filas.
+- Operación, Catálogo y Administración son grupos desplegables independientes.
+  Sus títulos son botones de `44px` como mínimo, fuente de `14px` y flecha que
+  indica apertura, con `aria-expanded` y `aria-controls`. Los enlaces usan `14px`.
+  Inicialmente se abre el grupo de la ruta actual; los demás quedan cerrados.
+  Cambiar de ruta abre su grupo y conserva las decisiones sobre los otros.
+  El estado se comparte entre sidebar y menú compacto durante la sesión y se
+  conserva al cerrar el menú o cambiar de ancho; no se guarda entre recargas.
+  Clic, Enter y Espacio alternan cada grupo. Los enlaces ocultos quedan fuera del
+  foco y de la navegación accesible. Los permisos se aplican también a los títulos.
+  Si el grupo actual está cerrado al pasar a escritorio, el foco vuelve a su
+  título visible. Se reutilizan colores, radios y foco del shell existente.
 - Hasta `1050px`, la barra superior fija de `66px` muestra marca, sección actual
   y «Menú», con área táctil mínima de `44px`. El menú abre un `dialog` nativo
   lateral de hasta `320px`, limitado al viewport y sus áreas seguras. Conserva
@@ -762,6 +773,10 @@ Esta variante no modifica las dimensiones ni el cierre de otros modales.
 - Distinguir carga, error recuperable, ausencia de datos y filtros sin resultados.
   Ofrecer reintento o limpieza de filtros cuando corresponda; mostrar acciones
   de creación solo si el usuario tiene permisos.
+- En el login, solo `401`/`403` muestran «Credenciales inválidas». Un error de
+  conexión o `5xx` informa que no se pudo conectar o que el servidor no está
+  disponible, conservando los campos y permitiendo reintentar. El mensaje usa
+  `.error-text` con `role="alert"`.
 - El componente vacío también se usa hoy para carga/error: no trae spinner,
   reintento automático ni anuncios accesibles incorporados.
 

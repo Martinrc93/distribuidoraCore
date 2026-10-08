@@ -54,6 +54,28 @@ describe('HTTP mutation helpers', () => {
     expect(sessionStorage.getItem('distribuidora.refreshToken')).toBe('refresh-1')
   })
 
+  it.each([401, 403])('reports invalid credentials only for an authentication rejection (%s)', async (status) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status }))
+
+    await expect(login('user@example.com', 'password')).rejects.toThrow('Credenciales inválidas')
+    expect(sessionStorage.getItem('distribuidora.accessToken')).toBeNull()
+  })
+
+  it.each([500, 502, 503, 504])('reports an unavailable server separately from invalid credentials (%s)', async (status) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Proxy error', { status }))
+
+    await expect(login('user@example.com', 'password')).rejects.toThrow('El servidor no está disponible')
+    expect(sessionStorage.getItem('distribuidora.accessToken')).toBeNull()
+    expect(sessionStorage.getItem('distribuidora.refreshToken')).toBeNull()
+  })
+
+  it('reports connection failure when the login request cannot reach the server', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+
+    await expect(login('user@example.com', 'password')).rejects.toThrow('No se pudo conectar con el servidor')
+    expect(sessionStorage.getItem('distribuidora.accessToken')).toBeNull()
+  })
+
   it('refreshes once after a 401 and retries with the rotated access token', async () => {
     sessionStorage.setItem('distribuidora.accessToken', 'expired-access')
     sessionStorage.setItem('distribuidora.refreshToken', 'refresh-1')

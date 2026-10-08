@@ -51,10 +51,16 @@
   .brand-block strong { @apply text-[15px] tracking-[-.02em]; }
   .brand-block div span { @apply text-[#afc2bc] text-[11px] mt-[3px]; }
   .brand-mark { @apply w-[32px] h-[32px] shrink-0 grid place-items-center [border:1px_solid_var(--copper)] rounded-[5px] text-white bg-copper font-bold; }
-  .main-nav { @apply grid content-start gap-[23px] min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-color:#91aaa2_transparent] [padding:4px_4px_16px]; }
-  .nav-group { @apply grid gap-[3px]; }
-  .nav-group-label { @apply text-[#91aaa2] text-[10px] font-bold tracking-[.08em] [padding:0_12px_7px]; }
-  .nav-link { @apply flex items-center gap-[9px] min-h-[38px] rounded-[5px] text-[#cfdbd6] text-[13px] [padding:9px_12px]; }
+  .main-nav { @apply grid content-start gap-[14px] min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-color:#91aaa2_transparent] [padding:4px_4px_16px]; }
+  .nav-group { @apply grid gap-[4px]; }
+  .nav-group-toggle { @apply appearance-none flex w-full items-center justify-between gap-[10px] min-h-[44px] [border:0] rounded-[5px] bg-transparent text-[#afc2bc] text-[14px] font-bold text-left [padding:8px_12px] cursor-pointer [transition:background_.15s,_color_.15s]; }
+  .nav-group-toggle:hover { @apply bg-[#28505a] text-white; }
+  .nav-group-toggle.is-current { @apply text-white; }
+  .nav-group-chevron { @apply shrink-0 -rotate-90 [transition:transform_.15s]; }
+  .nav-group-toggle[aria-expanded="true"] .nav-group-chevron { @apply rotate-0; }
+  .nav-group-links { @apply grid gap-[3px]; }
+  .nav-group-links[hidden] { @apply hidden; }
+  .nav-link { @apply flex items-center gap-[9px] min-h-[38px] rounded-[5px] text-[#cfdbd6] text-[14px] [padding:9px_12px]; }
   .nav-link:hover, .nav-link.active { @apply bg-[#28505a] text-white; }
   .nav-link.active { @apply font-bold; }
   .nav-dot { @apply w-[5px] h-[5px] shrink-0 [border:1px_solid_currentColor] rounded-[50%]; }
@@ -425,7 +431,7 @@
   @media (max-height: 820px) {
     .sidebar { @apply pt-[20px]; }
     .sidebar .brand-block { @apply pb-[20px]; }
-    .sidebar .main-nav { @apply gap-[14px]; }
+    .sidebar .main-nav { @apply gap-[10px]; }
     .sidebar .nav-link { @apply min-h-[36px] [padding:8px_12px]; }
     .sidebar .sidebar-footer { @apply gap-[10px] pt-[12px]; }
   }
