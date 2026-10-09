@@ -33,7 +33,7 @@ public class UserAdminController {
     public ResponseEntity<UserAdminDtos.InviteUserResponse> invite(@Valid @RequestBody UserAdminDtos.InviteUserRequest request) {
         UserAdminService.InviteUserResult result = service.invite(request);
         return ResponseEntity.status(201).body(new UserAdminDtos.InviteUserResponse(
-            result.userId(), result.email(), result.activationToken(), result.expiresAt()));
+            result.userId(), result.email(), result.deliveryStatus(), result.expiresAt()));
     }
 
     @PostMapping("/{id}/revoke-sessions")

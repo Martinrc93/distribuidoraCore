@@ -23,6 +23,7 @@ public class OutboxRepository {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public List<OutboxEvent> claimBatch(int batchSize, int maxAttempts, Duration lease) {
         jdbc.update("update notification.outbox_events set status = 'RETRY_EXHAUSTED', locked_at = null, "
+                + "payload = case when event_type = 'USER_INVITATION_EMAIL_REQUESTED' then '{}'::jsonb else payload end, "
                 + "last_error = coalesce(last_error, 'Processing lease expired after maximum attempts'), updated_at = now() "
                 + "where status = 'PROCESSING' and locked_at < now() - (? * interval '1 millisecond') and attempt_count >= ?",
             lease.toMillis(), maxAttempts);
@@ -41,6 +42,7 @@ public class OutboxRepository {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markProcessed(UUID eventId) {
         jdbc.update("update notification.outbox_events set status = 'PROCESSED', processed_at = now(), "
+                + "payload = case when event_type = 'USER_INVITATION_EMAIL_REQUESTED' then '{}'::jsonb else payload end, "
                 + "locked_at = null, last_error = null, updated_at = now() where id = ? and status = 'PROCESSING'",
             eventId);
     }
@@ -48,9 +50,11 @@ public class OutboxRepository {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean markFailed(OutboxEvent event, int maxAttempts, Duration retryDelay, String error) {
         jdbc.update("update notification.outbox_events set status = ?, available_at = now() + (? * interval '1 millisecond'), "
+                + "payload = case when event_type = 'USER_INVITATION_EMAIL_REQUESTED' and attempt_count >= ? "
+                + "then '{}'::jsonb else payload end, "
                 + "locked_at = null, last_error = ?, updated_at = now() where id = ? and status = 'PROCESSING'",
             event.attemptCount() >= maxAttempts ? "RETRY_EXHAUSTED" : "PENDING",
-            retryDelay.toMillis(), abbreviate(error), event.id());
+            retryDelay.toMillis(), maxAttempts, abbreviate(error), event.id());
         return event.attemptCount() >= maxAttempts;
     }
 

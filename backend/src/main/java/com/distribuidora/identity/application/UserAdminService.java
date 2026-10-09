@@ -35,7 +35,7 @@ public class UserAdminService {
         String displayName();
     }
 
-    public record InviteUserResult(UUID userId, String email, String activationToken, Instant expiresAt) { }
+    public record InviteUserResult(UUID userId, String email, String deliveryStatus, Instant expiresAt) { }
 
     private final JdbcTemplate jdbc;
     private final UserActivationTokenRepository activationTokens;
@@ -43,6 +43,7 @@ public class UserAdminService {
     private final PasswordEncoder passwordEncoder;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
+    private final UserInvitationEmailService invitationEmails;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public UserAdminService(JdbcTemplate jdbc,
@@ -50,13 +51,15 @@ public class UserAdminService {
                             RefreshTokenRepository refreshTokens,
                             PasswordEncoder passwordEncoder,
                             AuditService audit,
-                            CurrentUserAccess currentUser) {
+                            CurrentUserAccess currentUser,
+                            UserInvitationEmailService invitationEmails) {
         this.jdbc = jdbc;
         this.activationTokens = activationTokens;
         this.refreshTokens = refreshTokens;
         this.passwordEncoder = passwordEncoder;
         this.audit = audit;
         this.currentUser = currentUser;
+        this.invitationEmails = invitationEmails;
     }
 
     @Transactional
@@ -101,6 +104,7 @@ public class UserAdminService {
 
     @Transactional
     public InviteUserResult invite(InviteUserCommand request) {
+        invitationEmails.requireConfigured();
         if (request == null || request.roleCode() == null || request.email() == null || request.email().isBlank()) {
             throw new IllegalArgumentException("email y role son obligatorios");
         }
@@ -145,11 +149,12 @@ public class UserAdminService {
 
         UserActivationToken token = new UserActivationToken(userId, tokenHash, expiresAt);
         activationTokens.save(token);
+        invitationEmails.enqueue(userId, email, rawToken, expiresAt);
 
         audit.recordWithinTransaction(currentUser.userId(), "USER_INVITE", "USER", userId.toString(), "SUCCESS",
             Map.of("role", request.roleCode(), "email", email));
 
-        return new InviteUserResult(userId, email, rawToken, expiresAt);
+        return new InviteUserResult(userId, email, "QUEUED", expiresAt);
     }
 
     @Transactional

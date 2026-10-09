@@ -7,4 +7,6 @@ public interface NotificationChannelSender {
 
     void send(String channel, String recipient, String subject, String filename,
               byte[] pdf, UUID idempotencyKey);
+
+    void sendEmail(String recipient, String subject, String text, UUID idempotencyKey);
 }

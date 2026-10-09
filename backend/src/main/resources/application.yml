@@ -54,6 +54,7 @@ logging:
       console: ecs
 
 app:
+  public-url: ${APP_PUBLIC_URL:}
   security:
     jwt-secret: ${JWT_SECRET:}
     jwt-issuer: ${JWT_ISSUER:distribuidora-local}

@@ -16,6 +16,31 @@ El tamaño se limita a 100.
 /api/users/invite` crea una invitación de un solo uso. Ambos reciben `email`,
 `role` (`ADMIN` o `SELLER`) y `displayName` cuando corresponde.
 
+La invitación crea la cuenta en estado `INVITED`, guarda el hash del token y
+encola el correo en la misma transacción. La respuesta es
+`{userId, email, deliveryStatus: "QUEUED", expiresAt}`; no devuelve el token.
+El correo contiene un enlace a `/activate?token=...` para elegir la contraseña.
+La pantalla de activación solicita «Contraseña» y «Repetir contraseña», ambas
+obligatorias. Solo envía el token y la contraseña cuando los valores coinciden;
+si difieren, muestra un error asociado al campo de confirmación y permite corregirlo.
+El token es de un solo uso y vence a los 30 minutos de crear la invitación.
+La contraseña provisoria sigue siendo una alternativa independiente, sin correo.
+
+Configurar `APP_PUBLIC_URL` con el origen público de la interfaz (por ejemplo,
+`https://app.example.com`), `EMAIL_WEBHOOK_URL` y, si corresponde,
+`EMAIL_WEBHOOK_TOKEN`. Se permite HTTP en localhost para desarrollo.
+Sin origen válido o proveedor de email, devuelve `503` con código
+`INVITATION_EMAIL_UNAVAILABLE`, sin crear la cuenta.
+
+El worker de outbox envía después del commit y reintenta fallos del proveedor;
+`QUEUED` no confirma recepción ni entrega. El proveedor debe aceptar el cuerpo
+de email de texto descrito en [notifications.md](notifications.md) y deduplicar
+por `Idempotency-Key`. Los enlaces vencidos no se envían. El enlace permanece
+temporalmente en la cola para reintentos y se elimina al procesar el evento o
+agotar los intentos; la tabla de activaciones conserva solo el hash.
+La interfaz informa envío pendiente; todavía no hay consulta de estado ni
+reenvío de invitaciones desde la pantalla de usuarios.
+
 `PUT /api/users/{id}/role` reemplaza el rol único del usuario:
 
 ```json

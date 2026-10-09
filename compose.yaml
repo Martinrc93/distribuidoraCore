@@ -29,6 +29,9 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_DEMO: ${SEED_DEMO:-true}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-ChangeMe123!}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      EMAIL_WEBHOOK_URL: ${EMAIL_WEBHOOK_URL:-}
+      EMAIL_WEBHOOK_TOKEN: ${EMAIL_WEBHOOK_TOKEN:-}
     ports:
       - "8080:8080"
     depends_on:

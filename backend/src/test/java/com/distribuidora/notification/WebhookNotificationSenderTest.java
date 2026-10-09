@@ -38,6 +38,15 @@ class WebhookNotificationSenderTest {
             assertThat(key.get()).isEqualTo(eventId.toString());
             assertThat(authorization.get()).isEqualTo("Bearer email-secret");
             assertThat(body.get()).contains("sales@example.test", "ticket.pdf", "attachmentBase64");
+
+            sender.sendEmail("invited@example.test", "Activar cuenta", "https://app.example.test/activate?token=secret", eventId);
+            var payload = new ObjectMapper().readTree(body.get());
+            assertThat(payload.get("recipient").asText()).isEqualTo("invited@example.test");
+            assertThat(payload.get("text").asText()).isEqualTo("https://app.example.test/activate?token=secret");
+            assertThat(payload.get("contentType").asText()).isEqualTo("text/plain");
+            assertThat(payload.has("attachmentBase64")).isFalse();
+            assertThat(key.get()).isEqualTo(eventId.toString());
+            assertThat(authorization.get()).isEqualTo("Bearer email-secret");
         } finally {
             server.stop(0);
         }
@@ -53,5 +62,7 @@ class WebhookNotificationSenderTest {
         WebhookNotificationSender insecure = new WebhookNotificationSender(new ObjectMapper(),
             "http://provider.example/send", "token", "", "", 10000);
         assertThat(insecure.isConfigured("EMAIL")).isFalse();
+        assertThatThrownBy(() -> sender.sendEmail("a@example.test", "subject", "text", UUID.randomUUID()))
+            .isInstanceOf(IllegalStateException.class);
     }
 }

@@ -32,7 +32,7 @@ public final class UserAdminDtos {
     public record InviteUserResponse(
         UUID userId,
         String email,
-        String activationToken,
+        String deliveryStatus,
         Instant expiresAt
     ) { }
 

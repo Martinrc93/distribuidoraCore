@@ -3,6 +3,8 @@ package com.distribuidora.identity;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.identity.api.UserAdminDtos;
 import com.distribuidora.identity.application.UserAdminService;
+import com.distribuidora.identity.application.UserInvitationEmailService;
+import com.distribuidora.identity.application.InvitationEmailUnavailableException;
 import com.distribuidora.identity.domain.UserActivationToken;
 import com.distribuidora.identity.infrastructure.RefreshTokenRepository;
 import com.distribuidora.identity.infrastructure.UserActivationTokenRepository;
@@ -36,6 +38,7 @@ class UserAdminServiceTest {
     @Mock RefreshTokenRepository refreshTokens;
     @Mock AuditService audit;
     @Mock CurrentUserAccess currentUser;
+    @Mock UserInvitationEmailService invitationEmails;
 
     UserAdminService service;
     Argon2PasswordEncoder encoder;
@@ -45,11 +48,11 @@ class UserAdminServiceTest {
     void setUp() {
         encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
         org.mockito.Mockito.lenient().when(currentUser.userId()).thenReturn(currentAdminId);
-        service = new UserAdminService(jdbc, activationTokens, refreshTokens, encoder, audit, currentUser);
+        service = new UserAdminService(jdbc, activationTokens, refreshTokens, encoder, audit, currentUser, invitationEmails);
     }
 
     @Test
-    void inviteCreatesInvitedUserAndReturnsActivationToken() {
+    void inviteCreatesInvitedUserAndQueuesActivationEmail() {
         when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("seller@distribuidora.local")))
             .thenReturn(false);
         when(jdbc.queryForObject(anyString(), eq(UUID.class), eq("SELLER")))
@@ -65,7 +68,7 @@ class UserAdminServiceTest {
 
         assertThat(response.userId()).isNotNull();
         assertThat(response.email()).isEqualTo("seller@distribuidora.local");
-        assertThat(response.activationToken()).isNotBlank();
+        assertThat(response.deliveryStatus()).isEqualTo("QUEUED");
         assertThat(response.expiresAt()).isAfter(Instant.now());
 
         // Verify activation token saved in repository
@@ -76,9 +79,22 @@ class UserAdminServiceTest {
         assertThat(savedToken.getTokenHash()).isNotBlank();
         assertThat(savedToken.getExpiresAt()).isAfter(Instant.now());
 
+        ArgumentCaptor<String> rawToken = ArgumentCaptor.forClass(String.class);
+        verify(invitationEmails).enqueue(eq(response.userId()), eq(response.email()), rawToken.capture(), eq(response.expiresAt()));
+        assertThat(savedToken.getTokenHash()).isEqualTo(com.distribuidora.identity.application.AuthService.hashToken(rawToken.getValue()));
+
         // Verify audit
         verify(audit).recordWithinTransaction(eq(currentAdminId), eq("USER_INVITE"), eq("USER"),
             eq(response.userId().toString()), eq("SUCCESS"), any());
+    }
+
+    @Test
+    void missingEmailConfigurationRejectsInvitationBeforeCreatingUser() {
+        org.mockito.Mockito.doThrow(new InvitationEmailUnavailableException()).when(invitationEmails).requireConfigured();
+        assertThatThrownBy(() -> service.invite(new UserAdminDtos.InviteUserRequest(
+            "seller@example.test", UserAdminDtos.Role.SELLER, "Seller")))
+            .isInstanceOf(InvitationEmailUnavailableException.class);
+        org.mockito.Mockito.verifyNoInteractions(jdbc, activationTokens, audit);
     }
 
     @Test

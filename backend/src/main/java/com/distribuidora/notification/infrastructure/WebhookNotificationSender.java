@@ -53,6 +53,17 @@ public class WebhookNotificationSender implements NotificationChannelSender {
         if (!isConfigured(channel)) throw new IllegalStateException("El canal de notificación no está configurado");
         Map<String, Object> payload = Map.of("channel", channel, "recipient", recipient, "subject", subject,
             "filename", filename, "contentType", "application/pdf", "attachmentBase64", Base64.getEncoder().encodeToString(pdf));
+        post(endpoint, token, payload, idempotencyKey);
+    }
+
+    @Override
+    public void sendEmail(String recipient, String subject, String text, UUID idempotencyKey) {
+        if (!isConfigured("EMAIL")) throw new IllegalStateException("El canal de email no está configurado");
+        post(emailUrl, emailToken, Map.of("channel", "EMAIL", "recipient", recipient,
+            "subject", subject, "contentType", "text/plain", "text", text), idempotencyKey);
+    }
+
+    private void post(String endpoint, String token, Map<String, Object> payload, UUID idempotencyKey) {
         try {
             HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(endpoint)).timeout(timeout)
                 .header("Content-Type", "application/json")

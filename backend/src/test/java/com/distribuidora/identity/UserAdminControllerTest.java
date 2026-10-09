@@ -3,6 +3,8 @@ package com.distribuidora.identity;
 import com.distribuidora.identity.api.UserAdminController;
 import com.distribuidora.identity.api.UserAdminDtos;
 import com.distribuidora.identity.application.UserAdminService;
+import com.distribuidora.identity.application.InvitationEmailUnavailableException;
+import com.distribuidora.identity.api.IdentityExceptionHandler;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,7 +30,7 @@ class UserAdminControllerTest {
     private final UserAdminService service = mock(UserAdminService.class);
     private final UserAdminController controller = new UserAdminController(service);
     private final MockMvc mockMvc = standaloneSetup(controller)
-        .setControllerAdvice(new ApiExceptionHandler())
+        .setControllerAdvice(new IdentityExceptionHandler(), new ApiExceptionHandler())
         .build();
 
     @Test
@@ -52,11 +54,11 @@ class UserAdminControllerTest {
     }
 
     @Test
-    void inviteUserReturns201WithActivationToken() throws Exception {
+    void inviteUserReturns201WithQueuedEmailAndNoActivationToken() throws Exception {
         UUID newId = UUID.randomUUID();
         Instant expiresAt = Instant.now().plusSeconds(1800);
         when(service.invite(any())).thenReturn(
-            new UserAdminService.InviteUserResult(newId, "invited@distribuidora.local", "token-xyz", expiresAt)
+            new UserAdminService.InviteUserResult(newId, "invited@distribuidora.local", "QUEUED", expiresAt)
         );
 
         mockMvc.perform(post("/api/users/invite")
@@ -71,9 +73,22 @@ class UserAdminControllerTest {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.userId").value(newId.toString()))
             .andExpect(jsonPath("$.email").value("invited@distribuidora.local"))
-            .andExpect(jsonPath("$.activationToken").value("token-xyz"));
+            .andExpect(jsonPath("$.deliveryStatus").value("QUEUED"))
+            .andExpect(jsonPath("$.activationToken").doesNotExist());
 
         verify(service).invite(any());
+    }
+
+    @Test
+    void missingEmailConfigurationReturnsActionableError() throws Exception {
+        when(service.invite(any())).thenThrow(new InvitationEmailUnavailableException());
+        mockMvc.perform(post("/api/users/invite").contentType(APPLICATION_JSON)
+                .content("""
+                    {"email":"invited@example.test","role":"ADMIN"}
+                    """))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.code").value("INVITATION_EMAIL_UNAVAILABLE"))
+            .andExpect(jsonPath("$.detail").value("El envío de invitaciones por email no está configurado. Contacte al administrador."));
     }
 
     @Test

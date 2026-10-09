@@ -2,6 +2,7 @@ package com.distribuidora.identity.api;
 
 import com.distribuidora.identity.application.InvalidActivationTokenException;
 import com.distribuidora.identity.application.InvalidRefreshTokenException;
+import com.distribuidora.identity.application.InvitationEmailUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -12,8 +13,19 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = AuthController.class)
+@RestControllerAdvice(assignableTypes = {AuthController.class, UserAdminController.class})
 public class IdentityExceptionHandler {
+
+    @ExceptionHandler(InvitationEmailUnavailableException.class)
+    ResponseEntity<ProblemDetail> handleInvitationUnavailable(
+        InvitationEmailUnavailableException exception, HttpServletRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
+        problem.setTitle("Email unavailable");
+        problem.setProperty("code", "INVITATION_EMAIL_UNAVAILABLE");
+        problem.setProperty("instance", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
+    }
 
     @ExceptionHandler(InvalidRefreshTokenException.class)
     ResponseEntity<ProblemDetail> handleInvalidRefreshToken(

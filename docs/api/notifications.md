@@ -54,6 +54,13 @@ deduplicar por `Idempotency-Key`; el despacho es al menos una vez. Toda respuest
 HTTP 2xx se considera aceptada. Si el canal no tiene URL válida configurada, la
 solicitud se rechaza con conflicto y no se encola.
 
+Para invitaciones de cuentas, el mismo webhook de email recibe `channel`,
+`recipient`, `subject`, `contentType: "text/plain"` y `text` con el enlace de
+activación, sin adjunto. Mantiene los mismos encabezados, autenticación y
+deduplicación. `APP_PUBLIC_URL` define el origen público del enlace; ver
+[identity-admin.md](identity-admin.md). `compose.yaml` transmite las variables
+de origen y proveedor al backend, sin valores de credenciales predeterminados.
+
 Las credenciales y la integración concreta del proveedor quedan a cargo de la
 configuración de despliegue. La venta nunca espera al envío ni se revierte por
 un fallo externo; los fallos se reintentan mediante la outbox.
