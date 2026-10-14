@@ -5,6 +5,9 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './app/App'
 import '@fontsource-variable/inter/wght.css'
 import './styles.css'
+import { initializeTheme } from './shared/theme'
+
+initializeTheme()
 
 const queryClient = new QueryClient()
 

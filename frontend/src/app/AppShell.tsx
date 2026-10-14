@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { logout } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
+import { ThemeToggle } from '../shared/components/ThemeToggle'
 
 const compactNavigationQuery = '(max-width: 1050px)'
 const menuGroups = [
@@ -141,10 +142,13 @@ export default function AppShell() {
     <div className="main-area">
       <header className="topbar">
         <div className="breadcrumbs"><span>{currentGroup?.label ?? 'Empresa'}</span><span aria-hidden="true">/</span><strong>{currentLabel}</strong></div>
-        {compact && <>
-          <div className="compact-brand"><span className="brand-mark" aria-hidden="true">D</span><div><strong>Distribuidora</strong><span>{currentLabel}</span></div></div>
+        {compact && <div className="compact-brand"><span className="brand-mark" aria-hidden="true">D</span><div><strong>Distribuidora</strong><span>{currentLabel}</span></div></div>}
+        <div className="topbar-controls">
+          <ThemeToggle />
+          {compact && <>
           <button type="button" className="navigation-toggle" aria-label="Abrir menú" aria-haspopup="dialog" aria-expanded={drawerOpen} aria-controls="navigation-drawer" onClick={() => setDrawerLocationKey(location.key)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg><span>Menú</span></button>
-        </>}
+          </>}
+        </div>
         <div className="topbar-actions"><span className="connection-status"><span className="status-dot" aria-hidden="true" />Sistema operativo</span></div>
       </header>
       <main className="page-content"><Outlet /></main>

@@ -82,7 +82,7 @@ interfaces se indican por separado en las secciones siguientes.
 
 ## Identidad visual y tokens
 
-Interfaz operativa compacta: superficies claras, texto verde oscuro, acento verde
+Interfaz operativa compacta: superficies adaptadas al tema, texto legible, acento verde
 y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrupación.
 
 | Variable CSS | Valor actual | Uso |
@@ -125,6 +125,27 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Extender el foco visible a cualquier nuevo control, incluido `textarea`.
 
 ## Estructura de páginas, paneles y métricas
+
+### Tema claro y oscuro
+
+- `ThemeToggle` ofrece el cambio en la barra superior para todos los usuarios,
+  también hasta `1050px`, sin abrir el menú. Muestra la acción «Oscuro» o «Claro»
+  con un icono; hasta `460px` conserva solo el icono y su nombre accesible.
+  Tiene altura mínima de `44px`, foco visible, `aria-pressed` para el estado oscuro
+  y admite Enter/Espacio. No cambia los permisos ni la navegación.
+- El tema inicial es claro. La preferencia se guarda por navegador en
+  `localStorage` (`distribuidora.theme`), se restaura antes de pintar y se sincroniza
+  entre pestañas. No es una configuración del usuario en el servidor. Si el
+  almacenamiento está bloqueado, el cambio funciona durante la sesión actual.
+- `data-theme` en `html` y `color-scheme` controlan la paleta y los controles
+  nativos. La preferencia también se aplica al login y a los diálogos en portales.
+  `--sidebar` se separa de `--ink` para conservar texto claro sobre la navegación;
+  `--accent-hover` mantiene el contraste blanco de los botones principales.
+- La tabla anterior documenta el tema claro. En oscuro se usan `--canvas`
+  `#101b20`, `--surface` `#19292f`, `--ink` `#e0ece7`, `--muted` `#a5b9b2`
+  y `--line` `#3b5053`. Los tokens `--detail-*` adaptan bordes, tablas, hover,
+  selección y feedback de los patrones existentes, con fallback al valor claro
+  exacto. Mantener estas variantes en `styles.css`; no crear paletas por pantalla.
 
 - Respetar el shell existente: `.app-shell`, `.sidebar`, `.main-area`, `.topbar`
   y `.page-content`. No duplicarlo dentro de una feature.

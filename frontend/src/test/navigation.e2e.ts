@@ -13,6 +13,36 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+for (const width of [320, 1280]) {
+  test(`theme switches and persists at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 768 })
+    await page.goto('/orders')
+    const toggle = page.getByRole('button', { name: 'Cambiar a modo oscuro' })
+    await expect(toggle).toBeVisible()
+    await toggle.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(16, 27, 32)')
+    await expect(page.locator('.topbar')).toHaveCSS('background-color', 'rgb(25, 41, 47)')
+    await expect(page.getByRole('button', { name: 'Cambiar a modo claro' })).toHaveCSS('background-color', 'rgb(25, 41, 47)')
+    const toggleBounds = await page.getByRole('button', { name: 'Cambiar a modo claro' }).boundingBox()
+    expect(toggleBounds!.height).toBeGreaterThanOrEqual(44)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`dark-${width}.png`), fullPage: true })
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Cambiar a modo claro' })).toHaveAttribute('aria-pressed', 'true')
+    if (width === 320) {
+      await page.getByRole('button', { name: 'Abrir menú' }).click()
+      await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(18, 35, 42)')
+      await page.screenshot({ path: testInfo.outputPath('dark-menu.png') })
+      await page.keyboard.press('Escape')
+    }
+    await page.getByRole('button', { name: 'Cambiar a modo claro' }).click()
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(243, 245, 242)')
+    await page.screenshot({ path: testInfo.outputPath(`light-${width}.png`), fullPage: true })
+  })
+}
+
 for (const width of [320, 390, 640, 760, 761, 1024, 1050, 1051, 1280, 1366, 1440, 1920]) {
   test(`navigation fits and remains usable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 })
@@ -30,7 +60,7 @@ for (const width of [320, 390, 640, 760, 761, 1024, 1050, 1051, 1280, 1366, 1440
       await expect(dialog.getByRole('link', { name: 'Pagos y deuda' })).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Cerrar menú' })).toBeFocused()
       await expect(page.getByRole('button', { name: 'Salir' })).toBeVisible()
-      await expect(dialog.getByRole('link', { name: 'Pedidos' })).toHaveAttribute('aria-current', 'page')
+      await expect(dialog.getByRole('link', { name: 'Pedidos', exact: true })).toHaveAttribute('aria-current', 'page')
       const bounds = await dialog.boundingBox()
       expect(bounds!.width).toBeLessThanOrEqual(width)
       expect(bounds!.height).toBeLessThanOrEqual(768)
