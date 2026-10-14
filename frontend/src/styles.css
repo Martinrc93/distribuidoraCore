@@ -394,6 +394,17 @@
   .warning-text { @apply p-[12px] [border-left:3px_solid_var(--copper)] bg-[#faf4eb] text-[#79501e] text-[12px] leading-[1.5]; }
   .modal-backdrop { @apply fixed inset-[0] z-[20] grid place-items-center p-[20px] bg-[rgba(25,_58,_67,_.38)]; }
   .modal-backdrop .panel { @apply w-[min(100%,_520px)] [box-shadow:0_18px_55px_rgba(25,_58,_67,_.2)]; }
+  .product-movements-backdrop > .panel { @apply w-[min(100%,_1100px)] max-h-[calc(100dvh_-_40px)] overflow-y-auto; }
+  .product-movements-backdrop h2 { @apply [overflow-wrap:anywhere]; }
+  .product-movements-table .data-table { @apply min-w-0 table-fixed; }
+  .product-movements-table .data-table th, .product-movements-table .data-table td { @apply whitespace-normal [overflow-wrap:anywhere]; }
+  @media (min-width: 641px) {
+    .product-movements-table .data-table th:nth-child(1) { @apply w-[20%]; }
+    .product-movements-table .data-table th:nth-child(2) { @apply w-[14%]; }
+    .product-movements-table .data-table th:nth-child(3) { @apply w-[10%]; }
+    .product-movements-table .data-table th:nth-child(4) { @apply w-[22%]; }
+    .product-movements-table .data-table th:nth-child(5) { @apply w-[34%]; }
+  }
   .sale-detail-backdrop > .panel { @apply max-h-[calc(100dvh_-_40px)] overflow-y-auto; }
   @media (min-width: 761px) {
     .sale-detail-backdrop > .panel { @apply w-[min(100%,_1040px)] p-[28px]; }

@@ -756,6 +756,7 @@ no bloquea por sí mismo navegación del sidebar ni atrás/adelante del router.
 | Variante | Alcance y diferencia |
 | --- | --- |
 | `.modal-backdrop .panel` | Patrón básico de `520px`; no incluye por sí solo límite de altura ni las tres secciones |
+| `.product-movements-backdrop > .panel` | Movimientos del producto: ancho adaptable hasta `1100px` y altura limitada al viewport con scroll vertical. `.product-movements-table` muestra las cinco columnas sin scroll horizontal, con anchos proporcionales y texto completo adaptable, incluidas las referencias largas. Hasta `640px` conserva las tarjetas compartidas |
 | `.customer-modal` | Formulario de clientes de ancho adaptable hasta `1040px`, scroll interno y descarte mediante `ConfirmationDialog` |
 | `.price-status-dialog-*` | Confirmación de estado de listas: `480px`, radio `12px`, resumen del cambio, cierre y capa `35` |
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
