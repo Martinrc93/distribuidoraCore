@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
@@ -93,12 +94,12 @@ export default function OrderDetailPage() {
 
   return <>
     <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href="/orders">Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
-    {feedback && <p className="success-text" role="status">{feedback}</p>}
-    {Number(order.previousBalanceAmount ?? 0) > 0 && <Panel title="Importe para la entrega"><dl className="confirmation-result"><dt>Total del pedido</dt><dd>{money(order.total)}</dd><dt>Saldo anterior incluido</dt><dd>{money(order.previousBalanceAmount)}</dd><dt>Total a cobrar</dt><dd>{money(order.collectionTotal ?? order.total + Number(order.previousBalanceAmount))}</dd></dl></Panel>}
+    {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
+    {Number(order.previousBalanceAmount ?? 0) > 0 && <Panel title="Importe para la entrega"><dl className="confirmation-result"><dt>Total del pedido</dt><dd><CurrencyText>{money(order.total)}</CurrencyText></dd><dt>Saldo anterior incluido</dt><dd><CurrencyText>{money(order.previousBalanceAmount)}</CurrencyText></dd><dt>Total a cobrar</dt><dd><CurrencyText>{money(order.collectionTotal ?? order.total + Number(order.previousBalanceAmount))}</CurrencyText></dd></dl></Panel>}
     <div className="stats-grid compact">
       <article className="stat-card"><span>Estado del pedido</span><strong><Badge tone="soft">{order.status}</Badge></strong><small className="[overflow-wrap:anywhere]">{order.customer}</small></article>
-      <article className="stat-card"><span>Total de la venta</span><strong>{money(sale.total)}</strong><small>Venta {sale.number}</small></article>
-      <article className="stat-card"><span>Saldo de la venta</span><strong>{money(sale.balance)}</strong><small>{money(sale.paid)} cobrados</small></article>
+      <article className="stat-card"><span>Total de la venta</span><strong><CurrencyText>{money(sale.total)}</CurrencyText></strong><small>Venta {sale.number}</small></article>
+      <article className="stat-card"><span>Saldo de la venta</span><strong><CurrencyText>{money(sale.balance)}</CurrencyText></strong><small><CurrencyText>{money(sale.paid)}</CurrencyText> cobrados</small></article>
     </div>
     <>
       <Panel title="Productos del pedido"><DataTable columns={itemColumns} rows={itemRows} /></Panel>
@@ -115,9 +116,9 @@ export default function OrderDetailPage() {
       </Panel>}
       <div className="content-grid two-thirds">
         <Panel title="Pagos registrados">{paymentRows.length ? <DataTable columns={paymentColumns} rows={paymentRows} /> : <EmptyState title="Todavía no hay pagos" description="El saldo permanece en la cuenta corriente del cliente." />}</Panel>
-        <Panel title="Cuenta corriente"><dl className="account-ledger"><dt>Débitos de esta venta</dt><dd>{money(account.debit)}</dd><dt>Créditos aplicados</dt><dd>{money(account.credit)}</dd><dt>Saldo pendiente</dt><dd>{money(account.net)}</dd><dt>Saldo total del cliente</dt><dd>{money(order.customerBalance)}</dd></dl></Panel>
+        <Panel title="Cuenta corriente"><dl className="account-ledger"><dt>Débitos de esta venta</dt><dd><CurrencyText>{money(account.debit)}</CurrencyText></dd><dt>Créditos aplicados</dt><dd><CurrencyText>{money(account.credit)}</CurrencyText></dd><dt>Saldo pendiente</dt><dd><CurrencyText>{money(account.net)}</CurrencyText></dd><dt>Saldo total del cliente</dt><dd><CurrencyText>{money(order.customerBalance)}</CurrencyText></dd></dl></Panel>
       </div>
-      <Panel title="Resumen"><dl className="order-totals"><dt>Subtotal</dt><dd>{money(order.subtotal)}</dd><dt>Descuentos</dt><dd>{money(order.discount)}</dd><dt className="total-label">Total</dt><dd className="total-value">{money(order.total)}</dd></dl><p className="helper-text">Lista(s) usada(s): {Array.from(new Set(items.map((item) => item.priceListCode))).join(', ') || '—'}</p></Panel>
+      <Panel title="Resumen"><dl className="order-totals"><dt>Subtotal</dt><dd><CurrencyText>{money(order.subtotal)}</CurrencyText></dd><dt>Descuentos</dt><dd><CurrencyText>{money(order.discount)}</CurrencyText></dd><dt className="total-label">Total</dt><dd className="total-value"><CurrencyText>{money(order.total)}</CurrencyText></dd></dl><p className="helper-text">Lista(s) usada(s): {Array.from(new Set(items.map((item) => item.priceListCode))).join(', ') || '—'}</p></Panel>
       <OrderLifecycleActions orderId={order.id} orderNumber={order.number} orderStatus={order.status} saleBalance={sale.balance} previousDebtAvailable={sale.previousDebtAvailable} onChanged={() => { void query.refetch() }} />
     </>
   </>

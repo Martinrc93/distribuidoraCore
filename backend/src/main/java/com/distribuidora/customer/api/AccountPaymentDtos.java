@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import com.distribuidora.customer.application.AccountPaymentService;
 
 import java.math.BigDecimal;
@@ -22,6 +24,17 @@ public final class AccountPaymentDtos {
         @Size(max = 100) String transferReference,
         UUID saleId
     ) implements AccountPaymentService.PaymentCommand { }
+
+    public record SettlementPayment(
+        @NotNull @DecimalMin(value = "0.0000", inclusive = false) @Digits(integer = 15, fraction = 4)
+        BigDecimal amount,
+        @NotBlank @Pattern(regexp = "CASH|BANK_TRANSFER") String method,
+        @Size(max = 100) String transferReference
+    ) implements AccountPaymentService.PaymentCommand {
+        @Override public UUID saleId() { return null; }
+    }
+
+    public record SettlementRequest(@NotEmpty @Size(max = 100) List<@NotNull @Valid SettlementPayment> payments) { }
 
     public record Allocation(UUID saleId, String saleNumber, UUID paymentId, BigDecimal amount) { }
 

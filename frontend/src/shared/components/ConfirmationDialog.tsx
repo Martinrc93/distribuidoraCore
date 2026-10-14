@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from './Button'
+import { CurrencyText } from './CurrencyText'
 import { lockBodyScroll } from '../lockBodyScroll'
 
 type Props = {
@@ -50,8 +51,8 @@ export function ConfirmationDialog({ title, description, confirmLabel, cancelLab
     }}>
       <header className="confirmation-dialog-header"><h2 id={`${id}-title`}>{title}</h2></header>
       <div className="confirmation-dialog-body">
-        <p id={`${id}-description`}>{description}</p>
-        {error && <p className="error-text" role="alert">{error}</p>}
+        <p id={`${id}-description`}><CurrencyText>{description}</CurrencyText></p>
+        {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
       </div>
       <footer className="confirmation-dialog-footer">
         <Button data-safe-action type="button" variant="secondary" disabled={pending} onClick={onCancel}>{cancelLabel}</Button>

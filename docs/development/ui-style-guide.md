@@ -102,11 +102,20 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   `bg-accent`). `var(--...)` sigue disponible para propiedades arbitrarias.
   Los colores literales existentes de bordes,
   overlays y hover son detalles de sus patrones; no crear otra paleta por pantalla.
-- Fuente global: `Aptos, "Segoe UI", ui-sans-serif, system-ui, sans-serif`.
-  Los números usan `tabular-nums`.
+- Fuente global: `"Inter Variable", Aptos, "Segoe UI", ui-sans-serif, system-ui, sans-serif`.
+  Inter se sirve desde la aplicación mediante `@fontsource-variable/inter/wght.css`,
+  importado en `frontend/src/main.tsx`, con pesos variables y `font-display: swap`.
+  El token `--font-sans` centraliza la familia para texto, controles y diálogos.
+  Los números conservan `tabular-nums`.
 - Título de página: `h1`, `clamp(28px, 4vw, 42px)`, altura de línea `1.05`.
   Título de panel: `h2`, `15px`; subtítulo: `h3`, `14px`.
   Descripciones: `13px`; controles y tablas: `12px`; etiquetas: `11px`.
+- Los importes monetarios usan negrita (`700`) sin cambiar su tamaño, color ni
+  formato. `DataTable` agrega `.currency-value` a las celdas con importes
+  formateados con `$`; `CurrencyText` destaca solo los importes dentro de ayudas,
+  descripciones y mensajes. Los campos de precio, costo, pago, saldo anterior y
+  límite de crédito usan `.currency-input`, también en móvil. Cantidades,
+  porcentajes y referencias de transferencia conservan su estilo.
 - Radios por contexto: paneles/botones `5px`, campos `4px`, tablas `8px`, modal
   de catálogo `10px`, badges tipo píldora `999px`. No uniformarlos arbitrariamente.
 - Reutilizar los espacios definidos por cada patrón: panel `20px`, formulario
@@ -255,6 +264,21 @@ tarjeta de saldo se alinea arriba sin estirarse a la altura de los datos.
 Los datos usan un `dl.customer-detail-fields` con dos columnas, etiquetas de
 `11px`, valores de `13px` y ajuste de nombres/direcciones largos. A `760px`
 los datos y el resumen de saldo se apilan en una columna.
+
+Los administradores también tienen «Saldar cuenta» en las filas con saldo deudor
+positivo, incluidos clientes inactivos al seleccionar ese filtro. Consulta el
+saldo actual antes de abrir el diálogo y conserva filtros y paginación. Reutiliza
+`DeliveryAttemptDialog` en modo `account`: muestra el cliente, el saldo de cuenta
+corriente y los mismos controles y estilos de pago de las entregas, sin resultado
+de entrega ni selección de deuda anterior. Precarga el saldo completo en efectivo;
+permite combinar efectivo y transferencia y exige el número de transferencia.
+«Pagar total» completa el importe y «Confirmar pago» exige cubrir exactamente la
+deuda. La API exclusiva de administradores registra todos los pagos en una sola
+transacción e imputa primero las deudas más antiguas. Si cambió el saldo, muestra
+el error, actualiza el saldo y conserva el borrador para corregirlo. Al guardar
+refresca clientes, ventas, pedidos, pagos y métricas. El diálogo conserva el foco,
+Escape, bloqueo durante guardado y adaptación móvil del pago de entregas; al
+cerrar vuelve al botón o a la búsqueda si la fila dejó de estar visible.
 
 «Historial de pedidos» reutiliza `DataTable` y la paginación compartida. Incluye
 fecha/hora de Argentina, vendedor, total, saldo pendiente, estado en español y «Ver pedido»;
@@ -414,8 +438,9 @@ El detalle del pedido y el resultado de confirmación usan el nombre del cliente
 como `h1` de `PageHeader`. Debajo muestran «Pedido» y su número con la fuente
 secundaria de `13px`; el detalle también muestra la fecha. La variante local
 `.order-customer-header` permite partir nombres largos sin desbordar en móvil,
-sin cambiar encabezados de otras pantallas. El número concatena los cuatro
-dígitos del cliente y cinco del correlativo por cliente (ejemplo `000100004`).
+sin cambiar encabezados de otras pantallas. El número concatena el número completo
+del cliente, con un mínimo de cuatro dígitos, y cinco del correlativo por cliente
+(ejemplos `000100004` y `1000000001`).
 El listado de clientes muestra su número debajo del nombre en `11px`, y la ficha
 lo incluye como dato «N.º de cliente». Contrato en
 [`order-numbering.md`](../api/order-numbering.md).
@@ -504,7 +529,9 @@ compartida, con etiquetas visibles y la papelera al final.
 
 Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
 
-El listado de productos combina búsqueda por nombre, marca y categoría con
+El listado de productos muestra costo y stock en negrita, conservando su tamaño
+en escritorio y móvil y el subrayado del stock negativo.
+Combina búsqueda por nombre, marca y categoría con
 `SearchableSelect`, y un select de stock con «Ambos» por defecto, «Positivo»
 (mayor a cero) y «Negativo» (menor a cero). «Ambos» incluye cero y productos sin
 saldo registrado. Las opciones de marca/categoría incluyen el catálogo completo,
@@ -816,8 +843,9 @@ transferencias. Solicita el número en el mismo bloque de fondo del pago por
 transferencia. Al elegir «No entregado», limpia los pagos y la deuda seleccionada
 y exige una observación; «Entregado» no muestra observación. Contiene el foco, bloquea
 el fondo y su scroll, enfoca el resultado al abrir y restaura el foco al cerrar.
-Escape y todas las acciones/campos quedan bloqueados durante el guardado;
-los errores permanecen dentro del cuerpo sin perder los datos. Hasta `760px`,
+Escape y todas las acciones/campos quedan bloqueados durante el guardado.
+Tab y Shift+Tab recorren circularmente los controles habilitados del diálogo.
+Los errores permanecen dentro del cuerpo sin perder los datos. Hasta `760px`,
 usa márgenes de `14px` y padding reducido. Su cuerpo desplaza sin ocultar el pie.
 
 El modal de alta/edición de clientes usa `min(100%, clamp(640px, 76vw, 1040px))`

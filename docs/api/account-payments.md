@@ -60,6 +60,39 @@ saldo global persistido, dentro de la misma transacción.
 - `404 NOT_FOUND`: cliente o venta indicada inexistentes o fuera del alcance del vendedor.
 - `409 CONFLICT`: el cliente no tiene deuda positiva suficiente, la asignación excede el saldo o la venta no está abierta.
 
-## Verificación
+## Liquidación completa para administradores
+
+`POST /api/customers/{customerId}/account-payments/settlement` requiere
+`ADMIN_ALL`, también cuando el usuario tiene `SALE_PAYMENT`. El listado de
+Clientes ofrece «Saldar cuenta» únicamente para saldos positivos y consulta el
+saldo actual antes de abrir el mismo modal de pago utilizado en entregas.
+
+```json
+{
+  "payments": [
+    { "amount": 40.00, "method": "CASH" },
+    { "amount": 30.00, "method": "BANK_TRANSFER", "transferReference": "TR-123" }
+  ]
+}
+```
+
+Admite entre 1 y 100 pagos válidos. Cada transferencia exige una referencia no
+vacía de hasta 100 caracteres. La suma debe coincidir exactamente con el saldo
+deudor actual, verificado después de bloquear ventas y cliente en el mismo orden
+que los pagos individuales. Un saldo cambiado, cero, negativo o un importe
+incompleto/excesivo devuelve `409` sin registrar cobros.
+
+Todos los medios se imputan por FIFO dentro de una única transacción: si falla
+cualquier asignación, se revierten también los pagos anteriores, sus asientos,
+los saldos y la auditoría. No cambia el estado de entrega. La respuesta conserva
+el formato anterior, con el importe total en `received`, `allocationMode: "FIFO"`
+y `balanceAfter: 0`.
+
+## Verificación de liquidaciones
+
+Las pruebas cubren pagos combinados, saldo actualizado, permisos, validación,
+rollback ante un fallo posterior y reintentos sin doble cobro. El flujo de navegador
+verifica 320, 640 y 1280 px, teclado, restauración del foco, estado pendiente y
+actualización del listado filtrado.
 
 Los tests PostgreSQL cubren imputación FIFO, asignación específica, límites por deuda, referencia de transferencia y concurrencia sin doble cobro. También verifican aislamiento entre vendedores con ventas del mismo cliente, saldos restringidos y autorización por API.

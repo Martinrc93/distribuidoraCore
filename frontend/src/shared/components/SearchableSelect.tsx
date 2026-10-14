@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { CurrencyText, hasCurrencyAmount } from './CurrencyText'
 
 type Option = { id: string; name: string }
 type Props = {
@@ -79,7 +80,7 @@ export function SearchableSelect({ label, options, value, onChange, allLabel, un
   }}>
     <label htmlFor={id}>{label}</label>
     <div className="searchable-select-control">
-      <input ref={inputRef} id={id} className="input" role="combobox" aria-autocomplete="list" aria-expanded={expanded}
+      <input ref={inputRef} id={id} className={`input${hasCurrencyAmount(selectedName) ? ' currency-input' : ''}`} role="combobox" aria-autocomplete="list" aria-expanded={expanded}
         aria-controls={expanded ? `${id}-list` : undefined} aria-activedescendant={activeOption >= 0 ? `${id}-option-${activeOption}` : undefined}
         aria-required={required || undefined} aria-invalid={invalid} aria-describedby={describedBy} aria-busy={loading || undefined}
         autoComplete="off" disabled={disabled || loading} placeholder="Buscar por nombre…"
@@ -95,7 +96,7 @@ export function SearchableSelect({ label, options, value, onChange, allLabel, un
         <ul ref={listRef} id={`${id}-list`} role="listbox" aria-label={label}>
           {visibleOptions.map((option, index) => <li key={option.id} id={`${id}-option-${index}`} role="option"
             aria-selected={value === option.id} className={index === activeOption ? 'active' : ''}
-            onMouseDown={(event) => event.preventDefault()} onMouseMove={() => setActive(index)} onClick={() => choose(option)}>{option.name}</li>)}
+            onMouseDown={(event) => event.preventDefault()} onMouseMove={() => setActive(index)} onClick={() => choose(option)}><CurrencyText>{option.name}</CurrencyText></li>)}
         </ul>
         {matches.length === 0 && <p role="status">No se encontraron coincidencias.</p>}
       </div>}

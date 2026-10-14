@@ -37,11 +37,13 @@ audit.entries
 - Zona de presentación: `America/Argentina/Buenos_Aires`.
 - Timestamps almacenados en UTC; las vigencias comerciales son `DATE` y usan
   explícitamente `America/Argentina/Buenos_Aires`.
-- V36 agrega un número estable de cliente de cuatro dígitos y un contador de
+- V36 agrega un número estable de cliente y un contador de
   pedidos por cliente. El número visible del pedido concatena ambos con cinco
   dígitos para el correlativo. La asignación bloquea la fila del cliente dentro
   de la transacción; UUIDs y referencias comerciales se conservan, y los
-  números anteriores quedan como alias. Ver
+  números anteriores quedan como alias. V37 elimina el límite de 9.999 clientes
+  usando `BIGINT` y un mínimo de cuatro dígitos de presentación, sin truncar los
+  números más largos ni modificar los existentes. Ver
   [contrato de numeración](../api/order-numbering.md).
 
 ## Importes y cantidades

@@ -155,7 +155,7 @@ public class ReadQueryService {
             parameters.add(state);
         }
         return page("""
-            select c.id, lpad(cast(c.customer_number as varchar), 4, '0') as "number", c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
+            select c.id, lpad(cast(c.customer_number as varchar), greatest(4, length(cast(c.customer_number as varchar))), '0') as "number", c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                    c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller,
                    c.balance, c.status
             from customer.customers c

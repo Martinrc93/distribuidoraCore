@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { apiGet, apiPost, ApiError, type ApiPage } from '../../shared/api/client'
@@ -143,16 +144,16 @@ export default function SalesPage() {
     {selectedSaleId && <div role="dialog" aria-modal="true" aria-labelledby="sale-detail-title" className="modal-backdrop sale-detail-backdrop"><Panel title={`Venta ${detailQuery.data?.sale.number ?? ''}`} description="Pedido, cliente, vendedor, cobros y productos de la venta." action={<Button variant="link" onClick={() => setSelectedSaleId('')}>Cerrar</Button>}>
       <h2 id="sale-detail-title">Detalle de venta</h2>
       {detailQuery.isLoading ? <EmptyState title="Cargando venta" description="Consultando snapshots y líneas de venta." /> : detailQuery.isError ? <EmptyState title="No se pudo cargar la venta" description={detailQuery.error.message} /> : !detailQuery.data ? <EmptyState title="Venta no disponible" description="No se encontró el detalle de esta venta." /> : <>
-        {feedback && <p className="success-text" role="status">{feedback}</p>}
+        {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
         {returnError && <p className="error-text" role="alert">{returnError}</p>}
         <dl className="confirmation-result">
           <dt>Pedido</dt><dd>{detailQuery.data.order?.number ?? '—'}</dd>
           <dt>Cliente</dt><dd>{detailQuery.data.order?.customer ?? '—'}</dd>
           <dt>Vendedor</dt><dd>{detailQuery.data.order?.seller ?? 'Sin asignar'}</dd>
           <dt>Fecha</dt><dd>{detailQuery.data.sale.date ? formatDateTime(detailQuery.data.sale.date) : detailQuery.data.order?.date ? formatDateTime(detailQuery.data.order.date) : '—'}</dd>
-          <dt>Total</dt><dd>{money(detailQuery.data.sale.total ?? detailQuery.data.order?.total)}</dd>
-          <dt>Pagado</dt><dd>{money(detailQuery.data.sale.paid)}</dd>
-          <dt>Saldo pendiente</dt><dd>{money(detailQuery.data.sale.balance)}</dd>
+          <dt>Total</dt><dd><CurrencyText>{money(detailQuery.data.sale.total ?? detailQuery.data.order?.total)}</CurrencyText></dd>
+          <dt>Pagado</dt><dd><CurrencyText>{money(detailQuery.data.sale.paid)}</CurrencyText></dd>
+          <dt>Saldo pendiente</dt><dd><CurrencyText>{money(detailQuery.data.sale.balance)}</CurrencyText></dd>
           <dt>Estado</dt><dd>{stateName[detailQuery.data.sale.status] ?? detailQuery.data.sale.status}</dd>
         </dl>
         <h3>Pagos registrados</h3>

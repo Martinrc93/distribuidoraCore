@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiGet, apiPost } from '../../shared/api/client'
@@ -117,13 +118,13 @@ export function SupplierOrderForm({ onClose, onSaved }: { onClose: () => void; o
           <DataTable columns={[
             { key: 'name', label: 'Producto', emphasis: true },
             { key: 'quantity', label: 'Cantidad', render: (value, row) => <input className="input w-[120px] max-w-full" inputMode="decimal" aria-label={`Cantidad de ${row.name}`} value={value} onChange={(event) => { setLines((current) => current.map((line) => line.productId === row.id ? { ...line, quantity: event.target.value } : line)); changed() }} /> },
-            { key: 'unitCost', label: 'Costo unitario', render: (value, row) => <input className="input w-[140px] max-w-full" inputMode="decimal" aria-label={`Costo de ${row.name}`} value={value} onChange={(event) => { setLines((current) => current.map((line) => line.productId === row.id ? { ...line, unitCost: event.target.value } : line)); changed() }} /> },
+            { key: 'unitCost', label: 'Costo unitario', render: (value, row) => <input className="input w-[140px] max-w-full currency-input" inputMode="decimal" aria-label={`Costo de ${row.name}`} value={value} onChange={(event) => { setLines((current) => current.map((line) => line.productId === row.id ? { ...line, unitCost: event.target.value } : line)); changed() }} /> },
             { key: 'total', label: 'Subtotal', align: 'right' },
             { key: 'actions', label: 'Acciones', render: (_, row) => <Button type="button" variant="danger" aria-label={`Quitar ${row.name}`} onClick={() => { setLines((current) => current.filter((line) => line.productId !== row.id)); changed() }}>Quitar</Button> },
           ]} rows={lines.map((line) => ({ id: line.productId, name: line.name, quantity: line.quantity, unitCost: line.unitCost, total: money(decimal(line.quantity) * decimal(line.unitCost) || 0) }))} emptyContent={<p className="table-empty-message">Agrega productos para solicitar el pedido.</p>} />
-          <p className="mt-[18px] text-[15px] font-bold">Total estimado: {money(total)}</p>
+          <p className="mt-[18px] text-[15px] font-bold">Total estimado: <CurrencyText>{money(total)}</CurrencyText></p>
         </fieldset>
-        {error && <p className="error-text" role="alert">{error}</p>}
+        {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
         <div className="page-actions mt-[18px]"><Button type="button" variant="secondary" disabled={busy} onClick={requestDiscard}>Cancelar</Button><Button type="submit" disabled={busy || suppliers.isLoading || suppliers.isError || !supplierId || !lines.length || !isoDate}>{saving ? 'Guardando...' : 'Solicitar pedido'}</Button></div>
       </form>
     </Panel>

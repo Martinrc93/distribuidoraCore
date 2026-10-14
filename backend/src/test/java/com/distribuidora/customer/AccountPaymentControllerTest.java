@@ -88,4 +88,40 @@ class AccountPaymentControllerTest {
 
         verifyNoInteractions(service);
     }
+
+    @Test
+    void settlementRequiresAdminAuthority() throws Exception {
+        var method = AccountPaymentController.class.getDeclaredMethod("settle", UUID.class,
+            AccountPaymentDtos.SettlementRequest.class);
+        assertThat(method.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+    }
+
+    @Test
+    void httpSettlementBindsMixedPaymentsAndReturnsZeroBalance() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        var payments = List.of(new AccountPaymentDtos.SettlementPayment(new BigDecimal("4"), "CASH", null),
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("6"), "BANK_TRANSFER", "TR-123"));
+        when(service.settle(customerId, payments)).thenReturn(new AccountPaymentService.PaymentResult(
+            customerId, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, "FIFO", List.of()));
+        mockMvc.perform(post("/api/customers/{customerId}/account-payments/settlement", customerId)
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"payments":[{"amount":4,"method":"CASH"},{"amount":6,"method":"BANK_TRANSFER","transferReference":"TR-123"}]}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.balanceAfter").value(0));
+        verify(service).settle(customerId, payments);
+    }
+
+    @Test
+    void httpSettlementRejectsEmptyAndInvalidPayments() throws Exception {
+        for (String body : List.of("{\"payments\":[]}", "{\"payments\":[null]}",
+            "{\"payments\":[{\"amount\":0,\"method\":\"CASH\"}]}",
+            "{\"payments\":[{\"amount\":1,\"method\":\"CHECK\"}]}")) {
+            mockMvc.perform(post("/api/customers/{customerId}/account-payments/settlement", UUID.randomUUID())
+                    .contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(service);
+    }
 }

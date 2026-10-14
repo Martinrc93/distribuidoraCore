@@ -42,11 +42,128 @@ describe('CustomersPage', () => {
     renderPage(['ORDER_CREATE'])
     expect(await screen.findByText('Almacén Norte')).toBeInTheDocument()
     expect(screen.getByText('Consultá únicamente los clientes asignados a tu vendedor.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /nuevo cliente|editar|activar cliente|desactivar cliente/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /nuevo cliente|editar|activar cliente|desactivar cliente|saldar cuenta/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /ver cliente/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Buscar por vendedor' })).not.toBeInTheDocument()
     expect(screen.getAllByRole('columnheader')).toHaveLength(5)
     expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith('/api/customers?'))).toBe(true)
+  })
+
+  it('offers settlement only for positive balances, including inactive customers', async () => {
+    const content = [customers.content[0],
+      { ...customers.content[0], id: 'zero', name: 'Sin deuda', balance: 0 },
+      { ...customers.content[0], id: 'credit', name: 'Saldo a favor', balance: -10 },
+      { ...customers.content[0], id: 'inactive', name: 'Inactivo con deuda', status: 'INACTIVE' }]
+    mockFetch(input => response(String(input).startsWith('/api/customers?page=') ? { ...customers, content } : { content: [] }))
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Saldar cuenta de Almacén Norte' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Saldar cuenta de Inactivo con deuda' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /saldar cuenta/i })).toHaveLength(2)
+  })
+
+  it('uses the current balance and settles mixed payments in one request', async () => {
+    const user = userEvent.setup()
+    let settled = false
+    const fetchMock = mockFetch((input, init) => {
+      const path = String(input)
+      if (path === '/api/customers/customer-1') return response({ ...customers.content[0], balance: 1200 })
+      if (path.endsWith('/settlement')) { settled = true; return response({ balanceAfter: 0 }, 201) }
+      if (path.startsWith('/api/customers?page=')) return response({ ...customers, content: [{ ...customers.content[0], balance: settled ? 0 : 1000 }] })
+      return response({ content: [] })
+    })
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Saldar cuenta de Almacén Norte' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Saldar cuenta' })
+    expect(within(dialog).queryByLabelText('Resultado de entrega')).not.toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Importe del pago')).toHaveValue('1.200,00')
+    await user.clear(within(dialog).getByLabelText('Importe del pago'))
+    await user.type(within(dialog).getByLabelText('Importe del pago'), '400')
+    await user.click(within(dialog).getByRole('button', { name: 'Agregar pago' }))
+    await user.selectOptions(within(dialog).getAllByLabelText('Medio de pago')[1], 'BANK_TRANSFER')
+    await user.type(within(dialog).getAllByLabelText('Importe del pago')[1], '800')
+    await user.type(within(dialog).getByLabelText('Número de transferencia'), 'TR-123')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar pago' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/account-payments/settlement', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ payments: [{ method: 'CASH', amount: 400 }, { method: 'BANK_TRANSFER', amount: 800, transferReference: 'TR-123' }] }),
+    })))
+    expect(await screen.findByText('Cuenta corriente saldada correctamente.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Saldar cuenta' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /saldar cuenta/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Buscar clientes' })).toHaveFocus()
+  })
+
+  it('validates full payment and transfer reference before submitting', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(input => String(input) === '/api/customers/customer-1' ? response(customers.content[0]) : response(customers))
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /saldar cuenta/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Saldar cuenta' })
+    await user.clear(within(dialog).getByLabelText('Importe del pago'))
+    await user.type(within(dialog).getByLabelText('Importe del pago'), '500')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar pago' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('exactamente el saldo')
+    await user.click(within(dialog).getByRole('button', { name: 'Pagar total' }))
+    await user.selectOptions(within(dialog).getByLabelText('Medio de pago'), 'BANK_TRANSFER')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar pago' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('número de transferencia')
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
+  it('refreshes a changed balance after conflict and preserves the draft for correction', async () => {
+    const user = userEvent.setup()
+    let paymentCalls = 0
+    mockFetch((input, init) => {
+      const path = String(input)
+      if (path.endsWith('/settlement') && init?.method === 'POST') {
+        paymentCalls += 1
+        return paymentCalls === 1 ? response({ detail: 'El saldo cambió. Revisa los importes.' }, 409) : response({ balanceAfter: 0 }, 201)
+      }
+      if (path === '/api/customers/customer-1') return response({ ...customers.content[0], balance: paymentCalls ? 800 : 1000 })
+      return response(customers)
+    })
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /saldar cuenta/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Saldar cuenta' })
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar pago' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('El saldo cambió')
+    expect(within(dialog).getByLabelText('Importe del pago')).toHaveValue('1.000,00')
+    await user.click(within(dialog).getByRole('button', { name: 'Pagar total' }))
+    expect(within(dialog).getByLabelText('Importe del pago')).toHaveValue('800,00')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar pago' }))
+    expect(await screen.findByText('Cuenta corriente saldada correctamente.')).toBeInTheDocument()
+    expect(paymentCalls).toBe(2)
+  })
+
+  it('does not open settlement when another payment has already cleared the balance', async () => {
+    const user = userEvent.setup()
+    mockFetch(input => String(input) === '/api/customers/customer-1' ? response({ ...customers.content[0], balance: 0 }) : response(customers))
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /saldar cuenta/i }))
+    expect(await screen.findByText('El cliente no tiene saldo pendiente.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Saldar cuenta' })).not.toBeInTheDocument()
+  })
+
+  it('preserves payments on error and blocks duplicate submissions and closing while saving', async () => {
+    const user = userEvent.setup()
+    let resolvePayment!: (value: Response) => void
+    const fetchMock = mockFetch((input, init) => init?.method === 'POST'
+      ? new Promise(resolve => { resolvePayment = resolve })
+      : response(String(input) === '/api/customers/customer-1' ? customers.content[0] : customers))
+    renderPage()
+    const trigger = await screen.findByRole('button', { name: /saldar cuenta/i })
+    await user.click(trigger)
+    const dialog = await screen.findByRole('dialog', { name: 'Saldar cuenta' })
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar pago' }))
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeDisabled()
+    expect(within(dialog).getByLabelText('Importe del pago')).toBeDisabled()
+    dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+    expect(dialog).toBeInTheDocument()
+    resolvePayment(await response({ detail: 'Error al registrar el cobro' }, 500))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Error al registrar el cobro')
+    expect(within(dialog).getByLabelText('Importe del pago')).toHaveValue('1.000,00')
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    expect(trigger).toHaveFocus()
   })
 
   it('preserves customer edits until discard is confirmed through the shared dialog', async () => {

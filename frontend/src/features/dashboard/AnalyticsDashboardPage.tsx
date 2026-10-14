@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { apiGet } from '../../shared/api/client'
@@ -58,7 +59,7 @@ function SalesTrend({ points }: { points: TrendPoint[] }) {
   const path = coordinates.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.y}`).join(' ')
   const tickIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
   return <figure className="m-0 min-w-0">
-    <div className="mb-[8px] flex justify-between text-[11px] text-muted"><span>Importe diario</span><span>Máximo {money(max)}</span></div>
+    <div className="mb-[8px] flex justify-between text-[11px] text-muted"><span>Importe diario</span><span>Máximo <CurrencyText>{money(max)}</CurrencyText></span></div>
     <svg className="block h-[180px] w-full" viewBox="0 0 800 180" preserveAspectRatio="none" role="img" aria-label={`Ventas diarias del ${displayDate(points[0].date)} al ${displayDate(points.at(-1)!.date)}. Máximo diario ${money(max)}.`}>
       {[12, 92, 172].map((y) => <line key={y} x1="0" x2="800" y1={y} y2={y} className="stroke-line" vectorEffect="non-scaling-stroke" />)}
       <path d={path} fill="none" className="stroke-accent" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
@@ -115,7 +116,7 @@ export default function AnalyticsDashboardPage() {
         <OrderDateFilter id="analytics-date-min" label="Desde" value={dateMin} isoValue={start ?? ''} invalid={Boolean(error)} describedBy={error ? 'analytics-date-error' : undefined} onChange={(value) => changeDate('dateMin', value)} />
         <OrderDateFilter id="analytics-date-max" label="Hasta" value={dateMax} isoValue={end ?? ''} invalid={Boolean(error)} describedBy={error ? 'analytics-date-error' : undefined} onChange={(value) => changeDate('dateMax', value)} />
       </div>
-      {error && <p id="analytics-date-error" className="error-text" role="alert">{error}</p>}
+      {error && <p id="analytics-date-error" className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
     </Panel>
     {!error && query.isLoading && <div role="status"><EmptyState title="Cargando dashboard" description="Consultando indicadores y actividad comercial." /></div>}
     {!error && query.isError && <div role="alert"><EmptyState title="No se pudo cargar el dashboard" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching}>Reintentar</Button>} /></div>}
@@ -130,7 +131,7 @@ export default function AnalyticsDashboardPage() {
       <div className="content-grid two-thirds">
         <Panel title="Evolución de ventas" description={`Del ${dateMin} al ${dateMax}. Ventas confirmadas y entregadas, después de descuentos.`} action={<Button variant="link" href={`/sales?dateMin=${encodeURIComponent(dateMin)}&dateMax=${encodeURIComponent(dateMax)}`}>Ver ventas</Button>}>
           <SalesTrend points={data.trend} />
-          <p className="mb-0 mt-[16px] text-[12px] text-muted">Ticket promedio: {money(data.sales.orders ? data.sales.amount / data.sales.orders : 0)}. Se excluyen cancelaciones. Las devoluciones de mercadería todavía no generan ajustes financieros.</p>
+          <p className="mb-0 mt-[16px] text-[12px] text-muted">Ticket promedio: <CurrencyText>{money(data.sales.orders ? data.sales.amount / data.sales.orders : 0)}</CurrencyText>. Se excluyen cancelaciones. Las devoluciones de mercadería todavía no generan ajustes financieros.</p>
         </Panel>
         <Panel title="Cobros y pendientes" description="Ingresos del período y prioridades actuales.">
           <dl className="m-0 grid gap-[14px] text-[13px]">{[['Efectivo', money(data.collections.cash)], ['Transferencias', money(data.collections.transfer)], ['Productos sin stock o con saldo negativo', number(data.current.stockAlertCount)], ['Pedido pendiente más antiguo', data.current.oldestPendingAt ? date(data.current.oldestPendingAt) : 'Sin pendientes']].map(([label, value]) => <div className="flex flex-wrap justify-between gap-[8px] border-b border-line pb-[12px]" key={label}><dt className="max-w-[230px] text-muted">{label}</dt><dd className="m-0 font-bold">{value}</dd></div>)}</dl>
@@ -139,7 +140,7 @@ export default function AnalyticsDashboardPage() {
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-[20px] [@media(max-width:760px)]:grid-cols-1">
         <Panel title="Clientes con mayor deuda" description="Cinco mayores saldos actuales y su porcentaje de la deuda total. No depende del período." action={<Button variant="link" aria-label="Ver todos los deudores" href="/customers?hasBalance=true&status=ALL">Ver deudores</Button>}>
-          {topDebtors.length > 0 && <p className="mb-[16px] mt-0 text-[13px]" role="status">{topDebtors.length === 1 ? 'Este cliente concentra' : `Estos ${topDebtors.length} clientes concentran`} <strong>{money(topDebt)}</strong>, el <strong>{debtShare(topDebt, data.current.debt)}</strong> de la deuda total.</p>}
+          {topDebtors.length > 0 && <p className="mb-[16px] mt-0 text-[13px]" role="status">{topDebtors.length === 1 ? 'Este cliente concentra' : `Estos ${topDebtors.length} clientes concentran`} <strong><CurrencyText>{money(topDebt)}</CurrencyText></strong>, el <strong>{debtShare(topDebt, data.current.debt)}</strong> de la deuda total.</p>}
           <DataTable className={compactTable} columns={[{ key: 'name', label: 'Cliente', emphasis: true }, { key: 'balance', label: 'Deuda', align: 'right' }, { key: 'share', label: '% del total', align: 'right' }, { key: 'action', label: 'Cuenta', render: (_, row) => <Button variant="link" href={`/sales?customerId=${row.id}&pendingBalance=true`} aria-label={`Ver deuda de ${row.name}`}>Ver deuda</Button> }]} rows={topDebtors.map((item) => ({ id: item.id, name: item.name, balance: money(item.balance), share: debtShare(item.balance, data.current.debt) }))} emptyContent={empty('No hay clientes con deuda pendiente.')} />
         </Panel>
         <Panel title="Antigüedad de deuda" description="Saldo abierto por fecha de venta, a la fecha actual. No indica vencimiento.">

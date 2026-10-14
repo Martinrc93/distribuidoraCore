@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { hasCurrencyAmount } from './CurrencyText'
 
 export type TableColumn = {
   key: string
@@ -24,7 +25,7 @@ export function DataTable({ columns, rows, onRowClick, className, emptyContent }
         <tbody>
           {rows.length === 0 && emptyContent != null && <tr className="table-empty-row"><td className="table-empty-cell" colSpan={columns.length}>{emptyContent}</td></tr>}
           {rows.map((row, index) => <tr className={onRowClick ? 'clickable-row' : ''} key={`${row.id ?? row.name ?? 'row'}-${index}`} onClick={() => onRowClick?.(row)}>
-            {columns.map((column) => <td data-label={column.label} className={`${column.align === 'right' ? 'align-right' : ''}${column.emphasis ? ' cell-emphasis' : ''}`} key={column.key}>{column.render ? column.render(row[column.key] ?? '', row) : row[column.key] ?? '-'}</td>)}
+            {columns.map((column) => <td data-label={column.label} className={`${column.align === 'right' ? 'align-right' : ''}${column.emphasis ? ' cell-emphasis' : ''}${hasCurrencyAmount(row[column.key] ?? '') ? ' currency-value' : ''}`} key={column.key}>{column.render ? column.render(row[column.key] ?? '', row) : row[column.key] ?? '-'}</td>)}
           </tr>)}
         </tbody>
       </table>

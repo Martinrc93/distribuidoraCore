@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../../shared/components/Button'
@@ -21,8 +22,10 @@ type Props = {
   onChange: (value: DeliveryAttemptDraft) => void
   onSubmit: (event: FormEvent) => void
   onClose: () => void
-  mode?: 'attempt' | 'delivery'
+  mode?: 'attempt' | 'delivery' | 'account'
+  customerName?: string
   returnFocusId?: string
+  fallbackFocusId?: string
 }
 
 const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
@@ -32,10 +35,10 @@ function PaymentAmountField({ amount, disabled, describedBy, onChange }: { amoun
   const [editing, setEditing] = useState(false)
   const number = deliveryAmount(amount)
   const display = Number.isFinite(number) ? new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(number) : amount
-  return <label className="field delivery-attempt-amount"><span>Importe del pago</span><input className="input" type="text" inputMode="decimal" size={14} value={editing ? amount : display} aria-describedby={describedBy} disabled={disabled} onFocus={() => setEditing(true)} onBlur={() => setEditing(false)} onChange={event => onChange(event.target.value)} /></label>
+  return <label className="field delivery-attempt-amount"><span>Importe del pago</span><input className="input currency-input" type="text" inputMode="decimal" size={14} value={editing ? amount : display} aria-describedby={describedBy} disabled={disabled} onFocus={() => setEditing(true)} onBlur={() => setEditing(false)} onChange={event => onChange(event.target.value)} /></label>
 }
 
-export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAvailable = 0, value, pending, error, onChange, onSubmit, onClose, mode = 'attempt', returnFocusId }: Props) {
+export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAvailable = 0, value, pending, error, onChange, onSubmit, onClose, mode = 'attempt', customerName, returnFocusId, fallbackFocusId }: Props) {
   const id = useId()
   const dialog = useRef<HTMLDialogElement>(null)
   const result = useRef<HTMLSelectElement>(null)
@@ -60,8 +63,9 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
       element.close()
       document.body.style.overflow = previousOverflow
       if (trigger?.isConnected) trigger.focus({ preventScroll: true })
+      else if (fallbackFocusId) document.getElementById(fallbackFocusId)?.focus({ preventScroll: true })
     }
-  }, [returnFocusId])
+  }, [returnFocusId, fallbackFocusId])
 
   function updatePayments(payments: DeliveryAttemptDraft['payments']) {
     onChange({ ...value, payments, transferReference: payments.some(payment => payment.method === 'BANK_TRANSFER') ? value.transferReference : '' })
@@ -72,25 +76,33 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
   }
 
   return createPortal(
-    <dialog ref={dialog} className="delivery-attempt-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-modal="true" aria-busy={pending} onCancel={event => { event.preventDefault(); if (!pending) onClose() }}>
+    <dialog ref={dialog} className="delivery-attempt-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-modal="true" aria-busy={pending} onCancel={event => { event.preventDefault(); if (!pending) onClose() }} onKeyDown={event => {
+      if (event.key !== 'Tab') return
+      const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (!first) event.preventDefault()
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }}>
       <header className="delivery-attempt-header">
-        <div><h2 id={`${id}-title`}>{mode === 'delivery' ? 'Confirmar entrega' : 'Registrar intento de entrega'}</h2><p id={`${id}-description`}>Pedido <strong>{orderNumber}</strong></p></div>
-        <button className="delivery-attempt-close" type="button" aria-label="Cerrar registro de entrega" onClick={onClose} disabled={pending}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
+        <div><h2 id={`${id}-title`}>{mode === 'account' ? 'Saldar cuenta' : mode === 'delivery' ? 'Confirmar entrega' : 'Registrar intento de entrega'}</h2><p id={`${id}-description`}>{mode === 'account' ? 'Cliente' : 'Pedido'} <strong>{mode === 'account' ? customerName : orderNumber}</strong></p></div>
+        <button className="delivery-attempt-close" type="button" aria-label={mode === 'account' ? 'Cerrar pago de cuenta corriente' : 'Cerrar registro de entrega'} onClick={onClose} disabled={pending}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
       </header>
       <form className="delivery-attempt-form" onSubmit={onSubmit}>
         <div className="delivery-attempt-body">
           <div className="delivery-attempt-fields">
-            {mode !== 'delivery' && <label className="field"><span>Resultado de entrega</span><select ref={result} className="select" value={value.result} onChange={event => onChange({ ...value, result: event.target.value as DeliveryAttemptDraft['result'], observation: '', ...(event.target.value === 'FAILED' ? { payments: [], transferReference: '', includePreviousDebt: false, previousDebtAmount: '' } : {}) })} disabled={pending}><option value="DELIVERED">Entregado</option><option value="FAILED">No entregado</option></select></label>}
+            {mode === 'attempt' && <label className="field"><span>Resultado de entrega</span><select ref={result} className="select" value={value.result} onChange={event => onChange({ ...value, result: event.target.value as DeliveryAttemptDraft['result'], observation: '', ...(event.target.value === 'FAILED' ? { payments: [], transferReference: '', includePreviousDebt: false, previousDebtAmount: '' } : {}) })} disabled={pending}><option value="DELIVERED">Entregado</option><option value="FAILED">No entregado</option></select></label>}
             {value.result === 'FAILED' && <label className="field"><span>Observación</span><textarea className="input textarea" aria-label="Observación" value={value.observation} onChange={event => onChange({ ...value, observation: event.target.value })} aria-describedby={`${id}-observation-help`} aria-required="true" aria-invalid={Boolean(error) && !value.observation.trim()} maxLength={2000} disabled={pending} /></label>}
           </div>
           {value.result === 'FAILED' && <p className="helper-text" id={`${id}-observation-help`}>Indica el motivo por el que no se pudo entregar el pedido.</p>}
           {value.result === 'DELIVERED' ? <section className="delivery-attempt-collections" aria-labelledby={`${id}-collections-title`}>
-            <div className="delivery-attempt-collections-header"><h3 id={`${id}-collections-title`}>Pago</h3><div className="delivery-attempt-balance"><span>Saldo pendiente de esta venta</span><strong>{money(saleBalance)}</strong></div></div>
+            <div className="delivery-attempt-collections-header"><h3 id={`${id}-collections-title`}>Pago</h3><div className="delivery-attempt-balance"><span>{mode === 'account' ? 'Saldo de cuenta corriente' : 'Saldo pendiente de esta venta'}</span><strong><CurrencyText>{money(saleBalance)}</CurrencyText></strong></div></div>
             {(previousDebtAvailable > 0 || value.includePreviousDebt) && <div className="delivery-attempt-previous">
               <label className="radio-row"><input type="checkbox" checked={value.includePreviousDebt} disabled={pending} onChange={event => onChange({ ...value, includePreviousDebt: event.target.checked, previousDebtAmount: event.target.checked ? value.previousDebtAmount || String(previousDebtAvailable).replace('.', ',') : '' })} />Agregar deuda anterior</label>
-              {value.includePreviousDebt && <label className="field"><span>Importe de deuda anterior</span><input className="input" inputMode="decimal" aria-label="Importe de deuda anterior" value={value.previousDebtAmount} aria-describedby={`${id}-previous-help`} disabled={pending} onChange={event => onChange({ ...value, previousDebtAmount: event.target.value })} /><span className="helper-text" id={`${id}-previous-help`}>Disponible: {money(previousDebtAvailable)}</span></label>}
+              {value.includePreviousDebt && <label className="field"><span>Importe de deuda anterior</span><input className="input currency-input" inputMode="decimal" aria-label="Importe de deuda anterior" value={value.previousDebtAmount} aria-describedby={`${id}-previous-help`} disabled={pending} onChange={event => onChange({ ...value, previousDebtAmount: event.target.value })} /><span className="helper-text" id={`${id}-previous-help`}>Disponible: <CurrencyText>{money(previousDebtAvailable)}</CurrencyText></span></label>}
             </div>}
-            {value.payments.length === 0 && saleBalance <= 0 && <p className="delivery-attempt-empty">Esta venta no tiene saldo pendiente.</p>}
+            {value.payments.length === 0 && saleBalance <= 0 && <p className="delivery-attempt-empty">{mode === 'account' ? 'El cliente no tiene saldo pendiente.' : 'Esta venta no tiene saldo pendiente.'}</p>}
             <div className="delivery-attempt-payments">
               {value.payments.length === 0 && <div className="delivery-attempt-quick-pay"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => fillPayment(totalDue)}>Pagar total</Button></div>}
               {value.payments.map((payment, index) => <div className="delivery-attempt-payment" key={index}>
@@ -105,12 +117,12 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
               {saleBalance > 0 && selectedPrevious > 0 && <div className="delivery-attempt-quick-pay"><Button type="button" variant="link" disabled={pending} onClick={() => fillPayment(saleBalance)}>Pagar solo esta venta</Button></div>}
             </div>
             <div className="delivery-attempt-add"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => updatePayments([...value.payments, { method: 'CASH', amount: '' }])}>Agregar pago</Button></div>
-            <p className="helper-text" id={`${id}-payment-help`}>El pago se aplica primero a esta venta y luego a la deuda anterior seleccionada.</p>
-            <dl className="delivery-attempt-summary" aria-live="polite"><div><dt>Total a pagar</dt><dd>{money(totalDue)}</dd></div><div><dt>Saldo después del pago</dt><dd className={collected > totalDue ? 'text-danger' : ''}>{money(totalDue - collected)}</dd></div></dl>
+            <p className="helper-text" id={`${id}-payment-help`}>{mode === 'account' ? 'El pago debe cubrir el saldo completo y se aplica primero a las deudas más antiguas.' : 'El pago se aplica primero a esta venta y luego a la deuda anterior seleccionada.'}</p>
+            <dl className="delivery-attempt-summary" aria-live="polite"><div><dt>Total a pagar</dt><dd><CurrencyText>{money(totalDue)}</CurrencyText></dd></div><div><dt>Saldo después del pago</dt><dd className={collected > totalDue ? 'text-danger' : ''}><CurrencyText>{money(totalDue - collected)}</CurrencyText></dd></div></dl>
           </section> : <p className="delivery-attempt-empty">Los intentos no entregados se registran sin pagos.</p>}
-          {error && <p className="delivery-attempt-error error-text" role="alert">{error}</p>}
+          {error && <p className="delivery-attempt-error error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
         </div>
-        <footer className="delivery-attempt-footer"><Button type="button" variant="secondary" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="submit" disabled={pending}>{pending ? 'Guardando...' : mode === 'delivery' ? 'Confirmar entrega' : 'Confirmar intento'}</Button></footer>
+        <footer className="delivery-attempt-footer"><Button type="button" variant="secondary" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="submit" disabled={pending}>{pending ? 'Guardando...' : mode === 'account' ? 'Confirmar pago' : mode === 'delivery' ? 'Confirmar entrega' : 'Confirmar intento'}</Button></footer>
       </form>
     </dialog>, document.body,
   )

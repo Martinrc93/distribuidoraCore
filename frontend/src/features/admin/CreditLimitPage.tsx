@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiPut, ApiError } from '../../shared/api/client'
@@ -47,13 +48,13 @@ export default function CreditLimitPage() {
 
   return <>
     <PageHeader eyebrow="Administración" title="Límite de crédito" description="El límite advierte al confirmar pedidos; no bloquea la operación." />
-    {feedback && <p className="success-text" role="status">{feedback}</p>}
-    {error && <p className="error-text" role="alert">{error}</p>}
+    {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
+    {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
     <Panel title="Configuración comercial">
       {query.isLoading ? <EmptyState title="Cargando configuración" description="Consultando el límite de crédito actual." /> : query.isError ? <EmptyState title="No se pudo cargar la configuración" description={query.error.message} /> : <form className="form-grid" onSubmit={submit}>
         <label className="radio-row"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={saving} /> Activar límite global de crédito</label>
-        {enabled && <label className="field"><span>Límite de crédito</span><input className="input" aria-label="Límite de crédito" type="text" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} disabled={saving} required /></label>}
-        <p className="helper-text">Si el saldo proyectado supera {enabled ? money(Number(amount || 0)) : 'el límite configurado'}, la confirmación muestra una advertencia auditada, pero continúa.</p>
+        {enabled && <label className="field"><span>Límite de crédito</span><input className="input currency-input" aria-label="Límite de crédito" type="text" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} disabled={saving} required /></label>}
+        <p className="helper-text">Si el saldo proyectado supera <CurrencyText>{enabled ? money(Number(amount || 0)) : 'el límite configurado'}</CurrencyText>, la confirmación muestra una advertencia auditada, pero continúa.</p>
         {query.data?.updatedAt && <small className="helper-text">Última actualización: {new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(query.data.updatedAt))}</small>}
         <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar límite'}</Button>
       </form>}

@@ -5,7 +5,7 @@
 
 /* Keep the existing CSS tokens available to shared and feature-specific patterns. */
 @theme inline {
-  --font-sans: Aptos, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", Aptos, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-line: var(--line);
@@ -324,9 +324,10 @@
   .field { @apply grid gap-[7px] text-[#62625d] text-[11px] font-bold; }
   .field .input, .field .select { @apply text-ink font-normal; }
   .read-only-field { @apply flex min-h-[39px] items-center text-ink text-[13px] font-normal; }
+  .currency-value, .input.currency-input, .select.currency-input, .read-only-field.currency-input { @apply font-bold; }
   .section-heading { @apply flex [align-items:end] justify-between gap-[14px] mb-[14px]; }
   .order-totals { @apply grid grid-cols-[1fr_auto] gap-[9px_18px] max-w-[300px] [margin:20px_0_20px_auto] text-muted text-[12px]; }
-  .order-totals dd { @apply m-[0] text-ink text-right; }
+  .order-totals dd { @apply m-[0] text-ink text-right font-bold; }
   .order-totals .total-label, .order-totals .total-value { @apply [border-top:1px_solid_var(--line)] pt-[12px] text-ink text-[15px]; }
   .payment-options { @apply grid gap-[10px] mb-[18px]; }
   .radio-row { @apply flex gap-[8px] items-center text-[#555550] text-[12px]; }

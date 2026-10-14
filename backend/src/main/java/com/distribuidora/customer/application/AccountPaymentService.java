@@ -5,6 +5,7 @@ import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,36 @@ public class AccountPaymentService {
         this.jdbc = jdbc;
         this.audit = audit;
         this.currentUser = currentUser;
+    }
+
+    @Transactional
+    public PaymentResult settle(UUID customerId, List<? extends PaymentCommand> payments) {
+        if (!currentUser.isAdmin()) throw new AccessDeniedException("Solo administradores pueden saldar cuentas");
+        if (payments == null || payments.isEmpty() || payments.size() > 100) {
+            throw new IllegalArgumentException("Se requiere al menos un pago y se admiten hasta 100");
+        }
+        for (PaymentCommand payment : payments) {
+            validate(customerId, payment);
+            if (payment.saleId() != null) throw new IllegalArgumentException("El saldo se imputa por FIFO");
+            if ("BANK_TRANSFER".equals(payment.method())
+                && (normalize(payment.transferReference()) == null || normalize(payment.transferReference()).isEmpty())) {
+                throw new IllegalArgumentException("Ingresa el número de transferencia");
+            }
+        }
+        // Use the same lock order as individual payments and delivery before checking the full balance.
+        lockCandidateSales(customerId, null);
+        BigDecimal balance = jdbc.queryForObject(
+            "select balance from customer.customers where id = ? for update", BigDecimal.class, customerId).setScale(4);
+        BigDecimal total = payments.stream().map(PaymentCommand::amount).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(4);
+        if (balance.signum() <= 0 || total.compareTo(balance) != 0) {
+            throw new IllegalStateException("El saldo cambió o los pagos no cubren la deuda completa. Revisa el saldo y los importes.");
+        }
+        List<AllocationResult> allocations = new ArrayList<>();
+        for (PaymentCommand payment : payments) {
+            // All allocations share this outer transaction, including their ledger entries and audit records.
+            allocations.addAll(apply(customerId, payment).allocations());
+        }
+        return new PaymentResult(customerId, total, balance, ZERO, "FIFO", allocations);
     }
 
     @Transactional

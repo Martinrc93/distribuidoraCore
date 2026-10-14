@@ -1280,6 +1280,91 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void accountSettlementCombinesMethodsAndClearsAllDebtsByFifo() {
+        UUID actor = createUser("account-settlement");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customer = createCustomer(null);
+        AccountDebtSale older = createAccountDebtSale(customer, new BigDecimal("30"), 3600);
+        AccountDebtSale newer = createAccountDebtSale(customer, new BigDecimal("40"), 1800);
+        var result = accountPaymentService.settle(customer, List.of(
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("35"), "CASH", null),
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("35"), "BANK_TRANSFER", "TR-SETTLE")));
+        assertThat(result.balanceBefore()).isEqualByComparingTo("70");
+        assertThat(result.balanceAfter()).isEqualByComparingTo("0");
+        assertThat(result.allocations()).extracting(AccountPaymentService.AllocationResult::saleId)
+            .containsExactly(older.saleId(), newer.saleId(), newer.saleId());
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isZero();
+        assertThat(jdbc.queryForObject("select sum(total - paid) from sale.sales where customer_id = ?", BigDecimal.class, customer)).isZero();
+        assertThat(jdbc.queryForObject("select transfer_reference from payment.payments where customer_id = ? and method = 'BANK_TRANSFER'", String.class, customer)).isEqualTo("TR-SETTLE");
+        assertThatThrownBy(() -> accountPaymentService.settle(customer, List.of(
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("70"), "CASH", null))))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where customer_id = ?", Long.class, customer)).isEqualTo(3L);
+    }
+
+    @Test
+    void accountSettlementRollsBackEarlierPaymentsWhenLaterAllocationFails() {
+        UUID actor = createUser("account-settlement-rollback");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customer = createCustomer(null);
+        AccountDebtSale sale = createAccountDebtSale(customer, BigDecimal.TEN, 1800);
+        jdbc.update("update sale.sales set paid = 5 where id = ?", sale.saleId());
+        assertThatThrownBy(() -> accountPaymentService.settle(customer, List.of(
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("4"), "CASH", null),
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("6"), "BANK_TRANSFER", "TR-ROLLBACK"))))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where customer_id = ?", Long.class, customer)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from customer.account_ledger where customer_id = ? and entry_type = 'CREDIT'", Long.class, customer)).isZero();
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, sale.saleId())).isEqualByComparingTo("5");
+    }
+
+    @Test
+    void accountSettlementRejectsPartialStaleAndMissingTransferReferenceWithoutWrites() {
+        UUID actor = createUser("account-settlement-validation");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customer = createCustomer(null);
+        createAccountDebtSale(customer, BigDecimal.TEN, 1800);
+        for (String amount : List.of("9", "11")) {
+            assertThatThrownBy(() -> accountPaymentService.settle(customer, List.of(
+                new AccountPaymentDtos.SettlementPayment(new BigDecimal(amount), "CASH", null))))
+                .isInstanceOf(IllegalStateException.class);
+        }
+        assertThatThrownBy(() -> accountPaymentService.settle(customer, List.of(
+            new AccountPaymentDtos.SettlementPayment(BigDecimal.TEN, "BANK_TRANSFER", "  "))))
+            .isInstanceOf(IllegalArgumentException.class);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("SALE_PAYMENT"))));
+        assertThatThrownBy(() -> accountPaymentService.settle(customer, List.of(
+            new AccountPaymentDtos.SettlementPayment(BigDecimal.TEN, "CASH", null))))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where customer_id = ?", Long.class, customer)).isZero();
+    }
+
+    @Test
+    void accountSettlementHttpRequiresAdminAndLeavesDeliveryStateUnchanged() throws Exception {
+        UUID actor = createUser("account-settlement-http");
+        assignRole(actor, "SELLER");
+        UUID customer = createCustomer(null);
+        AccountDebtSale sale = createAccountDebtSale(customer, BigDecimal.TEN, 1800);
+        String token = loginHttp(email(actor));
+        String body = "{\"payments\":[{\"amount\":10,\"method\":\"CASH\"}]}";
+        mockMvc.perform(post("/api/customers/{id}/account-payments/settlement", customer)
+                .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden());
+        assignRole(actor, "ADMIN");
+        token = loginHttp(email(actor));
+        mockMvc.perform(post("/api/customers/{id}/account-payments/settlement", customer)
+                .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.balanceAfter").value(0));
+        assertThat(jdbc.queryForObject("select status from orders.orders where id = ?", String.class, sale.orderId())).isEqualTo("CONFIRMED");
+        assertThat(jdbc.queryForObject("select status from sale.sales where id = ?", String.class, sale.saleId())).isEqualTo("CONFIRMED");
+    }
+
+    @Test
     void concurrentFifoPaymentsCannotAllocateTheSameDebtTwice() throws Exception {
         UUID firstActor = createUser("account-payment-race-1");
         UUID secondActor = createUser("account-payment-race-2");

@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiPatch, apiPost, apiPut, ApiError, type AffectedPriceList, type ApiPage } from '../../shared/api/client'
@@ -216,8 +217,8 @@ function ProductForm({
         <option value="">Seleccionar marca...</option>{brandOptions.map((brand) => <option value={brand.id} key={brand.id}>{brand.name}{brand.status !== 'ACTIVE' ? ' · Inactiva' : ''}</option>)}
       </select></label>
       <div className="field min-w-0 content-start"><span>Nombre</span><output className="read-only-field min-w-0 [overflow-wrap:anywhere]" aria-label="Nombre" aria-describedby="product-name-help" aria-live="polite">{generatedName || 'Marca + descripción'}</output><small id="product-name-help" className="helper-text m-0 font-normal">Se genera automáticamente con la marca y la descripción.</small></div>
-      <label className="field"><span>Costo</span><input className="input" type="text" inputMode="decimal" value={form.cost} onChange={(event) => change('cost', event.target.value)} required disabled={saving} /></label>
-      {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}</span><input className="input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required disabled={saving} /></label>)}
+      <label className="field"><span>Costo</span><input className="input currency-input" type="text" inputMode="decimal" value={form.cost} onChange={(event) => change('cost', event.target.value)} required disabled={saving} /></label>
+      {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}</span><input className="input currency-input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required disabled={saving} /></label>)}
       <div className="col-span-full min-w-0 grid gap-[8px]">
         <SupplierSelect mode="selection" label="Proveedores (opcional)" emptyLabel="Agregar proveedor..." value="" options={supplierOptions.filter((supplier) => !form.supplierIds.includes(supplier.id))}
           loading={suppliersQuery.isLoading} disabled={saving || suppliersQuery.isError} onChange={(id) => { if (id) setForm((current) => ({ ...current, supplierIds: [...current.supplierIds, id] })) }} />
@@ -228,7 +229,7 @@ function ProductForm({
         </li>)}</ul> : <p className="helper-text m-0">El producto puede guardarse sin proveedores asignados.</p>}
       </div>
       {optionsError && <p className="error-text" role="alert">No se pudieron cargar las listas, marcas o categorías activas.</p>}
-      {error && <p className="error-text" role="alert">{error}</p>}
+      {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
       <div className="page-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar producto' : 'Desactivar producto'}</Button>}<Button variant="secondary" type="button" onClick={onDone} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || optionsLoading}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
     </form>
   </Panel>
@@ -332,8 +333,8 @@ export default function ProductsPage() {
     { key: 'name', label: 'Producto', emphasis: true, render: (value, row) => <div className="min-w-0"><span className="block truncate" title={value}>{value}</span>{isAdmin && row.suppliers && <span className="block truncate text-[11px] font-normal text-muted" title={row.suppliers}>Proveedores: {row.suppliers}</span>}</div> },
     { key: 'category', label: 'Categoría' },
     { key: 'brand', label: 'Marca' },
-    ...(isAdmin ? [{ key: 'cost', label: 'Costo', align: 'right' as const }] : []),
-    { key: 'stock', label: 'Stock', align: 'right', render: (value) => <span className={Number(value) < 0 ? 'negative-number' : ''}>{value}</span> },
+    ...(isAdmin ? [{ key: 'cost', label: 'Costo', align: 'right' as const, render: (value: string) => <span className="font-bold">{value}</span> }] : []),
+    { key: 'stock', label: 'Stock', align: 'right', render: (value) => <span className={`font-bold${Number(value) < 0 ? ' negative-number' : ''}`}>{value}</span> },
     { key: 'actions', label: 'Estado y acciones', align: 'right', render: (_value: string, row: Record<string, string>) => {
       const product = products.find((candidate) => candidate.id === row.id)
       if (!product) return null
@@ -362,8 +363,8 @@ export default function ProductsPage() {
 
   return <>
     <PageHeader eyebrow="Catálogo" title="Productos" description="Productos, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button> : <Button variant="secondary" href="/price-lists">Ver listas de precios</Button>} />
-    {feedback && <p className="success-text" role="status">{feedback}</p>}
-    {actionError && <p className="error-text" role="alert">{actionError}</p>}
+    {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
+    {actionError && <p className="error-text" role="alert"><CurrencyText>{actionError}</CurrencyText></p>}
     {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} activeLists={activeLists} categories={categories} brands={brands} optionsLoading={optionsLoading} optionsError={optionsError} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} onChangeStatus={(product) => { setActionError(''); setStatusProduct(product) }} />}
     <Panel>
       <div className="toolbar items-end">

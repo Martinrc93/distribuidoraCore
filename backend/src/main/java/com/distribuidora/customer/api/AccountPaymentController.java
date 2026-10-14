@@ -25,7 +25,17 @@ public class AccountPaymentController {
     @PreAuthorize("hasAnyAuthority('SALE_PAYMENT', 'ADMIN_ALL')")
     public ResponseEntity<AccountPaymentDtos.PaymentResponse> apply(
         @PathVariable UUID customerId, @Valid @RequestBody AccountPaymentDtos.PaymentRequest request) {
-        AccountPaymentService.PaymentResult result = service.apply(customerId, request);
+        return response(service.apply(customerId, request));
+    }
+
+    @PostMapping("/settlement")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<AccountPaymentDtos.PaymentResponse> settle(
+        @PathVariable UUID customerId, @Valid @RequestBody AccountPaymentDtos.SettlementRequest request) {
+        return response(service.settle(customerId, request.payments()));
+    }
+
+    private ResponseEntity<AccountPaymentDtos.PaymentResponse> response(AccountPaymentService.PaymentResult result) {
         var allocations = result.allocations().stream()
             .map(item -> new AccountPaymentDtos.Allocation(item.saleId(), item.saleNumber(), item.paymentId(), item.amount()))
             .toList();

@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -236,8 +237,8 @@ export default function PriceListsPage() {
 
   return <div className="price-lists-page">
     <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
-    {feedback && <p className="success-text" role="status">{feedback}</p>}
-    {error && <p className="error-text" role="alert">{error}</p>}
+    {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
+    {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
     {showCreate && isAdmin && <Panel title="Nueva lista de precios"><form className="form-grid" onSubmit={submitCreate}>
       <label className="field"><span>Código</span><input className="input" value={code} onChange={(event) => setCode(event.target.value)} required maxLength={40} disabled={createMutation.isPending} /></label>
       <label className="field"><span>Nombre de lista</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} disabled={createMutation.isPending} /></label>
@@ -292,7 +293,7 @@ export default function PriceListsPage() {
     </Panel>}
     {editingProduct && <div role="dialog" aria-modal="true" aria-labelledby="price-dialog-title" className="modal-backdrop"><Panel title="Editar precio"><form className="form-grid" onSubmit={savePrice}>
       <h2 id="price-dialog-title">{editingProduct.name} · {selectedList?.name}</h2>
-      <label className="field"><span>Precio de {editingProduct.name}</span><input className="input" type="text" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required autoFocus /></label>
+      <label className="field"><span>Precio de {editingProduct.name}</span><input className="input currency-input" type="text" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required autoFocus /></label>
       <label className="field"><span>Vigente desde</span><input className="input" aria-label="Fecha de vigencia" type="date" value={effectiveOn} onChange={(event) => setEffectiveOn(event.target.value)} /><small>Dejalo vacío para aplicar el precio desde hoy.</small></label>
       <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setEditingProduct(undefined)}>Cancelar</Button><Button type="submit">Guardar precio</Button></div>
     </form></Panel></div>}
@@ -311,7 +312,7 @@ export default function PriceListsPage() {
         </header>
         <div className="price-status-dialog-body">
           <p id="status-dialog-description">Se actualizará el estado de la lista seleccionada.</p>
-          {error && <p className="price-status-dialog-error" role="alert">{error}</p>}
+          {error && <p className="price-status-dialog-error" role="alert"><CurrencyText>{error}</CurrencyText></p>}
           <div className="price-status-dialog-summary">
             <span className="price-status-dialog-label">Lista seleccionada</span>
             <strong>{statusList.name}</strong>

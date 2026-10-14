@@ -1,3 +1,4 @@
+import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -14,6 +15,7 @@ import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import type { Customer } from './customerTypes'
+import { AccountSettlementDialog } from './AccountSettlementDialog'
 
 type Seller = { id: string; displayName: string; email: string }
 type PriceList = { id: string; code: string; name: string; status: string }
@@ -142,7 +144,7 @@ function CustomerForm({
       <label className="field"><span>Zona</span><select className="select" aria-label="Zona" value={zone} onChange={(event) => setZone(event.target.value)} disabled={zonesLoading || zonesError}><option value="">Sin zona asignada</option>{initial?.zone && !zones.some((item) => item.name === initial.zone) && <option value={initial.zone}>{initial.zone}</option>}{zones.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}</select>{zonesError && <span className="error-text">No se pudieron cargar las zonas. <Button variant="link" type="button" onClick={onRetryZones}>Reintentar</Button></span>}</label>
       {isAdmin && <SellerSelect mode="selection" label="Vendedor asignado" options={sellers.map((seller) => ({ id: seller.id, name: `${seller.displayName} (${seller.email})` }))} value={sellerId} onChange={setSellerId} emptyLabel="Sin asignar" loading={sellersLoading} disabled={saving || sellersError} />}
       <label className="field"><span>Lista de precios predeterminada</span><select className="select" aria-label="Lista de precios predeterminada" value={priceListId} onChange={(event) => setPriceListId(event.target.value)} disabled={priceListsError}><option value="">Sin lista asignada</option>{priceLists.filter((list) => list.status === 'ACTIVE').map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}</option>)}</select>{priceListsError && <span className="error-text">No se pudieron cargar las listas. <Button variant="link" type="button" onClick={onRetryPriceLists}>Reintentar</Button></span>}</label>
-      {error && <p className="error-text" role="alert">{error}</p>}
+      {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
       <div className="page-actions customer-form-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}<div className="customer-form-actions-right"><Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || priceListsError}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></div>
     </form>
   </Panel>
@@ -171,6 +173,22 @@ export default function CustomersPage() {
   const [feedback, setFeedback] = useState('')
   const [actionSaving, setActionSaving] = useState(false)
   const [statusCustomer, setStatusCustomer] = useState<Customer | undefined>()
+  const [settlementCustomer, setSettlementCustomer] = useState<Customer>()
+  const [loadingSettlement, setLoadingSettlement] = useState('')
+
+  async function openSettlement(customerId: string) {
+    if (loadingSettlement) return
+    setLoadingSettlement(customerId)
+    setActionError('')
+    setFeedback('')
+    try {
+      const customer = await apiGet<Customer>(`/api/customers/${customerId}`)
+      if (Number(customer.balance ?? 0) > 0) setSettlementCustomer(customer)
+      else { await invalidate(); setFeedback('El cliente no tiene saldo pendiente.'); }
+    } catch (cause) {
+      setActionError(errorMessage(cause, 'No se pudo consultar el saldo del cliente.'))
+    } finally { setLoadingSettlement('') }
+  }
 
   async function invalidate() {
     await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') || queryKey[0] === '/api/customers/filter-options' })
@@ -202,6 +220,7 @@ export default function CustomersPage() {
     cuitId: customer.cuitId ?? '-',
     seller: customer.seller ?? 'Sin asignar',
     balance: money(customer.balance),
+    hasDebt: Number(customer.balance ?? 0) > 0 ? 'true' : '',
     status: customer.status,
     priceListId: customer.priceListId ?? '',
   }))
@@ -212,15 +231,17 @@ export default function CustomersPage() {
     { key: 'balance', label: 'Saldo', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
   ]
-  if (isAdmin) columns.push({ key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions"><Button variant="secondary" href={`/customers/${row.id}?returnTo=${encodeURIComponent(location.pathname + location.search)}`} aria-label={`Ver cliente ${row.name}`}>Ver cliente</Button><Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button></div> })
+  if (isAdmin) columns.push({ key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions"><Button variant="secondary" href={`/customers/${row.id}?returnTo=${encodeURIComponent(location.pathname + location.search)}`} aria-label={`Ver cliente ${row.name}`}>Ver cliente</Button>{row.hasDebt && <Button id={`settle-account-${row.id}`} variant="secondary" aria-label={`Saldar cuenta de ${row.name}`} disabled={Boolean(loadingSettlement)} onClick={() => openSettlement(row.id)}>{loadingSettlement === row.id ? 'Consultando saldo...' : 'Saldar cuenta'}</Button>}<Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button></div> })
 
   return <>
     <PageHeader eyebrow="Operación" title="Clientes" description={isAdmin ? 'Gestioná clientes, vendedor, lista de precios y cuenta corriente.' : 'Consultá únicamente los clientes asignados a tu vendedor.'} actions={isAdmin ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
-    {feedback && <p className="success-text" role="status">{feedback}</p>}
-    {actionError && <p className="error-text" role="alert">{actionError}</p>}
+    {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
+    {actionError && <p className="error-text" role="alert"><CurrencyText>{actionError}</CurrencyText></p>}
+    {loadingSettlement && <p className="helper-text" role="status">Consultando el saldo actual del cliente…</p>}
+    {isAdmin && settlementCustomer && <AccountSettlementDialog customer={settlementCustomer} onClose={() => setSettlementCustomer(undefined)} onSaved={() => { setSettlementCustomer(undefined); setFeedback('Cuenta corriente saldada correctamente.') }} />}
     {isAdmin && (showForm || formCustomer) && <div role="dialog" aria-modal="true" aria-label={formCustomer ? 'Editar cliente' : 'Nuevo cliente'} className="modal-backdrop"><div className="customer-modal"><CustomerForm initial={formCustomer} sellers={sellersQuery.data?.content ?? []} sellersLoading={sellersQuery.isLoading} sellersError={sellersQuery.isError} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} /></div></div>}
     <Panel><div className="toolbar">
-      <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar clientes</span><input className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
+      <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar clientes</span><input id="customers-search" className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
       {isAdmin && <SellerSelect options={optionsQuery.data?.sellers ?? []} value={sellerId} onChange={(value) => setFilter('sellerId', value)} loading={optionsQuery.isLoading} disabled={optionsQuery.isError} />}
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Cuenta corriente</span><select aria-label="Cuenta corriente" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={hasBalance ? 'true' : ''} onChange={(event) => setFilter('hasBalance', event.target.value)}><option value="">Todos los saldos</option><option value="true">Solo con saldo</option></select></label>
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Estado</span><select aria-label="Estado" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="ACTIVE">Activo</option><option value="INACTIVE">Inactivo</option><option value="ALL">Todos</option></select></label>
