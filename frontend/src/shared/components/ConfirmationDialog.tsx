@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from './Button'
+import { lockBodyScroll } from '../lockBodyScroll'
 
 type Props = {
   title: string
@@ -22,13 +23,12 @@ export function ConfirmationDialog({ title, description, confirmLabel, cancelLab
   useEffect(() => {
     const element = dialog.current!
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const releaseScroll = lockBodyScroll()
     element.showModal()
     element.querySelector<HTMLButtonElement>('[data-safe-action]')?.focus()
     return () => {
       element.close()
-      document.body.style.overflow = previousOverflow
+      releaseScroll()
       if (trigger?.isConnected) trigger.focus({ preventScroll: true })
     }
   }, [])

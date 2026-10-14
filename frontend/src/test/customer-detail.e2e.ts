@@ -4,6 +4,29 @@ const customer = { id: 'customer-1', name: 'Almacén Norte', cuitId: '30-1234567
 const order = { id: 'order-1', number: 'PED-001', seller: 'Lucía', total: 1250.50, status: 'CANCELLED', date: '2025-04-01T12:00:00Z' }
 const paged = (content: unknown[], page = 0, totalElements = content.length) => ({ content, page, size: 20, totalElements, totalPages: Math.ceil(totalElements / 20) })
 
+for (const width of [1440, 390]) {
+  test(`shows current order debt at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
+      const path = new URL(route.request().url()).pathname
+      const json = path.endsWith('/orders') ? paged([
+        { ...order, id: 'partial', number: 'PARTIAL', status: 'DELIVERED', balance: 250.50 },
+        { ...order, id: 'paid', number: 'PAID', status: 'DELIVERED', balance: 0 },
+        { ...order, id: 'cancelled', number: 'CANCELLED', status: 'CANCELLED', balance: 0 },
+      ]) : { ...customer, balance: 250.50 }
+      await route.fulfill({ json })
+    })
+    await page.goto('/customers/customer-1')
+    const pending = page.getByRole('row', { name: /PARTIAL/ })
+    await expect(pending).toContainText('250,50')
+    await expect(pending.locator('td[data-label="Saldo pendiente"]')).toContainText('250,50')
+    for (const number of ['PAID', 'CANCELLED']) await expect(page.getByRole('row', { name: new RegExp(`\\b${number}\\b`) }).locator('td[data-label="Saldo pendiente"]')).toHaveText('Sin deuda')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    const history = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Historial de pedidos', exact: true }) })
+    await history.screenshot({ path: testInfo.outputPath(`customer-debt-${width}.png`) })
+  })
+}
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('distribuidora.accessToken',
     `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`))

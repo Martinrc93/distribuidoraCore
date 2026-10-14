@@ -242,6 +242,20 @@
   .confirmation-dialog-body > .error-text { @apply mt-[14px] text-danger; }
   .confirmation-dialog-footer { @apply flex justify-end gap-[10px] [padding:16px_26px] [border-top:1px_solid_#e8eeeb] bg-[#fafcfb]; }
   .confirmation-dialog-footer .button { @apply min-h-[40px]; }
+  .stock-adjustment-product { @apply mt-[8px] mb-0 text-[14px] leading-[1.5] text-muted [overflow-wrap:anywhere]; }
+  .stock-adjustment-body { @apply grid gap-[20px]; }
+  .stock-adjustment-summary { @apply m-0 grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)] gap-[16px] rounded-[5px] border border-line bg-canvas p-[16px]; }
+  .stock-adjustment-summary > div { @apply min-w-0; }
+  .stock-adjustment-summary > div + div { @apply border-l border-line pl-[16px]; }
+  .stock-adjustment-summary dt { @apply text-[11px] font-semibold text-muted; }
+  .stock-adjustment-summary dd { @apply m-0 mt-[6px] text-[22px] font-bold leading-[1.2] [overflow-wrap:anywhere]; }
+  .stock-adjustment-fields { @apply grid gap-[18px]; }
+  .stock-adjustment-fields .field { @apply min-w-0 text-[12px] text-ink; }
+  .stock-adjustment-fields .input { @apply w-full min-w-0 min-h-[44px] text-[14px]; }
+  .stock-adjustment-fields .textarea { @apply min-h-[88px] font-sans font-normal text-ink; }
+  .stock-adjustment-fields .textarea:focus-visible { @apply [outline:3px_solid_#bb8754] outline-offset-[2px]; }
+  .stock-adjustment-fields .helper-text { @apply m-0 text-[11px] font-normal; }
+  .stock-adjustment-body .stock-adjustment-feedback { @apply m-0 text-[12px] leading-[1.5]; }
   .delivery-attempt-dialog { @apply box-border w-[min(720px,_calc(100vw_-_40px))] max-w-none max-h-[calc(100dvh_-_40px)] overflow-hidden p-0 [border:1px_solid_#dce5e0] rounded-[10px] bg-surface text-ink font-sans [box-shadow:0_24px_70px_rgba(13,_36,_39,_.3)]; }
   .delivery-attempt-dialog[open] { @apply flex flex-col; }
   .delivery-attempt-dialog::backdrop { @apply bg-[rgba(25,_58,_67,_.38)] [backdrop-filter:blur(2px)]; }

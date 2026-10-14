@@ -257,7 +257,11 @@ Los datos usan un `dl.customer-detail-fields` con dos columnas, etiquetas de
 los datos y el resumen de saldo se apilan en una columna.
 
 «Historial de pedidos» reutiliza `DataTable` y la paginación compartida. Incluye
-fecha/hora de Argentina, vendedor, total, estado en español y «Ver pedido»;
+fecha/hora de Argentina, vendedor, total, saldo pendiente, estado en español y «Ver pedido»;
+el saldo es la deuda actual de cuenta corriente de cada venta, limitada al importe
+sin pagar y sin duplicar el saldo anterior del remito. Los importes pendientes
+se destacan en rojo y negrita; los saldos cero muestran «Sin deuda» y un dato
+no disponible muestra «—». Los pedidos cancelados no muestran deuda.
 a `640px` adopta las tarjetas compartidas. Consulta por ID exacto, sin restringir
 al día actual. Conserva `ordersPage` en la URL y los filtros del listado al
 volver. Carga y errores se anuncian y ofrecen reintento; un error del historial
@@ -750,6 +754,27 @@ En pedidos, `protectUnload` mantiene el aviso nativo para recargar/cerrar la
 pestaña. Ese aviso es controlado por el navegador y no admite diseño ni texto
 personalizado. El hook confirma los cierres explícitos que usan `requestDiscard`;
 no bloquea por sí mismo navegación del sidebar ni atrás/adelante del router.
+
+### Ajuste de stock
+
+[`StockAdjustmentDialog`](../../frontend/src/shared/components/StockAdjustmentDialog.tsx)
+comparte el formulario de ajuste en Productos e Inventario. Reutiliza
+`.confirmation-dialog-*`: encabezado con producto, resumen de stock actual y
+resultante en dos columnas, campos de cantidad y motivo en una columna y acciones
+fuera de la grilla. El resultado solo aparece para cantidades válidas distintas
+de cero y múltiplos de `0,5`; un saldo negativo mantiene una advertencia textual.
+El motivo usa un textarea de al menos `88px`; los controles tienen `44px` de altura
+mínima. Las variantes `.stock-adjustment-*` solo afectan este formulario.
+
+Usa un diálogo nativo con foco inicial en cantidad, contención y restauración del
+foco, bloqueo del fondo y scroll interno limitado al viewport. Cancelar y Escape
+reutilizan `useDiscardChanges` si hay datos ingresados. Ambos diálogos comparten
+`lockBodyScroll` para restaurar el scroll al cerrar el último modal, incluso si se
+descartan los cambios con ambos abiertos. Durante guardado se bloquean
+campos y cierre; los errores conservan los datos y se anuncian dentro del diálogo.
+Hasta `760px` conserva los márgenes y padding del diálogo compartido y hasta
+`640px` sus acciones se expanden por igual. El nombre del producto admite varias
+líneas sin desbordar y la ayuda está asociada al campo de cantidad.
 
 ### Variantes específicas por pantalla
 

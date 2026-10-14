@@ -56,11 +56,17 @@ public class CustomerReadService {
         parameters.add((long) safePage * safeSize);
         var rows = jdbc.queryForList("""
             select o.id, o.order_number as number, o.total, o.status, o.created_at as date,
-                   coalesce(sp.display_name, customer_seller.display_name, 'Sin asignar') as seller
+                   coalesce(sp.display_name, customer_seller.display_name, 'Sin asignar') as seller,
+                   case when o.status = 'CANCELLED' or s.status = 'CANCELLED' then 0
+                        else least(greatest(coalesce((
+                            select sum(case when l.entry_type = 'DEBIT' then l.amount else -l.amount end)
+                            from customer.account_ledger l where l.sale_id = s.id
+                        ), 0), 0), greatest(coalesce(s.total - s.paid, 0), 0)) end as balance
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
             left join seller.seller_profiles sp on sp.id = o.seller_id
             left join seller.seller_profiles customer_seller on customer_seller.id = c.seller_id
+            left join sale.sales s on s.order_id = o.id
             """ + where + " order by o.created_at desc, o.id desc limit ? offset ?", parameters.toArray());
         return PageResponse.of(rows, safePage, safeSize, total == null ? 0 : total);
     }

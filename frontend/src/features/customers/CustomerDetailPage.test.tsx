@@ -7,7 +7,7 @@ import CustomerDetailPage from './CustomerDetailPage'
 import CustomersPage from './CustomersPage'
 
 const customer = { id: 'customer-1', number: '0001', name: 'Almacén Norte', cuitId: '30-123', email: 'cliente@example.test', phone: '123456', address: 'San Martín 100', zone: 'Centro', seller: 'Lucía', priceList: 'Mayorista', priceListCode: 'MAYORISTA', status: 'INACTIVE', balance: -120.50, createdAt: '2025-01-01T12:00:00Z' }
-const order = { id: 'order-1', number: 'PED-001', seller: 'Lucía', total: 500.50, status: 'CANCELLED', date: '2025-01-01T02:00:00Z' }
+const order = { id: 'order-1', number: 'PED-001', seller: 'Lucía', total: 500.50, balance: 0, status: 'CANCELLED', date: '2025-01-01T02:00:00Z' }
 const paged = (content: unknown[], page = 0, totalElements = content.length) => ({ content, page, size: 20, totalElements, totalPages: Math.ceil(totalElements / 20) })
 const response = (body: unknown, status = 200) => Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 
@@ -24,6 +24,20 @@ function renderPage(url = '/customers/customer-1', authorities = ['ADMIN_ALL']) 
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks() })
 
 describe('customer details and order history', () => {
+  it('shows the current debt per order and distinguishes zero from unavailable balances', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).includes('/orders?') ? response(paged([
+      { ...order, id: 'partial', number: 'PARTIAL', status: 'DELIVERED', balance: 125.50 },
+      { ...order, id: 'paid', number: 'PAID', status: 'DELIVERED', balance: 0 },
+      { ...order, id: 'cancelled', number: 'CANCELLED', balance: 0 },
+      { ...order, id: 'unavailable', number: 'UNAVAILABLE', balance: undefined },
+    ])) : response({ ...customer, balance: 125.50 }))
+    renderPage()
+    const pending = await screen.findByRole('row', { name: /PARTIAL/ })
+    expect(screen.getByRole('columnheader', { name: 'Saldo pendiente' })).toBeInTheDocument()
+    expect(within(pending).getByText(/125,50/)).toHaveClass('text-danger', 'font-bold')
+    for (const name of ['PAID', 'CANCELLED']) expect(within(screen.getByRole('row', { name: new RegExp(`\\b${name}\\b`) })).getByText('Sin deuda')).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: /UNAVAILABLE/ })).getByText('—')).toBeInTheDocument()
+  })
   it('offers an exact customer detail link for administrators and preserves list filters', async () => {
     vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/customers?') ? response(paged([customer])) : response(paged([])))
     renderPage('/customers?status=INACTIVE&page=2', ['ADMIN_ALL'])

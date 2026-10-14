@@ -70,10 +70,16 @@ los filtros en la URL y vuelve a la primera página al cambiarlos.
 nulos; conserva clientes inactivos y sin vendedor o lista asignada.
 
 `GET /api/customers/{customerId}/orders?page=0&size=20` devuelve el historial
-paginado por ID exacto del cliente, con `id`, `number`, `seller`, `total`,
+paginado por ID exacto del cliente, con `id`, `number`, `seller`, `total`, `balance`,
 `status` y `date`. Incluye todos los estados, sin un límite de fecha inicial,
 ordenado por fecha e ID descendentes. `total` es el importe del pedido, sin
-sumar el saldo anterior del remito. El tamaño se limita a `1–100` y la página
+sumar el saldo anterior del remito. `balance` es la deuda vigente de cuenta
+corriente de la venta asociada: débitos menos créditos, limitada entre cero y
+el importe de la venta sin pagar (`total - paid`). Los pedidos y ventas cancelados
+devuelven cero. No incluye nuevamente la deuda anterior seleccionada para el
+remito ni importes sin débito contable. Se calcula al consultar, por lo que los
+pagos parciales o la cancelación de la deuda se reflejan en el historial.
+El tamaño se limita a `1–100` y la página
 negativa se normaliza a cero.
 
 Ambos endpoints requieren `ADMIN_ALL`. Los vendedores reciben `403` sin

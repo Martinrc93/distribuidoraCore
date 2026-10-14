@@ -8,6 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { StockAdjustmentDialog } from '../../shared/components/StockAdjustmentDialog'
 import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { SupplierSelect } from '../../shared/components/EntitySelect'
 import { apiGetAllPages } from '../../shared/api/pagination'
@@ -358,7 +359,6 @@ export default function ProductsPage() {
     { key: 'reason', label: 'Motivo' },
     { key: 'reference', label: 'Referencia' },
   ]
-  const projectedStock = adjustmentProduct ? Number(adjustmentProduct.stock ?? 0) + Number(quantity || 0) : 0
 
   return <>
     <PageHeader eyebrow="Catálogo" title="Productos" description="Productos, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button> : <Button variant="secondary" href="/price-lists">Ver listas de precios</Button>} />
@@ -381,14 +381,13 @@ export default function ProductsPage() {
       <h2 id="movements-title">{selectedProduct.name}</h2>
       {movementsQuery.isLoading ? <EmptyState title="Cargando movimientos" description="Consultando el historial de stock." /> : movementsQuery.isError ? <EmptyState title="No se pudieron cargar los movimientos" description={movementsQuery.error.message} /> : movementRows.length === 0 ? <EmptyState title="Sin movimientos" description="No hay movimientos registrados para este producto." /> : <DataTable className="product-movements-table" columns={movementColumns} rows={movementRows} />}
     </Panel></div>}
-    {adjustmentProduct && <div role="dialog" aria-modal="true" aria-labelledby="adjustment-title" className="modal-backdrop"><Panel title="Ajustar stock"><form className="form-grid" onSubmit={submitAdjustment}>
-      <h2 id="adjustment-title">{adjustmentProduct.name} · stock actual {adjustmentProduct.stock ?? 0}</h2>
-      <label className="field"><span>Cantidad de ajuste</span><input className="input" aria-label="Cantidad de ajuste" type="text" inputMode="decimal" value={quantity} onChange={(event) => { setQuantity(event.target.value); setAdjustmentError('') }} required disabled={adjustmentSaving} /><small>Usá un valor positivo para sumar o negativo para descontar; múltiplos de 0,5.</small></label>
-      <label className="field"><span>Motivo</span><input className="input" aria-label="Motivo" value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={500} disabled={adjustmentSaving} /></label>
-      {quantity && projectedStock < 0 && <p className="warning-text" role="status">Advertencia: el saldo quedará negativo ({projectedStock}).</p>}
-      {adjustmentError && <p className="error-text" role="alert">{adjustmentError}</p>}
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setAdjustmentProduct(undefined)} disabled={adjustmentSaving}>Cancelar</Button><Button type="submit" disabled={adjustmentSaving}>{adjustmentSaving ? 'Guardando...' : 'Confirmar ajuste'}</Button></div>
-    </form></Panel></div>}
+    {adjustmentProduct && <StockAdjustmentDialog
+      productName={adjustmentProduct.name} stock={adjustmentProduct.stock ?? 0}
+      quantity={quantity} reason={reason} pending={adjustmentSaving} error={adjustmentError}
+      onQuantityChange={(value) => { setQuantity(value); setAdjustmentError('') }}
+      onReasonChange={(value) => { setReason(value); setAdjustmentError('') }}
+      onSubmit={submitAdjustment} onCancel={() => setAdjustmentProduct(undefined)}
+    />}
     {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)} disabled={mutating || formSaving}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating || formSaving}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
   </>
 }

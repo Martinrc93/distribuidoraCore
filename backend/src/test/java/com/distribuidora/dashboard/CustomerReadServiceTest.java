@@ -16,10 +16,12 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.sql.Timestamp;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -41,11 +43,13 @@ class CustomerReadServiceTest {
     @BeforeEach
     void setUp() {
         jdbc = new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL", "sa", ""));
-        for (String schema : List.of("customer", "orders", "seller", "catalog")) jdbc.execute("create schema " + schema);
+        for (String schema : List.of("customer", "orders", "seller", "catalog", "sale")) jdbc.execute("create schema " + schema);
         jdbc.execute("create table seller.seller_profiles(id uuid primary key, user_id uuid, display_name varchar, status varchar)");
         jdbc.execute("create table catalog.price_lists(id uuid primary key, code varchar, name varchar)");
         jdbc.execute("create table customer.customers(id uuid primary key, business_name varchar, tax_id varchar, email varchar, phone varchar, address varchar, zone varchar, seller_id uuid, price_list_id uuid, balance decimal(19,4), status varchar, created_at timestamp with time zone)");
         jdbc.execute("create table orders.orders(id uuid primary key, customer_id uuid, seller_id uuid, order_number varchar, total decimal(19,4), status varchar, created_at timestamp with time zone)");
+        jdbc.execute("create table sale.sales(id uuid primary key, order_id uuid unique, total decimal(19,4), paid decimal(19,4), status varchar)");
+        jdbc.execute("create table customer.account_ledger(id uuid primary key, sale_id uuid, entry_type varchar, amount decimal(19,4))");
         jdbc.update("insert into seller.seller_profiles values (?, ?, 'Lucía', 'ACTIVE'), (?, ?, 'Martín', 'ACTIVE')", sellerId, userId, otherSeller, UUID.randomUUID());
         jdbc.update("insert into catalog.price_lists values (?, 'GENERAL', 'General')", priceList);
         jdbc.update("insert into customer.customers values (?, 'Almacén Norte', '30-123', 'cliente@example.test', '123456', 'San Martín 100', 'Centro', ?, ?, 100.50, 'INACTIVE', ?)", customerId, sellerId, priceList, Timestamp.from(Instant.parse("2025-01-01T12:00:00Z")));
@@ -149,7 +153,39 @@ class CustomerReadServiceTest {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user.toString(), null, List.of(new SimpleGrantedAuthority(authority))));
     }
 
-    private void order(UUID customer, UUID seller, String number, String status, String date) {
-        jdbc.update("insert into orders.orders values (?, ?, ?, ?, 50, ?, ?)", UUID.randomUUID(), customer, seller, number, status, Timestamp.from(Instant.parse(date)));
+    @Test
+    void historyShowsCurrentAccountDebtWithoutCountingCancelledOrUnpostedSales() {
+        UUID partial = debtOrder("PARTIAL", "DELIVERED", "DELIVERED", "50", "20", "50", "20");
+        debtOrder("PAID", "DELIVERED", "DELIVERED", "50", "50", "50", "50");
+        debtOrder("CANCELLED", "CANCELLED", "CANCELLED", "50", "0", "50", "0");
+        debtOrder("NO-DEBIT", "CONFIRMED", "CONFIRMED", "50", "0", "0", "0");
+        debtOrder("LEDGER-LIMIT", "CONFIRMED", "CONFIRMED", "50", "0", "20", "5");
+        debtOrder("SALE-LIMIT", "DELIVERED", "DELIVERED", "50", "40", "50", "0");
+        debtOrder("CREDIT", "DELIVERED", "DELIVERED", "50", "0", "50", "60");
+        var balances = service.orders(customerId, 0, 20).content().stream().collect(
+            Collectors.toMap(row -> row.get("number"), row -> new BigDecimal(row.get("balance").toString())));
+        assertThat(balances.get("PARTIAL")).isEqualByComparingTo("30");
+        for (String number : List.of("PAID", "CANCELLED", "NO-DEBIT", "CREDIT")) assertThat(balances.get(number)).isEqualByComparingTo("0");
+        assertThat(balances.get("LEDGER-LIMIT")).isEqualByComparingTo("15");
+        assertThat(balances.get("SALE-LIMIT")).isEqualByComparingTo("10");
+        jdbc.update("update sale.sales set paid = total where id = ?", partial);
+        jdbc.update("insert into customer.account_ledger values (?, ?, 'CREDIT', 30)", UUID.randomUUID(), partial);
+        var refreshed = service.orders(customerId, 0, 20).content().stream().filter(row -> row.get("number").equals("PARTIAL")).findFirst().orElseThrow();
+        assertThat(new BigDecimal(refreshed.get("balance").toString())).isEqualByComparingTo("0");
+    }
+
+    private UUID debtOrder(String number, String orderStatus, String saleStatus, String total, String paid, String debit, String credit) {
+        UUID orderId = order(customerId, sellerId, number, orderStatus, "2025-01-01T12:00:00Z");
+        UUID saleId = UUID.randomUUID();
+        jdbc.update("insert into sale.sales values (?, ?, ?, ?, ?)", saleId, orderId, new BigDecimal(total), new BigDecimal(paid), saleStatus);
+        jdbc.update("insert into customer.account_ledger values (?, ?, 'DEBIT', ?), (?, ?, 'CREDIT', ?)",
+            UUID.randomUUID(), saleId, new BigDecimal(debit), UUID.randomUUID(), saleId, new BigDecimal(credit));
+        return saleId;
+    }
+
+    private UUID order(UUID customer, UUID seller, String number, String status, String date) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("insert into orders.orders values (?, ?, ?, ?, 50, ?, ?)", id, customer, seller, number, status, Timestamp.from(Instant.parse(date)));
+        return id;
     }
 }

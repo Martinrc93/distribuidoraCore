@@ -8,6 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
+import { StockAdjustmentDialog } from '../../shared/components/StockAdjustmentDialog'
 
 type InventoryItem = { id: string; product: string; stock: number; lastMovement?: string | null; updated?: string }
 type Movement = { id: string; movementType: string; quantity: number; reason: string; referenceType?: string; referenceId?: string; date: string }
@@ -91,13 +92,13 @@ export default function InventoryPage() {
       const item = query.data?.content.find((candidate) => candidate.id === row.id)
       if (!item) return null
       return <div className="page-actions">
-        <Button variant="link" onClick={() => setSelectedProduct(item)}>Ver movimientos</Button>
+        <Button variant="link" onClick={() => setSelectedProduct(item)} aria-label={`Ver movimientos de ${item.product}`}>Ver movimientos</Button>
         {canAdjust && <Button variant="link" onClick={() => {
           setAdjustmentProduct(item)
           setQuantity('')
           setReason('')
           setAdjustmentError('')
-        }}>Ajustar stock</Button>}
+        }} aria-label={`Ajustar stock de ${item.product}`}>Ajustar stock</Button>}
       </div>
     } },
   ]
@@ -119,7 +120,6 @@ export default function InventoryPage() {
   ]
 
   const canAdjust = hasAuthority('STOCK_ADJUST')
-  const projectedStock = adjustmentProduct ? Number(adjustmentProduct.stock) + Number(quantity || 0) : 0
 
   return <>
     <PageHeader eyebrow="Catálogo" title="Inventario" description="Saldos actuales y movimientos de stock." />
@@ -132,13 +132,12 @@ export default function InventoryPage() {
     {selectedProduct && <Panel title={`Movimientos · ${selectedProduct.product}`} action={<Button variant="link" onClick={() => setSelectedProduct(undefined)}>Cerrar detalle</Button>}>
       {movementsQuery.isLoading ? <EmptyState title="Cargando movimientos" description="Consultando el historial de stock." /> : movementsQuery.isError ? <EmptyState title="No se pudieron cargar los movimientos" description={movementsQuery.error.message} /> : movementRows.length === 0 ? <EmptyState title="Sin movimientos" description="No hay movimientos registrados para este producto." /> : <DataTable columns={movementColumns} rows={movementRows} />}
     </Panel>}
-    {adjustmentProduct && <div role="dialog" aria-modal="true" aria-labelledby="adjustment-title" className="modal-backdrop"><Panel title="Ajustar inventario"><form className="form-grid" onSubmit={submitAdjustment}>
-      <h2 id="adjustment-title">{adjustmentProduct.product} · stock actual {adjustmentProduct.stock}</h2>
-      <label className="field"><span>Cantidad de ajuste</span><input className="input" aria-label="Cantidad de ajuste" type="text" inputMode="decimal" value={quantity} onChange={(event) => { setQuantity(event.target.value); setAdjustmentError('') }} required disabled={saving} /><small>Usá un valor positivo para sumar o negativo para descontar; múltiplos de 0,5.</small></label>
-      <label className="field"><span>Motivo</span><input className="input" aria-label="Motivo" value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={500} disabled={saving} /></label>
-      {Number.isFinite(projectedStock) && quantity && projectedStock < 0 && <p className="warning-text" role="status">Advertencia: el saldo quedará negativo ({projectedStock}).</p>}
-      {adjustmentError && <p className="error-text" role="alert">{adjustmentError}</p>}
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setAdjustmentProduct(undefined)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Confirmar ajuste'}</Button></div>
-    </form></Panel></div>}
+    {adjustmentProduct && <StockAdjustmentDialog
+      title="Ajustar inventario" productName={adjustmentProduct.product} stock={adjustmentProduct.stock}
+      quantity={quantity} reason={reason} pending={saving} error={adjustmentError}
+      onQuantityChange={(value) => { setQuantity(value); setAdjustmentError('') }}
+      onReasonChange={(value) => { setReason(value); setAdjustmentError('') }}
+      onSubmit={submitAdjustment} onCancel={() => setAdjustmentProduct(undefined)}
+    />}
   </>
 }

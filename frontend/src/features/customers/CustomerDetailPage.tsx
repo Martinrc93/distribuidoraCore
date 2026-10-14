@@ -12,7 +12,7 @@ import { useUrlListState } from '../../shared/useUrlListState'
 import type { Customer } from './customerTypes'
 
 type CustomerDetail = Customer & { priceList?: string | null; priceListCode?: string | null; createdAt?: string }
-type CustomerOrder = { id: string; number: string; seller: string; total: number; status: string; date: string }
+type CustomerOrder = { id: string; number: string; seller: string; total: number; balance?: number; status: string; date: string }
 const money = (value: number = 0) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
 const date = (value?: string) => value ? new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(value)) : '—'
 const orderStatus: Record<string, string> = { CONFIRMED: 'Confirmado', DELIVERED: 'Entregado', CANCELLED: 'Cancelado' }
@@ -57,10 +57,11 @@ export default function CustomerDetailPage() {
     { key: 'date', label: 'Fecha' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'total', label: 'Total', align: 'right' },
+    { key: 'balance', label: 'Saldo pendiente', align: 'right', render: (value, row) => <span className={Number(row.pendingBalance) > 0 ? 'font-bold text-danger' : 'text-muted'}>{value}</span> },
     { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'CANCELLED' ? 'muted' : value === 'DELIVERED' ? 'strong' : 'soft'}>{orderStatus[value] ?? value}</Badge> },
     { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button variant="link" href={`/orders/${row.id}`} aria-label={`Ver pedido ${row.number}`}>Ver pedido</Button></div> },
   ]
-  const rows = (ordersQuery.data?.content ?? []).map((order) => ({ id: order.id, number: order.number, date: date(order.date), seller: order.seller, total: money(order.total), status: order.status }))
+  const rows = (ordersQuery.data?.content ?? []).map((order) => ({ id: order.id, number: order.number, date: date(order.date), seller: order.seller, total: money(order.total), balance: order.balance === undefined ? '—' : order.balance > 0 ? money(order.balance) : 'Sin deuda', pendingBalance: String(order.balance ?? ''), status: order.status }))
   const balance = Number(customer.balance ?? 0)
   return <>
     <PageHeader eyebrow="Operación" title={customer.name} description="Datos del cliente e historial de pedidos." actions={backAction} />
@@ -71,7 +72,7 @@ export default function CustomerDetailPage() {
         </Panel>
         <div className="self-start"><StatCard label="Saldo de cuenta corriente" value={money(balance)} detail={balance > 0 ? 'Saldo deudor actual del cliente.' : balance < 0 ? 'Saldo a favor del cliente.' : 'El cliente no tiene saldo pendiente.'} /></div>
       </div>
-      <Panel title="Historial de pedidos" description="Pedidos del cliente, del más reciente al más antiguo.">
+      <Panel title="Historial de pedidos" description="Pedidos del cliente, del más reciente al más antiguo. El saldo pendiente muestra la deuda actual de cada pedido en cuenta corriente.">
         {ordersQuery.isPending ? <div role="status"><EmptyState title="Cargando pedidos" description="Consultando el historial del cliente." /></div>
           : ordersQuery.isError ? <div role="alert"><EmptyState title="No se pudo cargar el historial" description="Los datos del cliente siguen disponibles. Podés reintentar la consulta." action={<Button variant="secondary" onClick={() => ordersQuery.refetch()}>Reintentar historial</Button>} /></div>
           : rows.length === 0 ? <EmptyState title="No hay pedidos para mostrar" description="Este cliente no tiene pedidos visibles para tu usuario en esta página." />
