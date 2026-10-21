@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 async function signIn(page: Page, instance: string) {
-  await page.getByLabel('Email', { exact: true }).fill('dev-admin@distribuidora.local')
+  await page.getByLabel('Email', { exact: true }).fill('admin@demo')
   await page.getByLabel('Contraseña', { exact: true }).fill(process.env.DEV_ADMIN_PASSWORD ?? 'ChangeMe123!')
   await page.getByRole('button', { name: 'Ingresar', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/${instance}/dashboard$`))
@@ -59,8 +59,8 @@ test('keeps data, logins, deep links and logout independent between A and B', as
   const usersB = await page.request.get('/b/api/users?page=0&size=20', { headers: { Authorization: `Bearer ${tokenB}` } })
   expect(usersA.ok()).toBeTruthy()
   expect(usersB.ok()).toBeTruthy()
-  const adminA = (await usersA.json()).content.find((user: { email: string }) => user.email === 'dev-admin@distribuidora.local')
-  const adminB = (await usersB.json()).content.find((user: { email: string }) => user.email === 'dev-admin@distribuidora.local')
+  const adminA = (await usersA.json()).content.find((user: { email: string }) => user.email === 'admin@demo')
+  const adminB = (await usersB.json()).content.find((user: { email: string }) => user.email === 'admin@demo')
   expect(adminA?.id).toBeTruthy()
   expect(adminB?.id).toBeTruthy()
   expect(adminA.id).not.toBe(adminB.id)

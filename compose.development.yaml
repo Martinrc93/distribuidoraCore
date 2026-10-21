@@ -21,7 +21,7 @@ x-backend: &backend
     DB_USERNAME: distribuidora
     DB_PASSWORD: local-development-only
     SEED_DEMO: "false"
-    ADMIN_EMAIL: dev-admin@distribuidora.local
+    ADMIN_EMAIL: admin@demo
     ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-ChangeMe123!}
 
 x-frontend: &frontend

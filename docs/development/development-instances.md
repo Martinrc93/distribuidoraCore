@@ -88,7 +88,7 @@ versión estable mientras el checkout continúa en `support`.
 La carga de datos demo está desactivada (`SEED_DEMO=false`). Una base nueva
 inicializa únicamente la cuenta administradora y la configuración técnica de
 las migraciones, sin usuarios demo, clientes, productos, pedidos ni ventas.
-El administrador de desarrollo es `dev-admin@distribuidora.local` y su
+El administrador de desarrollo es `admin@demo` y su
 contraseña inicial es `ChangeMe123!`.
 
 Puedes establecer `DEV_ADMIN_PASSWORD` antes del primer arranque. Cambiar esta
