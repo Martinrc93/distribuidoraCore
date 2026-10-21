@@ -43,8 +43,8 @@ if ($Action -eq 'update') {
         $InstanceExistingImage = & docker image ls --quiet --filter "reference=$InstanceImageTag"
         if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the local Docker images.' }
         if ($InstanceExistingImage) {
-            $InstanceExistingRevision = & docker image inspect $InstanceImageTag --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
-            if ($LASTEXITCODE -ne 0 -or $InstanceExistingRevision -ne $InstanceRevision) { throw "Image $InstanceImageTag does not match its main revision." }
+            $InstanceExistingLabels = & docker image inspect $InstanceImageTag --format '{{json .Config.Labels}}' | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $InstanceExistingLabels.'org.opencontainers.image.revision' -ne $InstanceRevision) { throw "Image $InstanceImageTag does not match its main revision." }
             Write-Host "Keeping existing main image $InstanceImageTag"
             continue
         }
