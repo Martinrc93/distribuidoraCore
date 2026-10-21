@@ -1,0 +1,71 @@
+import { expect, test, type Page } from '@playwright/test'
+
+async function signIn(page: Page, instance: string) {
+  await page.getByLabel('Email', { exact: true }).fill('dev-admin@distribuidora.local')
+  await page.getByLabel('Contraseña', { exact: true }).fill(process.env.DEV_ADMIN_PASSWORD ?? 'ChangeMe123!')
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/${instance}/dashboard$`))
+}
+
+for (const width of [320, 1280]) {
+  test(`selects either system without horizontal overflow at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Seleccionar sistema' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`selector-${width}.png`), fullPage: true })
+    const a = page.getByRole('link', { name: 'Abrir sistema A' })
+    await a.focus()
+    await page.keyboard.press('Enter')
+    await expect(page).toHaveURL(/\/a\/login$/)
+    await expect(page.getByRole('button', { name: 'Ingresar', exact: true })).toBeVisible()
+    await page.goto('/')
+    await page.getByRole('link', { name: 'Abrir sistema B' }).click()
+    await expect(page).toHaveURL(/\/b\/login$/)
+    await expect(page.getByRole('button', { name: 'Ingresar', exact: true })).toBeVisible()
+  })
+}
+
+test('keeps data, logins, deep links and logout independent between A and B', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/')
+  await page.getByRole('link', { name: 'Abrir sistema A' }).click()
+  await signIn(page, 'a')
+  const tokenA = await page.evaluate(() => sessionStorage.getItem('distribuidora.accessToken:/a/'))
+  expect(tokenA).toBeTruthy()
+  await page.goto('/a/orders')
+  await expect(page.getByRole('link', { name: '+ Nuevo pedido', exact: true }).first()).toHaveAttribute('href', '/a/orders/new')
+  await page.getByRole('link', { name: '+ Nuevo pedido', exact: true }).first().click()
+  await expect(page).toHaveURL(/\/a\/orders\/new$/)
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Cliente' })).toBeVisible()
+
+  await page.goto('/')
+  await page.getByRole('link', { name: 'Abrir sistema B' }).click()
+  await expect(page).toHaveURL(/\/b\/login$/)
+  await signIn(page, 'b')
+  const tokenB = await page.evaluate(() => sessionStorage.getItem('distribuidora.accessToken:/b/'))
+  expect(tokenB).toBeTruthy()
+  expect(tokenB).not.toBe(tokenA)
+
+  const customersA = await page.request.get('/a/api/customers?page=0&size=20', { headers: { Authorization: `Bearer ${tokenA}` } })
+  const customersB = await page.request.get('/b/api/customers?page=0&size=20', { headers: { Authorization: `Bearer ${tokenB}` } })
+  expect(customersA.ok()).toBeTruthy()
+  expect(customersB.ok()).toBeTruthy()
+  const idsA = (await customersA.json()).content.map((customer: { id: string }) => customer.id)
+  const idsB = (await customersB.json()).content.map((customer: { id: string }) => customer.id)
+  expect(idsA.length).toBeGreaterThan(0)
+  expect(idsB.length).toBeGreaterThan(0)
+  expect(idsA.filter((id: string) => idsB.includes(id))).toEqual([])
+  const wrongInstance = await page.request.get('/b/api/customers', { headers: { Authorization: `Bearer ${tokenA}` } })
+  expect(wrongInstance.status()).toBe(401)
+
+  await page.getByRole('button', { name: 'Salir', exact: true }).click()
+  await expect(page).toHaveURL(/\/b\/login$/)
+  expect(await page.evaluate(() => sessionStorage.getItem('distribuidora.accessToken:/a/'))).toBe(tokenA)
+  await page.goto('/a/orders')
+  await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toBeVisible()
+  const redirect = await page.request.get('/a', { maxRedirects: 0, headers: { Host: 'preview.example.test' } })
+  expect(redirect.status()).toBe(302)
+  expect(redirect.headers().location).toBe('/a/')
+})

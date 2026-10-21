@@ -112,6 +112,13 @@ cerrar ambas ventanas o presionar `Ctrl+C` dentro de cada una.
 
 ## Docker Compose
 
+Para ejecutar **dos instancias de main** con bases independientes y una pantalla
+inicial de selección, usa `.\dev-instances.cmd update` para generar las imágenes
+desde `origin/main`. Los siguientes arranques usan `.\dev-instances.cmd start`,
+sin reconstruir ni tomar cambios de `support`.
+La entrada queda en `http://localhost:3100/`, con los sistemas bajo `/a/` y `/b/`.
+Configuración y operación: [instancias de desarrollo](../docs/development/development-instances.md).
+
 Desde la raíz del proyecto:
 
 ```powershell

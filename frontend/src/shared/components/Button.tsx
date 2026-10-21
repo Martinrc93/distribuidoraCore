@@ -1,4 +1,5 @@
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react'
+import { appPath } from '../appBase'
 
 type BaseProps = {
   children: ReactNode
@@ -12,7 +13,7 @@ type LinkProps = BaseProps & AnchorHTMLAttributes<HTMLAnchorElement> & { href: s
 export function Button({ children, variant = 'primary', fullWidth = false, ...props }: ButtonProps | LinkProps) {
   const className = `button button-${variant}${fullWidth ? ' button-full' : ''}`
   if ('href' in props && props.href) {
-    return <a className={className} {...props}>{children}</a>
+    return <a className={className} {...props} href={appPath(props.href)}>{children}</a>
   }
   return <button className={className} {...props as ButtonHTMLAttributes<HTMLButtonElement>}>{children}</button>
 }

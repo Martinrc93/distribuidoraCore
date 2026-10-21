@@ -1,3 +1,5 @@
+import { appPath, instanceStorageKey } from '../appBase'
+
 export type ApiPage<T> = {
   content: T[]
   page: number
@@ -32,8 +34,8 @@ export class ApiError extends Error {
   }
 }
 
-const TOKEN_KEY = 'distribuidora.accessToken'
-const REFRESH_TOKEN_KEY = 'distribuidora.refreshToken'
+const TOKEN_KEY = instanceStorageKey('distribuidora.accessToken')
+const REFRESH_TOKEN_KEY = instanceStorageKey('distribuidora.refreshToken')
 let refreshInFlight: Promise<string> | undefined
 
 export function getAccessToken() {
@@ -58,7 +60,7 @@ export function clearAccessToken() {
 export async function login(email: string, password: string) {
   let response: Response
   try {
-    response = await fetch('/api/auth/login', {
+    response = await fetch(appPath('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -84,7 +86,7 @@ async function refreshAccessToken(): Promise<string> {
   }
 
   refreshInFlight = (async () => {
-    const response = await fetch('/api/auth/refresh', {
+    const response = await fetch(appPath('/api/auth/refresh'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -111,14 +113,14 @@ async function refreshAccessToken(): Promise<string> {
 
 async function fetchAuthenticated(path: string, init: RequestInit): Promise<Response> {
   const token = getAccessToken()
-  const response = await fetch(path, {
+  const response = await fetch(appPath(path), {
     ...init,
     headers: { ...(init.headers as Record<string, string> | undefined), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   })
   if (response.status !== 401 || !token) return response
 
   const newToken = await refreshAccessToken()
-  return fetch(path, {
+  return fetch(appPath(path), {
     ...init,
     headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${newToken}` },
   })
@@ -180,7 +182,7 @@ export async function logout() {
   const refreshToken = getRefreshToken()
   try {
     if (refreshToken) {
-      await fetch('/api/auth/logout', {
+      await fetch(appPath('/api/auth/logout'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),

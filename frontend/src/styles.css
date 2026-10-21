@@ -75,6 +75,17 @@
   .login-page { @apply min-h-[100vh] grid place-items-center p-[24px] bg-canvas; }
   .login-page .panel { @apply w-[min(100%,_420px)]; }
   .login-form { @apply grid gap-[16px]; }
+  .instance-launcher { @apply box-border w-full max-w-[760px] mx-auto px-[24px] py-[64px]; }
+  .instance-launcher-heading { @apply flex items-start justify-between gap-[20px]; }
+  .instance-launcher-heading .page-header { @apply min-w-0; }
+  .instance-launcher-heading h1 { @apply [overflow-wrap:anywhere]; }
+  .instance-launcher-options { @apply grid grid-cols-[repeat(2,_minmax(0,_1fr))] gap-[20px]; }
+  .instance-launcher-description { @apply text-muted text-[13px] leading-[1.5] mb-[20px]; }
+  .instance-launcher-options .button { @apply min-h-[44px]; }
+  @media (max-width: 640px) {
+    .instance-launcher { @apply px-[16px] py-[32px]; }
+    .instance-launcher-options { @apply grid-cols-1; }
+  }
   .error-text { @apply text-danger text-[13px] m-[0]; }
   .success-text { @apply text-accent-dark text-[13px] [margin:0_0_12px]; }
   .sidebar { @apply sticky top-0 h-[100dvh] min-h-0 w-[250px] flex-[0_0_250px] bg-[var(--sidebar)] text-[#eef4f0] [border-right:1px_solid_#254852] flex flex-col [padding:24px_16px_16px]; }

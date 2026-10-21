@@ -1,6 +1,10 @@
 .git
 .gitignore
+.main-instances
+.env.development-tunnel.local
 **/target
+**/target-*
 **/node_modules
 **/dist
+**/test-results
 *.log

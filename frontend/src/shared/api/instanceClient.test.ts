@@ -1,0 +1,53 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  vi.resetModules()
+  sessionStorage.clear()
+})
+
+describe('Independent instance sessions', () => {
+  it('does not send A credentials to B and logs out only the selected instance', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch')
+    const credentials = (instance: string) => new Response(JSON.stringify({ accessToken: `access-${instance}`, refreshToken: `refresh-${instance}`, tokenType: 'Bearer', expiresInSeconds: 300 }))
+    vi.stubEnv('BASE_URL', '/a/')
+    vi.resetModules()
+    const a = await import('./client')
+    fetch.mockResolvedValueOnce(credentials('a'))
+    await a.login('a@example.test', 'password')
+    expect(fetch).toHaveBeenLastCalledWith('/a/api/auth/login', expect.anything())
+
+    vi.stubEnv('BASE_URL', '/b/')
+    vi.resetModules()
+    const b = await import('./client')
+    fetch.mockResolvedValueOnce(new Response('{}'))
+    await b.apiGet('/api/orders')
+    expect(fetch).toHaveBeenLastCalledWith('/b/api/orders', { headers: {} })
+    fetch.mockResolvedValueOnce(credentials('b'))
+    await b.login('b@example.test', 'password')
+    fetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await b.logout()
+    expect(fetch).toHaveBeenLastCalledWith('/b/api/auth/logout', expect.objectContaining({ body: JSON.stringify({ refreshToken: 'refresh-b' }) }))
+    expect(sessionStorage.getItem('distribuidora.accessToken:/a/')).toBe('access-a')
+    expect(sessionStorage.getItem('distribuidora.accessToken:/b/')).toBeNull()
+    expect(sessionStorage.getItem('distribuidora.accessToken')).toBeNull()
+  })
+
+  it('renews an expired session through the same instance before retrying', async () => {
+    vi.stubEnv('BASE_URL', '/a/')
+    vi.resetModules()
+    sessionStorage.setItem('distribuidora.accessToken:/a/', 'expired-a')
+    sessionStorage.setItem('distribuidora.refreshToken:/a/', 'refresh-a')
+    sessionStorage.setItem('distribuidora.refreshToken:/b/', 'refresh-b')
+    const fetch = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: 'new-a', refreshToken: 'new-refresh-a' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ instance: 'a' })))
+    const client = await import('./client')
+    await expect(client.apiGet('/api/orders')).resolves.toEqual({ instance: 'a' })
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/a/api/orders', '/a/api/auth/refresh', '/a/api/orders'])
+    expect(fetch.mock.calls[1][1]?.body).toBe(JSON.stringify({ refreshToken: 'refresh-a' }))
+    expect(sessionStorage.getItem('distribuidora.refreshToken:/b/')).toBe('refresh-b')
+  })
+})

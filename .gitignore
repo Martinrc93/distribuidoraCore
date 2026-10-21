@@ -1,4 +1,6 @@
 /backups/
+/.main-instances/
+/.env.development-tunnel.local
 *.dcbak
 *.dump
 /frontend/dist-tailwind-check/

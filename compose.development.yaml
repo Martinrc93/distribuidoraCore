@@ -1,0 +1,119 @@
+# Frozen main images. Build and deploy explicitly with dev-instances.cmd update.
+name: distribuidora-dev-instances
+
+x-database: &database
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_DB: distribuidora
+    POSTGRES_USER: distribuidora
+    POSTGRES_PASSWORD: local-development-only
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U distribuidora -d distribuidora"]
+    interval: 5s
+    timeout: 5s
+    retries: 20
+
+x-backend: &backend
+  image: distribuidora-main-backend:${DISTRIBUIDORA_MAIN_IMAGE_TAG:?Run dev-instances.cmd update first}
+  pull_policy: never
+  environment: &backend-environment
+    SPRING_PROFILES_ACTIVE: local
+    DB_USERNAME: distribuidora
+    DB_PASSWORD: local-development-only
+    SEED_DEMO: "true"
+    DEMO_PASSWORD: ${DEV_DEMO_PASSWORD:-ChangeMe123!}
+    ADMIN_EMAIL: dev-admin@distribuidora.local
+    ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-ChangeMe123!}
+
+x-frontend: &frontend
+  pull_policy: never
+
+services:
+  db-a:
+    <<: *database
+    volumes:
+      - data-a:/var/lib/postgresql/data
+    networks: [system-a]
+
+  db-b:
+    <<: *database
+    volumes:
+      - data-b:/var/lib/postgresql/data
+    networks: [system-b]
+
+  backend-a:
+    <<: *backend
+    environment:
+      <<: *backend-environment
+      DB_URL: jdbc:postgresql://db-a:5432/distribuidora
+      JWT_SECRET: development-system-a-secret-at-least-32-characters
+      JWT_ISSUER: distribuidora-dev-a
+    depends_on:
+      db-a:
+        condition: service_healthy
+    networks: [system-a]
+
+  backend-b:
+    <<: *backend
+    environment:
+      <<: *backend-environment
+      DB_URL: jdbc:postgresql://db-b:5432/distribuidora
+      JWT_SECRET: development-system-b-secret-at-least-32-characters
+      JWT_ISSUER: distribuidora-dev-b
+    depends_on:
+      db-b:
+        condition: service_healthy
+    networks: [system-b]
+
+  frontend-a:
+    <<: *frontend
+    image: distribuidora-main-frontend-a:${DISTRIBUIDORA_MAIN_IMAGE_TAG:?Run dev-instances.cmd update first}
+    environment:
+      DEV_BACKEND_HOST: backend-a
+    depends_on:
+      backend-a:
+        condition: service_healthy
+    networks: [system-a, entrance]
+
+  frontend-b:
+    <<: *frontend
+    image: distribuidora-main-frontend-b:${DISTRIBUIDORA_MAIN_IMAGE_TAG:?Run dev-instances.cmd update first}
+    environment:
+      DEV_BACKEND_HOST: backend-b
+    depends_on:
+      backend-b:
+        condition: service_healthy
+    networks: [system-b, entrance]
+
+  gateway:
+    image: distribuidora-main-gateway:${DISTRIBUIDORA_MAIN_IMAGE_TAG:?Run dev-instances.cmd update first}
+    pull_policy: never
+    ports:
+      - "${DEV_GATEWAY_BIND:-127.0.0.1}:${DEV_GATEWAY_PORT:-3100}:80"
+    depends_on: [frontend-a, frontend-b]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [entrance]
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles: [tunnel]
+    command: ["http", "http://gateway:80", "--url=${DEV_NGROK_URL:-}", "--inspect=false", "--log=stdout"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks: [entrance]
+
+volumes:
+  data-a:
+  data-b:
+
+networks:
+  entrance:
+  system-a:
+  system-b:

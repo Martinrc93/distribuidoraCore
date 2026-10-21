@@ -147,6 +147,20 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   selección y feedback de los patrones existentes, con fallback al valor claro
   exacto. Mantener estas variantes en `styles.css`; no crear paletas por pantalla.
 
+### Selector de instancias de desarrollo
+
+- `InstanceLauncher` es una entrada independiente, compilada únicamente con el
+  modo `instance-launcher` para el gateway de `compose.development.yaml`.
+  El build habitual conserva solo la aplicación, sin pantalla de selección.
+- Reutiliza `PageHeader`, `Panel`, `Button` y `ThemeToggle`, con los mismos tokens,
+  tipografía, foco y temas. `.instance-launcher-*` limita el ancho a `760px` y
+  presenta Sistema A y Sistema B en dos columnas; hasta `640px` se apilan.
+  Los enlaces tienen al menos `44px` de alto y funcionan por teclado.
+- Seleccionar un sistema navega a `/a/` o `/b/` del origen actual. La aplicación
+  usa su `BASE_URL` para rutas, enlaces, API y credenciales por instancia.
+  La selección no concede permisos ni evita el login de cada sistema.
+- Configuración y alcance: [instancias de desarrollo](development-instances.md).
+
 - Respetar el shell existente: `.app-shell`, `.sidebar`, `.main-area`, `.topbar`
   y `.page-content`. No duplicarlo dentro de una feature.
 - [`AppShell`](../../frontend/src/app/AppShell.tsx) centraliza la navegación y
