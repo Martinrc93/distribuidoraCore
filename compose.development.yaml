@@ -20,8 +20,7 @@ x-backend: &backend
     SPRING_PROFILES_ACTIVE: local
     DB_USERNAME: distribuidora
     DB_PASSWORD: local-development-only
-    SEED_DEMO: "true"
-    DEMO_PASSWORD: ${DEV_DEMO_PASSWORD:-ChangeMe123!}
+    SEED_DEMO: "false"
     ADMIN_EMAIL: dev-admin@distribuidora.local
     ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-ChangeMe123!}
 

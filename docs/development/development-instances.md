@@ -85,12 +85,16 @@ tema se comparte en el navegador.
 Ambas instancias usan el mismo commit de `main`, con frontends compilados para
 sus respectivos prefijos. Esto permite probar datos independientes con una
 versión estable mientras el checkout continúa en `support`.
-Los datos demo y las credenciales locales se inicializan en cada base.
+La carga de datos demo está desactivada (`SEED_DEMO=false`). Una base nueva
+inicializa únicamente la cuenta administradora y la configuración técnica de
+las migraciones, sin usuarios demo, clientes, productos, pedidos ni ventas.
 El administrador de desarrollo es `dev-admin@distribuidora.local` y su
 contraseña inicial es `ChangeMe123!`.
 
-Puedes establecer `DEV_ADMIN_PASSWORD` y `DEV_DEMO_PASSWORD` antes del primer
-arranque. Cambiar estas variables no reemplaza contraseñas de cuentas existentes.
+Puedes establecer `DEV_ADMIN_PASSWORD` antes del primer arranque. Cambiar esta
+variable no reemplaza contraseñas de cuentas existentes. Desactivar la carga
+demo no elimina datos existentes: cualquier limpieza requiere una operación
+separada y explícita sobre las bases A/B.
 Esta configuración no conecta servicios de correo externos.
 
 ## Puertos y operación
