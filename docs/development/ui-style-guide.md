@@ -147,6 +147,23 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   selección y feedback de los patrones existentes, con fallback al valor claro
   exacto. Mantener estas variantes en `styles.css`; no crear paletas por pantalla.
 
+### Tamaño de texto
+
+- `TextSizeToggle` aparece en la barra superior antes de `ThemeToggle`. Alterna
+  entre «Texto grande» y «Texto normal» con `aria-pressed`, `44px` de alto, foco
+  visible y Enter/Espacio; hasta `460px` muestra solo el icono «AA».
+- La preferencia se guarda por navegador en `localStorage`
+  (`distribuidora.text-size`), se restaura antes de pintar y se sincroniza entre
+  pestañas, igual que el tema. El valor por defecto es normal.
+- Con `data-text-size="large"` en `html` se aplica `zoom: 1.125` a `.page-content`,
+  al contenido de los `<dialog>` y a los hijos de `.modal-backdrop`. No se aplica a
+  la raíz: allí `zoom` agrandaría las alturas `100dvh` de los modales y los sacaría
+  del viewport. La navegación lateral y la barra superior conservan su tamaño.
+- Los tamaños del resto de la guía siguen siendo los valores base exactos; no
+  convertirlos a `rem` ni duplicar estilos por tamaño. En texto grande las tablas
+  anchas pueden activar su scroll horizontal interno antes; la página no debe
+  desbordar horizontalmente (verificado en Stock y Listas de precios a 390 y 1280 px).
+
 ### Selector de instancias de desarrollo
 
 - `InstanceLauncher` es una entrada independiente, compilada únicamente con el
@@ -191,8 +208,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Escape, clic en el fondo o selección de un enlace cierran el menú, también
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
-- Las rutas de Resumen, Dashboard, ficha de cliente, Productos, Marcas
-  y categorías, Listas de precios, Proveedores, Pedidos a proveedores (listado y
+- Las rutas de Resumen, Dashboard, ficha de cliente, Stock (`/products`), Marcas
+  y categorías, Listas de precios, Proveedores, Compras (`/supplier-orders`, listado y
   detalle), Zonas y Auditoría usan `RequireAdmin` en
   [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
@@ -300,15 +317,15 @@ Los datos usan un `dl.customer-detail-fields` con dos columnas, etiquetas de
 `11px`, valores de `13px` y ajuste de nombres/direcciones largos. A `760px`
 los datos y el resumen de saldo se apilan en una columna.
 
-Los administradores también tienen «Saldar cuenta» en las filas con saldo deudor
+Los administradores también tienen «Registrar pago» en las filas con saldo deudor
 positivo, incluidos clientes inactivos al seleccionar ese filtro. Consulta el
 saldo actual antes de abrir el diálogo y conserva filtros y paginación. Reutiliza
 `DeliveryAttemptDialog` en modo `account`: muestra el cliente, el saldo de cuenta
 corriente y los mismos controles y estilos de pago de las entregas, sin resultado
-de entrega ni selección de deuda anterior. Precarga el saldo completo en efectivo;
+de entrega ni selección de deuda anterior; el título es «Pago de cuenta corriente». Precarga el saldo completo en efectivo;
 permite combinar efectivo y transferencia y exige el número de transferencia.
-«Pagar total» completa el importe y «Confirmar pago» exige cubrir exactamente la
-deuda. La API exclusiva de administradores registra todos los pagos en una sola
+«Pagar total» completa el importe. «Confirmar pago» acepta el total o una parte (sin superar la
+deuda; un pago parcial envía `partial: true` e informa el saldo pendiente). La API exclusiva de administradores registra todos los pagos en una sola
 transacción e imputa primero las deudas más antiguas. Si cambió el saldo, muestra
 el error, actualiza el saldo y conserva el borrador para corregirlo. Al guardar
 refresca clientes, ventas, pedidos, pagos y métricas. El diálogo conserva el foco,
@@ -332,9 +349,9 @@ La ficha y el historial también exigen `ADMIN_ALL`: entrar a la ficha por URL
 como vendedor redirige a Pedidos sin consultarla. Los selectores de cliente para pedidos y
 pagos mantienen sus opciones autorizadas y el acceso al último pedido.
 
-### Pedidos a proveedores
+### Compras (pedidos a proveedores)
 
-«Pedidos a proveedores» aparece entre Ventas y Clientes, solo para `ADMIN_ALL`.
+«Compras» (antes «Pedidos a proveedores») aparece entre Ventas y Clientes, solo para `ADMIN_ALL`; la ruta `/supplier-orders` no cambió.
 `/supplier-orders` reutiliza `PageHeader`, `Panel`, `DataTable`, la paginación,
 `OrderDateFilter`/`OrderCalendar` y `SupplierSelect` del selector compartido.
 Los filtros por proveedor, Desde y Hasta se combinan y conservan en la URL;
@@ -679,8 +696,11 @@ pedidos y ventas.
 
 [`SearchableSelect`](../../frontend/src/shared/components/SearchableSelect.tsx)
 combina un campo editable y una lista desplegable con búsqueda local por nombre.
-Recibe opciones `{ id, name }` y conserva el ID elegido, incluso con nombres
-repetidos. La opción vacía siempre está disponible para quitar la selección;
+Recibe opciones `{ id, name, detail? }` y conserva el ID elegido, incluso con nombres
+repetidos. `detail` (por ejemplo «Stock: 12» en el producto del pedido) se muestra
+a la derecha en `.searchable-select-detail` (`11px`, color atenuado), se expone
+como descripción accesible de la opción y no participa de la búsqueda; el nombre
+accesible de la opción sigue siendo solo `name`. La opción vacía siempre está disponible para quitar la selección;
 su texto y significado dependen del contexto (todos, sin asignar o seleccionar).
 Si se abandona la búsqueda sin elegir, conserva la selección anterior.
 Usa las clases `.searchable-select-*`, el campo `.input` de `39px`, ancho base
@@ -746,8 +766,38 @@ pantalla; la interacción de búsqueda y selección es siempre la misma.
 
 ## Modales y confirmaciones
 
-No existe un componente compartido `Modal` o `Dialog`. Reutilizar la estructura
-y las clases de catálogo para nuevos modales comunes; no inventar una API inexistente.
+Los formularios de alta/edición usan el componente compartido
+[`FormModal`](../../frontend/src/shared/components/FormModal.tsx); las
+confirmaciones, `ConfirmationDialog`. No crear formularios de edición como
+paneles insertados al inicio de la página: si el usuario hizo scroll, aparecen
+fuera de la vista (problema reportado en Productos y Listas de precios).
+
+### Formularios en modal (`FormModal`)
+
+`FormModal` recibe `label` (nombre accesible, normalmente el título del
+formulario), `onClose`, `busy` y `size` (`default` o `compact`). Envuelve un
+`Panel` con el formulario. Usa `<dialog>` con `showModal()` en un portal a
+`document.body`: se dibuja en la capa superior del navegador, por lo que siempre
+abre dentro del viewport sin importar el scroll; bloquea el scroll del fondo con
+`lockBodyScroll`, enfoca el primer campo, contiene Tab/Shift+Tab y devuelve el
+foco al disparador al cerrar. Escape llama a `onClose` salvo con `busy`; pasar el
+mismo `requestDiscard` de `useDiscardChanges` que usa «Cancelar» para no perder
+datos. Mostrar los errores del formulario dentro del panel.
+
+- `.form-modal`: ancho `min(100vw - 40px, clamp(640px, 76vw, 1040px))`, altura
+  máxima `100dvh - 40px` con scroll interno, panel con padding `24px` y radio
+  `10px`, título de `20px`. Hasta `760px`: ancho `100vw - 24px` y padding `16px`.
+- `.form-modal-compact`: ancho máximo `480px`, para formularios cortos (crear o
+  renombrar listas de precios).
+- Un diálogo abierto desde un `FormModal` (por ejemplo, confirmar el cambio de
+  estado de un producto) debe ser nativo (`ConfirmationDialog`): un
+  `.modal-backdrop` común quedaría debajo de la capa superior y no recibiría foco.
+
+Uso actual: formulario de producto (`ProductsPage`), alta y renombre de listas
+(`PriceListsPage`). El formulario de clientes mantiene su variante `.customer-modal`.
+
+Los modales básicos `.modal-backdrop > .panel` restantes limitan su altura a
+`100dvh - 40px` con scroll interno para que el contenido largo no quede cortado.
 
 ### Patrón visual común
 
@@ -781,9 +831,11 @@ y las clases de catálogo para nuevos modales comunes; no inventar una API inexi
   para desactivar/eliminar y `primary` para activar o guardar.
 - Verificar scroll y altura en mobile antes de considerar terminado el cambio.
 
-**Límite actual:** los modales están implementados por pantalla. El formulario
-de catálogo tiene foco inicial y manejo de `Escape`, pero no implementa contención
-ni restauración del foco. No asumir que `aria-modal` resuelve esos comportamientos.
+**Límite actual:** varios modales siguen implementados por pantalla con
+`.modal-backdrop`. El formulario de catálogo tiene foco inicial y manejo de
+`Escape`, pero no implementa contención ni restauración del foco. No asumir que
+`aria-modal` resuelve esos comportamientos; para modales nuevos usar `FormModal`
+o `ConfirmationDialog`.
 
 ### Confirmaciones reutilizables de cancelación y descarte
 
@@ -820,13 +872,19 @@ no bloquea por sí mismo navegación del sidebar ni atrás/adelante del router.
 ### Ajuste de stock
 
 [`StockAdjustmentDialog`](../../frontend/src/shared/components/StockAdjustmentDialog.tsx)
-comparte el formulario de ajuste en Productos e Inventario. Reutiliza
+comparte el formulario de ajuste en Stock (Productos) e Inventario. Reutiliza
 `.confirmation-dialog-*`: encabezado con producto, resumen de stock actual y
-resultante en dos columnas, campos de cantidad y motivo en una columna y acciones
-fuera de la grilla. El resultado solo aparece para cantidades válidas distintas
-de cero y múltiplos de `0,5`; un saldo negativo mantiene una advertencia textual.
-El motivo usa un textarea de al menos `88px`; los controles tienen `44px` de altura
-mínima. Las variantes `.stock-adjustment-*` solo afectan este formulario.
+resultante en dos columnas, selector de tipo de ajuste, campos de cantidad y
+motivo en una columna y acciones fuera de la grilla.
+
+El tipo de ajuste (`.stock-adjustment-mode`, radios de `44px`) ofrece «Indicar
+cantidad final» (por defecto: reemplaza el stock por la cantidad contada y muestra
+la diferencia) y «Sumar o restar» (delta firmado). `buildStockAdjustment` valida
+el borrador y arma el cuerpo (`targetQuantity` o `quantity`) para ambas pantallas.
+El resultado solo aparece para cantidades válidas múltiplos de `0,5` (en delta,
+distintas de cero); un saldo negativo mantiene una advertencia textual. El motivo
+es opcional, usa un textarea de al menos `88px`; los controles tienen `44px` de
+altura mínima. Las variantes `.stock-adjustment-*` solo afectan este formulario.
 
 Usa un diálogo nativo con foco inicial en cantidad, contención y restauración del
 foco, bloqueo del fondo y scroll interno limitado al viewport. Cancelar y Escape

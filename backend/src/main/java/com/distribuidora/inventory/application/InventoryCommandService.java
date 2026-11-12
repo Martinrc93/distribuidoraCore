@@ -24,26 +24,59 @@ public class InventoryCommandService {
         this.movements = movements;
     }
 
+    /** Reason stored when the user leaves it empty; movements keep a non-empty reason. */
+    public static final String DEFAULT_ADJUSTMENT_REASON = "Ajuste manual";
+    public static final String DEFAULT_COUNT_REASON = "Ajuste a cantidad contada";
+
     @Transactional
     public void adjust(UUID productId, BigDecimal quantity, String reason) {
-        validate(productId, quantity, reason);
+        validate(productId, quantity);
+        String normalizedReason = normalizeReason(reason, DEFAULT_ADJUSTMENT_REASON);
+        requireActiveProduct(productId);
+        UUID actorId = actorId();
+        movements.apply(productId, quantity, "MANUAL_ADJUSTMENT", null, normalizedReason);
+        audit.recordWithinTransaction(actorId, "STOCK_ADJUSTMENT", "PRODUCT", productId.toString(), "SUCCESS",
+            Map.of("quantity", quantity, "reason", normalizedReason));
+    }
+
+    /** Replaces the current stock with the counted quantity; the server computes the difference under lock. */
+    @Transactional
+    public void setQuantity(UUID productId, BigDecimal targetQuantity, String reason) {
+        if (productId == null || targetQuantity == null || targetQuantity.remainder(HALF).signum() != 0) {
+            throw new IllegalArgumentException("targetQuantity debe ser un múltiplo de 0.5");
+        }
+        String normalizedReason = normalizeReason(reason, DEFAULT_COUNT_REASON);
+        requireActiveProduct(productId);
+        UUID actorId = actorId();
+        var result = movements.applyTarget(productId, targetQuantity, "MANUAL_ADJUSTMENT", normalizedReason);
+        audit.recordWithinTransaction(actorId, "STOCK_ADJUSTMENT", "PRODUCT", productId.toString(), "SUCCESS",
+            Map.of("quantity", result.delta(), "previousQuantity", result.previousQuantity(),
+                "targetQuantity", targetQuantity, "reason", normalizedReason));
+    }
+
+    private static final BigDecimal HALF = new BigDecimal("0.5");
+
+    private void requireActiveProduct(UUID productId) {
         String status = jdbc.queryForObject(
             "select status from catalog.products where id = ?", String.class, productId);
         if (!"ACTIVE".equals(status)) {
             throw new IllegalStateException("El producto no está activo");
         }
-        UUID actorId = actorId();
-        movements.apply(productId, quantity, "MANUAL_ADJUSTMENT", null, reason);
-        audit.recordWithinTransaction(actorId, "STOCK_ADJUSTMENT", "PRODUCT", productId.toString(), "SUCCESS",
-            Map.of("quantity", quantity, "reason", reason.trim()));
     }
 
-    private void validate(UUID productId, BigDecimal quantity, String reason) {
+    private void validate(UUID productId, BigDecimal quantity) {
         if (productId == null || quantity == null || quantity.signum() == 0
-            || quantity.remainder(new BigDecimal("0.5")).signum() != 0
-            || reason == null || reason.isBlank() || reason.length() > 500) {
-            throw new IllegalArgumentException("quantity debe ser un múltiplo distinto de cero de 0.5 y reason es obligatorio (máximo 500 caracteres)");
+            || quantity.remainder(HALF).signum() != 0) {
+            throw new IllegalArgumentException("quantity debe ser un múltiplo distinto de cero de 0.5");
         }
+    }
+
+    private String normalizeReason(String reason, String fallback) {
+        String normalized = reason == null ? "" : reason.trim();
+        if (normalized.length() > 500) {
+            throw new IllegalArgumentException("reason admite hasta 500 caracteres");
+        }
+        return normalized.isEmpty() ? fallback : normalized;
     }
 
     private UUID actorId() {

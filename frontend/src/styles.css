@@ -119,9 +119,14 @@
   .breadcrumbs strong { @apply truncate text-ink font-semibold; }
   .topbar-controls { @apply flex shrink-0 items-center gap-[8px] ml-auto; }
   .button.theme-toggle { @apply inline-flex shrink-0 items-center justify-center gap-[8px] min-h-[44px]; }
+  .button.text-size-toggle { @apply inline-flex shrink-0 items-center justify-center gap-[8px] min-h-[44px]; }
+  .text-size-toggle-icon { @apply inline-flex items-baseline font-bold text-[16px] leading-none; }
+  .text-size-toggle-icon small { @apply text-[11px]; }
   @media (max-width: 460px) {
     .button.theme-toggle { @apply w-[44px] p-0; }
     .theme-toggle > span { @apply hidden; }
+    .button.text-size-toggle { @apply w-[44px] p-0; }
+    .text-size-toggle-label { @apply hidden; }
   }
   .topbar-actions { @apply flex items-center gap-[16px] ml-[16px]; }
   .connection-status { @apply text-muted text-[11px] flex gap-[6px] items-center; }
@@ -227,6 +232,8 @@
   .searchable-select-menu li { @apply min-h-[36px] [padding:9px_8px] rounded-[3px] cursor-pointer break-words; }
   .searchable-select-menu li:hover, .searchable-select-menu li.active { @apply bg-surface-muted; }
   .searchable-select-menu li[aria-selected="true"] { @apply text-accent-dark font-bold; }
+  .searchable-select-menu li.has-detail { @apply flex justify-between items-baseline gap-[12px]; }
+  .searchable-select-detail { @apply shrink-0 text-muted text-[11px] font-normal whitespace-nowrap; }
   .searchable-select-menu p { @apply m-0 p-[12px] text-muted; }
   .table-wrap { @apply max-w-full overflow-x-auto [border:1px_solid_var(--detail-border,#dce5e0)] rounded-[8px] bg-surface; }
   .data-table .table-empty-cell { @apply table-cell px-[16px] py-[32px] whitespace-normal text-center! text-muted; }
@@ -298,6 +305,9 @@
   .stock-adjustment-summary > div + div { @apply border-l border-line pl-[16px]; }
   .stock-adjustment-summary dt { @apply text-[11px] font-semibold text-muted; }
   .stock-adjustment-summary dd { @apply m-0 mt-[6px] text-[22px] font-bold leading-[1.2] [overflow-wrap:anywhere]; }
+  .stock-adjustment-mode { @apply m-0 flex flex-wrap gap-[8px_20px] p-0 border-0 min-w-0; }
+  .stock-adjustment-mode legend { @apply mb-[8px] p-0 text-[12px] font-semibold text-ink; }
+  .stock-adjustment-mode .radio-row { @apply min-h-[44px] text-[13px] text-ink cursor-pointer; }
   .stock-adjustment-fields { @apply grid gap-[18px]; }
   .stock-adjustment-fields .field { @apply min-w-0 text-[12px] text-ink; }
   .stock-adjustment-fields .input { @apply w-full min-w-0 min-h-[44px] text-[14px]; }
@@ -411,7 +421,7 @@
   .order-product-picker > .field { @apply min-w-0; }
   .order-product-picker .input, .order-product-picker .select { @apply w-full min-w-0; }
   .order-product-picker .order-compact-input, .order-lines-table .order-compact-input { @apply w-[calc(4ch_+_22px)] min-w-0; }
-  .order-product-picker > .error-text { @apply col-span-full; }
+  .order-product-picker > .error-text, .order-product-picker > .helper-text { @apply col-span-full; }
   .order-product-picker .input[aria-invalid="true"], .order-lines-table .input[aria-invalid="true"] { @apply border-danger; }
   .order-lines-table .data-table { @apply min-w-[640px] table-fixed; }
   .order-lines-table .data-table th:nth-child(2) { @apply w-[80px]; }
@@ -458,6 +468,16 @@
   .warning-text { @apply p-[12px] [border-left:3px_solid_var(--copper)] bg-[var(--detail-warning-bg,#faf4eb)] text-[var(--detail-warning-text,#79501e)] text-[12px] leading-[1.5]; }
   .modal-backdrop { @apply fixed inset-[0] z-[20] grid place-items-center p-[20px] bg-[rgba(25,_58,_67,_.38)]; }
   .modal-backdrop .panel { @apply w-[min(100%,_520px)] [box-shadow:0_18px_55px_rgba(25,_58,_67,_.2)]; }
+  .modal-backdrop > .panel { @apply max-h-[calc(100dvh_-_40px)] overflow-y-auto; }
+  .form-modal { @apply box-border w-[min(calc(100vw_-_40px),_clamp(640px,_76vw,_1040px))] max-w-none max-h-[calc(100dvh_-_40px)] overflow-y-auto p-0 border-0 rounded-[10px] bg-transparent text-ink font-sans; }
+  .form-modal::backdrop { @apply bg-[rgba(25,_58,_67,_.38)]; }
+  .form-modal > .panel { @apply w-full p-[24px] rounded-[10px] [box-shadow:0_18px_55px_rgba(25,_58,_67,_.2)]; }
+  .form-modal > .panel > .panel-header { @apply items-center mb-[20px]; }
+  .form-modal > .panel > .panel-header h2 { @apply m-0 text-[20px]; }
+  .form-modal .form-grid { @apply mb-0; }
+  .form-modal.form-modal-compact { @apply w-[min(calc(100vw_-_40px),_480px)]; }
+  /* «Texto grande»: scales page and dialog content, not the root, so viewport-sized containers keep fitting. */
+  :root[data-text-size="large"] .page-content, :root[data-text-size="large"] dialog > *, :root[data-text-size="large"] .modal-backdrop > * { @apply [zoom:1.125]; }
   .product-movements-backdrop > .panel { @apply w-[min(100%,_1100px)] max-h-[calc(100dvh_-_40px)] overflow-y-auto; }
   .product-movements-backdrop h2 { @apply [overflow-wrap:anywhere]; }
   .product-movements-table .data-table { @apply min-w-0 table-fixed; }
@@ -549,6 +569,8 @@
     .stats-grid, .stats-grid.compact { @apply grid-cols-[1fr_1fr]; }
     .panel { @apply p-[15px]; }
     .customer-modal .panel { @apply p-[16px]; }
+    .form-modal { @apply w-[calc(100vw_-_24px)] max-h-[calc(100dvh_-_24px)]; }
+    .form-modal > .panel { @apply p-[16px]; }
     .customer-detail-fields { @apply grid-cols-[minmax(0,_1fr)]; }
     .catalog-modal-backdrop { @apply p-[14px]; }
     .catalog-modal-backdrop .catalog-modal { @apply max-h-[calc(100vh_-_28px)]; }
@@ -645,10 +667,10 @@
   .price-products-table .data-table { @apply table-fixed; }
   .price-products-table-admin .data-table { @apply min-w-[760px]; }
   .price-products-table-standard .data-table { @apply min-w-[760px]; }
-  .price-products-table-admin .data-table th:nth-child(1), .price-products-table-admin .data-table td:nth-child(1) { @apply w-[43%]; }
-  .price-products-table-admin .data-table th:nth-child(2), .price-products-table-admin .data-table td:nth-child(2) { @apply w-[18%]; }
+  .price-products-table-admin .data-table th:nth-child(1), .price-products-table-admin .data-table td:nth-child(1) { @apply w-[38%]; }
+  .price-products-table-admin .data-table th:nth-child(2), .price-products-table-admin .data-table td:nth-child(2) { @apply w-[16%]; }
   .price-products-table-admin .data-table th:nth-child(3), .price-products-table-admin .data-table td:nth-child(3) { @apply w-[14%]; }
-  .price-products-table-admin .data-table th:nth-child(4), .price-products-table-admin .data-table td:nth-child(4) { @apply w-[25%]; }
+  .price-products-table-admin .data-table th:nth-child(4), .price-products-table-admin .data-table td:nth-child(4) { @apply w-[32%]; }
   .price-products-table-standard .data-table th:nth-child(1), .price-products-table-standard .data-table td:nth-child(1) { @apply w-[38%]; }
   .price-products-table-standard .data-table th:nth-child(2), .price-products-table-standard .data-table td:nth-child(2) { @apply w-[18%]; }
   .price-products-table-standard .data-table th:nth-child(3), .price-products-table-standard .data-table td:nth-child(3) { @apply w-[22%]; }

@@ -2,8 +2,6 @@ package com.distribuidora.inventory.api;
 
 import com.distribuidora.inventory.application.InventoryCommandService;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,12 +26,18 @@ public class InventoryCommandController {
     @PostMapping("/{productId}/adjustments")
     @PreAuthorize("hasAuthority('STOCK_ADJUST')")
     public ResponseEntity<Void> adjust(@PathVariable UUID productId, @Valid @RequestBody AdjustmentRequest request) {
-        service.adjust(productId, request.quantity(), request.reason());
+        if ((request.quantity() == null) == (request.targetQuantity() == null)) {
+            throw new IllegalArgumentException("Indicá quantity (diferencia) o targetQuantity (cantidad final), no ambos");
+        }
+        if (request.targetQuantity() != null) service.setQuantity(productId, request.targetQuantity(), request.reason());
+        else service.adjust(productId, request.quantity(), request.reason());
         return ResponseEntity.noContent().build();
     }
 
+    /** {@code quantity} is a signed difference; {@code targetQuantity} replaces the current stock. Reason is optional. */
     public record AdjustmentRequest(
-        @NotNull BigDecimal quantity,
-        @NotBlank @Size(max = 500) String reason
+        BigDecimal quantity,
+        BigDecimal targetQuantity,
+        @Size(max = 500) String reason
     ) { }
 }

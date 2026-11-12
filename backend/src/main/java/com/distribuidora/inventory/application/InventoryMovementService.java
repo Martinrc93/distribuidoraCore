@@ -41,6 +41,35 @@ public class InventoryMovementService {
         insertMovement(productId, delta, movementType, referenceId, reason, now);
     }
 
+    public record TargetResult(BigDecimal previousQuantity, BigDecimal delta) { }
+
+    /**
+     * Sets the balance to {@code targetQuantity} under the same row lock as {@link #apply}; the difference is recorded
+     * as an append-only movement, so the history keeps explaining every change.
+     */
+    @Transactional
+    public TargetResult applyTarget(UUID productId, BigDecimal targetQuantity, String movementType, String reason) {
+        if (productId == null || targetQuantity == null || targetQuantity.remainder(HALF).signum() != 0) {
+            throw new IllegalArgumentException("La cantidad final debe ser un múltiplo de 0.5");
+        }
+        requireActiveProductForNewMovement(productId, movementType);
+        Timestamp now = Timestamp.from(Instant.now());
+        ensureBalance(productId, now);
+        BigDecimal current = jdbc.queryForObject(
+            "select quantity from inventory.inventory_balances where product_id = ? for update",
+            BigDecimal.class, productId);
+        BigDecimal delta = targetQuantity.subtract(current);
+        if (delta.signum() == 0) {
+            throw new IllegalStateException("El stock ya tiene esa cantidad");
+        }
+        validate(productId, delta, movementType, reason);
+        jdbc.update(
+            "update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?",
+            targetQuantity, now, productId);
+        insertMovement(productId, delta, movementType, null, reason, now);
+        return new TargetResult(current, delta);
+    }
+
     private void ensureBalance(UUID productId, Timestamp now) {
         jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) "
                 + "values (?, 0, ?) on conflict (product_id) do nothing",

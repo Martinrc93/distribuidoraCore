@@ -57,7 +57,7 @@ export default function CustomerDetailPage() {
     { key: 'date', label: 'Fecha' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'total', label: 'Total', align: 'right' },
-    { key: 'balance', label: 'Saldo pendiente', align: 'right', render: (value, row) => <span className={Number(row.pendingBalance) > 0 ? 'font-bold text-danger' : 'text-muted'}>{value}</span> },
+    { key: 'balance', label: 'Por cobrar', align: 'right', render: (value, row) => <span className={Number(row.pendingBalance) > 0 ? 'font-bold text-accent-dark' : 'text-muted'}>{value}</span> },
     { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'CANCELLED' ? 'muted' : value === 'DELIVERED' ? 'strong' : 'soft'}>{orderStatus[value] ?? value}</Badge> },
     { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button variant="link" href={`/orders/${row.id}`} aria-label={`Ver pedido ${row.number}`}>Ver pedido</Button></div> },
   ]
@@ -70,7 +70,7 @@ export default function CustomerDetailPage() {
         <Panel title="Datos del cliente" action={<Badge tone={customer.status === 'ACTIVE' ? 'strong' : 'muted'}>{customer.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}</Badge>}>
           <dl className="customer-detail-fields">{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl>
         </Panel>
-        <div className="self-start"><StatCard label="Saldo de cuenta corriente" value={money(balance)} detail={balance > 0 ? 'Saldo deudor actual del cliente.' : balance < 0 ? 'Saldo a favor del cliente.' : 'El cliente no tiene saldo pendiente.'} /></div>
+        <div className="self-start"><StatCard label="Saldo de cuenta corriente" value={money(balance)} detail={balance > 0 ? 'Saldo por cobrar al cliente.' : balance < 0 ? 'Saldo a favor del cliente.' : 'El cliente no tiene saldo pendiente.'} /></div>
       </div>
       <Panel title="Historial de pedidos" description="Pedidos del cliente, del más reciente al más antiguo. El saldo pendiente muestra la deuda actual de cada pedido en cuenta corriente.">
         {ordersQuery.isPending ? <div role="status"><EmptyState title="Cargando pedidos" description="Consultando el historial del cliente." /></div>

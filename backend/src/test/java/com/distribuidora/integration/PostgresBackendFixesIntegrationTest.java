@@ -1345,6 +1345,29 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void accountPartialSettlementCombinesMethodsByFifoAndRejectsExcess() {
+        UUID actor = createUser("account-settlement-partial");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customer = createCustomer(null);
+        AccountDebtSale older = createAccountDebtSale(customer, new BigDecimal("30"), 3600);
+        AccountDebtSale newer = createAccountDebtSale(customer, new BigDecimal("40"), 1800);
+        assertThatThrownBy(() -> accountPaymentService.settle(customer, List.of(
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("71"), "CASH", null)), true))
+            .isInstanceOf(IllegalStateException.class);
+        var result = accountPaymentService.settle(customer, List.of(
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("20"), "CASH", null),
+            new AccountPaymentDtos.SettlementPayment(new BigDecimal("15"), "BANK_TRANSFER", "TR-PARTIAL")), true);
+        assertThat(result.balanceBefore()).isEqualByComparingTo("70");
+        assertThat(result.balanceAfter()).isEqualByComparingTo("35");
+        assertThat(result.allocations()).extracting(AccountPaymentService.AllocationResult::saleId)
+            .containsExactly(older.saleId(), older.saleId(), newer.saleId());
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("35");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, older.saleId())).isEqualByComparingTo("30");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, newer.saleId())).isEqualByComparingTo("5");
+    }
+
+    @Test
     void accountSettlementHttpRequiresAdminAndLeavesDeliveryStateUnchanged() throws Exception {
         UUID actor = createUser("account-settlement-http");
         assignRole(actor, "SELLER");

@@ -1,6 +1,6 @@
 # Pedidos a proveedores
 
-La sección de Operación aparece entre Ventas y Clientes. Menú, páginas y API
+En la interfaz la sección se llama «Compras» (antes «Pedidos a proveedores») y aparece en Operación, entre Ventas y Clientes. La API y las rutas conservan `supplier-orders`. Menú, páginas y API
 requieren `ADMIN_ALL`, igual que la administración de proveedores y productos.
 
 ## Proveedores opcionales por producto

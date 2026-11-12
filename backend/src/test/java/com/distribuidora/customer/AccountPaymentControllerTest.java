@@ -101,7 +101,7 @@ class AccountPaymentControllerTest {
         UUID customerId = UUID.randomUUID();
         var payments = List.of(new AccountPaymentDtos.SettlementPayment(new BigDecimal("4"), "CASH", null),
             new AccountPaymentDtos.SettlementPayment(new BigDecimal("6"), "BANK_TRANSFER", "TR-123"));
-        when(service.settle(customerId, payments)).thenReturn(new AccountPaymentService.PaymentResult(
+        when(service.settle(customerId, payments, false)).thenReturn(new AccountPaymentService.PaymentResult(
             customerId, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, "FIFO", List.of()));
         mockMvc.perform(post("/api/customers/{customerId}/account-payments/settlement", customerId)
                 .contentType(APPLICATION_JSON)
@@ -110,7 +110,23 @@ class AccountPaymentControllerTest {
                     """))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.balanceAfter").value(0));
-        verify(service).settle(customerId, payments);
+        verify(service).settle(customerId, payments, false);
+    }
+
+    @Test
+    void httpSettlementForwardsPartialFlag() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        var payments = List.of(new AccountPaymentDtos.SettlementPayment(new BigDecimal("4"), "CASH", null));
+        when(service.settle(customerId, payments, true)).thenReturn(new AccountPaymentService.PaymentResult(
+            customerId, new BigDecimal("4"), BigDecimal.TEN, new BigDecimal("6"), "FIFO", List.of()));
+        mockMvc.perform(post("/api/customers/{customerId}/account-payments/settlement", customerId)
+                .contentType(APPLICATION_JSON)
+                .content("""
+                    {"payments":[{"amount":4,"method":"CASH"}],"partial":true}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.balanceAfter").value(6));
+        verify(service).settle(customerId, payments, true);
     }
 
     @Test

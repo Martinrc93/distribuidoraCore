@@ -37,7 +37,7 @@ describe('Responsive navigation', () => {
     expect(screen.getByRole('navigation', { name: 'Navegación principal' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Pagos y deuda' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
-    for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+    for (const name of ['Stock', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
     expect(screen.queryByText('Catálogo')).not.toBeInTheDocument()
@@ -74,12 +74,12 @@ describe('Responsive navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir menú' }))
     expect(screen.queryByRole('link', { name: 'Pagos y deuda' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Catálogo' }))
-    await user.click(screen.getByRole('link', { name: 'Productos' }))
+    await user.click(screen.getByRole('link', { name: 'Stock' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(document.querySelector('.compact-brand')).toHaveTextContent('Productos')
+    expect(document.querySelector('.compact-brand')).toHaveTextContent('Stock')
     await user.click(screen.getByRole('button', { name: 'Abrir menú' }))
-    expect(screen.getByRole('link', { name: 'Productos' })).toHaveAttribute('aria-current', 'page')
-    await user.click(screen.getByRole('link', { name: 'Productos' }))
+    expect(screen.getByRole('link', { name: 'Stock' })).toHaveAttribute('aria-current', 'page')
+    await user.click(screen.getByRole('link', { name: 'Stock' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -92,7 +92,7 @@ describe('Responsive navigation', () => {
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Pagos y deuda' })).not.toBeInTheDocument()
-    for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+    for (const name of ['Stock', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
     expect(screen.queryByText('Catálogo')).not.toBeInTheDocument()
@@ -113,7 +113,7 @@ describe('Responsive navigation', () => {
     expect(document.getElementById(catalog.getAttribute('aria-controls')!)).toHaveAttribute('hidden')
 
     await user.click(catalog)
-    expect(screen.getByRole('link', { name: 'Productos' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Stock' })).toBeVisible()
     expect(operation).toHaveAttribute('aria-expanded', 'true')
     expect(administration).toHaveAttribute('aria-expanded', 'false')
     operation.focus()
@@ -137,7 +137,7 @@ describe('Responsive navigation', () => {
     await user.click(operation)
     await user.click(screen.getByRole('link', { name: 'Open products' }))
     expect(operation).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('link', { name: 'Productos' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Stock' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('preserves collapsed groups between drawer openings and desktop, restoring focus to a visible control', async () => {
@@ -155,7 +155,7 @@ describe('Responsive navigation', () => {
     act(() => changeViewport(false))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Operación' })).toHaveFocus()
-    expect(screen.getByRole('link', { name: 'Productos' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Stock' })).toBeVisible()
     expect(document.body.style.overflow).toBe('')
   })
 })

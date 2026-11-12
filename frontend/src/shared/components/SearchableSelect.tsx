@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { CurrencyText, hasCurrencyAmount } from './CurrencyText'
 
-type Option = { id: string; name: string }
+/** `detail` is shown next to the name (e.g. stock) and exposed as the option description; it is not searched. */
+type Option = { id: string; name: string; detail?: string }
 type Props = {
   label: string
   options: Option[]
@@ -95,8 +96,9 @@ export function SearchableSelect({ label, options, value, onChange, allLabel, un
       {expanded && <div className="searchable-select-menu">
         <ul ref={listRef} id={`${id}-list`} role="listbox" aria-label={label}>
           {visibleOptions.map((option, index) => <li key={option.id} id={`${id}-option-${index}`} role="option"
-            aria-selected={value === option.id} className={index === activeOption ? 'active' : ''}
-            onMouseDown={(event) => event.preventDefault()} onMouseMove={() => setActive(index)} onClick={() => choose(option)}><CurrencyText>{option.name}</CurrencyText></li>)}
+            aria-selected={value === option.id} className={[index === activeOption ? 'active' : '', option.detail ? 'has-detail' : ''].filter(Boolean).join(' ')}
+            aria-label={option.detail ? option.name : undefined} aria-describedby={option.detail ? `${id}-option-${index}-detail` : undefined}
+            onMouseDown={(event) => event.preventDefault()} onMouseMove={() => setActive(index)} onClick={() => choose(option)}><CurrencyText>{option.name}</CurrencyText>{option.detail && <span id={`${id}-option-${index}-detail`} className="searchable-select-detail">{option.detail}</span>}</li>)}
         </ul>
         {matches.length === 0 && <p role="status">No se encontraron coincidencias.</p>}
       </div>}

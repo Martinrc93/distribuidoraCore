@@ -25,11 +25,11 @@ describe('Analytics dashboard', () => {
       ],
     }), { status: 200 })))
     renderDashboard()
-    const panel = (await screen.findByRole('heading', { name: 'Clientes con mayor deuda' })).closest('section')!
+    const panel = (await screen.findByRole('heading', { name: 'Clientes con mayor saldo por cobrar' })).closest('section')!
     const rows = within(panel).getAllByRole('row').slice(1)
     expect(rows.map((row) => within(row).getAllByRole('cell')[0].textContent)).toEqual(['Cliente mayor', 'Cliente medio', 'Cliente menor'])
     expect(rows.map((row) => within(row).getAllByRole('cell')[2].textContent)).toEqual(['50%', '20%', '10%'])
-    expect(within(panel).getByRole('status')).toHaveTextContent('Estos 3 clientes concentran $ 800,00, el 80% de la deuda total.')
+    expect(within(panel).getByRole('status')).toHaveTextContent('Estos 3 clientes concentran $ 800,00, el 80% del total por cobrar.')
     expect(within(panel).getByRole('link', { name: 'Ver todos los deudores' })).toHaveAttribute('href', '/customers?hasBalance=true&status=ALL')
   })
   it('keeps a clear empty state when there is no debt', async () => {
@@ -37,8 +37,8 @@ describe('Analytics dashboard', () => {
       ...report, current: { ...report.current, debt: 0, debtorCount: 0 }, topDebtors: [],
     }), { status: 200 })))
     renderDashboard()
-    const panel = (await screen.findByRole('heading', { name: 'Clientes con mayor deuda' })).closest('section')!
-    expect(within(panel).getByText('No hay clientes con deuda pendiente.')).toBeInTheDocument()
+    const panel = (await screen.findByRole('heading', { name: 'Clientes con mayor saldo por cobrar' })).closest('section')!
+    expect(within(panel).getByText('No hay clientes con saldo por cobrar.')).toBeInTheDocument()
     expect(within(panel).queryByRole('status')).not.toBeInTheDocument()
     expect(panel.textContent).not.toMatch(/NaN|Infinity/)
   })
@@ -47,7 +47,7 @@ describe('Analytics dashboard', () => {
     renderDashboard()
     expect(await screen.findByText('Ventas del período')).toBeInTheDocument()
     expect(screen.getAllByText(/\+50% respecto del período anterior/)).toHaveLength(2)
-    expect(screen.getByText('Deuda pendiente actual')).toBeInTheDocument()
+    expect(screen.getByText('Por cobrar en cuentas corrientes')).toBeInTheDocument()
     expect(screen.getByText('Stock negativo')).toBeInTheDocument()
     expect(screen.getByText('Sin ventas')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /Ventas diarias/ })).toBeInTheDocument()

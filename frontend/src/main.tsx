@@ -6,8 +6,10 @@ import App from './app/App'
 import '@fontsource-variable/inter/wght.css'
 import './styles.css'
 import { initializeTheme } from './shared/theme'
+import { initializeTextSize } from './shared/textSize'
 
 initializeTheme()
+initializeTextSize()
 
 const queryClient = new QueryClient()
 

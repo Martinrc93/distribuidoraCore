@@ -48,6 +48,15 @@ public class AccountPaymentService {
 
     @Transactional
     public PaymentResult settle(UUID customerId, List<? extends PaymentCommand> payments) {
+        return settle(customerId, payments, false);
+    }
+
+    /**
+     * Applies one or more payments to the customer account by FIFO in a single transaction.
+     * Without {@code allowPartial} the payments must match the full balance; with it they may cover part of it.
+     */
+    @Transactional
+    public PaymentResult settle(UUID customerId, List<? extends PaymentCommand> payments, boolean allowPartial) {
         if (!currentUser.isAdmin()) throw new AccessDeniedException("Solo administradores pueden saldar cuentas");
         if (payments == null || payments.isEmpty() || payments.size() > 100) {
             throw new IllegalArgumentException("Se requiere al menos un pago y se admiten hasta 100");
@@ -65,15 +74,20 @@ public class AccountPaymentService {
         BigDecimal balance = jdbc.queryForObject(
             "select balance from customer.customers where id = ? for update", BigDecimal.class, customerId).setScale(4);
         BigDecimal total = payments.stream().map(PaymentCommand::amount).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(4);
-        if (balance.signum() <= 0 || total.compareTo(balance) != 0) {
-            throw new IllegalStateException("El saldo cambió o los pagos no cubren la deuda completa. Revisa el saldo y los importes.");
+        if (balance.signum() <= 0) {
+            throw new IllegalStateException("El cliente no tiene saldo pendiente.");
+        }
+        if (allowPartial ? total.compareTo(balance) > 0 : total.compareTo(balance) != 0) {
+            throw new IllegalStateException(allowPartial
+                ? "El saldo cambió o los pagos superan la deuda. Revisa el saldo y los importes."
+                : "El saldo cambió o los pagos no cubren la deuda completa. Revisa el saldo y los importes.");
         }
         List<AllocationResult> allocations = new ArrayList<>();
         for (PaymentCommand payment : payments) {
             // All allocations share this outer transaction, including their ledger entries and audit records.
             allocations.addAll(apply(customerId, payment).allocations());
         }
-        return new PaymentResult(customerId, total, balance, ZERO, "FIFO", allocations);
+        return new PaymentResult(customerId, total, balance, balance.subtract(total).setScale(4), "FIFO", allocations);
     }
 
     @Transactional

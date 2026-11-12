@@ -32,7 +32,7 @@ const columns: TableColumn[] = [
   { key: 'paid', label: 'Pagado', align: 'right' },
   { key: 'cashPaid', label: 'Pagado en efectivo', align: 'right' },
   { key: 'transferPaid', label: 'Pagado en transferencia', align: 'right' },
-  { key: 'accountBalance', label: 'Deuda en cuenta corriente', align: 'right' },
+  { key: 'accountBalance', label: 'Por cobrar', align: 'right' },
 ]
 
 export function SellerOrdersDialog({ selection, onClose }: { selection: SellerOrderSelection; onClose: () => void }) {

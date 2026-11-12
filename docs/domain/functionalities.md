@@ -161,7 +161,10 @@ Reglas:
 - Las cantidades aceptan decimales.
 - Las cantidades deben ser múltiplos de `0.5`.
 - Solo el administrador puede realizar ajustes manuales.
-- Todo ajuste requiere auditoría.
+- Todo ajuste requiere auditoría. El motivo es opcional; si falta se guarda uno por defecto.
+- El ajuste puede indicar la cantidad final contada (el sistema calcula y registra
+  la diferencia) o una diferencia a sumar/restar. En ambos casos queda un movimiento
+  `MANUAL_ADJUSTMENT` inmutable.
 - No se editan ni eliminan movimientos históricos.
 - La confirmación de una venta registra una salida.
 - La cancelación de una venta no pagada registra una reversión.

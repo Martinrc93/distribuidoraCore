@@ -32,7 +32,7 @@ public class AccountPaymentController {
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<AccountPaymentDtos.PaymentResponse> settle(
         @PathVariable UUID customerId, @Valid @RequestBody AccountPaymentDtos.SettlementRequest request) {
-        return response(service.settle(customerId, request.payments()));
+        return response(service.settle(customerId, request.payments(), request.allowsPartial()));
     }
 
     private ResponseEntity<AccountPaymentDtos.PaymentResponse> response(AccountPaymentService.PaymentResult result) {

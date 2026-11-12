@@ -22,13 +22,25 @@ por nombre; devuelve un único saldo por producto. Cada movimiento contiene
 `POST /api/inventory/{productId}/adjustments` requiere la autoridad
 `STOCK_ADJUST` y responde `204 No Content`.
 
+Se envía **uno** de estos dos campos (ambos o ninguno devuelve `400`):
+
 ```json
 {"quantity":2.5,"reason":"Conteo físico"}
+{"targetQuantity":24,"reason":"Conteo físico"}
 ```
 
-`quantity` puede ser positivo o negativo, distinto de cero, y debe ser múltiplo
-de `0.5`. El motivo admite hasta 500 caracteres. Se actualiza el saldo único del
-producto y se registra un movimiento append-only junto con su evento de
+- `quantity`: diferencia firmada, distinta de cero y múltiplo de `0.5`.
+- `targetQuantity`: cantidad final contada, múltiplo de `0.5` (puede ser cero o
+  negativa). El servidor bloquea el saldo, calcula la diferencia con el stock
+  actual y la registra como movimiento `MANUAL_ADJUSTMENT`; el historial sigue
+  siendo append-only. Si el stock ya es esa cantidad responde `409` sin cambios.
+  La auditoría `STOCK_ADJUSTMENT` incluye `quantity` (diferencia),
+  `previousQuantity` y `targetQuantity`.
+
+`reason` es opcional y admite hasta 500 caracteres. Si se omite o está vacío se
+guarda «Ajuste manual» (diferencia) o «Ajuste a cantidad contada» (cantidad
+final), porque los movimientos conservan siempre un motivo. Se actualiza el saldo
+único del producto y se registra un movimiento append-only junto con su evento de
 auditoría.
 
 El saldo negativo está permitido. Un ajuste inválido responde `400 Bad Request`;

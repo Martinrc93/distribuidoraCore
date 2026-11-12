@@ -41,10 +41,10 @@ export default function SupplierOrdersPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Operación" title="Pedidos a proveedores" description="Solicitudes de compra e historial por proveedor y fecha." actions={<Button type="button" disabled={showForm} onClick={() => { setSaved(undefined); setShowForm(true) }}>+ Nuevo pedido a proveedor</Button>} />
-    {saved && <p className="success-text" role="status">Pedido {saved.number} registrado correctamente. <Button variant="link" href={`/supplier-orders/${saved.id}`}>Ver pedido registrado</Button></p>}
+    <PageHeader eyebrow="Operación" title="Compras" description="Solicitudes de compra e historial por proveedor y fecha." actions={<Button type="button" disabled={showForm} onClick={() => { setSaved(undefined); setShowForm(true) }}>+ Nueva compra</Button>} />
+    {saved && <p className="success-text" role="status">Compra {saved.number} registrada correctamente. <Button variant="link" href={`/supplier-orders/${saved.id}`}>Ver compra registrada</Button></p>}
     {showForm && <SupplierOrderForm onClose={() => setShowForm(false)} onSaved={(result) => { setSaved(result); setShowForm(false); setPage(0) }} />}
-    <Panel title="Pedidos realizados" description="Sin fechas seleccionadas se muestra todo el historial. Los importes corresponden a la solicitud registrada.">
+    <Panel title="Compras realizadas" description="Sin fechas seleccionadas se muestra todo el historial. Los importes corresponden a la solicitud registrada.">
       <div className="toolbar items-end">
         <SupplierSelect options={suppliers.data?.content ?? []} value={supplierId} onChange={(id) => setFilter('supplierId', id)} loading={suppliers.isLoading} disabled={suppliers.isError} />
         <div className="orders-date-filters">
@@ -55,15 +55,15 @@ export default function SupplierOrdersPage() {
       </div>
       {suppliers.isError && <p className="error-text" role="alert">No se pudieron cargar los proveedores del filtro. <Button type="button" variant="link" onClick={() => void suppliers.refetch()}>Reintentar proveedores</Button></p>}
       {dateError ? <p id="supplier-orders-date-error" className="error-text" role="alert">{dateError}</p>
-        : orders.isLoading ? <div role="status"><EmptyState title="Cargando pedidos a proveedores" description="Consultando las solicitudes registradas." /></div>
-          : orders.isError ? <div role="alert"><EmptyState title="No se pudieron cargar los pedidos" description={orders.error.message} action={<Button variant="secondary" onClick={() => void orders.refetch()}>Reintentar pedidos</Button>} /></div>
+        : orders.isLoading ? <div role="status"><EmptyState title="Cargando compras" description="Consultando las solicitudes registradas." /></div>
+          : orders.isError ? <div role="alert"><EmptyState title="No se pudieron cargar las compras" description={orders.error.message} action={<Button variant="secondary" onClick={() => void orders.refetch()}>Reintentar compras</Button>} /></div>
             : <DataTable columns={[
-              { key: 'number', label: 'Pedido', emphasis: true }, { key: 'supplier', label: 'Proveedor' }, { key: 'date', label: 'Fecha' },
+              { key: 'number', label: 'Compra', emphasis: true }, { key: 'supplier', label: 'Proveedor' }, { key: 'date', label: 'Fecha' },
               { key: 'total', label: 'Total estimado', align: 'right' },
-              { key: 'action', label: 'Detalle', render: (_, row) => <Button variant="link" href={`/supplier-orders/${row.id}${suffix}`} aria-label={`Ver pedido ${row.number}`}>Ver pedido</Button> },
+              { key: 'action', label: 'Detalle', render: (_, row) => <Button variant="link" href={`/supplier-orders/${row.id}${suffix}`} aria-label={`Ver compra ${row.number}`}>Ver compra</Button> },
             ]} rows={(orders.data?.content ?? []).map((order) => ({ ...order, date: displayDate(order.date), total: money(order.total) }))}
-              emptyContent={<p className="table-empty-message">No hay pedidos para los filtros seleccionados.</p>} />}
-      {!dateError && orders.data && !orders.isError && <div className="pagination"><span>Página {page + 1} de {Math.max(1, orders.data.totalPages)} · {orders.data.totalElements} pedidos</span><div><Button type="button" variant="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</Button><Button type="button" variant="secondary" disabled={page + 1 >= orders.data.totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button></div></div>}
+              emptyContent={<p className="table-empty-message">No hay compras para los filtros seleccionados.</p>} />}
+      {!dateError && orders.data && !orders.isError && <div className="pagination"><span>Página {page + 1} de {Math.max(1, orders.data.totalPages)} · {orders.data.totalElements} compras</span><div><Button type="button" variant="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</Button><Button type="button" variant="secondary" disabled={page + 1 >= orders.data.totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button></div></div>}
     </Panel>
   </>
 }

@@ -50,7 +50,7 @@ const columns: TableColumn[] = [
   { key: 'totalPaid', label: 'Total pagado', align: 'right' },
   { key: 'cashPaid', label: 'Pagado en efectivo', align: 'right' },
   { key: 'transferPaid', label: 'Pagado en transferencia', align: 'right' },
-  { key: 'accountBalance', label: 'Saldo en cuenta corriente', align: 'right' },
+  { key: 'accountBalance', label: 'Por cobrar', align: 'right' },
 ]
 
 export default function DashboardPage() {
@@ -119,7 +119,7 @@ export default function DashboardPage() {
           <StatCard label="Pedidos entregados" value={String(data.totals.deliveredOrders)} detail="Del conjunto de pedidos del período" />
           <StatCard label="Total facturado" value={money(data.totals.totalBilled)} detail="Importe de ventas no canceladas" />
           <StatCard label="Total pagado" value={money(data.totals.totalPaid)} detail="Cobros acumulados de esas ventas" />
-          <StatCard label="Saldo en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo pendiente actual de esas ventas" />
+          <StatCard label="Por cobrar en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo pendiente de cobro de esas ventas" />
         </section>
         <Panel title="Detalle por vendedor" description="Entregas, cobros y saldos reflejan el estado actual de los pedidos del período. No incluye deuda de otros períodos ni saldo anterior agregado al remito.">
           <DataTable className="[&_th]:whitespace-normal" columns={sellerColumns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos en el período seleccionado.</p>} />

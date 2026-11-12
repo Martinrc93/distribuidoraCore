@@ -49,8 +49,9 @@ describe('InventoryPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /ver movimientos de harina/i }))
     await user.click(await screen.findByRole('button', { name: /ajustar stock de harina/i }))
+    await user.click(screen.getByRole('radio', { name: 'Sumar o restar' }))
     await user.type(screen.getByLabelText('Cantidad de ajuste'), '-0.25')
-    await user.type(screen.getByLabelText('Motivo'), 'Corrección de conteo')
+    await user.type(screen.getByLabelText('Motivo (opcional)'), 'Corrección de conteo')
     await user.click(screen.getByRole('button', { name: /confirmar ajuste/i }))
     expect(await screen.findByText('La cantidad debe ser múltiplo de 0,5.')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/inventory/product-1/adjustments', expect.objectContaining({ method: 'POST' }))
@@ -65,6 +66,29 @@ describe('InventoryPage', () => {
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/inventory/product-1/movements?page=0&size=20'] })
     expect(await screen.findByText('Ajuste de inventario registrado.')).toBeInTheDocument()
+  })
+
+  it('replaces stock with the counted quantity without requiring a reason', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/inventory/product-1/adjustments' && init?.method === 'POST') return response({}, 204)
+      return response(inventory)
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /ajustar stock de harina/i }))
+    expect(screen.getByRole('radio', { name: 'Indicar cantidad final' })).toBeChecked()
+    await user.type(screen.getByLabelText('Cantidad final'), '0,25')
+    await user.click(screen.getByRole('button', { name: /confirmar ajuste/i }))
+    expect(await screen.findByText('La cantidad debe ser múltiplo de 0,5.')).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('Cantidad final'))
+    await user.type(screen.getByLabelText('Cantidad final'), '12')
+    expect(screen.getByText(/Diferencia: \+11,75/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /confirmar ajuste/i }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/inventory/product-1/adjustments', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ targetQuantity: 12 }),
+    })))
   })
 
   it('hides adjustments unless the user has the stock-adjust permission', async () => {

@@ -37,7 +37,7 @@ describe('App shell', () => {
   it.each([
     ['/customers', 'Clientes', 'Clientes'],
     ['/suppliers', 'Proveedores', 'Proveedores'],
-    ['/products', 'Productos', 'Productos'],
+    ['/products', 'Stock', 'Stock'],
     ['/catalog', 'Marcas y categorías', 'Marcas y categorías'],
     ['/price-lists', 'Listas de precios', 'Listas de precios'],
   ])('renders the extracted %s route inside the authenticated shell', async (route, heading, linkName) => {
@@ -156,7 +156,7 @@ describe('App shell', () => {
     expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
-    for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+    for (const name of ['Stock', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
     expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/zones', '/api/audit', '/api/customers', '/api/products', '/api/brands', '/api/categories', '/api/pricing'].some((path) => String(input).split('?')[0].startsWith(path)))).toBe(false)
@@ -169,7 +169,7 @@ describe('App shell', () => {
     expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Vendedores' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Auditoría' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Productos' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Stock' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Pedidos' })).toBeInTheDocument()
   })
 

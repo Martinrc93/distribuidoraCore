@@ -194,7 +194,7 @@ describe('OrderLifecycleActions', () => {
 
     await user.click(screen.getByRole('button', { name: /descargar ticket/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders/order-1/documents/ticket', expect.anything()))
-    await user.click(screen.getByRole('button', { name: /compartir comprobante/i }))
+    await user.click(screen.getByRole('button', { name: /enviar por email o whatsapp/i }))
     await user.selectOptions(screen.getByLabelText('Canal de envío'), 'WHATSAPP')
     await user.type(screen.getByLabelText('Destinatario'), '+5491112345678')
     await user.selectOptions(screen.getByLabelText('Formato de comprobante'), 'TICKET')

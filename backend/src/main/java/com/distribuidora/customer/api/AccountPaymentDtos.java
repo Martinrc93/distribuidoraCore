@@ -34,7 +34,11 @@ public final class AccountPaymentDtos {
         @Override public UUID saleId() { return null; }
     }
 
-    public record SettlementRequest(@NotEmpty @Size(max = 100) List<@NotNull @Valid SettlementPayment> payments) { }
+    /** {@code partial=true} allows paying part of the balance; omitted or false keeps the exact full-settlement rule. */
+    public record SettlementRequest(@NotEmpty @Size(max = 100) List<@NotNull @Valid SettlementPayment> payments,
+                                    Boolean partial) {
+        public boolean allowsPartial() { return Boolean.TRUE.equals(partial); }
+    }
 
     public record Allocation(UUID saleId, String saleNumber, UUID paymentId, BigDecimal amount) { }
 

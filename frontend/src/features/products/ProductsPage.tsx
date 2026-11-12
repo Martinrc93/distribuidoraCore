@@ -9,11 +9,14 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import { StockAdjustmentDialog } from '../../shared/components/StockAdjustmentDialog'
+import { StockAdjustmentDialog, buildStockAdjustment, type StockAdjustmentMode } from '../../shared/components/StockAdjustmentDialog'
 import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { SupplierSelect } from '../../shared/components/EntitySelect'
 import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
+import { useDiscardChanges } from '../../shared/useDiscardChanges'
+import { FormModal } from '../../shared/components/FormModal'
+import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 
 type Product = {
   id: string
@@ -122,6 +125,8 @@ function ProductForm({
   const brandOptions = brands.filter((brand) => brand.status === 'ACTIVE' || brand.id === initial?.brandId)
   const brandName = brands.find((brand) => brand.id === form.brandId)?.name ?? ''
   const generatedName = brandName && form.description.trim() ? `${brandName} ${form.description.trim()}` : ''
+  const hasChanges = JSON.stringify(form) !== JSON.stringify(initialFormValues(initial))
+  const { requestDiscard: requestClose, discardDialog } = useDiscardChanges({ hasChanges, onDiscard: onDone, disabled: saving })
 
   useEffect(() => {
     setForm(initialFormValues(initial))
@@ -207,7 +212,7 @@ function ProductForm({
     }
   }
 
-  return <Panel title={initial ? 'Editar producto' : 'Nuevo producto'}>
+  return <FormModal label={initial ? 'Editar producto' : 'Nuevo producto'} busy={saving} onClose={requestClose}><Panel title={initial ? 'Editar producto' : 'Nuevo producto'}>
     <form className="form-grid" onSubmit={submit}>
       <label className="field"><span>Descripción</span><input className="input" value={form.description} onChange={(event) => change('description', event.target.value)} maxLength={200} required disabled={saving} /></label>
       <label className="field"><span>Categoría</span><select className="select" value={form.categoryId} onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))} required disabled={saving || optionsLoading}>
@@ -230,9 +235,9 @@ function ProductForm({
       </div>
       {optionsError && <p className="error-text" role="alert">No se pudieron cargar las listas, marcas o categorías activas.</p>}
       {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-      <div className="page-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar producto' : 'Desactivar producto'}</Button>}<Button variant="secondary" type="button" onClick={onDone} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || optionsLoading}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
+      <div className="page-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar producto' : 'Desactivar producto'}</Button>}<Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || optionsLoading}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
     </form>
-  </Panel>
+  </Panel>{discardDialog}</FormModal>
 }
 
 export default function ProductsPage() {
@@ -263,6 +268,7 @@ export default function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | undefined>()
   const [adjustmentProduct, setAdjustmentProduct] = useState<Product | undefined>()
   const [quantity, setQuantity] = useState('')
+  const [adjustmentMode, setAdjustmentMode] = useState<StockAdjustmentMode>('target')
   const [reason, setReason] = useState('')
   const [adjustmentError, setAdjustmentError] = useState('')
   const [adjustmentSaving, setAdjustmentSaving] = useState(false)
@@ -281,14 +287,12 @@ export default function ProductsPage() {
   async function submitAdjustment(event: FormEvent) {
     event.preventDefault()
     if (!adjustmentProduct || adjustmentSaving) return
-    const amount = Number(quantity)
-    if (!quantity.trim() || !Number.isFinite(amount) || amount === 0) { setAdjustmentError('Ingresá una cantidad distinta de cero.'); return }
-    if (!Number.isInteger(amount * 2)) { setAdjustmentError('La cantidad debe ser múltiplo de 0,5.'); return }
-    if (!reason.trim()) { setAdjustmentError('Ingresá el motivo del ajuste.'); return }
+    const request = buildStockAdjustment(adjustmentMode, quantity, reason, Number(adjustmentProduct.stock ?? 0))
+    if ('error' in request) { setAdjustmentError(request.error); return }
     setAdjustmentSaving(true)
     setAdjustmentError('')
     try {
-      await apiPost(`/api/inventory/${adjustmentProduct.id}/adjustments`, { quantity: amount, reason: reason.trim() })
+      await apiPost(`/api/inventory/${adjustmentProduct.id}/adjustments`, request.body)
       await queryClient.invalidateQueries({ predicate: ({ queryKey }) => typeof queryKey[0] === 'string' && (queryKey[0].startsWith('/api/products?') || queryKey[0].startsWith('/api/inventory')) })
       if (selectedProduct?.id === adjustmentProduct.id) await queryClient.invalidateQueries({ queryKey: movementsKey })
       setAdjustmentProduct(undefined)
@@ -342,7 +346,7 @@ export default function ProductsPage() {
         <StatusBadge value={product.status ?? 'ACTIVE'} />
         <div className="table-row-actions">
           <Button variant="secondary" onClick={() => setSelectedProduct(product)} aria-label={`Ver movimientos de ${product.name}`}>Ver movimientos</Button>
-          {hasAuthority('STOCK_ADJUST') && <Button variant="secondary" onClick={() => { setAdjustmentProduct(product); setQuantity(''); setReason(''); setAdjustmentError('') }} aria-label={`Ajustar stock de ${product.name}`}>Ajustar stock</Button>}
+          {hasAuthority('STOCK_ADJUST') && <Button variant="secondary" onClick={() => { setAdjustmentProduct(product); setAdjustmentMode('target'); setQuantity(''); setReason(''); setAdjustmentError('') }} aria-label={`Ajustar stock de ${product.name}`}>Ajustar stock</Button>}
           {isAdmin && <Button variant="secondary" onClick={() => { setFormProduct(product); setShowForm(false); setFeedback('') }} disabled={formSaving || mutating} aria-label={`Editar ${product.name}`}>Editar</Button>}
         </div>
       </div>
@@ -362,7 +366,7 @@ export default function ProductsPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Catálogo" title="Productos" description="Productos, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button> : <Button variant="secondary" href="/price-lists">Ver listas de precios</Button>} />
+    <PageHeader eyebrow="Catálogo" title="Stock" description="Productos, stock, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button> : <Button variant="secondary" href="/price-lists">Ver listas de precios</Button>} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {actionError && <p className="error-text" role="alert"><CurrencyText>{actionError}</CurrencyText></p>}
     {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} activeLists={activeLists} categories={categories} brands={brands} optionsLoading={optionsLoading} optionsError={optionsError} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} onChangeStatus={(product) => { setActionError(''); setStatusProduct(product) }} />}
@@ -384,11 +388,18 @@ export default function ProductsPage() {
     </Panel></div>}
     {adjustmentProduct && <StockAdjustmentDialog
       productName={adjustmentProduct.name} stock={adjustmentProduct.stock ?? 0}
+      mode={adjustmentMode} onModeChange={(mode) => { setAdjustmentMode(mode); setAdjustmentError('') }}
       quantity={quantity} reason={reason} pending={adjustmentSaving} error={adjustmentError}
       onQuantityChange={(value) => { setQuantity(value); setAdjustmentError('') }}
       onReasonChange={(value) => { setReason(value); setAdjustmentError('') }}
       onSubmit={submitAdjustment} onCancel={() => setAdjustmentProduct(undefined)}
     />}
-    {statusProduct && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" className="modal-backdrop"><Panel title="Confirmar cambio de estado"><h2 id="status-dialog-title">¿Querés {statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a {statusProduct.name}?</h2><div className="page-actions"><Button variant="secondary" onClick={() => setStatusProduct(undefined)} disabled={mutating || formSaving}>Cancelar</Button><Button onClick={changeStatus} disabled={mutating || formSaving}>{mutating ? 'Guardando...' : 'Confirmar'}</Button></div></Panel></div>}
+    {statusProduct && <ConfirmationDialog
+      title={statusProduct.status === 'ACTIVE' ? 'Desactivar producto' : 'Activar producto'}
+      description={`¿Querés ${statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a ${statusProduct.name}?`}
+      cancelLabel="Cancelar" confirmLabel="Confirmar" pendingLabel="Guardando..."
+      pending={mutating || formSaving} error={actionError}
+      onCancel={() => setStatusProduct(undefined)} onConfirm={() => void changeStatus()}
+    />}
   </>
 }

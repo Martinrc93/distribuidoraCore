@@ -86,7 +86,7 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }}>
       <header className="delivery-attempt-header">
-        <div><h2 id={`${id}-title`}>{mode === 'account' ? 'Saldar cuenta' : mode === 'delivery' ? 'Confirmar entrega' : 'Registrar intento de entrega'}</h2><p id={`${id}-description`}>{mode === 'account' ? 'Cliente' : 'Pedido'} <strong>{mode === 'account' ? customerName : orderNumber}</strong></p></div>
+        <div><h2 id={`${id}-title`}>{mode === 'account' ? 'Pago de cuenta corriente' : mode === 'delivery' ? 'Confirmar entrega' : 'Registrar intento de entrega'}</h2><p id={`${id}-description`}>{mode === 'account' ? 'Cliente' : 'Pedido'} <strong>{mode === 'account' ? customerName : orderNumber}</strong></p></div>
         <button className="delivery-attempt-close" type="button" aria-label={mode === 'account' ? 'Cerrar pago de cuenta corriente' : 'Cerrar registro de entrega'} onClick={onClose} disabled={pending}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
       </header>
       <form className="delivery-attempt-form" onSubmit={onSubmit}>
@@ -117,7 +117,7 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
               {saleBalance > 0 && selectedPrevious > 0 && <div className="delivery-attempt-quick-pay"><Button type="button" variant="link" disabled={pending} onClick={() => fillPayment(saleBalance)}>Pagar solo esta venta</Button></div>}
             </div>
             <div className="delivery-attempt-add"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => updatePayments([...value.payments, { method: 'CASH', amount: '' }])}>Agregar pago</Button></div>
-            <p className="helper-text" id={`${id}-payment-help`}>{mode === 'account' ? 'El pago debe cubrir el saldo completo y se aplica primero a las deudas más antiguas.' : 'El pago se aplica primero a esta venta y luego a la deuda anterior seleccionada.'}</p>
+            <p className="helper-text" id={`${id}-payment-help`}>{mode === 'account' ? 'Podés pagar el total o una parte. El pago se aplica primero a las deudas más antiguas.' : 'El pago se aplica primero a esta venta y luego a la deuda anterior seleccionada.'}</p>
             <dl className="delivery-attempt-summary" aria-live="polite"><div><dt>Total a pagar</dt><dd><CurrencyText>{money(totalDue)}</CurrencyText></dd></div><div><dt>Saldo después del pago</dt><dd className={collected > totalDue ? 'text-danger' : ''}><CurrencyText>{money(totalDue - collected)}</CurrencyText></dd></div></dl>
           </section> : <p className="delivery-attempt-empty">Los intentos no entregados se registran sin pagos.</p>}
           {error && <p className="delivery-attempt-error error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}

@@ -8,7 +8,7 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import { StockAdjustmentDialog } from '../../shared/components/StockAdjustmentDialog'
+import { StockAdjustmentDialog, buildStockAdjustment, type StockAdjustmentMode } from '../../shared/components/StockAdjustmentDialog'
 
 type InventoryItem = { id: string; product: string; stock: number; lastMovement?: string | null; updated?: string }
 type Movement = { id: string; movementType: string; quantity: number; reason: string; referenceType?: string; referenceId?: string; date: string }
@@ -33,6 +33,7 @@ export default function InventoryPage() {
   const movementsQuery = useQuery({ queryKey: movementsKey, queryFn: () => apiGet<ApiPage<Movement>>(movementsPath), enabled: Boolean(selectedProduct) })
   const [adjustmentProduct, setAdjustmentProduct] = useState<InventoryItem | undefined>()
   const [quantity, setQuantity] = useState('')
+  const [adjustmentMode, setAdjustmentMode] = useState<StockAdjustmentMode>('target')
   const [reason, setReason] = useState('')
   const [adjustmentError, setAdjustmentError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -42,24 +43,16 @@ export default function InventoryPage() {
   async function submitAdjustment(event: FormEvent) {
     event.preventDefault()
     if (!adjustmentProduct || saving) return
-    const amount = Number(quantity)
-    if (!quantity.trim() || !Number.isFinite(amount) || amount === 0) {
-      setAdjustmentError('Ingresá una cantidad distinta de cero.')
-      return
-    }
-    if (!Number.isInteger(amount * 2)) {
-      setAdjustmentError('La cantidad debe ser múltiplo de 0,5.')
-      return
-    }
-    if (!reason.trim()) {
-      setAdjustmentError('Ingresá el motivo del ajuste.')
+    const request = buildStockAdjustment(adjustmentMode, quantity, reason, Number(adjustmentProduct.stock ?? 0))
+    if ('error' in request) {
+      setAdjustmentError(request.error)
       return
     }
     setSaving(true)
     setAdjustmentError('')
     setPageError('')
     try {
-      await apiPost(`/api/inventory/${adjustmentProduct.id}/adjustments`, { quantity: amount, reason: reason.trim() })
+      await apiPost(`/api/inventory/${adjustmentProduct.id}/adjustments`, request.body)
       await queryClient.invalidateQueries({
         predicate: (cachedQuery) => typeof cachedQuery.queryKey[0] === 'string'
           && cachedQuery.queryKey[0].startsWith(`${INVENTORY_BASE}?`),
@@ -95,6 +88,7 @@ export default function InventoryPage() {
         <Button variant="link" onClick={() => setSelectedProduct(item)} aria-label={`Ver movimientos de ${item.product}`}>Ver movimientos</Button>
         {canAdjust && <Button variant="link" onClick={() => {
           setAdjustmentProduct(item)
+          setAdjustmentMode('target')
           setQuantity('')
           setReason('')
           setAdjustmentError('')
@@ -134,6 +128,7 @@ export default function InventoryPage() {
     </Panel>}
     {adjustmentProduct && <StockAdjustmentDialog
       title="Ajustar inventario" productName={adjustmentProduct.product} stock={adjustmentProduct.stock}
+      mode={adjustmentMode} onModeChange={(mode) => { setAdjustmentMode(mode); setAdjustmentError('') }}
       quantity={quantity} reason={reason} pending={saving} error={adjustmentError}
       onQuantityChange={(value) => { setQuantity(value); setAdjustmentError('') }}
       onReasonChange={(value) => { setReason(value); setAdjustmentError('') }}

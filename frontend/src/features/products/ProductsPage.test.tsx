@@ -254,10 +254,11 @@ describe('ProductsPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: 'Editar Harina' }))
+    expect(screen.getByRole('dialog', { name: 'Editar producto' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /desactivar producto/i }))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Desactivar producto' })).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/products/product-1/status', expect.anything())
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /cancelar/i }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Desactivar producto' })).getByRole('button', { name: /cancelar/i }))
 
     cleanup()
     sessionStorage.setItem('distribuidora.accessToken', token(['ORDER_CREATE']))

@@ -62,11 +62,11 @@ export function SupplierOrderForm({ onClose, onSaved }: { onClose: () => void; o
       const result = await previous.refetch()
       if (result.error) throw result.error
       const data = result.data
-      if (!data?.available || !data.items?.length) throw new Error('Este proveedor no tiene pedidos anteriores.')
-      if (data.items.some((item) => item.status !== 'ACTIVE')) throw new Error('El pedido anterior contiene productos inactivos. Revisa los productos antes de solicitar otro pedido.')
+      if (!data?.available || !data.items?.length) throw new Error('Este proveedor no tiene compras anteriores.')
+      if (data.items.some((item) => item.status !== 'ACTIVE')) throw new Error('La compra anterior contiene productos inactivos. Revisa los productos antes de registrar otra compra.')
       if (lines.length) setReplacement(data)
       else applyPrevious(data)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo cargar el pedido anterior.') }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo cargar la compra anterior.') }
     finally { setLoadingPrevious(false) }
   }
   function addProduct() {
@@ -92,23 +92,23 @@ export function SupplierOrderForm({ onClose, onSaved }: { onClose: () => void; o
       const result = await apiPost<Result>('/api/supplier-orders', payload)
       await Promise.all([queryClient.invalidateQueries({ queryKey: supplierOrdersKey }), queryClient.invalidateQueries({ queryKey: ['supplier-orders-last', supplierId] })])
       onSaved(result)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo solicitar el pedido.') }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo registrar la compra.') }
     finally { setSaving(false) }
   }
 
   return <>
-    <Panel title="Nuevo pedido a proveedor" description="Registra productos, cantidades y costos estimados para coordinar la compra.">
-      <form ref={formRef} onSubmit={submit} aria-label="Nuevo pedido a proveedor" aria-busy={busy}>
+    <Panel title="Nueva compra" description="Registra productos, cantidades y costos estimados para coordinar la compra.">
+      <form ref={formRef} onSubmit={submit} aria-label="Nueva compra" aria-busy={busy}>
         <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0">
           <div className="form-grid items-end mb-[18px]">
             <SupplierSelect mode="selection" label="Proveedor" options={suppliers.data?.content ?? []} value={supplierId} onChange={(id) => { setSupplierId(id); setProductId(''); changed() }} loading={suppliers.isLoading} disabled={suppliers.isError} required />
-            <OrderDateFilter id="supplier-order-date" label="Fecha del pedido" value={orderDate} isoValue={isoDate ?? ''} invalid={Boolean(orderDate && !isoDate)} required disabled={busy} onChange={(value) => { setOrderDate(value); changed() }} />
+            <OrderDateFilter id="supplier-order-date" label="Fecha de la compra" value={orderDate} isoValue={isoDate ?? ''} invalid={Boolean(orderDate && !isoDate)} required disabled={busy} onChange={(value) => { setOrderDate(value); changed() }} />
           </div>
           {suppliers.isError && <p className="error-text" role="alert">No se pudieron cargar los proveedores. <Button type="button" variant="link" onClick={() => void suppliers.refetch()}>Reintentar proveedores</Button></p>}
-          <div className="page-actions mb-[18px]"><Button type="button" variant="secondary" disabled={!supplierId || previous.isFetching || previous.isError || !previous.data?.available} onClick={() => void loadPrevious()}>{loadingPrevious ? 'Cargando pedido...' : 'Cargar pedido anterior'}</Button></div>
-          {supplierId && previous.isFetching && <p className="helper-text" role="status">Consultando el último pedido de este proveedor...</p>}
-          {supplierId && previous.isError && <p className="error-text" role="alert">No se pudo consultar el pedido anterior. <Button type="button" variant="link" onClick={() => void previous.refetch()}>Reintentar pedido anterior</Button></p>}
-          {supplierId && previous.isSuccess && !previous.data?.available && <p className="helper-text">Este proveedor no tiene pedidos anteriores.</p>}
+          <div className="page-actions mb-[18px]"><Button type="button" variant="secondary" disabled={!supplierId || previous.isFetching || previous.isError || !previous.data?.available} onClick={() => void loadPrevious()}>{loadingPrevious ? 'Cargando compra...' : 'Cargar compra anterior'}</Button></div>
+          {supplierId && previous.isFetching && <p className="helper-text" role="status">Consultando el última compra a este proveedor...</p>}
+          {supplierId && previous.isError && <p className="error-text" role="alert">No se pudo consultar la compra anterior. <Button type="button" variant="link" onClick={() => void previous.refetch()}>Reintentar compra anterior</Button></p>}
+          {supplierId && previous.isSuccess && !previous.data?.available && <p className="helper-text">Este proveedor no tiene compras anteriores.</p>}
           <div className="product-picker">
             <SearchableSelect label="Producto" options={activeProducts.filter((product) => !lines.some((line) => line.productId === product.id))} value={productId} onChange={(id) => { setProductId(id); setError('') }} allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" loading={products.isLoading} disabled={!supplierId || products.isError} fullWidth />
             <label className="field"><span>Cantidad</span><input className="input" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
@@ -121,14 +121,14 @@ export function SupplierOrderForm({ onClose, onSaved }: { onClose: () => void; o
             { key: 'unitCost', label: 'Costo unitario', render: (value, row) => <input className="input w-[140px] max-w-full currency-input" inputMode="decimal" aria-label={`Costo de ${row.name}`} value={value} onChange={(event) => { setLines((current) => current.map((line) => line.productId === row.id ? { ...line, unitCost: event.target.value } : line)); changed() }} /> },
             { key: 'total', label: 'Subtotal', align: 'right' },
             { key: 'actions', label: 'Acciones', render: (_, row) => <Button type="button" variant="danger" aria-label={`Quitar ${row.name}`} onClick={() => { setLines((current) => current.filter((line) => line.productId !== row.id)); changed() }}>Quitar</Button> },
-          ]} rows={lines.map((line) => ({ id: line.productId, name: line.name, quantity: line.quantity, unitCost: line.unitCost, total: money(decimal(line.quantity) * decimal(line.unitCost) || 0) }))} emptyContent={<p className="table-empty-message">Agrega productos para solicitar el pedido.</p>} />
+          ]} rows={lines.map((line) => ({ id: line.productId, name: line.name, quantity: line.quantity, unitCost: line.unitCost, total: money(decimal(line.quantity) * decimal(line.unitCost) || 0) }))} emptyContent={<p className="table-empty-message">Agrega productos para registrar la compra.</p>} />
           <p className="mt-[18px] text-[15px] font-bold">Total estimado: <CurrencyText>{money(total)}</CurrencyText></p>
         </fieldset>
         {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-        <div className="page-actions mt-[18px]"><Button type="button" variant="secondary" disabled={busy} onClick={requestDiscard}>Cancelar</Button><Button type="submit" disabled={busy || suppliers.isLoading || suppliers.isError || !supplierId || !lines.length || !isoDate}>{saving ? 'Guardando...' : 'Solicitar pedido'}</Button></div>
+        <div className="page-actions mt-[18px]"><Button type="button" variant="secondary" disabled={busy} onClick={requestDiscard}>Cancelar</Button><Button type="submit" disabled={busy || suppliers.isLoading || suppliers.isError || !supplierId || !lines.length || !isoDate}>{saving ? 'Guardando...' : 'Registrar compra'}</Button></div>
       </form>
     </Panel>
-    {replacement && <ConfirmationDialog title="¿Reemplazar los productos?" description="Se copiarán los productos y cantidades del último pedido de este proveedor, con sus costos actuales. Los productos del borrador se reemplazarán." confirmLabel="Reemplazar productos" onConfirm={() => applyPrevious(replacement)} onCancel={() => setReplacement(undefined)} />}
+    {replacement && <ConfirmationDialog title="¿Reemplazar los productos?" description="Se copiarán los productos y cantidades de la última compra a este proveedor, con sus costos actuales. Los productos del borrador se reemplazarán." confirmLabel="Reemplazar productos" onConfirm={() => applyPrevious(replacement)} onCancel={() => setReplacement(undefined)} />}
     {discardDialog}
   </>
 }

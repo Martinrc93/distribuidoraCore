@@ -10,6 +10,7 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { useUrlListState } from '../../shared/useUrlListState'
+import { FormModal } from '../../shared/components/FormModal'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean }
 type ProductPrice = { productId: string; name: string; price: number; effectiveOn?: string }
@@ -228,8 +229,8 @@ export default function PriceListsPage() {
       const product = pricesQuery.data?.content.find((item) => item.productId === row.id)
       if (!product) return null
       return <div className="table-row-actions">
-        {isAdmin && <Button variant="secondary" onClick={() => { setEditingProduct(product); setPrice(String(product.price)); setEffectiveOn(''); setError('') }} aria-label={`Editar precio de ${product.name}`}>Editar</Button>}
-        <Button variant="secondary" onClick={() => { setEditingHistoryProduct(product); setHistoryPage(0); setError('') }} aria-label={`Ver historial de precios de ${product.name}`}>Historial</Button>
+        {isAdmin && <Button variant="secondary" onClick={() => { setEditingProduct(product); setPrice(String(product.price)); setEffectiveOn(''); setError('') }} aria-label={`Editar precio de ${product.name}`}>Editar precio</Button>}
+        <Button variant="secondary" onClick={() => { setEditingHistoryProduct(product); setHistoryPage(0); setError('') }} aria-label={`Ver historial de precios de ${product.name}`}>Ver historial</Button>
       </div>
     } },
   ]
@@ -238,16 +239,18 @@ export default function PriceListsPage() {
   return <div className="price-lists-page">
     <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
-    {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-    {showCreate && isAdmin && <Panel title="Nueva lista de precios"><form className="form-grid" onSubmit={submitCreate}>
+    {error && !showCreate && !renameList && !editingProduct && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
+    {showCreate && isAdmin && <FormModal size="compact" label="Nueva lista de precios" busy={createMutation.isPending} onClose={() => { setShowCreate(false); setError('') }}><Panel title="Nueva lista de precios"><form className="form-grid" onSubmit={submitCreate}>
       <label className="field"><span>Código</span><input className="input" value={code} onChange={(event) => setCode(event.target.value)} required maxLength={40} disabled={createMutation.isPending} /></label>
       <label className="field"><span>Nombre de lista</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} disabled={createMutation.isPending} /></label>
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setShowCreate(false)} disabled={createMutation.isPending}>Cancelar</Button><Button type="submit" disabled={createMutation.isPending}>{createMutation.isPending ? 'Guardando...' : 'Guardar lista'}</Button></div>
-    </form></Panel>}
-    {renameList && <Panel title={`Renombrar ${renameList.code}`}><form className="form-grid" onSubmit={submitRename}>
+      {error && <p className="error-text col-span-full" role="alert"><CurrencyText>{error}</CurrencyText></p>}
+      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => { setShowCreate(false); setError('') }} disabled={createMutation.isPending}>Cancelar</Button><Button type="submit" disabled={createMutation.isPending}>{createMutation.isPending ? 'Guardando...' : 'Guardar lista'}</Button></div>
+    </form></Panel></FormModal>}
+    {renameList && <FormModal size="compact" label={`Renombrar ${renameList.code}`} onClose={() => { setRenameList(undefined); setError('') }}><Panel title={`Renombrar ${renameList.code}`}><form className="form-grid" onSubmit={submitRename}>
       <label className="field"><span>Nuevo nombre</span><input className="input" value={rename} onChange={(event) => setRename(event.target.value)} required maxLength={120} /></label>
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setRenameList(undefined)}>Cancelar</Button><Button type="submit">Guardar nombre</Button></div>
-    </form></Panel>}
+      {error && <p className="error-text col-span-full" role="alert"><CurrencyText>{error}</CurrencyText></p>}
+      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => { setRenameList(undefined); setError('') }}>Cancelar</Button><Button type="submit">Guardar nombre</Button></div>
+    </form></Panel></FormModal>}
     {listsQuery.isLoading || listsQuery.isError ? <Panel><State error={listsQuery.error} /></Panel> : lists.length === 0 ? <Panel><EmptyState title="Todavía no hay listas" description="Creá una lista de precios para asignar valores de venta a los productos." action={isAdmin ? <Button onClick={() => setShowCreate(true)}>+ Nueva lista</Button> : undefined} /></Panel> : <>
       <Panel title="Listas de precios" description={`${visibleLists.length} ${visibleLists.length === 1 ? 'lista visible' : 'listas visibles'} · Los pedidos usan la lista asignada al cliente.`} action={<div className="price-list-controls">
         <label className="price-list-filter"><span>Mostrar</span><select className="select" aria-label="Mostrar listas" value={listVisibility} onChange={(event) => setPreferences((current) => ({ ...current, visibility: event.target.value as ListVisibility }))}>
@@ -295,6 +298,7 @@ export default function PriceListsPage() {
       <h2 id="price-dialog-title">{editingProduct.name} · {selectedList?.name}</h2>
       <label className="field"><span>Precio de {editingProduct.name}</span><input className="input currency-input" type="text" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required autoFocus /></label>
       <label className="field"><span>Vigente desde</span><input className="input" aria-label="Fecha de vigencia" type="date" value={effectiveOn} onChange={(event) => setEffectiveOn(event.target.value)} /><small>Dejalo vacío para aplicar el precio desde hoy.</small></label>
+      {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
       <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setEditingProduct(undefined)}>Cancelar</Button><Button type="submit">Guardar precio</Button></div>
     </form></Panel></div>}
     {historyEntryToCancel && <div role="dialog" aria-modal="true" aria-labelledby="cancel-price-title" className="modal-backdrop"><Panel title="Cancelar precio programado"><h2 id="cancel-price-title">¿Cancelar la vigencia del {historyEntryToCancel.effectiveOn}?</h2><p>El cambio no modificará precios que ya entraron en vigor.</p><div className="page-actions"><Button variant="secondary" onClick={() => setHistoryEntryToCancel(undefined)}>Volver</Button><Button onClick={cancelScheduledPrice}>Confirmar cancelación</Button></div></Panel></div>}

@@ -77,16 +77,31 @@ saldo actual antes de abrir el mismo modal de pago utilizado en entregas.
 ```
 
 Admite entre 1 y 100 pagos válidos. Cada transferencia exige una referencia no
-vacía de hasta 100 caracteres. La suma debe coincidir exactamente con el saldo
-deudor actual, verificado después de bloquear ventas y cliente en el mismo orden
-que los pagos individuales. Un saldo cambiado, cero, negativo o un importe
-incompleto/excesivo devuelve `409` sin registrar cobros.
+vacía de hasta 100 caracteres. Sin `partial` (o con `false`), la suma debe
+coincidir exactamente con el saldo deudor actual, verificado después de bloquear
+ventas y cliente en el mismo orden que los pagos individuales. Un saldo cambiado,
+cero, negativo o un importe incompleto/excesivo devuelve `409` sin registrar cobros.
+
+### Pago parcial
+
+Con `"partial": true` la suma puede ser menor al saldo deudor (nunca mayor). Se
+usa el mismo bloqueo, la misma imputación FIFO y la misma transacción única; la
+respuesta informa `balanceAfter` con el saldo que queda pendiente. La pantalla de
+Clientes («Registrar pago») envía `partial: true` solo cuando el importe es menor
+al saldo, y muestra «Pago registrado. Saldo pendiente: …».
+
+```json
+{
+  "payments": [{ "amount": 20.00, "method": "CASH" }],
+  "partial": true
+}
+```
 
 Todos los medios se imputan por FIFO dentro de una única transacción: si falla
 cualquier asignación, se revierten también los pagos anteriores, sus asientos,
 los saldos y la auditoría. No cambia el estado de entrega. La respuesta conserva
 el formato anterior, con el importe total en `received`, `allocationMode: "FIFO"`
-y `balanceAfter: 0`.
+y `balanceAfter` (`0` en una liquidación completa; el saldo restante en un pago parcial).
 
 ## Verificación de liquidaciones
 

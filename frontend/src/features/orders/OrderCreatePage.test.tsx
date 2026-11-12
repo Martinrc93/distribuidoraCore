@@ -195,8 +195,8 @@ describe('OrderCreatePage', () => {
   it('filters all product pages locally by name without accents and selects with the keyboard', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
-      if (String(input) === '/api/products?page=0&size=100&includeStock=false') return response({ ...products, totalPages: 2 })
-      if (String(input) === '/api/products?page=1&size=100&includeStock=false') return response({ ...products, page: 1, content: [{ ...products.content[0], id: 'product-2', name: 'Café molido' }, { ...products.content[0], id: 'inactive', name: 'Café inactivo', status: 'INACTIVE' }] })
+      if (String(input) === '/api/products?page=0&size=100&includeStock=true') return response({ ...products, totalPages: 2 })
+      if (String(input) === '/api/products?page=1&size=100&includeStock=true') return response({ ...products, page: 1, content: [{ ...products.content[0], id: 'product-2', name: 'Café molido', stock: 12.5 }, { ...products.content[0], id: 'inactive', name: 'Café inactivo', status: 'INACTIVE' }] })
       return catalogResponse(input)
     })
     renderPage()
@@ -204,7 +204,7 @@ describe('OrderCreatePage', () => {
     const input = screen.getByRole('combobox', { name: 'Producto' })
     await user.click(input)
     expect(screen.getByRole('option', { name: /^Harina$/ })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /^Café molido$/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /^Café molido$/ })).toHaveAccessibleDescription('Stock: 12,5')
     expect(screen.queryByRole('option', { name: /Café inactivo/ })).not.toBeInTheDocument()
     await user.clear(input)
     await user.type(input, 'cafe')
@@ -214,6 +214,7 @@ describe('OrderCreatePage', () => {
     await user.type(input, 'cafe')
     await user.keyboard('{ArrowDown}{ArrowDown}{Enter}')
     expect(input).toHaveValue('Café molido')
+    expect(screen.getByText('Stock disponible: 12,5')).toBeInTheDocument()
     await findPrice('150,5')
     const requests = fetchMock.mock.calls.length
     await user.click(input)

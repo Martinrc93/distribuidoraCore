@@ -61,17 +61,66 @@ class InventoryCommandServiceTest {
     }
 
     @Test
-    void rejectsMissingOrTooLongReason() {
+    void rejectsTooLongReason() {
         UUID productId = UUID.randomUUID();
         String tooLong = "a".repeat(501);
 
-        assertThatThrownBy(() -> service.adjust(productId, BigDecimal.ONE, null))
-            .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.adjust(productId, BigDecimal.ONE, "  "))
-            .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.adjust(productId, BigDecimal.ONE, tooLong))
             .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.setQuantity(productId, BigDecimal.ONE, tooLong))
+            .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(jdbc, audit);
+    }
+
+    @Test
+    void storesDefaultReasonWhenReasonIsEmpty() {
+        UUID productId = UUID.randomUUID();
+        UUID actorId = authenticate();
+        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
+        when(jdbc.queryForObject(eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
+            eq(BigDecimal.class), eq(productId))).thenReturn(BigDecimal.TEN);
+
+        service.adjust(productId, BigDecimal.ONE, "  ");
+
+        verify(audit).recordWithinTransaction(eq(actorId), eq("STOCK_ADJUSTMENT"), eq("PRODUCT"), eq(productId.toString()),
+            eq("SUCCESS"), eq(Map.of("quantity", BigDecimal.ONE, "reason", InventoryCommandService.DEFAULT_ADJUSTMENT_REASON)));
+    }
+
+    @Test
+    void setsCountedQuantityByRecordingTheDifferenceUnderLock() {
+        UUID productId = UUID.randomUUID();
+        UUID actorId = authenticate();
+        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
+        when(jdbc.queryForObject(eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
+            eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("10.0"));
+
+        service.setQuantity(productId, new BigDecimal("7.5"), null);
+
+        verify(jdbc).update(
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
+            eq(new BigDecimal("7.5")), any(), eq(productId));
+        verify(jdbc).update(
+            eq("insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, reference_type, reference_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)"),
+            any(UUID.class), eq(productId), eq("MANUAL_ADJUSTMENT"), eq(new BigDecimal("-2.5")),
+            eq(InventoryCommandService.DEFAULT_COUNT_REASON), eq(null), eq(null), any());
+        verify(audit).recordWithinTransaction(eq(actorId), eq("STOCK_ADJUSTMENT"), eq("PRODUCT"), eq(productId.toString()),
+            eq("SUCCESS"), eq(Map.of("quantity", new BigDecimal("-2.5"), "previousQuantity", new BigDecimal("10.0"),
+                "targetQuantity", new BigDecimal("7.5"), "reason", InventoryCommandService.DEFAULT_COUNT_REASON)));
+    }
+
+    @Test
+    void rejectsCountedQuantityEqualToCurrentStockOrNotHalfUnits() {
+        UUID productId = UUID.randomUUID();
+        authenticate();
+        when(jdbc.queryForObject(anyString(), eq(String.class), eq(productId))).thenReturn("ACTIVE");
+        when(jdbc.queryForObject(eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
+            eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("4.0"));
+
+        assertThatThrownBy(() -> service.setQuantity(productId, new BigDecimal("4"), "Conteo"))
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.setQuantity(productId, new BigDecimal("4.25"), "Conteo"))
+            .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(audit);
     }
 
     @Test

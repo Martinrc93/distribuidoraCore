@@ -5,11 +5,12 @@ import { logout } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
 import { ThemeToggle } from '../shared/components/ThemeToggle'
+import { TextSizeToggle } from '../shared/components/TextSizeToggle'
 
 const compactNavigationQuery = '(max-width: 1050px)'
 const menuGroups = [
-  { id: 'operation', label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Pedidos a proveedores', '/supplier-orders'], ['Clientes', '/customers']] },
-  { id: 'catalog', label: 'Catálogo', links: [['Productos', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists'], ['Proveedores', '/suppliers']] },
+  { id: 'operation', label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Compras', '/supplier-orders'], ['Clientes', '/customers']] },
+  { id: 'catalog', label: 'Catálogo', links: [['Stock', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists'], ['Proveedores', '/suppliers']] },
   { id: 'administration', label: 'Administración', links: [['Usuarios', '/admin/users'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
 ]
 
@@ -144,6 +145,7 @@ export default function AppShell() {
         <div className="breadcrumbs"><span>{currentGroup?.label ?? 'Empresa'}</span><span aria-hidden="true">/</span><strong>{currentLabel}</strong></div>
         {compact && <div className="compact-brand"><span className="brand-mark" aria-hidden="true">D</span><div><strong>Distribuidora</strong><span>{currentLabel}</span></div></div>}
         <div className="topbar-controls">
+          <TextSizeToggle />
           <ThemeToggle />
           {compact && <>
           <button type="button" className="navigation-toggle" aria-label="Abrir menú" aria-haspopup="dialog" aria-expanded={drawerOpen} aria-controls="navigation-drawer" onClick={() => setDrawerLocationKey(location.key)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg><span>Menú</span></button>

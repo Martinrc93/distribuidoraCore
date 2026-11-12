@@ -7,7 +7,8 @@ import type { Customer } from './customerTypes'
 export function AccountSettlementDialog({ customer, onClose, onSaved }: {
   customer: Customer
   onClose: () => void
-  onSaved: () => void
+  /** Receives the remaining balance: zero after a full settlement, positive after a partial payment. */
+  onSaved: (remainingBalance: number) => void
 }) {
   const queryClient = useQueryClient()
   const submitting = useRef(false)
@@ -27,9 +28,11 @@ export function AccountSettlementDialog({ customer, onClose, onSaved }: {
       setError('Cada pago debe ser mayor a cero y tener hasta 4 decimales.'); return
     }
     const total = payments.reduce((sum, payment) => sum + Math.round(payment.amount * 10000), 0)
-    if (balance <= 0 || total !== Math.round(balance * 10000)) {
-      setError('Los pagos deben cubrir exactamente el saldo de la cuenta corriente.'); return
+    const balanceUnits = Math.round(balance * 10000)
+    if (balance <= 0 || total > balanceUnits) {
+      setError('Los pagos no pueden superar el saldo de la cuenta corriente.'); return
     }
+    const partial = total < balanceUnits
     const hasTransfer = payments.some(payment => payment.method === 'BANK_TRANSFER')
     if (hasTransfer && !draft.transferReference.trim()) {
       setError('Ingresa el número de transferencia.'); return
@@ -42,13 +45,14 @@ export function AccountSettlementDialog({ customer, onClose, onSaved }: {
         payments: payments.map(payment => ({ ...payment,
           ...(payment.method === 'BANK_TRANSFER' ? { transferReference: draft.transferReference.trim() } : {}),
         })),
+        ...(partial ? { partial: true } : {}),
       })
       await queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
         const key = String(queryKey[0])
         return ['/api/customers', '/api/sales', '/api/orders', '/api/payments', '/api/dashboard', '/api/audit'].some(prefix => key.startsWith(prefix))
           || ['customer-debts', 'sale-detail', 'dashboard'].includes(key)
       } })
-      onSaved()
+      onSaved((balanceUnits - total) / 10000)
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
         try {
@@ -56,7 +60,7 @@ export function AccountSettlementDialog({ customer, onClose, onSaved }: {
           setBalance(Number(current.balance ?? 0))
         } catch { /* Keep the draft available if the balance refresh fails. */ }
       }
-      setError(cause instanceof ApiError && cause.status === 403 ? 'No tienes permiso para saldar cuentas.'
+      setError(cause instanceof ApiError && cause.status === 403 ? 'No tienes permiso para registrar pagos de cuenta corriente.'
         : cause instanceof ApiError && cause.status === 404 ? 'El cliente ya no está disponible.'
           : cause instanceof Error ? cause.message : 'No se pudo registrar el pago.')
     } finally {

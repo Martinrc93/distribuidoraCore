@@ -76,10 +76,10 @@ for (const width of [320, 390, 640, 760, 761, 1024, 1050, 1051, 1280, 1366, 1440
       expect(await page.evaluate(() => document.body.style.overflow)).toBe('')
       await trigger.click()
       await nav.getByRole('button', { name: 'Catálogo', exact: true }).click()
-      await page.getByRole('link', { name: 'Productos', exact: true }).click()
+      await page.getByRole('link', { name: 'Stock', exact: true }).click()
       await expect(page).toHaveURL(/\/products$/)
       await expect(dialog).toHaveCount(0)
-      await expect(page.locator('.compact-brand')).toContainText('Productos')
+      await expect(page.locator('.compact-brand')).toContainText('Stock')
     } else {
       await expect(nav).toBeVisible()
       await expect(nav.getByRole('link', { name: 'Pagos y deuda' })).toHaveCount(0)
@@ -116,7 +116,7 @@ test('drawer supports backdrop, resize, short landscape screens and signing out'
   await expect(dialog).toHaveCount(0)
   await trigger.click()
   await dialog.getByRole('button', { name: 'Catálogo', exact: true }).click()
-  await dialog.getByRole('link', { name: 'Productos', exact: true }).click()
+  await dialog.getByRole('link', { name: 'Stock', exact: true }).click()
   await trigger.click()
   await page.goBack()
   await expect(page).toHaveURL(/\/orders$/)
@@ -142,7 +142,7 @@ test('compact navigation respects permissions and reduced motion', async ({ page
   await expect(dialog.getByRole('link', { name: 'Usuarios' })).toHaveCount(0)
   await expect(dialog.getByRole('link', { name: 'Clientes' })).toBeVisible()
   await expect(dialog.getByRole('link', { name: 'Pagos y deuda' })).toHaveCount(0)
-  for (const name of ['Productos', 'Marcas y categorías', 'Listas de precios']) {
+  for (const name of ['Stock', 'Marcas y categorías', 'Listas de precios']) {
     await expect(dialog.getByRole('link', { name })).toHaveCount(0)
   }
   await expect(dialog.getByText('Catálogo', { exact: true })).toHaveCount(0)
@@ -175,7 +175,7 @@ for (const width of [390, 1440]) {
     await page.keyboard.press('Tab')
     await expect(catalog).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(nav.getByRole('link', { name: 'Productos', exact: true })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Stock', exact: true })).toBeVisible()
     await expect(operation).toHaveAttribute('aria-expanded', 'false')
     await expect(administration).toHaveAttribute('aria-expanded', 'false')
     await page.keyboard.press('Space')

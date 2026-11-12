@@ -125,7 +125,7 @@ export default function AnalyticsDashboardPage() {
       <section className="stats-grid mb-0" aria-label="Indicadores principales">
         <StatCard label="Ventas del período" value={money(data.sales.amount)} detail={`${number(data.sales.orders)} ventas · ${comparison(data.sales.amount, data.previousSales.amount)}`} />
         <StatCard label="Cobros del período" value={money(data.collections.amount)} detail={comparison(data.collections.amount, data.previousCollections.amount)} />
-        <StatCard label="Deuda pendiente actual" value={money(data.current.debt)} detail={`${number(data.current.debtorCount)} clientes con deuda`} />
+        <StatCard label="Por cobrar en cuentas corrientes" value={money(data.current.debt)} detail={`${number(data.current.debtorCount)} clientes con saldo por cobrar`} />
         <StatCard label="Pedidos por entregar" value={number(data.current.pendingOrders)} detail={`${money(data.current.pendingAmount)} pendientes actualmente`} />
       </section>
       <div className="content-grid two-thirds">
@@ -139,11 +139,11 @@ export default function AnalyticsDashboardPage() {
         </Panel>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-[20px] [@media(max-width:760px)]:grid-cols-1">
-        <Panel title="Clientes con mayor deuda" description="Cinco mayores saldos actuales y su porcentaje de la deuda total. No depende del período." action={<Button variant="link" aria-label="Ver todos los deudores" href="/customers?hasBalance=true&status=ALL">Ver deudores</Button>}>
-          {topDebtors.length > 0 && <p className="mb-[16px] mt-0 text-[13px]" role="status">{topDebtors.length === 1 ? 'Este cliente concentra' : `Estos ${topDebtors.length} clientes concentran`} <strong><CurrencyText>{money(topDebt)}</CurrencyText></strong>, el <strong>{debtShare(topDebt, data.current.debt)}</strong> de la deuda total.</p>}
-          <DataTable className={compactTable} columns={[{ key: 'name', label: 'Cliente', emphasis: true }, { key: 'balance', label: 'Deuda', align: 'right' }, { key: 'share', label: '% del total', align: 'right' }, { key: 'action', label: 'Cuenta', render: (_, row) => <Button variant="link" href={`/sales?customerId=${row.id}&pendingBalance=true`} aria-label={`Ver deuda de ${row.name}`}>Ver deuda</Button> }]} rows={topDebtors.map((item) => ({ id: item.id, name: item.name, balance: money(item.balance), share: debtShare(item.balance, data.current.debt) }))} emptyContent={empty('No hay clientes con deuda pendiente.')} />
+        <Panel title="Clientes con mayor saldo por cobrar" description="Cinco mayores saldos actuales y su porcentaje del total por cobrar. No depende del período." action={<Button variant="link" aria-label="Ver todos los deudores" href="/customers?hasBalance=true&status=ALL">Ver deudores</Button>}>
+          {topDebtors.length > 0 && <p className="mb-[16px] mt-0 text-[13px]" role="status">{topDebtors.length === 1 ? 'Este cliente concentra' : `Estos ${topDebtors.length} clientes concentran`} <strong><CurrencyText>{money(topDebt)}</CurrencyText></strong>, el <strong>{debtShare(topDebt, data.current.debt)}</strong> del total por cobrar.</p>}
+          <DataTable className={compactTable} columns={[{ key: 'name', label: 'Cliente', emphasis: true }, { key: 'balance', label: 'Por cobrar', align: 'right' }, { key: 'share', label: '% del total', align: 'right' }, { key: 'action', label: 'Cuenta', render: (_, row) => <Button variant="link" href={`/sales?customerId=${row.id}&pendingBalance=true`} aria-label={`Ver deuda de ${row.name}`}>Ver deuda</Button> }]} rows={topDebtors.map((item) => ({ id: item.id, name: item.name, balance: money(item.balance), share: debtShare(item.balance, data.current.debt) }))} emptyContent={empty('No hay clientes con saldo por cobrar.')} />
         </Panel>
-        <Panel title="Antigüedad de deuda" description="Saldo abierto por fecha de venta, a la fecha actual. No indica vencimiento.">
+        <Panel title="Antigüedad de saldos por cobrar" description="Saldo abierto por fecha de venta, a la fecha actual. No indica vencimiento.">
           <DataTable className={compactTable} columns={[{ key: 'age', label: 'Antigüedad' }, { key: 'amount', label: 'Saldo', align: 'right' }]} rows={[
             { age: 'Hasta 30 días', amount: money(data.debtAging.days0to30) }, { age: '31 a 60 días', amount: money(data.debtAging.days31to60) },
             { age: '61 a 90 días', amount: money(data.debtAging.days61to90) }, { age: 'Más de 90 días', amount: money(data.debtAging.daysOver90) },
