@@ -161,6 +161,33 @@ describe('ProductsPage', () => {
     expect(await screen.findByText('Producto creado correctamente.')).toBeInTheDocument()
   })
 
+  it('requires only the default list price on creation and lets other lists follow it', async () => {
+    const user = userEvent.setup()
+    const followLists = { ...lists, content: [{ ...lists.content[0], isDefault: true }, { ...lists.content[1], status: 'ACTIVE' }] }
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/products?page=0&size=20' && !init?.method) return response({ ...products, content: [] })
+      if (String(input) === '/api/pricing/lists?page=0&size=20') return response(followLists)
+      if (String(input) === '/api/products' && init?.method === 'POST') return response({ id: 'new-product' }, 201)
+      return catalogResponse(input)
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /nuevo producto/i }))
+    expect(screen.getByLabelText('Precio para MINORISTA (opcional)')).toHaveAttribute('placeholder', 'Igual a MAYORISTA')
+    expect(screen.getByLabelText('Precio para MINORISTA (opcional)')).not.toBeRequired()
+    await user.type(screen.getByLabelText('Descripción'), 'Arroz')
+    await user.type(screen.getByLabelText('Costo'), '10')
+    await user.type(screen.getByLabelText('Precio para MAYORISTA'), '20,5')
+    await user.selectOptions(screen.getByLabelText('Categoría'), 'category-1')
+    await user.selectOptions(screen.getByLabelText('Marca'), 'brand-1')
+    await user.click(screen.getByRole('button', { name: /guardar producto/i }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ description: 'Arroz', cost: 10, prices: [{ priceListId: 'list-1', price: 20.5 }], categoryId: 'category-1', brandId: 'brand-1' }),
+    })))
+  })
+
   it('updates cost without prices when no active list price is affected', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {

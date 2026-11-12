@@ -92,3 +92,43 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`price-list-${width}.png`) })
   })
 }
+
+for (const width of [1280, 390]) {
+  test(`price list follow states and default-price warning at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 })
+    await mockApi(page)
+    const listsBody = { content: [
+      { id: 'list-1', code: 'GENERAL', name: 'Lista general', status: 'ACTIVE', isDefault: true, pendingReviewCount: 0 },
+      { id: 'list-4', code: 'LISTA_4', name: 'Lista 4', status: 'ACTIVE', isDefault: false, pendingReviewCount: 2 },
+    ], page: 0, size: 20, totalElements: 10, totalPages: 1 }
+    await page.route(/\/api\/pricing\/lists\?/, (route) => route.fulfill({ json: listsBody }))
+    await page.route(/\/api\/pricing\/lists\/list-4\/prices/, (route) => route.fulfill({ json: {
+      content: products.slice(0, 3).map((product, index) => ({ productId: product.id, name: product.name, price: 150.5, effectiveOn: '2026-11-01',
+        followStatus: index === 0 ? 'PENDING' : index === 1 ? 'CONFIRMED' : null })),
+      page: 0, size: 20, totalElements: 3, totalPages: 1,
+    } }))
+    await page.route(/\/api\/pricing\/lists\/list-1\/prices/, (route) => route.fulfill({ json: {
+      content: [{ productId: products[0].id, name: products[0].name, price: 150.5, effectiveOn: '2026-11-01' }], page: 0, size: 20, totalElements: 1, totalPages: 1,
+    } }))
+    await page.route(/\/api\/pricing\/lists\/products\/.*\/followers/, (route) => route.fulfill({ json: [{ priceListId: 'list-4', code: 'LISTA_4', name: 'Lista 4' }] }))
+    await page.goto('/price-lists')
+    await expect(page.getByRole('button', { name: '+ Nueva lista' })).toBeDisabled()
+    await page.getByRole('tab', { name: /Lista 4/ }).click()
+    await expect(page.getByRole('tab', { name: /Lista 4/ })).toContainText('2 sin revisar')
+    await expect(page.getByRole('button', { name: 'Confirmar 2 sin revisar' })).toBeVisible()
+    await expect(page.getByRole('button', { name: `Confirmar precio de ${products[0].name} sin cambios` })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`follow-states-${width}.png`), fullPage: true })
+
+    await page.getByRole('tab', { name: /Lista general/ }).click()
+    await page.getByRole('button', { name: `Editar precio de ${products[0].name}` }).click()
+    await page.getByRole('textbox', { name: `Precio de ${products[0].name}`, exact: true }).fill('160')
+    await page.getByRole('button', { name: 'Guardar precio' }).click()
+    const warning = page.getByRole('dialog', { name: 'Este cambio también se aplica en Lista 4' })
+    await expect(warning).toBeVisible()
+    await expect(warning.getByRole('button', { name: 'Volver', exact: true })).toBeFocused()
+    await page.screenshot({ path: testInfo.outputPath(`follow-warning-${width}.png`) })
+    await page.keyboard.press('Escape')
+    await expect(warning).toHaveCount(0)
+  })
+}

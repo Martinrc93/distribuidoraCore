@@ -48,6 +48,6 @@ class ProductDescriptionPostgresTest {
         var rows = new ReadQueryService(jdbc).products(0, 20, "New Acme Rice").content();
         assertThat(rows).hasSize(1);
         assertThat(rows.getFirst()).containsEntry("name", "New Acme Rice 2 kg").containsEntry("description", "Rice 2 kg");
-        assertThat(jdbc.queryForObject("select price from catalog.product_prices where product_id = ?", BigDecimal.class, created)).isEqualByComparingTo("25");
+        assertThat(jdbc.queryForObject("select price from catalog.product_prices where product_id = ? and price_list_id = ?", BigDecimal.class, created, list)).isEqualByComparingTo("25");
     }
 }

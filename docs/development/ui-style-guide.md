@@ -306,6 +306,29 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   vencimiento, y cobertura estimada de stock de un mínimo de reposición.
 - Contrato y limitaciones: [dashboard-analytics.md](../api/dashboard-analytics.md).
 
+### Listas de precios que siguen a la General
+
+- Crear una lista con productos cargados abre `ConfirmationDialog` (`primary`)
+  sobre el formulario: «Ya hay N productos cargados…» y explica que tomarán los
+  precios de la General y la seguirán. Activar una lista inactiva lo explica en el
+  diálogo de estado. Con diez listas, «+ Nueva lista» se deshabilita y una ayuda
+  indica activar y renombrar una inactiva.
+- La tarjeta de cada lista muestra «N sin revisar» (`.price-list-pending`).
+- En una lista que no es la General, la tabla agrega «Estado» con `Badge`:
+  «Sin revisar» (`strong`), «Sin cambios» (`soft`, revisado y sigue a la General) y
+  «Precio propio» (`muted`). El encabezado ofrece el filtro «Estado» (Todos, Sin
+  revisar, Siguen a la General, Precio propio) y «Confirmar N sin revisar»; cada
+  fila pendiente tiene «Confirmar». Una ayuda explica que esos precios siguen a la
+  General y que editarlos los vuelve propios; el diálogo de edición lo repite.
+- Al guardar un precio de la General (desde la lista o al cambiar el costo del
+  producto), si hay listas que lo siguen con aviso pendiente se abre
+  `ConfirmationDialog` «Este cambio también se aplica en …» con «Volver» (foco
+  inicial) y «Guardar y no volver a avisar». Confirmar envía `acknowledgeFollowers`.
+- Los importes de precio aceptan formato argentino («1.250,50») además de punto
+  decimal; el campo se precarga con coma decimal.
+- En el alta de productos solo es obligatorio el precio de la General; las demás
+  listas muestran «(opcional)» y el placeholder «Igual a GENERAL».
+
 ### Ficha del cliente
 
 El listado ofrece «Ver cliente» y «Editar» solo para administradores,
@@ -842,7 +865,10 @@ o `ConfirmationDialog`.
 [`ConfirmationDialog`](../../frontend/src/shared/components/ConfirmationDialog.tsx)
 centraliza las confirmaciones destructivas. Montarlo solo cuando se requiere
 confirmación. Recibe `title`, `description`, `confirmLabel`, `onConfirm` y
-`onCancel`; opcionalmente `cancelLabel`, `pendingLabel`, `pending` y `error`.
+`onCancel`; opcionalmente `cancelLabel`, `pendingLabel`, `pending`, `error` y
+`confirmVariant` (`danger` por defecto; `primary` para confirmar una creación o un
+guardado, por ejemplo crear una lista con los precios de la General o el aviso de
+listas que la siguen).
 Usa `<dialog>` con `showModal()` en un portal a `document.body`: contiene el foco,
 impide interacción con el fondo y queda sobre los formularios existentes. Tab y
 Shift+Tab recorren sus acciones de forma circular sin salir del diálogo. Enfoca
@@ -905,6 +931,8 @@ líneas sin desbordar y la ayuda está asociada al campo de cantidad.
 | `.customer-modal` | Formulario de clientes de ancho adaptable hasta `1040px`, scroll interno y descarte mediante `ConfirmationDialog` |
 | `.price-status-dialog-*` | Confirmación de estado de listas: `480px`, radio `12px`, resumen del cambio, cierre y capa `35` |
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
+| `.price-list-pending`, `.price-products-table-follow` | Listas que siguen a la General: contador «N sin revisar» en la tarjeta (fondo de advertencia, `11px`) y tabla de cinco columnas con «Estado» (mínimo `880px`; en tarjetas hasta `640px`) |
+| `.price-lists-page .panel-header` | Hasta `640px` los controles del encabezado (filtros, confirmar pendientes) pasan a su propia fila |
 | `.sale-detail-backdrop > .panel` | Detalle de venta: hasta `1040px` sobre `760px`, padding `28px`, títulos de `20px` y tablas/datos de `14px`; hasta `760px` conserva el ancho y tipografía compactos. Altura limitada al viewport con scroll interno |
 | `.delivery-attempt-dialog` | Registro de entrega: diálogo nativo de hasta `720px`, encabezado y pie fijos, cuerpo con scroll y pagos con medio, importe y eliminación alineados. Número de transferencia dentro del mismo fondo. Hasta `640px`, los pagos se apilan y las acciones del pie comparten el ancho |
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -76,7 +76,7 @@ describe('PriceListsPage', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1', expect.objectContaining({
       method: 'PUT', body: JSON.stringify({ price: 175.25 }),
     })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/pricing/lists/list-1/prices?page=0&size=20'] })
+    expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
   })
 
   it('schedules a product price for its effective date', async () => {
@@ -194,5 +194,88 @@ describe('PriceListsPage', () => {
     expect(await screen.findByText('Harina')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /nueva lista/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /editar precio/i })).not.toBeInTheDocument()
+  })
+
+  it('asks for confirmation before creating a list that takes the default list prices', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/pricing/lists?page=0&size=20' && !init?.method) return response(lists)
+      if (String(input) === '/api/pricing/lists/creation-preview') return response({ productsToCopy: 12, defaultListName: 'Mayorista' })
+      if (String(input) === '/api/pricing/lists' && init?.method === 'POST') return response({ id: 'list-3' }, 201)
+      return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /nueva lista/i }))
+    await user.type(screen.getByLabelText('Código'), 'PROMO')
+    await user.type(screen.getByLabelText('Nombre de lista'), 'Promoción')
+    await user.click(screen.getByRole('button', { name: /guardar lista/i }))
+    const dialog = await screen.findByRole('dialog', { name: '¿Crear la lista con los precios de Mayorista?' })
+    expect(dialog).toHaveTextContent('Ya hay 12 productos cargados')
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input) === '/api/pricing/lists' && init?.method === 'POST')).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Crear lista' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists', expect.objectContaining({ method: 'POST' })))
+    expect(await screen.findByText('Lista creada con 12 productos marcados «Sin revisar».')).toBeInTheDocument()
+  })
+
+  it('shows follow states, filters them and confirms pending prices of a non-default list', async () => {
+    const user = userEvent.setup()
+    const activeLists = { ...lists, content: [lists.content[0], { ...lists.content[1], status: 'ACTIVE', pendingReviewCount: 2 }] }
+    const followPrices = { content: [
+      { productId: 'product-1', name: 'Harina', price: 150.5, effectiveOn: '2026-09-24', followStatus: 'PENDING' },
+      { productId: 'product-2', name: 'Azúcar', price: 90, effectiveOn: '2026-09-24', followStatus: 'CONFIRMED' },
+      { productId: 'product-3', name: 'Yerba', price: 80, effectiveOn: '2026-09-24', followStatus: null },
+    ], page: 0, size: 20, totalElements: 3, totalPages: 1 }
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path === '/api/pricing/lists?page=0&size=20') return response(activeLists)
+      if (path.startsWith('/api/pricing/lists/list-2/prices')) return response(followPrices)
+      if (path === '/api/pricing/lists/list-2/reviews/confirm' && init?.method === 'POST') return response({ confirmed: init.body === '{}' ? 2 : 1 })
+      return response(prices)
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: /minorista/i }))
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText('Sin revisar')).toBeInTheDocument()
+    expect(within(table).getByText('Sin cambios')).toBeInTheDocument()
+    expect(within(table).getByText('Precio propio')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /minorista/i })).toHaveTextContent('2 sin revisar')
+    await user.selectOptions(screen.getByLabelText('Filtrar por estado del precio'), 'PENDING')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-2/prices?page=0&size=20&followStatus=PENDING', expect.anything()))
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar precio de Harina sin cambios' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-2/reviews/confirm', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ productIds: ['product-1'] }),
+    })))
+    expect(await screen.findByText('Precio confirmado sin cambios.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Confirmar 2 sin revisar' }))
+    expect(await screen.findByText('2 precios confirmados sin cambios.')).toBeInTheDocument()
+  })
+
+  it('warns once before changing a default price followed by other lists and accepts es-AR amounts', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path === '/api/pricing/lists?page=0&size=20') return response(lists)
+      if (path === '/api/pricing/lists/list-1/prices?page=0&size=20') return response(prices)
+      if (path === '/api/pricing/lists/products/product-1/followers') return response([{ priceListId: 'list-2', code: 'MINORISTA', name: 'Minorista' }])
+      if (path === '/api/pricing/lists/list-1/products/product-1' && init?.method === 'PUT') return response({}, 204)
+      return response({})
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /editar precio de harina/i }))
+    expect(screen.getByLabelText('Precio de Harina')).toHaveValue('150,5')
+    await user.clear(screen.getByLabelText('Precio de Harina'))
+    await user.type(screen.getByLabelText('Precio de Harina'), '1.250,50')
+    await user.click(screen.getByRole('button', { name: /guardar precio/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Este cambio también se aplica en Minorista' })
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar y no volver a avisar' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1', expect.objectContaining({
+      method: 'PUT', body: JSON.stringify({ price: 1250.5, acknowledgeFollowers: true }),
+    })))
+    expect(await screen.findByText(/actualizado, también en Minorista\./)).toBeInTheDocument()
   })
 })

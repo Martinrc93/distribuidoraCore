@@ -1,6 +1,8 @@
 package com.distribuidora.catalog.application;
 
 import com.distribuidora.audit.application.AuditService;
+import com.distribuidora.pricing.application.PriceListFollowService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -10,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -21,10 +24,17 @@ import java.util.stream.Collectors;
 public class ProductCommandService {
     private final JdbcTemplate jdbc;
     private final AuditService audit;
+    private final PriceListFollowService follows;
 
     public ProductCommandService(JdbcTemplate jdbc, AuditService audit) {
+        this(jdbc, audit, new PriceListFollowService(jdbc));
+    }
+
+    @Autowired
+    public ProductCommandService(JdbcTemplate jdbc, AuditService audit, PriceListFollowService follows) {
         this.jdbc = jdbc;
         this.audit = audit;
+        this.follows = follows;
     }
 
     public record ProductPriceInput(UUID priceListId, BigDecimal price) { }
@@ -100,6 +110,8 @@ public class ProductCommandService {
                 storeCurrentPrice(priceInput.priceListId(), id, priceInput.price());
             }
         }
+        // Active lists without an explicit price take the default list price and follow it.
+        follows.copyDefaultPricesForProduct(id);
 
         replaceSuppliers(id, input.supplierIds());
         audit.record(actorId(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS", Map.of("name", name));
@@ -108,6 +120,15 @@ public class ProductCommandService {
 
     @Transactional
     public void update(UUID id, ProductInput input) {
+        update(id, input, false);
+    }
+
+    /**
+     * Updates the product. Lists following the default list are not asked for replacement prices: they take
+     * the default price. {@code acknowledgeFollowers} records that the user accepted the warning about them.
+     */
+    @Transactional
+    public void update(UUID id, ProductInput input, boolean acknowledgeFollowers) {
         validate(input);
         validateSuppliers(input.supplierIds());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
@@ -145,7 +166,9 @@ public class ProductCommandService {
             throw new IllegalStateException("El nuevo costo supera un precio futuro programado; ajuste o cancele esa vigencia primero");
         }
 
+        Set<UUID> followers = new HashSet<>(follows.followerListIds(id));
         List<ProductPriceValidationException.AffectedPriceList> affected = activePrices.stream()
+            .filter(ap -> !followers.contains(ap.priceListId()))
             .filter(ap -> input.cost().compareTo(ap.price()) > 0)
             .map(ap -> new ProductPriceValidationException.AffectedPriceList(ap.priceListId(), ap.code(), ap.price()))
             .toList();
@@ -173,9 +196,18 @@ public class ProductCommandService {
             name, input.description().trim(), categoryName.trim(), nullable(input.presentation()),
             input.cost(), input.categoryId(), input.brandId(), id);
 
+        UUID defaultListId = followers.isEmpty() && (input.prices() == null || input.prices().isEmpty()) ? null : follows.defaultListId();
         if (input.prices() != null) {
             for (ProductPriceInput priceInput : input.prices()) {
                 storeCurrentPrice(priceInput.priceListId(), id, priceInput.price());
+                if (priceInput.priceListId().equals(defaultListId)) {
+                    if (acknowledgeFollowers) follows.acknowledgeWarnings(id, timestamp());
+                    LocalDate today = jdbc.queryForObject(
+                        "select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date", LocalDate.class);
+                    follows.propagateFromDefault(id, priceInput.price(), today, today, timestamp());
+                } else if (followers.contains(priceInput.priceListId())) {
+                    follows.stopFollowing(priceInput.priceListId(), id);
+                }
             }
         }
 
@@ -187,6 +219,8 @@ public class ProductCommandService {
     public void setStatus(UUID id, String status) {
         if (!"ACTIVE".equals(status) && !"INACTIVE".equals(status)) throw new IllegalArgumentException("status debe ser ACTIVE o INACTIVE");
         if (jdbc.update("update catalog.products set status = ? where id = ?", status, id) == 0) throw new EmptyResultDataAccessException(1);
+        // A reactivated product gets the default price in lists created while it was inactive.
+        if ("ACTIVE".equals(status)) follows.copyDefaultPricesForProduct(id);
         audit.record(actorId(), "PRODUCT_STATUS", "PRODUCT", id.toString(), "SUCCESS", Map.of("status", status));
     }
 

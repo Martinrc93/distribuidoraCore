@@ -38,9 +38,10 @@ public class PricingQueryController {
     public PageResponse<Map<String, Object>> prices(
         @PathVariable UUID listId,
         @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "20") int size
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(required = false) String followStatus
     ) {
-        return queries.prices(listId, page, size);
+        return queries.prices(listId, page, size, followStatus == null || followStatus.isBlank() ? null : followStatus);
     }
 
     @GetMapping("/lists/{listId}/products/{productId}/history")

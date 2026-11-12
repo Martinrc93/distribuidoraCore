@@ -34,7 +34,9 @@ type Product = {
 type Movement = { id: string; movementType: string; quantity: number; reason: string; referenceType?: string; referenceId?: string; date: string }
 type Row = Record<string, string>
 
-type PriceList = { id: string; code: string; name: string; status: string }
+type PriceList = { id: string; code: string; name: string; status: string; isDefault?: boolean }
+type Follower = { priceListId: string; code: string; name: string }
+type ProductBody = Record<string, unknown>
 type CatalogOption = { id: string; name: string; status: string }
 type ProductFormValues = {
   description: string
@@ -145,9 +147,13 @@ function ProductForm({
     setForm((current) => ({ ...current, prices: { ...current.prices, [priceListId]: value } }))
   }
 
-  const visiblePriceLists = initial
+  const visiblePriceLists: Array<{ id: string; code: string }> = initial
     ? affectedLists.map((list) => ({ id: list.priceListId, code: list.code }))
     : activeLists
+  const defaultList = activeLists.find((list) => list.isDefault)
+  // On creation only the default list price is required: empty lists take it and follow it.
+  const isOptionalPrice = (listId: string) => !initial && Boolean(defaultList) && listId !== defaultList?.id
+  const [followerWarning, setFollowerWarning] = useState<{ followers: Follower[]; body: ProductBody }>()
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -168,7 +174,8 @@ function ProductForm({
     const prices: Array<{ priceListId: string; price: number }> = []
     for (const list of visiblePriceLists) {
       const rawPrice = form.prices[list.id]
-      const price = Number(rawPrice)
+      if (!rawPrice?.trim() && isOptionalPrice(list.id)) continue
+      const price = Number(rawPrice?.trim().replace(',', '.'))
       if (!rawPrice?.trim() || !Number.isFinite(price) || price < 0) {
         setError(`Ingresá un precio válido para ${list.code}.`)
         return
@@ -180,19 +187,37 @@ function ProductForm({
       prices.push({ priceListId: list.id, price })
     }
 
+    const body: ProductBody = {
+      description: form.description.trim(),
+      cost,
+      ...(prices.length > 0 ? { prices } : {}),
+      categoryId: form.categoryId || null,
+      brandId: form.brandId || null,
+      ...(suppliersChanged ? { supplierIds: form.supplierIds } : {}),
+    }
+    if (initial && defaultList && prices.some((price) => price.priceListId === defaultList.id)) {
+      // Changing the default price also changes the lists that follow it: warn once per product and list.
+      try {
+        const followers = await apiGet<Follower[]>(`/api/pricing/lists/products/${initial.id}/followers`)
+        if (followers.length > 0) {
+          setFollowerWarning({ followers, body })
+          return
+        }
+      } catch (cause) {
+        setError(errorMessage(cause, 'No se pudo consultar las listas que siguen a la lista general.'))
+        return
+      }
+    }
+    await persist(body, false)
+  }
+
+  async function persist(body: ProductBody, acknowledgeFollowers: boolean) {
+    setFollowerWarning(undefined)
     setSaving(true)
     onBusyChange(true)
     setError('')
     try {
-      const body = {
-        description: form.description.trim(),
-        cost,
-        ...(prices.length > 0 ? { prices } : {}),
-        categoryId: form.categoryId || null,
-        brandId: form.brandId || null,
-        ...(suppliersChanged ? { supplierIds: form.supplierIds } : {}),
-      }
-      if (initial) await apiPut(`/api/products/${initial.id}`, body)
+      if (initial) await apiPut(`/api/products/${initial.id}`, acknowledgeFollowers ? { ...body, acknowledgeFollowers: true } : body)
       else await apiPost('/api/products', body)
       await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') })
       await queryClient.invalidateQueries({ queryKey: PRICE_LIST_QUERY_KEY })
@@ -223,7 +248,8 @@ function ProductForm({
       </select></label>
       <div className="field min-w-0 content-start"><span>Nombre</span><output className="read-only-field min-w-0 [overflow-wrap:anywhere]" aria-label="Nombre" aria-describedby="product-name-help" aria-live="polite">{generatedName || 'Marca + descripción'}</output><small id="product-name-help" className="helper-text m-0 font-normal">Se genera automáticamente con la marca y la descripción.</small></div>
       <label className="field"><span>Costo</span><input className="input currency-input" type="text" inputMode="decimal" value={form.cost} onChange={(event) => change('cost', event.target.value)} required disabled={saving} /></label>
-      {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}</span><input className="input currency-input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required disabled={saving} /></label>)}
+      {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}{isOptionalPrice(list.id) ? " (opcional)" : ""}</span><input className="input currency-input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required={!isOptionalPrice(list.id)} placeholder={isOptionalPrice(list.id) ? `Igual a ${defaultList?.code}` : undefined} disabled={saving} /></label>)}
+      {!initial && defaultList && activeLists.length > 1 && <p className="helper-text col-span-full m-0">Las listas sin precio toman el de {defaultList.code} y lo siguen hasta que les pongas un precio propio.</p>}
       <div className="col-span-full min-w-0 grid gap-[8px]">
         <SupplierSelect mode="selection" label="Proveedores (opcional)" emptyLabel="Agregar proveedor..." value="" options={supplierOptions.filter((supplier) => !form.supplierIds.includes(supplier.id))}
           loading={suppliersQuery.isLoading} disabled={saving || suppliersQuery.isError} onChange={(id) => { if (id) setForm((current) => ({ ...current, supplierIds: [...current.supplierIds, id] })) }} />
@@ -237,7 +263,14 @@ function ProductForm({
       {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
       <div className="page-actions">{initial && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar producto' : 'Desactivar producto'}</Button>}<Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || optionsLoading}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar producto'}</Button></div>
     </form>
-  </Panel>{discardDialog}</FormModal>
+  </Panel>{discardDialog}
+    {followerWarning && <ConfirmationDialog
+      title={`El precio también cambia en ${followerWarning.followers.map((follower) => follower.name).join(', ')}`}
+      description={`${followerWarning.followers.length === 1 ? 'Esa lista sigue' : 'Esas listas siguen'} el precio de ${defaultList?.name ?? 'la lista general'} para este producto, así que va a cambiar igual. Si confirmás, no se volverá a avisar para este producto en ${followerWarning.followers.length === 1 ? 'esa lista' : 'esas listas'}.`}
+      confirmLabel="Guardar y no volver a avisar" confirmVariant="primary" cancelLabel="Volver" pendingLabel="Guardando..."
+      pending={saving}
+      onCancel={() => setFollowerWarning(undefined)} onConfirm={() => void persist(followerWarning.body, true)}
+    />}</FormModal>
 }
 
 export default function ProductsPage() {

@@ -29,7 +29,7 @@ public class ProductCommandController {
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<Void> update(@PathVariable UUID id, @Valid @RequestBody ProductPayload body) {
-        service.update(id, body.input()); return ResponseEntity.noContent().build();
+        service.update(id, body.input(), body.acknowledgesFollowers()); return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/status")
@@ -51,8 +51,12 @@ public class ProductCommandController {
         @Valid List<ProductPricePayload> prices,
         @NotNull UUID categoryId,
         @NotNull UUID brandId,
-        List<@NotNull UUID> supplierIds
+        List<@NotNull UUID> supplierIds,
+        /** True when the user accepted the warning about lists following the default list price. */
+        Boolean acknowledgeFollowers
     ) {
+        public boolean acknowledgesFollowers() { return Boolean.TRUE.equals(acknowledgeFollowers); }
+
         public ProductCommandService.ProductInput input() {
             List<ProductCommandService.ProductPriceInput> priceInputs = prices != null
                 ? prices.stream().map(p -> new ProductCommandService.ProductPriceInput(p.priceListId(), p.price())).toList()

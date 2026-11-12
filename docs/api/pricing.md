@@ -70,6 +70,46 @@ La respuesta incluye `priceListId`, `priceListCode`, `productId`, `unitPrice` y
 una lista activa anterior según el orden de identificadores ya definido; si no
 se encuentra ningún precio, se responde `404`.
 
+## Listas que siguen a la General
+
+`catalog.price_list_follows` (V38) marca, por lista y producto, que el precio
+sigue a la lista predeterminada (`is_default`). Se implementa al escribir: cada
+versión de precio de la General (actual o programada) se escribe en la misma
+transacción en las listas que la siguen, así la resolución, los pedidos y los
+snapshots siguen leyendo `product_price_history` sin cambios.
+
+- **Copia:** `POST /api/pricing/lists` y `PATCH .../status` con `ACTIVE` copian a
+  la lista el precio vigente y las vigencias futuras de la General para cada
+  producto activo sin ningún precio en ella. Quedan con `followStatus: PENDING`.
+  Los productos se bloquean antes de copiar para no perder cambios concurrentes.
+  Crear o reactivar un producto también completa las listas activas sin precio.
+- **Seguimiento:** `PUT .../lists/{generalId}/products/{productId}` y la
+  cancelación de una vigencia de la General se aplican también a las listas que
+  la siguen. Un `PUT`, una programación o una cancelación en otra lista convierte
+  el precio en propio (borra el seguimiento).
+- **Productos:** al subir el costo (`PUT /api/products/{id}`) las listas que siguen
+  a la General no se informan como afectadas; un precio enviado para la General se
+  propaga a ellas.
+
+Endpoints (todos con `ADMIN_ALL`):
+
+- `GET /api/pricing/lists/creation-preview` → `{ productsToCopy, defaultListId, defaultListName }`.
+- `GET /api/pricing/lists/{listId}/prices?followStatus=PENDING|CONFIRMED|FOLLOWING|OWN`:
+  filtro opcional; cada fila incluye `followStatus` (`PENDING`, `CONFIRMED` o `null`
+  para precio propio). `GET /api/pricing/lists` incluye `pendingReviewCount`.
+- `POST /api/pricing/lists/{listId}/reviews/confirm` con `{ "productIds": [...] }`
+  (hasta 1000) o sin cuerpo/lista vacía para confirmar todos los pendientes de la
+  lista. Responde `{ "confirmed": n }` y audita `PRICELIST_REVIEW_CONFIRM`.
+- `GET /api/pricing/lists/products/{productId}/followers` → listas que siguen la
+  General para el producto y todavía no tienen el aviso confirmado
+  (`[{ priceListId, code, name }]`).
+- `PUT /api/pricing/lists/{listId}/products/{productId}` y `PUT /api/products/{id}`
+  aceptan `acknowledgeFollowers: true`: registra que el usuario aceptó el aviso y no
+  se vuelve a avisar para ese producto en esas listas (siguen acompañando a la General).
+
+La auditoría agrega `copiedFromDefault`, `propagatedToFollowers`,
+`acknowledgedFollowers` o `stoppedFollowingDefault` cuando corresponde.
+
 ## Errores
 
 - `400 INVALID_REQUEST`: precio inválido, fecha pasada o precio inferior al

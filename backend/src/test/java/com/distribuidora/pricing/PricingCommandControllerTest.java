@@ -60,7 +60,7 @@ class PricingCommandControllerTest {
 
         verify(service).renameList(listId, "Nuevo");
         verify(service).setListStatus(listId, "ACTIVE");
-        verify(service).setProductPrice(listId, productId, new BigDecimal("10.2500"), null);
+        verify(service).setProductPrice(listId, productId, new BigDecimal("10.2500"), null, false);
     }
 
     @Test
@@ -71,6 +71,31 @@ class PricingCommandControllerTest {
             assertThat(annotation).isNotNull();
             assertThat(annotation.value()).isEqualTo("hasAuthority('ADMIN_ALL')");
         }
+    }
+
+    @Test
+    void protectsFollowReviewEndpointsWithAdminAll() throws Exception {
+        for (var method : new java.lang.reflect.Method[]{
+            PricingCommandController.class.getDeclaredMethod("creationPreview"),
+            PricingCommandController.class.getDeclaredMethod("confirmReview", UUID.class, PricingCommandController.ConfirmReviewRequest.class),
+            PricingCommandController.class.getDeclaredMethod("followers", UUID.class)}) {
+            assertThat(method.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+        }
+    }
+
+    @Test
+    void forwardsFollowerAcknowledgementAndReviewConfirmation() {
+        UUID listId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        controller.setProductPrice(listId, productId,
+            new PricingCommandController.ProductPriceRequest(new BigDecimal("12"), null, true));
+        verify(service).setProductPrice(listId, productId, new BigDecimal("12"), null, true);
+
+        org.mockito.Mockito.when(service.confirmFollowingPrices(listId, java.util.List.of(productId))).thenReturn(1);
+        assertThat(controller.confirmReview(listId, new PricingCommandController.ConfirmReviewRequest(java.util.List.of(productId))).confirmed())
+            .isEqualTo(1);
+        controller.confirmReview(listId, null);
+        verify(service).confirmFollowingPrices(listId, null);
     }
 
     @Test

@@ -139,7 +139,32 @@ reemplazo.
 - La lista puede cambiarse durante la creación del pedido.
 - Si falta el precio en la lista activa seleccionada, se prueban las listas
   activas anteriores por identificador descendente.
-- Los cambios de precio son inmediatos y no tienen vigencia futura.
+- Los precios pueden regir desde hoy o programarse con vigencia futura
+  (ver [`pricing.md`](../api/pricing.md)).
+
+##### Listas que siguen a la General
+
+Los productos no pueden quedar sin precio en una lista activa:
+
+- Al crear una lista, o al activar una inactiva, todos los productos activos que
+  no tengan precio en ella se vinculan con el precio vigente (y las vigencias
+  programadas) de `Lista general`. Antes de crear, la interfaz pide confirmación
+  indicando cuántos productos tomarán esos precios.
+- Esos precios quedan **«Sin revisar»** hasta que el usuario los confirma; al
+  confirmarlos quedan **«Sin cambios»**. En ambos estados **siguen a la General**:
+  cada cambio o vigencia programada de la General se aplica también en esa lista.
+- Cuando el usuario pone un precio propio (editar, programar o cancelar una
+  vigencia en esa lista, o reemplazarlo desde el producto), el producto deja de
+  seguir a la General en esa lista.
+- Antes de cambiar un precio de la General, la interfaz avisa qué listas lo siguen.
+  Si el usuario confirma el aviso, no se vuelve a avisar para ese producto en esas
+  listas; los precios siguen acompañando a la General.
+- Un producto nuevo necesita precio en la General; las listas sin precio explícito
+  lo toman y la siguen. Lo mismo ocurre al reactivar un producto.
+- Al subir el costo, solo se piden precios de reemplazo para las listas con precio
+  propio: las que siguen a la General toman el nuevo precio de la General.
+- En la práctica, las instancias ya tienen las diez listas creadas (tres activas),
+  por lo que «agregar» una lista equivale a activar y renombrar una inactiva.
 
 No se guardan precios históricos de la lista como historial independiente; el
 historial comercial se conserva mediante snapshots en pedidos y ventas.

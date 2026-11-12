@@ -13,11 +13,13 @@ type Props = {
   pending?: boolean
   error?: string
   onConfirm: () => void
+  /** `danger` (default) for destructive actions; `primary` to confirm creating or saving. */
+  confirmVariant?: 'danger' | 'primary'
   onCancel: () => void
 }
 
 /** Mount only while confirmation is required. */
-export function ConfirmationDialog({ title, description, confirmLabel, cancelLabel = 'Volver', pendingLabel = 'Procesando...', pending = false, error, onConfirm, onCancel }: Props) {
+export function ConfirmationDialog({ title, description, confirmLabel, cancelLabel = 'Volver', pendingLabel = 'Procesando...', pending = false, error, onConfirm, onCancel, confirmVariant = 'danger' }: Props) {
   const id = useId()
   const dialog = useRef<HTMLDialogElement>(null)
 
@@ -56,7 +58,7 @@ export function ConfirmationDialog({ title, description, confirmLabel, cancelLab
       </div>
       <footer className="confirmation-dialog-footer">
         <Button data-safe-action type="button" variant="secondary" disabled={pending} onClick={onCancel}>{cancelLabel}</Button>
-        <Button type="button" variant="danger" disabled={pending} onClick={onConfirm}>{pending ? pendingLabel : confirmLabel}</Button>
+        <Button type="button" variant={confirmVariant} disabled={pending} onClick={onConfirm}>{pending ? pendingLabel : confirmLabel}</Button>
       </footer>
     </dialog>,
     document.body,

@@ -82,6 +82,15 @@ con datos de Isma/Leo (la reproducción original de los bugs no estuvo disponibl
 
 ### Fase 2 — Listas de precios
 
+**Estado (2026-11-12):** 2.3 implementado con la regla acordada con el usuario
+(V38 `price_list_follows`). Al crear o activar una lista, los productos toman el
+precio de la General con confirmación previa; quedan «Sin revisar» / «Sin cambios»
+y siguen a la General hasta tener precio propio; un aviso por producto y lista
+antes de cambiar la General, que no se repite una vez confirmado. Como las
+instancias ya tienen 10 listas, el camino real es activar una inactiva. En 2.1 se
+corrigió el rechazo de importes con coma decimal («1250,50»), causa probable del
+bug de Isma (sin confirmar con ella).
+
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
 | 2.1 | Corregir edición de precios | S–M | Depende de la reproducción (Fase 0). Sospechas a verificar: listas inactivas rechazan la edición (`La lista de precios no está activa`), precio menor al costo, formato decimal con coma. |

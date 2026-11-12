@@ -34,6 +34,7 @@ flowchart TD
     identity --> audit
     identity --> shared
     catalog --> audit
+    catalog --> pricing
     catalog --> shared
     customer --> audit
     customer --> shared
@@ -70,7 +71,7 @@ solo contiene `package-info.java`.
 `order` coordina el caso de uso de confirmación, pero cada módulo conserva la
 responsabilidad de validar su propio dominio:
 
-- `catalog` valida productos y precios.
+- `catalog` valida productos y precios; usa `pricing.PriceListFollowService` para que las listas que siguen a la General acompañen sus cambios.
 - `customer` valida el cliente.
 - `seller` valida el vendedor si existe asignación.
 - `inventory` registra movimientos y controla concurrencia.

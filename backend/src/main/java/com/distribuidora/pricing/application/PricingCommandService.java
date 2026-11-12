@@ -1,6 +1,7 @@
 package com.distribuidora.pricing.application;
 
 import com.distribuidora.audit.application.AuditService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -11,6 +12,8 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -20,10 +23,17 @@ public class PricingCommandService {
 
     private final JdbcTemplate jdbc;
     private final AuditService audit;
+    private final PriceListFollowService follows;
 
     public PricingCommandService(JdbcTemplate jdbc, AuditService audit) {
+        this(jdbc, audit, new PriceListFollowService(jdbc));
+    }
+
+    @Autowired
+    public PricingCommandService(JdbcTemplate jdbc, AuditService audit, PriceListFollowService follows) {
         this.jdbc = jdbc;
         this.audit = audit;
+        this.follows = follows;
     }
 
     @Transactional
@@ -44,9 +54,43 @@ public class PricingCommandService {
         Timestamp now = timestamp();
         jdbc.update("insert into catalog.price_lists(id, code, name, status, is_default, created_at, updated_at) values (?, ?, ?, 'ACTIVE', false, ?, ?)",
             id, normalizedCode, normalizedName, now, now);
-        audit.record(actorId(), "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS",
-            Map.of("code", normalizedCode));
+        // Existing products are linked with the default list prices and stay marked until reviewed.
+        int copied = follows.copyDefaultPricesIntoList(id);
+        Map<String, Object> details = new HashMap<>(Map.of("code", normalizedCode));
+        if (copied > 0) details.put("copiedFromDefault", copied);
+        audit.record(actorId(), "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS", details);
         return id;
+    }
+
+    /** What creating a list would copy, so the UI can ask for confirmation first. */
+    public Map<String, Object> creationPreview() {
+        UUID defaultId = follows.defaultListId();
+        Map<String, Object> preview = new HashMap<>();
+        preview.put("productsToCopy", follows.activeProductsWithDefaultPrice());
+        preview.put("defaultListId", defaultId);
+        preview.put("defaultListName", defaultId == null ? null
+            : jdbc.queryForObject("select name from catalog.price_lists where id = ?", String.class, defaultId));
+        return preview;
+    }
+
+    /** Marks copied prices as reviewed; they keep following the default list. */
+    @Transactional
+    public int confirmFollowingPrices(UUID listId, List<UUID> productIds) {
+        requireId(listId, "listId");
+        if (productIds != null && productIds.size() > 1000) {
+            throw new IllegalArgumentException("Se pueden confirmar hasta 1000 productos por vez");
+        }
+        jdbc.queryForObject("select id from catalog.price_lists where id = ?", UUID.class, listId);
+        int confirmed = follows.confirm(listId, productIds, actorId(), timestamp());
+        audit.record(actorId(), "PRICELIST_REVIEW_CONFIRM", "PRICE_LIST", listId.toString(), "SUCCESS",
+            Map.of("confirmed", confirmed, "scope", productIds == null || productIds.isEmpty() ? "ALL_PENDING" : "SELECTED"));
+        return confirmed;
+    }
+
+    /** Lists that still warn before the default price of the product changes. */
+    public List<PriceListFollowService.Follower> unacknowledgedFollowers(UUID productId) {
+        requireId(productId, "productId");
+        return follows.unacknowledgedFollowers(productId);
     }
 
     @Transactional
@@ -75,8 +119,11 @@ public class PricingCommandService {
         }
         jdbc.update("update catalog.price_lists set status = ?, updated_at = ? where id = ?",
             status, timestamp(), listId);
-        audit.record(actorId(), "PRICELIST_STATUS", "PRICE_LIST", listId.toString(), "SUCCESS",
-            Map.of("status", status));
+        // An activated list gets the default prices for products it has no price for, like a new list.
+        int copied = "ACTIVE".equals(status) ? follows.copyDefaultPricesIntoList(listId) : 0;
+        Map<String, Object> details = new HashMap<>(Map.of("status", status));
+        if (copied > 0) details.put("copiedFromDefault", copied);
+        audit.record(actorId(), "PRICELIST_STATUS", "PRICE_LIST", listId.toString(), "SUCCESS", details);
     }
 
     @Transactional
@@ -86,6 +133,17 @@ public class PricingCommandService {
 
     @Transactional
     public void setProductPrice(UUID listId, UUID productId, BigDecimal price, LocalDate requestedEffectiveOn) {
+        setProductPrice(listId, productId, price, requestedEffectiveOn, false);
+    }
+
+    /**
+     * Sets a price on a list. On the default list the change is mirrored into the lists that follow it;
+     * {@code acknowledgeFollowers} records that the user accepted the warning, so it is not shown again for
+     * those product/list pairs. On any other list the price becomes its own and stops following.
+     */
+    @Transactional
+    public void setProductPrice(UUID listId, UUID productId, BigDecimal price, LocalDate requestedEffectiveOn,
+                                boolean acknowledgeFollowers) {
         requireId(listId, "listId");
         requireId(productId, "productId");
         validatePrice(price);
@@ -112,33 +170,20 @@ public class PricingCommandService {
             throw new IllegalArgumentException("effectiveOn no puede ser una fecha pasada");
         }
         Timestamp now = timestamp();
-        if (effectiveOn.equals(today)) {
-            jdbc.update("insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at) values (?, ?, ?, ?, ?) on conflict (price_list_id, product_id) do update set price = excluded.price, updated_at = excluded.updated_at",
-                listId, productId, price, now, now);
-            jdbc.update("""
-                insert into catalog.product_price_history
-                    (id, price_list_id, product_id, price, effective_on, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?)
-                """, UUID.randomUUID(), listId, productId, price, effectiveOn, now, now);
-        } else {
-            var scheduled = jdbc.queryForList("""
-                select id from catalog.product_price_history
-                where price_list_id = ? and product_id = ? and effective_on = ?
-                order by created_at desc, id desc limit 1 for update
-                """, UUID.class, listId, productId, effectiveOn);
-            if (scheduled.isEmpty()) {
-                jdbc.update("""
-                    insert into catalog.product_price_history
-                        (id, price_list_id, product_id, price, effective_on, created_at, updated_at)
-                    values (?, ?, ?, ?, ?, ?, ?)
-                    """, UUID.randomUUID(), listId, productId, price, effectiveOn, now, now);
-            } else {
-                jdbc.update("update catalog.product_price_history set price = ?, updated_at = ? where id = ?",
-                    price, now, scheduled.getFirst());
-            }
-        }
-        audit.record(actorId(), "PRODUCT_PRICE_UPDATE", "PRODUCT_PRICE", listId + ":" + productId, "SUCCESS",
+        follows.writePrice(listId, productId, price, effectiveOn, today, now);
+        Map<String, Object> details = new HashMap<>(
             Map.of("price", price, "effectiveOn", effectiveOn.toString(), "scheduled", effectiveOn.isAfter(today)));
+        if (follows.isDefault(listId)) {
+            if (acknowledgeFollowers) {
+                int acknowledged = follows.acknowledgeWarnings(productId, now);
+                if (acknowledged > 0) details.put("acknowledgedFollowers", acknowledged);
+            }
+            int propagated = follows.propagateFromDefault(productId, price, effectiveOn, today, now);
+            if (propagated > 0) details.put("propagatedToFollowers", propagated);
+        } else if (follows.stopFollowing(listId, productId)) {
+            details.put("stoppedFollowingDefault", true);
+        }
+        audit.record(actorId(), "PRODUCT_PRICE_UPDATE", "PRODUCT_PRICE", listId + ":" + productId, "SUCCESS", details);
     }
 
     @Transactional
@@ -159,8 +204,15 @@ public class PricingCommandService {
               and effective_on > (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date
             """, listId, productId, effectiveOn);
         if (deleted == 0) throw new EmptyResultDataAccessException(1);
+        Map<String, Object> details = new HashMap<>(Map.of("effectiveOn", effectiveOn.toString()));
+        if (follows.isDefault(listId)) {
+            int propagated = follows.propagateCancel(productId, effectiveOn);
+            if (propagated > 0) details.put("propagatedToFollowers", propagated);
+        } else if (follows.stopFollowing(listId, productId)) {
+            details.put("stoppedFollowingDefault", true);
+        }
         audit.record(actorId(), "PRODUCT_PRICE_SCHEDULE_CANCEL", "PRODUCT_PRICE",
-            listId + ":" + productId, "SUCCESS", Map.of("effectiveOn", effectiveOn.toString()));
+            listId + ":" + productId, "SUCCESS", details);
     }
 
     private void validatePrice(BigDecimal price) {

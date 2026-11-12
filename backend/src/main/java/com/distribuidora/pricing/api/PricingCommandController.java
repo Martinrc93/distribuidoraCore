@@ -1,5 +1,6 @@
 package com.distribuidora.pricing.api;
 
+import com.distribuidora.pricing.application.PriceListFollowService;
 import com.distribuidora.pricing.application.PricingCommandService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
@@ -9,6 +10,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -35,6 +39,25 @@ public class PricingCommandController {
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<IdResponse> createList(@Valid @NotNull @RequestBody CreateListRequest request) {
         return ResponseEntity.status(201).body(new IdResponse(service.createList(request.code(), request.name())));
+    }
+
+    @GetMapping("/creation-preview")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public Map<String, Object> creationPreview() {
+        return service.creationPreview();
+    }
+
+    @PostMapping("/{listId}/reviews/confirm")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ConfirmReviewResponse confirmReview(@PathVariable UUID listId, @Valid @RequestBody(required = false) ConfirmReviewRequest request) {
+        return new ConfirmReviewResponse(service.confirmFollowingPrices(listId, request == null ? null : request.productIds()));
+    }
+
+    /** Lists that follow the default price of the product and still show a warning before it changes. */
+    @GetMapping("/products/{productId}/followers")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public List<PriceListFollowService.Follower> followers(@PathVariable UUID productId) {
+        return service.unacknowledgedFollowers(productId);
     }
 
     @PutMapping("/{listId}")
@@ -58,7 +81,7 @@ public class PricingCommandController {
         @PathVariable UUID productId,
         @Valid @NotNull @RequestBody ProductPriceRequest request
     ) {
-        service.setProductPrice(listId, productId, request.price(), request.effectiveOn());
+        service.setProductPrice(listId, productId, request.price(), request.effectiveOn(), request.acknowledgesFollowers());
         return ResponseEntity.noContent().build();
     }
 
@@ -82,12 +105,23 @@ public class PricingCommandController {
 
     public record StatusRequest(@NotBlank String status) { }
 
+    /** {@code acknowledgeFollowers=true} means the user accepted the warning about lists following the default one. */
     public record ProductPriceRequest(
         @NotNull @DecimalMin("0.0000") @Digits(integer = 15, fraction = 4) BigDecimal price,
-        LocalDate effectiveOn
+        LocalDate effectiveOn,
+        Boolean acknowledgeFollowers
     ) {
-        public ProductPriceRequest(BigDecimal price) { this(price, null); }
+        public ProductPriceRequest(BigDecimal price) { this(price, null, null); }
+
+        public ProductPriceRequest(BigDecimal price, LocalDate effectiveOn) { this(price, effectiveOn, null); }
+
+        public boolean acknowledgesFollowers() { return Boolean.TRUE.equals(acknowledgeFollowers); }
     }
+
+    /** Without product ids, every pending price of the list is confirmed. */
+    public record ConfirmReviewRequest(@Size(max = 1000) List<UUID> productIds) { }
+
+    public record ConfirmReviewResponse(int confirmed) { }
 
     public record IdResponse(UUID id) { }
 }

@@ -17,9 +17,11 @@ public class PricingQueryService {
             select pl.id as "priceListId", pl.code as "priceListCode",
                    p.id as "productId", p.name,
                    h.price, h.effective_on as "effectiveOn",
-                   h.created_at as "createdAt", h.updated_at as "updatedAt"
+                   h.created_at as "createdAt", h.updated_at as "updatedAt",
+                   f.review_status as "followStatus"
             from catalog.price_lists pl
             cross join catalog.products p
+            left join catalog.price_list_follows f on f.price_list_id = pl.id and f.product_id = p.id
             left join lateral (
                 select history.price, history.effective_on, history.created_at, history.updated_at
                 from catalog.product_price_history history
@@ -41,20 +43,38 @@ public class PricingQueryService {
     public PageResponse<Map<String, Object>> lists(int page, int size) {
         return page("""
             select id, code, name, status, is_default as "isDefault",
-                   created_at as "createdAt", updated_at as "updatedAt"
+                   created_at as "createdAt", updated_at as "updatedAt",
+                   (select count(*) from catalog.price_list_follows f
+                    where f.price_list_id = catalog.price_lists.id and f.review_status = 'PENDING') as "pendingReviewCount"
             from catalog.price_lists
             order by code
             """, "select count(*) from catalog.price_lists", page, size);
     }
 
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size) {
+        return prices(listId, page, size, null);
+    }
+
+    /**
+     * Current prices of a list. {@code followStatus} is PENDING (copied, not reviewed), CONFIRMED (reviewed,
+     * still following the default list) or null (own price). Filter values: PENDING, CONFIRMED, FOLLOWING, OWN.
+     */
+    public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size, String followFilter) {
+        String filter = switch (followFilter == null ? "" : followFilter) {
+            case "" -> "";
+            case "PENDING" -> " and \"followStatus\" = 'PENDING'";
+            case "CONFIRMED" -> " and \"followStatus\" = 'CONFIRMED'";
+            case "FOLLOWING" -> " and \"followStatus\" is not null";
+            case "OWN" -> " and \"followStatus\" is null";
+            default -> throw new IllegalArgumentException("followStatus debe ser PENDING, CONFIRMED, FOLLOWING u OWN");
+        };
         return page(RESOLVED_PRICE_CTE + """
             select "priceListId", "priceListCode", "productId", name, price,
-                   "effectiveOn", "createdAt", "updatedAt"
+                   "effectiveOn", "createdAt", "updatedAt", "followStatus"
             from resolved_prices
-            where price is not null
+            where price is not null%s
             order by name, "productId"
-            """, RESOLVED_PRICE_CTE + "select count(*) from resolved_prices where price is not null",
+            """.formatted(filter), RESOLVED_PRICE_CTE + "select count(*) from resolved_prices where price is not null" + filter,
             page, size, listId);
     }
 

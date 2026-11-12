@@ -102,7 +102,7 @@ class ProductCommandControllerTest {
                     """.formatted(UUID.randomUUID())))
             .andExpect(status().isNoContent());
 
-        verify(service).update(eq(id), any());
+        verify(service).update(eq(id), any(), eq(false));
     }
 
     @Test
@@ -138,7 +138,7 @@ class ProductCommandControllerTest {
         AffectedPriceList affected = new AffectedPriceList(listId, "GENERAL", BigDecimal.valueOf(100));
 
         doThrow(new ProductPriceValidationException("El nuevo costo supera listas activas", List.of(affected)))
-            .when(service).update(eq(id), any());
+            .when(service).update(eq(id), any(), org.mockito.ArgumentMatchers.anyBoolean());
 
         mockMvc.perform(put("/api/products/{id}", id)
                 .contentType(APPLICATION_JSON)
