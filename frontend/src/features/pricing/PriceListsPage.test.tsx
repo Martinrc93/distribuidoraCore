@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PriceListsPage from './PriceListsPage'
+import { selectEntity } from '../../test/selectEntity'
 
 function token(authorities: string[]) {
   return `header.${btoa(JSON.stringify({ authorities }))}.signature`
@@ -277,5 +278,28 @@ describe('PriceListsPage', () => {
       method: 'PUT', body: JSON.stringify({ price: 1250.5, acknowledgeFollowers: true }),
     })))
     expect(await screen.findByText(/actualizado, también en Minorista\./)).toBeInTheDocument()
+  })
+
+  it('filters list prices by category, brand and name and keeps the filters in the URL', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const path = String(input)
+      if (path === '/api/pricing/lists?page=0&size=20') return response(lists)
+      if (path === '/api/categories') return response([{ id: 'category-1', name: 'Almacén', status: 'ACTIVE' }, { id: 'category-2', name: 'Bebidas', status: 'ACTIVE' }])
+      if (path === '/api/brands') return response([{ id: 'brand-1', name: 'Molino Norte', status: 'ACTIVE' }])
+      if (path.startsWith('/api/pricing/lists/list-1/prices') && path.includes('categoryId=category-2')) return response({ ...prices, content: [], totalElements: 0 })
+      return response(prices)
+    })
+    renderPage()
+
+    expect(await screen.findByText('Harina')).toBeInTheDocument()
+    await selectEntity(user, 'Categoría', 'Bebidas')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/prices?page=0&size=20&categoryId=category-2', expect.anything()))
+    expect(await screen.findByText('No hay precios para estos filtros')).toBeInTheDocument()
+    await selectEntity(user, 'Marca', 'Molino Norte')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/prices?page=0&size=20&categoryId=category-2&brandId=brand-1', expect.anything()))
+    await user.click(screen.getByRole('button', { name: 'Limpiar filtros' }))
+    await user.type(screen.getByLabelText('Buscar producto en la lista'), 'har')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/prices?page=0&size=20&search=har', expect.anything()))
   })
 })

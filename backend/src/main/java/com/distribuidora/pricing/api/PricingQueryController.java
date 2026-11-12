@@ -39,9 +39,13 @@ public class PricingQueryController {
         @PathVariable UUID listId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size,
-        @RequestParam(required = false) String followStatus
+        @RequestParam(required = false) String followStatus,
+        @RequestParam(required = false) UUID categoryId,
+        @RequestParam(required = false) UUID brandId,
+        @RequestParam(required = false) String search
     ) {
-        return queries.prices(listId, page, size, followStatus == null || followStatus.isBlank() ? null : followStatus);
+        return queries.prices(listId, page, size, new PricingQueryService.PriceFilter(
+            followStatus == null || followStatus.isBlank() ? null : followStatus, categoryId, brandId, search));
     }
 
     @GetMapping("/lists/{listId}/products/{productId}/history")

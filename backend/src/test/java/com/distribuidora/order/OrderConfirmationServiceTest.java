@@ -177,16 +177,17 @@ class OrderConfirmationServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"assigned", "general", "admin"})
+    @ValueSource(strings = {"assigned", "general", "admin", "permission"})
     void confirmsAuthorizedExplicitPriceList(String scenario) {
-        authenticate(scenario.equals("admin") ? "ADMIN_ALL" : "ORDER_CREATE");
+        if (scenario.equals("permission")) authenticate("ORDER_CREATE", "ORDER_PRICE_LIST_CHANGE");
+        else authenticate(scenario.equals("admin") ? "ADMIN_ALL" : "ORDER_CREATE");
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         UUID listId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), eq(customerId))).thenReturn(scenario.equals("general")
             ? Map.of("id", customerId, "status", "ACTIVE")
-            : Map.of("id", customerId, "status", "ACTIVE", "price_list_id", scenario.equals("admin") ? UUID.randomUUID() : listId));
+            : Map.of("id", customerId, "status", "ACTIVE", "price_list_id", scenario.equals("admin") || scenario.equals("permission") ? UUID.randomUUID() : listId));
         if (scenario.equals("general")) when(jdbc.queryForObject(contains("code = 'GENERAL'"), eq(UUID.class))).thenReturn(listId);
         when(pricing.resolve(customerId, productId, listId)).thenReturn(Map.of(
             "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN));

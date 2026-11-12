@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -15,7 +16,7 @@ public class PricingQueryService {
     private static final String RESOLVED_PRICE_CTE = """
         with resolved_prices as (
             select pl.id as "priceListId", pl.code as "priceListCode",
-                   p.id as "productId", p.name,
+                   p.id as "productId", p.name, p.category_id as "categoryId", p.brand_id as "brandId",
                    h.price, h.effective_on as "effectiveOn",
                    h.created_at as "createdAt", h.updated_at as "updatedAt",
                    f.review_status as "followStatus"
@@ -52,7 +53,7 @@ public class PricingQueryService {
     }
 
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size) {
-        return prices(listId, page, size, null);
+        return prices(listId, page, size, (PriceFilter) null);
     }
 
     /**
@@ -60,22 +61,45 @@ public class PricingQueryService {
      * still following the default list) or null (own price). Filter values: PENDING, CONFIRMED, FOLLOWING, OWN.
      */
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size, String followFilter) {
-        String filter = switch (followFilter == null ? "" : followFilter) {
+        return prices(listId, page, size, new PriceFilter(followFilter, null, null, null));
+    }
+
+    /** Optional filters for a list's prices: follow status, category (rubro), brand and product name. */
+    public record PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search) { }
+
+    public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size, PriceFilter priceFilter) {
+        PriceFilter criteria = priceFilter == null ? new PriceFilter(null, null, null, null) : priceFilter;
+        StringBuilder filter = new StringBuilder(switch (criteria.followStatus() == null ? "" : criteria.followStatus()) {
             case "" -> "";
             case "PENDING" -> " and \"followStatus\" = 'PENDING'";
             case "CONFIRMED" -> " and \"followStatus\" = 'CONFIRMED'";
             case "FOLLOWING" -> " and \"followStatus\" is not null";
             case "OWN" -> " and \"followStatus\" is null";
             default -> throw new IllegalArgumentException("followStatus debe ser PENDING, CONFIRMED, FOLLOWING u OWN");
-        };
+        });
+        List<Object> parameters = new ArrayList<>(List.of(listId));
+        if (criteria.categoryId() != null) {
+            filter.append(" and \"categoryId\" = ?");
+            parameters.add(criteria.categoryId());
+        }
+        if (criteria.brandId() != null) {
+            filter.append(" and \"brandId\" = ?");
+            parameters.add(criteria.brandId());
+        }
+        String search = criteria.search() == null ? "" : criteria.search().trim();
+        if (!search.isEmpty()) {
+            if (search.length() > 200) throw new IllegalArgumentException("search admite hasta 200 caracteres");
+            filter.append(" and position(lower(?) in lower(name)) > 0");
+            parameters.add(search);
+        }
         return page(RESOLVED_PRICE_CTE + """
             select "priceListId", "priceListCode", "productId", name, price,
-                   "effectiveOn", "createdAt", "updatedAt", "followStatus"
+                   "effectiveOn", "createdAt", "updatedAt", "followStatus", "categoryId", "brandId"
             from resolved_prices
             where price is not null%s
             order by name, "productId"
             """.formatted(filter), RESOLVED_PRICE_CTE + "select count(*) from resolved_prices where price is not null" + filter,
-            page, size, listId);
+            page, size, parameters.toArray());
     }
 
     public PageResponse<Map<String, Object>> history(UUID listId, UUID productId, int page, int size) {

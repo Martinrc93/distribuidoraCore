@@ -326,6 +326,10 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   inicial) y «Guardar y no volver a avisar». Confirmar envía `acknowledgeFollowers`.
 - Los importes de precio aceptan formato argentino («1.250,50») además de punto
   decimal; el campo se precarga con coma decimal.
+- La tabla de precios de cualquier lista ofrece «Buscar producto», «Categoría» y
+  «Marca» (`SearchableSelect`, opciones completas) con «Limpiar filtros»; se guardan
+  en la URL (`q`, `categoryId`, `brandId`), vuelven a la primera página y se
+  conservan al cambiar de lista.
 - En el alta de productos solo es obligatorio el precio de la General; las demás
   listas muestran «(opcional)» y el placeholder «Igual a GENERAL».
 

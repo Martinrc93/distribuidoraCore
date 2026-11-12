@@ -113,6 +113,8 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
+  // Sellers may pick another active list when their role has ORDER_PRICE_LIST_CHANGE.
+  const canChangeList = isAdmin || hasAuthority('ORDER_PRICE_LIST_CHANGE')
   const [initialOrderDate] = useState(currentOrderDate)
   const [orderDate, setOrderDate] = useState(initialOrderDate)
   const parsedOrderDate = parseOrderDate(orderDate)
@@ -146,7 +148,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const customer = customers.find((item) => item.id === customerId)
   const customerBalance = Number(customer?.balance ?? 0)
   const defaultListId = customer ? customer.priceListId || activeLists.find((list) => list.code === 'GENERAL')?.id || '' : ''
-  const resolvedListId = (isAdmin ? explicitListId : '') || defaultListId
+  const resolvedListId = (canChangeList ? explicitListId : '') || defaultListId
   const selectedList = activeLists.find((list) => list.id === resolvedListId)
   const previousOrderQuery = useQuery({
     queryKey: ['order-create-previous-order', customerId],
@@ -226,7 +228,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   }
 
   function selectPriceList(value: string) {
-    if (!isAdmin) return
+    if (!canChangeList) return
     draftChanged()
     setExplicitListId(value)
     setSelectedProductPriceOverride(undefined)
@@ -413,7 +415,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
               {editOrder ? <SellerSelect mode="selection" label="Vendedor" options={[{ id: 'locked-seller', name: editOrder.order.seller ?? 'Sin asignar' }]} value="locked-seller" onChange={() => {}} disabled /> : isAdmin
                 ? <SellerSelect mode="selection" label="Vendedor" options={(sellersQuery.data?.content ?? []).map((seller) => ({ id: seller.id, name: seller.displayName }))} value={sellerId} onChange={(value) => { draftChanged(); setSellerId(value) }} emptyLabel="Usar vendedor del cliente" disabled={submitting} />
                 : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>}
-              <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" aria-invalid={Boolean(customerId && resolvedListId && !selectedList)} aria-describedby={customerId && resolvedListId && !selectedList ? 'order-price-list-error' : undefined} value={resolvedListId} onChange={(event) => selectPriceList(event.target.value)} required disabled={submitting || !isAdmin}><option value="">Seleccionar lista...</option>{resolvedListId && !selectedList && <option value={resolvedListId} disabled>Lista asignada no disponible</option>}{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select>{customerId && resolvedListId && !selectedList && <span id="order-price-list-error" className="error-text">{isAdmin ? 'Seleccioná una lista activa para continuar.' : 'La lista asignada no está disponible. Solicitá su revisión a un administrador.'}</span>}</label>
+              <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" aria-invalid={Boolean(customerId && resolvedListId && !selectedList)} aria-describedby={customerId && resolvedListId && !selectedList ? 'order-price-list-error' : undefined} value={resolvedListId} onChange={(event) => selectPriceList(event.target.value)} required disabled={submitting || !canChangeList}><option value="">Seleccionar lista...</option>{resolvedListId && !selectedList && <option value={resolvedListId} disabled>Lista asignada no disponible</option>}{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select>{customerId && resolvedListId && !selectedList && <span id="order-price-list-error" className="error-text">{canChangeList ? 'Seleccioná una lista activa para continuar.' : 'La lista asignada no está disponible. Solicitá su revisión a un administrador.'}</span>}</label>
               <div className="order-previous-action"><Button type="button" variant="secondary" onClick={loadPreviousOrder} disabled={!customerId || !selectedList || previousOrderQuery.isFetching || previousOrderQuery.isError || !previousOrderQuery.data?.available || submitting} title={!customerId ? 'Seleccioná un cliente para consultar su último pedido.' : previousOrderQuery.isFetching ? 'Consultando el último pedido del cliente.' : previousOrderQuery.isError ? 'No se pudo consultar el pedido anterior.' : !previousOrderQuery.data?.available ? 'Este cliente no tiene pedidos anteriores.' : 'Reemplazar los productos del borrador con los del último pedido del cliente.'}>Cargar pedido anterior</Button></div>
             </div>
             {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}

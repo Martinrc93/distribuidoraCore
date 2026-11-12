@@ -421,14 +421,15 @@ public class OrderConfirmationService {
     }
 
     private void validatePriceList(ConfirmationCommand request, Map<String, Object> customer) {
-        if (hasAuthority("ADMIN_ALL") || request.priceListId() == null) return;
+        // The selected list must still be active; the pricing resolution rejects inactive lists.
+        if (hasAuthority("ADMIN_ALL") || hasAuthority("ORDER_PRICE_LIST_CHANGE") || request.priceListId() == null) return;
         UUID assignedListId = (UUID) customer.get("price_list_id");
         if (assignedListId == null) {
             assignedListId = jdbc.queryForObject(
                 "select id from catalog.price_lists where code = 'GENERAL' and status = 'ACTIVE'", UUID.class);
         }
         if (!request.priceListId().equals(assignedListId)) {
-            throw new AccessDeniedException("ADMIN_ALL es requerido para cambiar la lista de precios del cliente");
+            throw new AccessDeniedException("ORDER_PRICE_LIST_CHANGE es requerido para cambiar la lista de precios del cliente");
         }
     }
 

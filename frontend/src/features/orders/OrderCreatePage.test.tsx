@@ -870,6 +870,20 @@ describe('OrderCreatePage', () => {
     expect(screen.getByLabelText('Producto')).toBeEnabled()
   })
 
+  it('lets a seller with ORDER_PRICE_LIST_CHANGE choose another active list for the order', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      if (String(input).startsWith('/api/pricing/lists')) return response({ ...lists, content: [...lists.content, { id: 'general', code: 'GENERAL', name: 'General', status: 'ACTIVE' }] })
+      return catalogResponse(input)
+    })
+    renderPage(['ORDER_CREATE', 'ORDER_PRICE_LIST_CHANGE'])
+    await selectEntity(user, 'Cliente', 'Almacén Norte')
+    expect(screen.getByLabelText('Lista de precios')).toHaveValue('list-1')
+    expect(screen.getByLabelText('Lista de precios')).toBeEnabled()
+    await user.selectOptions(screen.getByLabelText('Lista de precios'), 'general')
+    expect(screen.getByLabelText('Lista de precios')).toHaveValue('general')
+  })
+
   it('loads later list pages so the customer assigned list is visible and its prices are used', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {

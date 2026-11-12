@@ -20,7 +20,9 @@ escrituras inmediatas antiguas; las lecturas de negocio usan el historial.
 ## Consultar listas y precios actuales
 
 - `GET /api/pricing/lists?page=0&size=20`
-- `GET /api/pricing/lists/{listId}/prices?page=0&size=20`
+- `GET /api/pricing/lists/{listId}/prices?page=0&size=20`: filtros opcionales
+  `categoryId` (rubro), `brandId`, `search` (nombre, sin distinguir mayúsculas) y
+  `followStatus`, combinados antes de paginar. Cada fila incluye `categoryId` y `brandId`.
 
 La lista de precios devuelve, por producto, el precio efectivo hoy y el campo
 `effectiveOn` que lo estableció.

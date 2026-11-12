@@ -91,6 +91,14 @@ instancias ya tienen 10 listas, el camino real es activar una inactiva. En 2.1 s
 corrigió el rechazo de importes con coma decimal («1250,50»), causa probable del
 bug de Isma (sin confirmar con ella).
 
+**Decisiones del usuario (2026-11-12):** 2.5 implementado (filtros por categoría,
+marca y nombre en la tabla de precios). 2.6 implementado tras confirmar que lo
+pidió Leo: permiso `ORDER_PRICE_LIST_CHANGE` (V39), otorgado a ADMIN y SELLER en
+ambas instancias y revocable por rol. Descartados: el aumento masivo por % de 2.4
+(«no se manejan de esa manera») y 2.2 (renombrar, activar y editar precios
+alcanza; el código es un identificador interno). Queda abierto si se quiere la
+edición en línea de precios de 2.4 sin el aumento por %.
+
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
 | 2.1 | Corregir edición de precios | S–M | Depende de la reproducción (Fase 0). Sospechas a verificar: listas inactivas rechazan la edición (`La lista de precios no está activa`), precio menor al costo, formato decimal con coma. |

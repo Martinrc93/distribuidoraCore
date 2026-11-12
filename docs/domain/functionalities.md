@@ -136,7 +136,8 @@ reemplazo.
 - Un cliente puede tener una lista asignada, pero no es obligatorio.
 - `GENERAL` (`Lista general`) es la lista predeterminada cuando el cliente no tiene una lista
   asignada; no se crea una cuarta lista automática.
-- La lista puede cambiarse durante la creación del pedido.
+- La lista puede cambiarse durante la creación del pedido (administradores y
+  vendedores con el permiso `ORDER_PRICE_LIST_CHANGE`, otorgado por defecto).
 - Si falta el precio en la lista activa seleccionada, se prueban las listas
   activas anteriores por identificador descendente.
 - Los precios pueden regir desde hoy o programarse con vigencia futura
@@ -453,6 +454,7 @@ la aplicación.
 | Crear pedidos | Sí | Sí |
 | Confirmar pedidos | Sí | Sí |
 | Modificar pedidos | No | Sí |
+| Cambiar la lista de precios del pedido | Sí (`ORDER_PRICE_LIST_CHANGE`) | Sí |
 | Modificar precios | No | Sí |
 | Aplicar descuentos | No | Sí |
 | Registrar pagos | Sí | Sí |

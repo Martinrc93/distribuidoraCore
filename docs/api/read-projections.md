@@ -127,9 +127,9 @@ para el pedido y reutiliza el resultado al seleccionar y agregar líneas.
 
 En la creación de pedidos, la UI selecciona automáticamente `priceListId` del
 cliente; si es nulo, usa la lista activa `GENERAL`, conforme al criterio de
-pricing. Para vendedores, el selector permanece deshabilitado y la confirmación
-rechaza con `403` una lista diferente a la asignada (o `GENERAL` si no hay
-asignación). Solo `ADMIN_ALL` puede elegir otra lista activa. Si la lista
+pricing. Elegir otra lista activa requiere `ADMIN_ALL` u `ORDER_PRICE_LIST_CHANGE`
+(V39 lo otorga a `ADMIN` y `SELLER`; se puede quitar por rol). Sin ese permiso el
+selector queda deshabilitado y la confirmación rechaza con `403` una lista distinta a la asignada (o `GENERAL`). Si la lista
 asignada no está disponible, se bloquea la creación y se solicita revisión
 administrativa. La confirmación envía `payments: []`: el pedido se registra sin cobro
 inicial y su importe queda pendiente en cuenta corriente. El resumen de totales

@@ -56,7 +56,8 @@ Reglas:
 - Los precios aplicados se guardan en `OrderItem` y `Sale`.
 - El cliente puede tener una lista de precios opcional.
 - Si no tiene lista, se utiliza `GENERAL`.
-- La lista puede cambiarse durante la creación del pedido.
+- La lista puede cambiarse durante la creación del pedido: `ADMIN_ALL` o el permiso
+  `ORDER_PRICE_LIST_CHANGE` (otorgado a `ADMIN` y `SELLER` desde V39, revocable por rol).
 - `sellerId` es opcional en la confirmación y solo `ADMIN_ALL` puede elegirlo;
   si se omite, se utiliza el vendedor asignado al cliente.
 - El vendedor resuelto se persiste en `orders.orders.seller_id`. Para usuarios

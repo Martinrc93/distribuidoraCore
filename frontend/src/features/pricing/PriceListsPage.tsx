@@ -13,6 +13,7 @@ import { useUrlListState } from '../../shared/useUrlListState'
 import { FormModal } from '../../shared/components/FormModal'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 import { Badge } from '../../shared/components/Badge'
+import { SearchableSelect } from '../../shared/components/SearchableSelect'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean; pendingReviewCount?: number }
 /** `followStatus`: PENDING (copied from the default list, not reviewed), CONFIRMED (reviewed, still follows it) or null (own price). */
@@ -20,6 +21,7 @@ type ProductPrice = { productId: string; name: string; price: number; effectiveO
 type FollowFilter = '' | 'PENDING' | 'FOLLOWING' | 'OWN'
 type CreationPreview = { productsToCopy: number; defaultListName?: string | null }
 type Follower = { priceListId: string; code: string; name: string }
+type CatalogOption = { id: string; name: string; status: string }
 type FollowerWarning = { followers: Follower[]; amount: number; effectiveOn: string }
 
 const MAX_PRICE_LISTS = 10
@@ -113,7 +115,31 @@ export default function PriceListsPage() {
   const [followFilter, setFollowFilter] = useState<FollowFilter>('')
   const showFollowState = Boolean(selectedList && !selectedList.isDefault)
   const activeFollowFilter = showFollowState ? followFilter : ''
-  const pricesPath = `/api/pricing/lists/${selectedId}/prices?page=${pricePage}&size=${pageSize}${activeFollowFilter ? `&followStatus=${activeFollowFilter}` : ''}`
+  // Product filters (rubro/category, brand and name) live in the URL so they survive reloads and list changes.
+  const priceSearch = searchParams.get('q') ?? ''
+  const priceCategoryId = searchParams.get('categoryId') ?? ''
+  const priceBrandId = searchParams.get('brandId') ?? ''
+  const hasProductFilters = Boolean(priceSearch.trim() || priceCategoryId || priceBrandId)
+  const categoriesQuery = useQuery({ queryKey: ['/api/categories'], queryFn: () => apiGet<CatalogOption[]>('/api/categories') })
+  const brandsQuery = useQuery({ queryKey: ['/api/brands'], queryFn: () => apiGet<CatalogOption[]>('/api/brands') })
+  const productFilterParams = (priceSearch.trim() ? `&search=${encodeURIComponent(priceSearch.trim())}` : '')
+    + (priceCategoryId ? `&categoryId=${encodeURIComponent(priceCategoryId)}` : '')
+    + (priceBrandId ? `&brandId=${encodeURIComponent(priceBrandId)}` : '')
+  const pricesPath = `/api/pricing/lists/${selectedId}/prices?page=${pricePage}&size=${pageSize}${activeFollowFilter ? `&followStatus=${activeFollowFilter}` : ''}${productFilterParams}`
+
+  function setPriceFilter(key: 'q' | 'categoryId' | 'brandId', value: string) {
+    const next = new URLSearchParams(searchParams)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    next.delete('pricePage')
+    setSearchParams(next)
+  }
+
+  function clearPriceFilters() {
+    const next = new URLSearchParams(searchParams)
+    for (const key of ['q', 'categoryId', 'brandId', 'pricePage']) next.delete(key)
+    setSearchParams(next)
+  }
   const pricesKey = [pricesPath]
   const pricesQuery = useQuery({ queryKey: pricesKey, queryFn: () => apiGet<ApiPage<ProductPrice>>(pricesPath), enabled: Boolean(selectedId) })
   const historyPath = editingHistoryProduct && selectedId
@@ -378,15 +404,22 @@ export default function PriceListsPage() {
         {listExpanded && isAdmin && selectedList && <div className="page-actions price-list-actions"><Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button><Button variant="secondary" onClick={() => { setError(''); setStatusList(selectedList) }}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button></div>}
         {listsQuery.data && listsQuery.data.totalPages > 1 && <div className="pagination"><span>Página {listPage + 1} de {listsQuery.data.totalPages} · {listsQuery.data.totalElements} listas</span><div><Button variant="secondary" onClick={() => setListPage(listPage - 1)} disabled={listPage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setListPage(listPage + 1)} disabled={listPage + 1 >= listsQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
-      <Panel title={selectedList ? `Precios de ${selectedList.name}` : 'Precios'} description={pricesQuery.data ? `${pricesQuery.data.totalElements} productos ${activeFollowFilter ? 'con este filtro' : 'en esta lista'}` : selectedList ? `${selectedList.code}${selectedList.isDefault ? ' · Lista predeterminada' : ''}` : undefined}
+      <Panel title={selectedList ? `Precios de ${selectedList.name}` : 'Precios'} description={pricesQuery.data ? `${pricesQuery.data.totalElements} productos ${activeFollowFilter || hasProductFilters ? 'con estos filtros' : 'en esta lista'}` : selectedList ? `${selectedList.code}${selectedList.isDefault ? ' · Lista predeterminada' : ''}` : undefined}
         action={showFollowState ? <div className="price-list-controls">
           <label className="price-list-filter"><span>Estado</span><select className="select" aria-label="Filtrar por estado del precio" value={followFilter} onChange={(event) => { setFollowFilter(event.target.value as FollowFilter); setPricePage(0) }}>
             <option value="">Todos</option><option value="PENDING">Sin revisar</option><option value="FOLLOWING">Siguen a {defaultListName}</option><option value="OWN">Precio propio</option>
           </select></label>
           {isAdmin && pendingReviewCount > 0 && <Button variant="secondary" disabled={confirmingReview} onClick={() => void confirmReview()}>{confirmingReview ? 'Confirmando...' : `Confirmar ${pendingReviewCount} sin revisar`}</Button>}
         </div> : undefined}>
+        <div className="toolbar items-end price-product-filters">
+          <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar producto</span><input className="input search-input [@media(max-width:640px)]:max-w-none" aria-label="Buscar producto en la lista" placeholder="Nombre del producto" value={priceSearch} onChange={(event) => setPriceFilter('q', event.target.value)} /></label>
+          <SearchableSelect label="Categoría" options={Array.isArray(categoriesQuery.data) ? categoriesQuery.data : []} value={priceCategoryId} onChange={(value) => setPriceFilter('categoryId', value)} allLabel="Todas las categorías" unavailableLabel="Categoría no disponible" loadingLabel="Cargando categorías…" loading={categoriesQuery.isLoading} disabled={categoriesQuery.isError} />
+          <SearchableSelect label="Marca" options={Array.isArray(brandsQuery.data) ? brandsQuery.data : []} value={priceBrandId} onChange={(value) => setPriceFilter('brandId', value)} allLabel="Todas las marcas" unavailableLabel="Marca no disponible" loadingLabel="Cargando marcas…" loading={brandsQuery.isLoading} disabled={brandsQuery.isError} />
+          {hasProductFilters && <Button variant="link" type="button" onClick={clearPriceFilters}>Limpiar filtros</Button>}
+        </div>
+        {(categoriesQuery.isError || brandsQuery.isError) && <div className="page-actions mb-[18px]"><p className="error-text" role="alert">No se pudieron cargar las categorías o marcas para filtrar.</p><Button variant="secondary" onClick={() => { if (categoriesQuery.isError) void categoriesQuery.refetch(); if (brandsQuery.isError) void brandsQuery.refetch() }}>Reintentar filtros</Button></div>}
         {showFollowState && <p className="helper-text price-follow-help">«Sin revisar» y «Sin cambios» siguen automáticamente los cambios de {defaultListName}. Al editar un precio, pasa a ser propio y deja de seguirla.</p>}
-        {pricesQuery.isLoading || pricesQuery.isError ? <State error={pricesQuery.error} /> : rows.length === 0 ? <EmptyState title={activeFollowFilter ? 'No hay precios con este estado' : 'Esta lista todavía no tiene precios'} description={activeFollowFilter ? 'Elegí otro estado para ver los precios.' : 'Los precios aparecen cuando se asignan a productos.'} /> : <DataTable className={priceTableClass} columns={priceColumns} rows={rows} />}
+        {pricesQuery.isLoading || pricesQuery.isError ? <State error={pricesQuery.error} /> : rows.length === 0 ? <EmptyState title={activeFollowFilter || hasProductFilters ? 'No hay precios para estos filtros' : 'Esta lista todavía no tiene precios'} description={activeFollowFilter || hasProductFilters ? 'Probá otra búsqueda, categoría, marca o estado.' : 'Los precios aparecen cuando se asignan a productos.'} /> : <DataTable className={priceTableClass} columns={priceColumns} rows={rows} />}
         {pricesQuery.data && pricesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {pricePage + 1} de {pricesQuery.data.totalPages} · {pricesQuery.data.totalElements} productos</span><div><Button variant="secondary" onClick={() => setPricePage(pricePage - 1)} disabled={pricePage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPricePage(pricePage + 1)} disabled={pricePage + 1 >= pricesQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
     </>}

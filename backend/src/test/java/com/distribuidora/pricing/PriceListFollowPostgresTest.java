@@ -173,11 +173,33 @@ class PriceListFollowPostgresTest {
         });
     }
 
+    @Test
+    void filtersListPricesByCategoryBrandAndName() {
+        rollback(() -> {
+            UUID[] first = brandAndCategory();
+            UUID[] second = brandAndCategory();
+            UUID flour = product("100");
+            UUID rice = product("200");
+            jdbc.update("update catalog.products set name = 'Harina 000', brand_id = ?, category_id = ? where id = ?", first[0], first[1], flour);
+            jdbc.update("update catalog.products set name = 'Arroz largo', brand_id = ?, category_id = ? where id = ?", second[0], second[1], rice);
+
+            var byCategory = queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, first[1], null, null));
+            assertThat(byCategory.content()).extracting(row -> row.get("productId")).containsExactly(flour);
+            assertThat(byCategory.totalElements()).isEqualTo(1);
+            assertThat(byCategory.content().getFirst()).containsEntry("categoryId", first[1]).containsEntry("brandId", first[0]);
+            assertThat(queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, null, second[0], null)).content())
+                .extracting(row -> row.get("productId")).containsExactly(rice);
+            assertThat(queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, null, null, "ARROZ")).content())
+                .extracting(row -> row.get("productId")).contains(rice).doesNotContain(flour);
+            assertThat(queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, first[1], second[0], null)).totalElements()).isZero();
+        });
+    }
+
     private UUID[] brandAndCategory() {
         UUID brand = UUID.randomUUID();
         UUID category = UUID.randomUUID();
-        jdbc.update("insert into catalog.brands(id, name, code, status, created_at) values (?, 'Follow brand', ?, 'ACTIVE', current_timestamp)", brand, "TEST_" + brand);
-        jdbc.update("insert into catalog.categories(id, name, code, status, created_at) values (?, 'Follow category', ?, 'ACTIVE', current_timestamp)", category, "TEST_" + category);
+        jdbc.update("insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', current_timestamp)", brand, "Follow brand " + brand, "TEST_" + brand);
+        jdbc.update("insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', current_timestamp)", category, "Follow category " + category, "TEST_" + category);
         return new UUID[]{brand, category};
     }
 
