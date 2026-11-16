@@ -69,7 +69,7 @@ describe('PriceListsPage', () => {
     const queryClient = renderPage()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
-    await user.click(await screen.findByRole('button', { name: /editar precio de harina/i }))
+    await user.click(await screen.findByRole('button', { name: /programar precio de harina/i }))
     await user.clear(screen.getByLabelText('Precio de Harina'))
     await user.type(screen.getByLabelText('Precio de Harina'), '175.25')
     await user.click(screen.getByRole('button', { name: /guardar precio/i }))
@@ -90,7 +90,7 @@ describe('PriceListsPage', () => {
     })
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: /editar precio de harina/i }))
+    await user.click(await screen.findByRole('button', { name: /programar precio de harina/i }))
     await user.clear(screen.getByLabelText('Precio de Harina'))
     await user.type(screen.getByLabelText('Precio de Harina'), '180')
     await user.type(screen.getByLabelText('Fecha de vigencia'), '2026-10-01')
@@ -194,7 +194,7 @@ describe('PriceListsPage', () => {
     renderPage(['ORDER_CREATE'])
     expect(await screen.findByText('Harina')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /nueva lista/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /editar precio/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /programar precio/i })).not.toBeInTheDocument()
   })
 
   it('asks for confirmation before creating a list that takes the default list prices', async () => {
@@ -266,7 +266,7 @@ describe('PriceListsPage', () => {
     })
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: /editar precio de harina/i }))
+    await user.click(await screen.findByRole('button', { name: /programar precio de harina/i }))
     expect(screen.getByLabelText('Precio de Harina')).toHaveValue('150,5')
     await user.clear(screen.getByLabelText('Precio de Harina'))
     await user.type(screen.getByLabelText('Precio de Harina'), '1.250,50')
@@ -301,5 +301,41 @@ describe('PriceListsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Limpiar filtros' }))
     await user.type(screen.getByLabelText('Buscar producto en la lista'), 'har')
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/prices?page=0&size=20&search=har', expect.anything()))
+  })
+
+  it('edits prices in the table, rejects amounts below cost and moves to the next row', async () => {
+    const user = userEvent.setup()
+    const costPrices = { ...prices, content: [
+      { ...prices.content[0], cost: 100 },
+      { priceListId: 'list-2', productId: 'product-2', name: 'Azúcar', price: 90, effectiveOn: '2026-09-24', cost: 50 },
+    ], totalElements: 2 }
+    const activeLists = { ...lists, content: [lists.content[0], { ...lists.content[1], status: 'ACTIVE' }] }
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path === '/api/pricing/lists?page=0&size=20') return response(activeLists)
+      if (path.startsWith('/api/pricing/lists/list-2/prices')) return response(costPrices)
+      if (path === '/api/pricing/lists/list-2/products/product-1' && init?.method === 'PUT') return response({}, 204)
+      return response(prices)
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: /minorista/i }))
+    const harina = await screen.findByLabelText('Precio de Harina en la lista')
+    expect(harina).toHaveValue('150,50')
+    await user.clear(harina)
+    await user.type(harina, '90{Enter}')
+    expect(await screen.findByText(/no puede ser menor al costo/)).toBeInTheDocument()
+    expect(harina).toHaveAttribute('aria-invalid', 'true')
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+
+    await user.keyboard('{Escape}')
+    expect(harina).toHaveValue('150,50')
+    await user.clear(harina)
+    await user.type(harina, '1.200,75{Enter}')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-2/products/product-1', expect.objectContaining({
+      method: 'PUT', body: JSON.stringify({ price: 1200.75 }),
+    })))
+    await waitFor(() => expect(screen.getByLabelText('Precio de Azúcar en la lista')).toHaveFocus())
+    expect(screen.queryByLabelText('Precio de Harina en la lista', { selector: 'input[disabled]' })).not.toBeInTheDocument()
   })
 })

@@ -232,16 +232,17 @@ describe('ProductsPage', () => {
     await user.type(screen.getByLabelText('Costo'), '130')
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
 
-    expect(await screen.findByLabelText('Precio para MAYORISTA')).toBeInTheDocument()
-    expect(screen.getByText('El costo supera precios vigentes')).toBeInTheDocument()
-    await user.type(screen.getByLabelText('Precio para MAYORISTA'), '125')
-    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
-    expect(await screen.findByText('El precio para MAYORISTA debe ser igual o mayor al nuevo costo.')).toBeInTheDocument()
+    const dialog = await screen.findByRole('dialog', { name: 'Corregir precios por el nuevo costo' })
+    expect(within(dialog).getByText(/supera el precio de esta lista/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Precio actual/)).toHaveTextContent('120')
+    await user.type(within(dialog).getByLabelText('Nuevo precio para MAYORISTA'), '125')
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar precios y costo' }))
+    expect(await within(dialog).findByText(/no puede ser menor al nuevo costo/)).toBeInTheDocument()
     expect(updateAttempts).toBe(1)
 
-    await user.clear(screen.getByLabelText('Precio para MAYORISTA'))
-    await user.type(screen.getByLabelText('Precio para MAYORISTA'), '140')
-    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+    await user.clear(within(dialog).getByLabelText('Nuevo precio para MAYORISTA'))
+    await user.type(within(dialog).getByLabelText('Nuevo precio para MAYORISTA'), '140')
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar precios y costo' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products/product-1', expect.objectContaining({
       method: 'PUT',

@@ -147,9 +147,8 @@ function ProductForm({
     setForm((current) => ({ ...current, prices: { ...current.prices, [priceListId]: value } }))
   }
 
-  const visiblePriceLists: Array<{ id: string; code: string }> = initial
-    ? affectedLists.map((list) => ({ id: list.priceListId, code: list.code }))
-    : activeLists
+  // When editing, prices are asked only if the new cost exceeds them, through CostPriceFixDialog.
+  const visiblePriceLists: Array<{ id: string; code: string }> = initial ? [] : activeLists
   const defaultList = activeLists.find((list) => list.isDefault)
   // On creation only the default list price is required: empty lists take it and follow it.
   const isOptionalPrice = (listId: string) => !initial && Boolean(defaultList) && listId !== defaultList?.id
@@ -186,7 +185,10 @@ function ProductForm({
       }
       prices.push({ priceListId: list.id, price })
     }
+    await saveProduct(cost, prices)
+  }
 
+  async function saveProduct(cost: number, prices: Array<{ priceListId: string; price: number }>) {
     const body: ProductBody = {
       description: form.description.trim(),
       cost,
@@ -226,8 +228,8 @@ function ProductForm({
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') })
       if (cause instanceof ApiError && cause.affectedPriceLists?.length) {
+        // The new cost exceeds some list prices: fix them right away in a modal.
         setAffectedLists(cause.affectedPriceLists)
-        setError(errorMessage(cause, 'El costo supera precios vigentes. Completá los precios indicados.'))
       } else {
         setError(errorMessage(cause, 'No se pudo guardar el producto.'))
       }
@@ -270,7 +272,59 @@ function ProductForm({
       confirmLabel="Guardar y no volver a avisar" confirmVariant="primary" cancelLabel="Volver" pendingLabel="Guardando..."
       pending={saving}
       onCancel={() => setFollowerWarning(undefined)} onConfirm={() => void persist(followerWarning.body, true)}
-    />}</FormModal>
+    />}
+    {affectedLists.length > 0 && <CostPriceFixDialog cost={Number(form.cost)} lists={affectedLists} pending={saving}
+      defaultListCode={defaultList?.code}
+      onCancel={() => setAffectedLists([])}
+      onConfirm={(prices) => { setAffectedLists([]); void saveProduct(Number(form.cost), prices) }} />}</FormModal>
+}
+
+/** Asks for new prices for the lists whose price would be below the new cost, before saving the product. */
+function CostPriceFixDialog({ cost, lists, pending, defaultListCode, onCancel, onConfirm }: {
+  cost: number
+  lists: AffectedPriceList[]
+  pending: boolean
+  defaultListCode?: string
+  onCancel: () => void
+  onConfirm: (prices: Array<{ priceListId: string; price: number }>) => void
+}) {
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [error, setError] = useState('')
+  const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 4 }).format(value)
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    const prices: Array<{ priceListId: string; price: number }> = []
+    for (const list of lists) {
+      const raw = values[list.priceListId]?.trim() ?? ''
+      const price = Number(raw.replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'))
+      if (!raw || !Number.isFinite(price) || price < 0) { setError(`Ingresá un precio válido para ${list.code}.`); return }
+      if (price < cost) { setError(`El precio para ${list.code} no puede ser menor al nuevo costo (${money(cost)}).`); return }
+      prices.push({ priceListId: list.priceListId, price })
+    }
+    onConfirm(prices)
+  }
+
+  return <FormModal size="compact" label="Corregir precios por el nuevo costo" busy={pending} onClose={onCancel}>
+    <Panel title="Corregir precios por el nuevo costo">
+      <form className="form-grid cost-price-fix" onSubmit={submit}>
+        <p className="col-span-full m-0 text-[13px] text-muted"><CurrencyText>{`El nuevo costo (${money(cost)}) supera el precio de ${lists.length === 1 ? 'esta lista' : 'estas listas'}. Ingresá precios iguales o mayores al costo para guardar el producto.`}</CurrencyText></p>
+        {lists.map((list) => <div className="field col-span-full" key={list.priceListId}>
+          <label htmlFor={`cost-fix-${list.priceListId}`}>Nuevo precio para {list.code}</label>
+          <input id={`cost-fix-${list.priceListId}`} className="input currency-input" type="text" inputMode="decimal" value={values[list.priceListId] ?? ''} placeholder={`Mínimo ${money(cost)}`}
+            aria-describedby={`cost-fix-${list.priceListId}-current`}
+            onChange={(event) => { setValues((current) => ({ ...current, [list.priceListId]: event.target.value })); setError('') }} disabled={pending} />
+          <small id={`cost-fix-${list.priceListId}-current`} className="helper-text m-0 font-normal"><CurrencyText>{`Precio actual: ${money(Number(list.currentPrice))}`}</CurrencyText></small>
+        </div>)}
+        {defaultListCode && lists.some((list) => list.code === defaultListCode) && <p className="helper-text col-span-full m-0">Las listas que siguen a {defaultListCode} van a tomar su nuevo precio.</p>}
+        {error && <p className="error-text col-span-full" role="alert"><CurrencyText>{error}</CurrencyText></p>}
+        <div className="page-actions col-span-full">
+          <Button variant="secondary" type="button" onClick={onCancel} disabled={pending}>Volver</Button>
+          <Button type="submit" disabled={pending}>{pending ? 'Guardando...' : 'Guardar precios y costo'}</Button>
+        </div>
+      </form>
+    </Panel>
+  </FormModal>
 }
 
 export default function ProductsPage() {

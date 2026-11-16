@@ -186,7 +186,10 @@ class PriceListFollowPostgresTest {
             var byCategory = queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, first[1], null, null));
             assertThat(byCategory.content()).extracting(row -> row.get("productId")).containsExactly(flour);
             assertThat(byCategory.totalElements()).isEqualTo(1);
-            assertThat(byCategory.content().getFirst()).containsEntry("categoryId", first[1]).containsEntry("brandId", first[0]);
+            assertThat(byCategory.content().getFirst()).containsEntry("categoryId", first[1]).containsEntry("brandId", first[0])
+                .doesNotContainKey("cost");
+            assertThat(queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, first[1], null, null, true)).content().getFirst())
+                .containsKey("cost");
             assertThat(queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, null, second[0], null)).content())
                 .extracting(row -> row.get("productId")).containsExactly(rice);
             assertThat(queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, null, null, "ARROZ")).content())

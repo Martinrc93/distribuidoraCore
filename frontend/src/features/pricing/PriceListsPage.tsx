@@ -17,12 +17,12 @@ import { SearchableSelect } from '../../shared/components/SearchableSelect'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean; pendingReviewCount?: number }
 /** `followStatus`: PENDING (copied from the default list, not reviewed), CONFIRMED (reviewed, still follows it) or null (own price). */
-type ProductPrice = { productId: string; name: string; price: number; effectiveOn?: string; followStatus?: 'PENDING' | 'CONFIRMED' | null }
+type ProductPrice = { productId: string; name: string; price: number; effectiveOn?: string; followStatus?: 'PENDING' | 'CONFIRMED' | null; cost?: number | null }
 type FollowFilter = '' | 'PENDING' | 'FOLLOWING' | 'OWN'
 type CreationPreview = { productsToCopy: number; defaultListName?: string | null }
 type Follower = { priceListId: string; code: string; name: string }
 type CatalogOption = { id: string; name: string; status: string }
-type FollowerWarning = { followers: Follower[]; amount: number; effectiveOn: string }
+type FollowerWarning = { followers: Follower[]; amount: number; effectiveOn: string; product: ProductPrice }
 
 const MAX_PRICE_LISTS = 10
 
@@ -91,6 +91,57 @@ function State({ error }: { error?: Error | null }) {
   return error
     ? <EmptyState title="No se pudieron cargar las listas" description={error.message} />
     : <EmptyState title="Cargando listas" description="Consultando los precios vigentes." />
+}
+
+function inlinePriceIndex(current: HTMLInputElement) {
+  return [...document.querySelectorAll<HTMLInputElement>('input[data-inline-price]')].indexOf(current)
+}
+
+function focusInlinePrice(index: number) {
+  document.querySelectorAll<HTMLInputElement>('input[data-inline-price]')[index]?.focus()
+}
+
+function focusNextInlinePrice(current: HTMLInputElement) {
+  const inputs = [...document.querySelectorAll<HTMLInputElement>('input[data-inline-price]')]
+  inputs[inputs.indexOf(current) + 1]?.focus()
+}
+
+/**
+ * Price edited directly in the table: Enter validates and saves (then moves to the next row),
+ * Escape restores the saved value. Unsaved drafts stay marked until saved or restored.
+ */
+function InlinePriceInput({ product, disabled, validate, onSave }: {
+  product: ProductPrice
+  disabled: boolean
+  validate: (raw: string) => string
+  onSave: (raw: string) => Promise<boolean>
+}) {
+  const saved = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(product.price))
+  const [draft, setDraft] = useState(saved)
+  const [error, setError] = useState('')
+  const changed = parsePriceInput(draft) !== Number(product.price) || !draft.trim()
+  const errorId = `inline-price-${product.productId}-error`
+  return <span className="inline-price">
+    <input className={`input currency-input inline-price-input${changed ? ' is-dirty' : ''}`} type="text" inputMode="decimal" data-inline-price
+      aria-label={`Precio de ${product.name} en la lista`} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
+      value={draft} disabled={disabled} onFocus={(event) => event.target.select()}
+      onChange={(event) => { setDraft(event.target.value); setError('') }}
+      onKeyDown={async (event) => {
+        const input = event.currentTarget
+        if (event.key === 'Escape') { event.preventDefault(); setDraft(saved); setError(''); return }
+        if (event.key !== 'Enter') return
+        event.preventDefault()
+        if (!changed) { focusNextInlinePrice(input); return }
+        const invalid = validate(draft)
+        if (invalid) { setError(invalid); return }
+        // The row re-renders after saving, so remember its position first.
+        const index = inlinePriceIndex(input)
+        // Inputs stay disabled while saving; move focus once they are enabled again.
+        if (await onSave(draft)) window.setTimeout(() => focusInlinePrice(index + 1), 0)
+      }} />
+    {error ? <span id={errorId} className="inline-price-error" role="alert">{error}</span>
+      : changed && <span className="inline-price-hint">Enter para guardar · Esc para descartar</span>}
+  </span>
 }
 
 export default function PriceListsPage() {
@@ -265,54 +316,72 @@ export default function PriceListsPage() {
 
   async function savePrice(event: FormEvent) {
     event.preventDefault()
-    if (!selectedList || !editingProduct) return
+    if (!editingProduct) return
     const amount = parsePriceInput(price)
-    if (!price.trim() || !Number.isFinite(amount) || amount < 0) {
-      setError('Ingresá un precio válido, igual o mayor a cero.')
+    const invalid = priceError(editingProduct, price, amount)
+    if (invalid) {
+      setError(invalid)
       return
     }
     setError('')
+    await requestPriceSave(editingProduct, amount, effectiveOn)
+  }
+
+  /** Validates a typed price: a plain non-negative number, never below the product cost. */
+  function priceError(product: ProductPrice, raw: string, amount: number) {
+    if (!raw.trim() || !Number.isFinite(amount) || amount < 0) return 'Ingresá un precio válido, igual o mayor a cero.'
+    if (product.cost !== undefined && product.cost !== null && amount < Number(product.cost)) {
+      return `El precio no puede ser menor al costo (${money(product.cost)}).`
+    }
+    return ''
+  }
+
+  /** Saves a price; on the default list it first warns about lists that follow it. Returns true when saved now. */
+  async function requestPriceSave(product: ProductPrice, amount: number, date: string): Promise<boolean> {
+    if (!selectedList) return false
     if (selectedList.isDefault) {
       // Lists following the default price change with it: warn once per product and list.
       setSavingPrice(true)
       try {
-        const followers = await apiGet<Follower[]>(`/api/pricing/lists/products/${editingProduct.productId}/followers`)
+        const followers = await apiGet<Follower[]>(`/api/pricing/lists/products/${product.productId}/followers`)
         if (followers.length > 0) {
-          setFollowerWarning({ followers, amount, effectiveOn })
-          return
+          setFollowerWarning({ followers, amount, effectiveOn: date, product })
+          return false
         }
       } catch (cause) {
         setError(readableError(cause, 'No se pudo consultar las listas que siguen a esta.'))
-        return
+        return false
       } finally {
         setSavingPrice(false)
       }
     }
-    await persistPrice(amount, effectiveOn, false)
+    return persistPrice(product, amount, date, false)
   }
 
-  async function persistPrice(amount: number, date: string, acknowledgeFollowers: boolean) {
-    if (!selectedList || !editingProduct) return
+  async function persistPrice(product: ProductPrice, amount: number, date: string, acknowledgeFollowers: boolean): Promise<boolean> {
+    if (!selectedList) return false
     setSavingPrice(true)
     setError('')
     try {
-      await apiPut(`/api/pricing/lists/${selectedList.id}/products/${editingProduct.productId}`, {
+      await apiPut(`/api/pricing/lists/${selectedList.id}/products/${product.productId}`, {
         price: amount,
         ...(date ? { effectiveOn: date } : {}),
         ...(acknowledgeFollowers ? { acknowledgeFollowers: true } : {}),
       })
       await refreshPricing()
-      if (editingHistoryProduct?.productId === editingProduct.productId) await queryClient.invalidateQueries({ queryKey: historyKey })
+      if (editingHistoryProduct?.productId === product.productId) await queryClient.invalidateQueries({ queryKey: historyKey })
       const followers = followerWarning?.followers ?? []
       setFollowerWarning(undefined)
       setEditingProduct(undefined)
       setEffectiveOn('')
       setFeedback(followers.length > 0
-        ? `Precio de ${editingProduct.name} actualizado, también en ${followerNames(followers)}.`
-        : `Precio de ${editingProduct.name} actualizado.`)
+        ? `Precio de ${product.name} actualizado, también en ${followerNames(followers)}.`
+        : date ? `Precio de ${product.name} programado para ${date}.` : `Precio de ${product.name} actualizado.`)
+      return true
     } catch (cause) {
       setFollowerWarning(undefined)
       setError(readableError(cause, 'No se pudo actualizar el precio.'))
+      return false
     } finally {
       setSavingPrice(false)
     }
@@ -344,7 +413,13 @@ export default function PriceListsPage() {
   const defaultListName = lists.find((list) => list.isDefault)?.name ?? 'Lista general'
   const priceColumns: TableColumn[] = [
     { key: 'name', label: 'Producto', emphasis: true },
-    { key: 'price', label: 'Precio de lista', align: 'right' },
+    { key: 'price', label: 'Precio de lista', align: 'right', render: (value: string, row: Row) => {
+      const product = pricesQuery.data?.content.find((item) => item.productId === row.id)
+      if (!isAdmin || !product || !selectedList || selectedList.status !== 'ACTIVE') return value
+      return <InlinePriceInput key={`${product.productId}-${product.price}`} product={product} disabled={savingPrice}
+        validate={(raw) => priceError(product, raw, parsePriceInput(raw))}
+        onSave={(raw) => requestPriceSave(product, parsePriceInput(raw), '')} />
+    } },
     { key: 'effectiveOn', label: 'Vigente desde' },
     ...(showFollowState ? [{ key: 'followStatus', label: 'Estado', render: (value: string) => value === 'PENDING'
       ? <Badge tone="strong">Sin revisar</Badge>
@@ -354,7 +429,7 @@ export default function PriceListsPage() {
       if (!product) return null
       return <div className="table-row-actions">
         {isAdmin && showFollowState && product.followStatus === 'PENDING' && <Button variant="secondary" disabled={confirmingReview} onClick={() => void confirmReview([product.productId])} aria-label={`Confirmar precio de ${product.name} sin cambios`}>Confirmar</Button>}
-        {isAdmin && <Button variant="secondary" onClick={() => { setEditingProduct(product); setPrice(String(product.price).replace('.', ',')); setEffectiveOn(''); setError('') }} aria-label={`Editar precio de ${product.name}`}>Editar precio</Button>}
+        {isAdmin && <Button variant="secondary" onClick={() => { setEditingProduct(product); setPrice(String(product.price).replace('.', ',')); setEffectiveOn(''); setError('') }} aria-label={`Programar precio de ${product.name}`}>Programar</Button>}
         <Button variant="secondary" onClick={() => { setEditingHistoryProduct(product); setHistoryPage(0); setError('') }} aria-label={`Ver historial de precios de ${product.name}`}>Ver historial</Button>
       </div>
     } },
@@ -444,7 +519,7 @@ export default function PriceListsPage() {
       }))} /> : <EmptyState title="Sin historial" description="Este producto no registra vigencias de precio." />}
       {historyQuery.data && historyQuery.data.totalPages > 1 && <div className="pagination"><span>Página {historyPage + 1} de {historyQuery.data.totalPages} · {historyQuery.data.totalElements} vigencias</span><div><Button variant="secondary" aria-label="Historial anterior" onClick={() => setHistoryPage(historyPage - 1)} disabled={historyPage === 0}>Anterior</Button><Button variant="secondary" aria-label="Siguiente historial" onClick={() => setHistoryPage(historyPage + 1)} disabled={historyPage + 1 >= historyQuery.data.totalPages}>Siguiente</Button></div></div>}
     </Panel>}
-    {editingProduct && <div role="dialog" aria-modal="true" aria-labelledby="price-dialog-title" className="modal-backdrop"><Panel title="Editar precio"><form className="form-grid" onSubmit={savePrice}>
+    {editingProduct && <div role="dialog" aria-modal="true" aria-labelledby="price-dialog-title" className="modal-backdrop"><Panel title="Programar precio"><form className="form-grid" onSubmit={savePrice}>
       <h2 id="price-dialog-title">{editingProduct.name} · {selectedList?.name}</h2>
       <label className="field"><span>Precio de {editingProduct.name}</span><input className="input currency-input" type="text" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required autoFocus /></label>
       <label className="field"><span>Vigente desde</span><input className="input" aria-label="Fecha de vigencia" type="date" value={effectiveOn} onChange={(event) => setEffectiveOn(event.target.value)} /><small>Dejalo vacío para aplicar el precio desde hoy.</small></label>
@@ -453,12 +528,12 @@ export default function PriceListsPage() {
       {selectedList?.isDefault && <p className="helper-text">Si otras listas siguen este precio, se te va a avisar antes de guardar.</p>}
       <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setEditingProduct(undefined)} disabled={savingPrice}>Cancelar</Button><Button type="submit" disabled={savingPrice}>{savingPrice ? "Guardando..." : "Guardar precio"}</Button></div>
     </form></Panel></div>}
-    {followerWarning && editingProduct && <ConfirmationDialog
+    {followerWarning && <ConfirmationDialog
       title={`Este cambio también se aplica en ${followerNames(followerWarning.followers)}`}
-      description={`${followerWarning.followers.length === 1 ? 'Esa lista sigue' : 'Esas listas siguen'} a ${selectedList?.name ?? defaultListName} para ${editingProduct.name}, así que su precio va a cambiar igual. Si confirmás, no se volverá a avisar para este producto en ${followerWarning.followers.length === 1 ? 'esa lista' : 'esas listas'}.`}
+      description={`${followerWarning.followers.length === 1 ? 'Esa lista sigue' : 'Esas listas siguen'} a ${selectedList?.name ?? defaultListName} para ${followerWarning.product.name}, así que su precio va a cambiar igual. Si confirmás, no se volverá a avisar para este producto en ${followerWarning.followers.length === 1 ? 'esa lista' : 'esas listas'}.`}
       confirmLabel="Guardar y no volver a avisar" confirmVariant="primary" cancelLabel="Volver" pendingLabel="Guardando..."
       pending={savingPrice}
-      onCancel={() => setFollowerWarning(undefined)} onConfirm={() => void persistPrice(followerWarning.amount, followerWarning.effectiveOn, true)}
+      onCancel={() => setFollowerWarning(undefined)} onConfirm={() => void persistPrice(followerWarning.product, followerWarning.amount, followerWarning.effectiveOn, true)}
     />}
     {historyEntryToCancel && <div role="dialog" aria-modal="true" aria-labelledby="cancel-price-title" className="modal-backdrop"><Panel title="Cancelar precio programado"><h2 id="cancel-price-title">¿Cancelar la vigencia del {historyEntryToCancel.effectiveOn}?</h2><p>El cambio no modificará precios que ya entraron en vigor.</p><div className="page-actions"><Button variant="secondary" onClick={() => setHistoryEntryToCancel(undefined)}>Volver</Button><Button onClick={cancelScheduledPrice}>Confirmar cancelación</Button></div></Panel></div>}
     {statusList && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description" className="price-status-dialog-backdrop">

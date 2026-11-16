@@ -213,19 +213,37 @@ Tamaño **XL**, el de mayor riesgo. Propuesta a validar con Leo:
   - cada migración Flyway afecta a las dos instancias (A/B) al actualizar `main`;
   - la tipografía con px fijos puede romper layouts en los cortes de 760 y 1050 px.
 
-## Decisiones pendientes
+## Decisiones
 
-1. Lista nueva: ¿copiar precios de una lista de origen con % de ajuste, o listar
-   todos los productos sin precio?
-2. Comisiones: ¿sobre el importe vendido o el cobrado? ¿Antes o después de los
-   descuentos? ¿Se pagan al confirmar o al entregar?
-3. Revendedor: ¿la deuda pasa siempre al revendedor o se elige por pedido o
-   cliente? ¿El revendedor ve y cobra a sus clientes?
-4. Preparación: ¿quién prepara (rol)? ¿Se descuenta el stock al confirmar (como
-   hoy) o al preparar?
-5. Impresión: ¿qué documentos necesita cada cliente en 80 mm?
-6. Permisos de Isma: ¿qué cambios concretos pide?
-7. Compras: ¿se agrega la recepción con ingreso de stock?
+Respuestas del usuario (2026-11-12):
+
+1. **Lista nueva:** resuelto e implementado (siguen a la General, ver Fase 2).
+2. **Comisiones:** la porcentual se calcula **sobre la ganancia** (precio de venta
+   menos costo); el usuario lo indicó con duda («creo»), confirmar con Leo antes de
+   implementar. Implicancia: hoy las ventas **no guardan el costo** al momento de la
+   venta (`dashboard-analytics.md` lo señala), así que hay que agregar un snapshot de
+   costo por línea; las ventas anteriores no tendrán ganancia calculable. Pendiente:
+   si la comisión fija es por unidad y si se liquida al confirmar o al cobrar.
+3. **Revendedor:** la deuda es **siempre** del revendedor. El revendedor tiene
+   clientes asociados; cómo les cobra él no le importa al sistema. Los pedidos de
+   esos clientes debitan la cuenta corriente del revendedor.
+4. **Preparación:** el stock se descuenta **al preparar**, no al confirmar; si el
+   pedido se cancela después de preparado, se revierte el movimiento. Cambia la
+   regla de ADR-006/007 (hoy confirmar descuenta stock). Abierto: qué pasa con un
+   pedido que se entrega sin pasar por preparación (propuesta: entregar prepara y
+   descuenta en ese momento), y si un pedido sin preparar puede editarse libremente.
+5. **Impresión 80 mm:** sin definir; usar 80 mm donde hoy existe (pedido) y para el
+   estado de deuda.
+6. **Permisos:** se posterga; el usuario quiere revisarlos en detalle.
+7. **Compras:** sí. Una compra **confirmada** ingresa el stock de lo comprado. Hace
+   falta un estado (borrador / confirmada) y que editar o anular una compra
+   confirmada genere movimientos compensatorios.
+8. **Edición de precios en la tabla (2.4):** sí, como número simple, **nunca menor al
+   costo**. Además, al modificar un costo que queda por encima del precio de alguna
+   lista, debe abrirse un **modal para corregir esos precios en el momento**.
+   **Implementado (2026-11-16):** edición en la fila con Enter/Escape y validación
+   contra el costo (la API de precios devuelve `cost` solo a administradores) y
+   `CostPriceFixDialog` en el formulario de producto.
 
 ## Verificación por fase
 

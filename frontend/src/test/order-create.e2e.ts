@@ -87,7 +87,7 @@ test('price tables show product names without a product code column', async ({ p
   const table = page.locator('.price-products-table')
   await expect(table.getByRole('columnheader', { includeHidden: true })).toHaveCount(4)
   await expect(table.getByRole('columnheader', { name: 'SKU', includeHidden: true })).toHaveCount(0)
-  await expect(table.getByRole('button', { name: 'Editar precio de Producto Demo 001' })).toBeVisible()
+  await expect(table.getByRole('button', { name: 'Programar precio de Producto Demo 001' })).toBeVisible()
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
   if (testInfo.project.name.startsWith('desktop')) {

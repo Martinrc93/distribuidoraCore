@@ -16,7 +16,7 @@ public class PricingQueryService {
     private static final String RESOLVED_PRICE_CTE = """
         with resolved_prices as (
             select pl.id as "priceListId", pl.code as "priceListCode",
-                   p.id as "productId", p.name, p.category_id as "categoryId", p.brand_id as "brandId",
+                   p.id as "productId", p.name, p.category_id as "categoryId", p.brand_id as "brandId", p.cost,
                    h.price, h.effective_on as "effectiveOn",
                    h.created_at as "createdAt", h.updated_at as "updatedAt",
                    f.review_status as "followStatus"
@@ -65,7 +65,12 @@ public class PricingQueryService {
     }
 
     /** Optional filters for a list's prices: follow status, category (rubro), brand and product name. */
-    public record PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search) { }
+    /** {@code includeCost} adds the product cost to each row; only for administrators. */
+    public record PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search, boolean includeCost) {
+        public PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search) {
+            this(followStatus, categoryId, brandId, search, false);
+        }
+    }
 
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size, PriceFilter priceFilter) {
         PriceFilter criteria = priceFilter == null ? new PriceFilter(null, null, null, null) : priceFilter;
@@ -94,11 +99,11 @@ public class PricingQueryService {
         }
         return page(RESOLVED_PRICE_CTE + """
             select "priceListId", "priceListCode", "productId", name, price,
-                   "effectiveOn", "createdAt", "updatedAt", "followStatus", "categoryId", "brandId"
+                   "effectiveOn", "createdAt", "updatedAt", "followStatus", "categoryId", "brandId"%s
             from resolved_prices
             where price is not null%s
             order by name, "productId"
-            """.formatted(filter), RESOLVED_PRICE_CTE + "select count(*) from resolved_prices where price is not null" + filter,
+            """.formatted(criteria.includeCost() ? ", cost" : "", filter), RESOLVED_PRICE_CTE + "select count(*) from resolved_prices where price is not null" + filter,
             page, size, parameters.toArray());
     }
 

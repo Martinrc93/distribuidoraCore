@@ -45,7 +45,7 @@ public class PricingQueryController {
         @RequestParam(required = false) String search
     ) {
         return queries.prices(listId, page, size, new PricingQueryService.PriceFilter(
-            followStatus == null || followStatus.isBlank() ? null : followStatus, categoryId, brandId, search));
+            followStatus == null || followStatus.isBlank() ? null : followStatus, categoryId, brandId, search, access.isAdmin()));
     }
 
     @GetMapping("/lists/{listId}/products/{productId}/history")

@@ -677,6 +677,12 @@
   .price-products-table-standard .data-table th:nth-child(4), .price-products-table-standard .data-table td:nth-child(4) { @apply w-[22%]; }
   .price-list-pending { @apply self-start rounded-[999px] bg-[var(--detail-warning-bg,#faf4eb)] [padding:2px_8px] text-[var(--detail-warning-text,#79501e)] text-[11px] font-bold; }
   .price-follow-help { @apply mt-0 mb-[14px]; }
+  .inline-price { @apply inline-grid justify-items-end gap-[4px] max-w-full; }
+  .inline-price-input.input { @apply w-[min(100%,_130px)] min-h-[36px] text-right tabular-nums; }
+  .inline-price-input.is-dirty { @apply border-[var(--copper)]; }
+  .inline-price-input[aria-invalid="true"] { @apply border-danger; }
+  .inline-price-hint { @apply text-muted text-[11px] font-normal; }
+  .inline-price-error { @apply text-danger text-[11px] font-normal text-right [overflow-wrap:anywhere]; }
   .price-products-table-follow .data-table { @apply min-w-[880px]; }
   .price-products-table-follow .data-table th:nth-child(1), .price-products-table-follow .data-table td:nth-child(1) { @apply w-[28%]; }
   .price-products-table-follow .data-table th:nth-child(2), .price-products-table-follow .data-table td:nth-child(2) { @apply w-[14%]; }

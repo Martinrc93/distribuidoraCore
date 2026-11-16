@@ -77,9 +77,9 @@ for (const width of [1280, 390]) {
       page: 0, size: 20, totalElements: 3, totalPages: 1,
     } }))
     await page.goto('/price-lists')
-    const edit = page.getByRole('button', { name: `Editar precio de ${products[0].name}` })
+    const edit = page.getByRole('button', { name: `Programar precio de ${products[0].name}` })
     const history = page.getByRole('button', { name: `Ver historial de precios de ${products[0].name}` })
-    await expect(edit).toHaveText('Editar precio')
+    await expect(edit).toHaveText('Programar')
     await expect(history).toHaveText('Ver historial')
     for (const button of [edit, history]) {
       await button.scrollIntoViewIfNeeded()
@@ -121,7 +121,7 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`follow-states-${width}.png`), fullPage: true })
 
     await page.getByRole('tab', { name: /Lista general/ }).click()
-    await page.getByRole('button', { name: `Editar precio de ${products[0].name}` }).click()
+    await page.getByRole('button', { name: `Programar precio de ${products[0].name}` }).click()
     await page.getByRole('textbox', { name: `Precio de ${products[0].name}`, exact: true }).fill('160')
     await page.getByRole('button', { name: 'Guardar precio' }).click()
     const warning = page.getByRole('dialog', { name: 'Este cambio también se aplica en Lista 4' })

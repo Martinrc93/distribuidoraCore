@@ -324,6 +324,18 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   producto), si hay listas que lo siguen con aviso pendiente se abre
   `ConfirmationDialog` «Este cambio también se aplica en …» con «Volver» (foco
   inicial) y «Guardar y no volver a avisar». Confirmar envía `acknowledgeFollowers`.
+- Edición en la tabla (`InlinePriceInput`, solo administradores en listas activas): el
+  precio es un campo numérico en la fila con formato es-AR. Enter valida y guarda y
+  pasa a la fila siguiente; Escape restaura el valor guardado. Mientras haya un
+  cambio sin guardar el borde usa `--copper` y se muestra «Enter para guardar · Esc
+  para descartar». Nunca se acepta un precio menor al costo: el error se muestra en
+  la fila con `role="alert"` y `aria-invalid`. En la General se aplica el mismo
+  aviso de listas seguidoras. «Programar» abre el diálogo para fijar una vigencia
+  futura (dejar la fecha vacía aplica desde hoy).
+- Al subir el costo de un producto por encima del precio de alguna lista con precio
+  propio, el formulario abre `CostPriceFixDialog` (`FormModal` compacto) con un campo
+  por lista, el precio actual como ayuda y el costo como mínimo. «Guardar precios y
+  costo» reenvía el producto con esos precios; «Volver» conserva el formulario.
 - Los importes de precio aceptan formato argentino («1.250,50») además de punto
   decimal; el campo se precarga con coma decimal.
 - La tabla de precios de cualquier lista ofrece «Buscar producto», «Categoría» y
