@@ -110,6 +110,12 @@ edición en línea de precios de 2.4 sin el aumento por %.
 
 ### Fase 3 — Servicio de impresión y descarga
 
+**Estado (2026-11-16): implementada.** `DocumentActions` (imprimir sin descargar /
+descargar) en pedidos, listas de precios y ficha del cliente; PDF de lista de
+precios filtrada por categoría, marca y nombre (`/api/documents/price-lists`);
+estado de deuda del cliente A4 y 80 mm (`/api/documents/customers/{id}/statement`).
+Contrato en `docs/api/documents.md`. Pendiente opcional: PDF de compra.
+
 Backend: generalizar `document` con un modelo de documento por tipo y los
 renderers A4/80 mm existentes. Frontend: `printDocument(path)` (blob → iframe
 oculto → `print()`, con apertura en pestaña nueva como alternativa en móviles)

@@ -1,5 +1,6 @@
 package com.distribuidora.document.api;
 
+import com.distribuidora.document.application.DocumentNotFoundException;
 import com.distribuidora.document.application.SaleDocumentConflictException;
 import com.distribuidora.document.application.SaleDocumentNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = DocumentController.class)
+@RestControllerAdvice(assignableTypes = {DocumentController.class, ExportDocumentController.class})
 public class DocumentExceptionHandler {
 
     @ExceptionHandler(SaleDocumentNotFoundException.class)
@@ -20,6 +21,11 @@ public class DocumentExceptionHandler {
         SaleDocumentNotFoundException exception,
         HttpServletRequest request
     ) {
+        return problem(HttpStatus.NOT_FOUND, "Not found", "NOT_FOUND", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(DocumentNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleDocumentNotFound(DocumentNotFoundException exception, HttpServletRequest request) {
         return problem(HttpStatus.NOT_FOUND, "Not found", "NOT_FOUND", exception.getMessage(), request);
     }
 

@@ -677,6 +677,9 @@
   .price-products-table-standard .data-table th:nth-child(4), .price-products-table-standard .data-table td:nth-child(4) { @apply w-[22%]; }
   .price-list-pending { @apply self-start rounded-[999px] bg-[var(--detail-warning-bg,#faf4eb)] [padding:2px_8px] text-[var(--detail-warning-text,#79501e)] text-[11px] font-bold; }
   .price-follow-help { @apply mt-0 mb-[14px]; }
+  .document-actions { @apply inline-flex flex-wrap items-center gap-[8px]; }
+  .document-actions-error { @apply basis-full m-0 text-[12px]; }
+  .customer-statement-actions { @apply mt-[14px] grid gap-[8px]; }
   .inline-price { @apply inline-grid justify-items-end gap-[4px] max-w-full; }
   .inline-price-input.input { @apply w-[min(100%,_130px)] min-h-[36px] text-right tabular-nums; }
   .inline-price-input.is-dirty { @apply border-[var(--copper)]; }

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { apiGet, apiGetBlob, apiPost, ApiError } from '../../shared/api/client'
+import { apiGet, apiPost, ApiError } from '../../shared/api/client'
+import { DocumentActions } from '../../shared/components/DocumentActions'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Panel } from '../../shared/components/Panel'
@@ -94,15 +95,6 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
     }
   }
 
-  async function downloadDocument(type: 'a4' | 'ticket') {
-    setError('')
-    try {
-      await apiGetBlob(`/api/orders/${orderId}/documents/${type}`, `${orderNumber}-${type}.pdf`)
-      setFeedback(type === 'a4' ? 'Documento A4 descargado.' : 'Ticket descargado.')
-    } catch (cause) {
-      setError(apiMessage(cause, 'No se pudo descargar el documento.'))
-    }
-  }
 
   function updateNotification<K extends 'channel' | 'recipient' | 'format'>(field: K, value: K extends 'channel' ? 'EMAIL' | 'WHATSAPP' : K extends 'format' ? 'A4' | 'TICKET' : string) {
     setError('')
@@ -138,7 +130,7 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
         {canDeliver && orderStatus === 'CONFIRMED' && <Button onClick={() => { setShowDelivery(true); setError(''); delivery.clearError() }}>Registrar entrega</Button>}
         {canCancel && orderStatus === 'CONFIRMED' && <Button variant="secondary" onClick={() => { setShowCancel(true); setError('') }}>Cancelar pedido</Button>}
         {canCancel && orderStatus === 'CANCELLED' && <Button onClick={() => { setShowReactivate(true); setError('') }}>Reactivar pedido</Button>}
-        {canNotify && <><Button variant="secondary" onClick={() => void downloadDocument('a4')}>Descargar remito A4</Button><Button variant="secondary" onClick={() => void downloadDocument('ticket')}>Descargar ticket 80 mm</Button><Button variant="secondary" aria-expanded={showNotification} onClick={() => { setShowNotification((value) => !value); setError('') }}>Enviar por email o WhatsApp</Button></>}
+        {canNotify && <><DocumentActions path={`/api/orders/${orderId}/documents/a4`} filename={`${orderNumber}-a4.pdf`} printLabel="Imprimir remito A4" downloadLabel="Descargar remito A4" onDone={(message) => { setError(''); setFeedback(message) }} /><DocumentActions path={`/api/orders/${orderId}/documents/ticket`} filename={`${orderNumber}-ticket.pdf`} printLabel="Imprimir ticket 80 mm" downloadLabel="Descargar ticket 80 mm" onDone={(message) => { setError(''); setFeedback(message) }} /><Button variant="secondary" aria-expanded={showNotification} onClick={() => { setShowNotification((value) => !value); setError('') }}>Enviar por email o WhatsApp</Button></>}
       </div>
     </Panel>
     {showDelivery && <DeliveryAttemptDialog orderNumber={orderNumber} saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setShowDelivery(false)} />}

@@ -14,6 +14,7 @@ import { FormModal } from '../../shared/components/FormModal'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 import { Badge } from '../../shared/components/Badge'
 import { SearchableSelect } from '../../shared/components/SearchableSelect'
+import { DocumentActions } from '../../shared/components/DocumentActions'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean; pendingReviewCount?: number }
 /** `followStatus`: PENDING (copied from the default list, not reviewed), CONFIRMED (reviewed, still follows it) or null (own price). */
@@ -480,11 +481,15 @@ export default function PriceListsPage() {
         {listsQuery.data && listsQuery.data.totalPages > 1 && <div className="pagination"><span>Página {listPage + 1} de {listsQuery.data.totalPages} · {listsQuery.data.totalElements} listas</span><div><Button variant="secondary" onClick={() => setListPage(listPage - 1)} disabled={listPage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setListPage(listPage + 1)} disabled={listPage + 1 >= listsQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
       <Panel title={selectedList ? `Precios de ${selectedList.name}` : 'Precios'} description={pricesQuery.data ? `${pricesQuery.data.totalElements} productos ${activeFollowFilter || hasProductFilters ? 'con estos filtros' : 'en esta lista'}` : selectedList ? `${selectedList.code}${selectedList.isDefault ? ' · Lista predeterminada' : ''}` : undefined}
-        action={showFollowState ? <div className="price-list-controls">
-          <label className="price-list-filter"><span>Estado</span><select className="select" aria-label="Filtrar por estado del precio" value={followFilter} onChange={(event) => { setFollowFilter(event.target.value as FollowFilter); setPricePage(0) }}>
+        action={selectedList ? <div className="price-list-controls">
+          {showFollowState && <label className="price-list-filter"><span>Estado</span><select className="select" aria-label="Filtrar por estado del precio" value={followFilter} onChange={(event) => { setFollowFilter(event.target.value as FollowFilter); setPricePage(0) }}>
             <option value="">Todos</option><option value="PENDING">Sin revisar</option><option value="FOLLOWING">Siguen a {defaultListName}</option><option value="OWN">Precio propio</option>
-          </select></label>
-          {isAdmin && pendingReviewCount > 0 && <Button variant="secondary" disabled={confirmingReview} onClick={() => void confirmReview()}>{confirmingReview ? 'Confirmando...' : `Confirmar ${pendingReviewCount} sin revisar`}</Button>}
+          </select></label>}
+          {isAdmin && showFollowState && pendingReviewCount > 0 && <Button variant="secondary" disabled={confirmingReview} onClick={() => void confirmReview()}>{confirmingReview ? 'Confirmando...' : `Confirmar ${pendingReviewCount} sin revisar`}</Button>}
+          {/* The PDF uses the product filters (category, brand, name) currently applied to the table. */}
+          <DocumentActions path={`/api/documents/price-lists/${selectedList.id}${productFilterParams ? `?${productFilterParams.slice(1)}` : ''}`}
+            filename={`lista-${selectedList.code}.pdf`} printLabel="Imprimir lista" downloadLabel="Descargar PDF"
+            onDone={(message) => { setError(''); setFeedback(message) }} />
         </div> : undefined}>
         <div className="toolbar items-end price-product-filters">
           <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar producto</span><input className="input search-input [@media(max-width:640px)]:max-w-none" aria-label="Buscar producto en la lista" placeholder="Nombre del producto" value={priceSearch} onChange={(event) => setPriceFilter('q', event.target.value)} /></label>

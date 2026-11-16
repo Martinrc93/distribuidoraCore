@@ -885,6 +885,22 @@ Los modales básicos `.modal-backdrop > .panel` restantes limitan su altura a
 `aria-modal` resuelve esos comportamientos; para modales nuevos usar `FormModal`
 o `ConfirmationDialog`.
 
+### Imprimir y descargar documentos (`DocumentActions`)
+
+[`DocumentActions`](../../frontend/src/shared/components/DocumentActions.tsx) recibe
+`path` (endpoint PDF autenticado), `filename`, `printLabel`, `downloadLabel`,
+`disabled` y `onDone`. Muestra dos botones secundarios en `.document-actions`
+(flex con wrap, gap `8px`): imprimir llama a `apiPrintPdf`, que carga el PDF en un
+iframe oculto y abre el diálogo de impresión sin descargar el archivo; en
+dispositivos táctiles (`pointer: coarse`) abre una pestaña en el mismo clic y
+muestra allí el PDF para imprimir o compartir. Descargar usa `apiGetBlob`. Mientras
+trabaja muestra «Preparando...»/«Descargando...» y bloquea ambos botones; los
+errores aparecen debajo (`.document-actions-error`, `role="alert"`). Nombrar las
+acciones con el documento y formato: «Imprimir remito A4», «Imprimir ticket 80 mm»,
+«Imprimir lista», «Imprimir estado A4». Uso actual: acciones del pedido, tabla de
+precios (con los filtros aplicados) y ficha del cliente (estado de deuda A4 y 80 mm,
+en `.customer-statement-actions`).
+
 ### Confirmaciones reutilizables de cancelación y descarte
 
 [`ConfirmationDialog`](../../frontend/src/shared/components/ConfirmationDialog.tsx)

@@ -132,3 +132,23 @@ for (const width of [1280, 390]) {
     await expect(warning).toHaveCount(0)
   })
 }
+
+test('prints the filtered price list without downloading it', async ({ page }) => {
+  await mockApi(page)
+  let requested = ''
+  await page.route(/\/api\/documents\/price-lists\//, (route) => {
+    requested = route.request().url()
+    return route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4\n%%EOF\n') })
+  })
+  await page.route(/\/api\/pricing\/lists\/list-1\/prices/, (route) => route.fulfill({ json: {
+    content: [{ productId: products[0].id, name: products[0].name, price: 150.5, effectiveOn: '2026-11-01' }], page: 0, size: 20, totalElements: 1, totalPages: 1,
+  } }))
+  await page.goto('/price-lists?categoryId=category-1')
+  let downloaded = false
+  page.on('download', () => { downloaded = true })
+  await page.getByRole('button', { name: 'Imprimir lista' }).click()
+  await expect(page.locator('iframe[title="Documento para imprimir"]')).toHaveAttribute('src', /^blob:/)
+  await expect(page.getByRole('status')).toHaveText('Documento enviado a imprimir.')
+  expect(new URL(requested).searchParams.get('categoryId')).toBe('category-1')
+  expect(downloaded).toBe(false)
+})

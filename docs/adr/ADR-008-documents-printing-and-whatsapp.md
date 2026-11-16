@@ -92,3 +92,13 @@ Postergado por sobreingeniería. Las plantillas serán versionadas en código.
 - La generación requiere disponibilidad del renderer cuando el usuario la pide.
 - La integración productiva de WhatsApp puede tener costos.
 - Las plantillas de impresión requieren validación física posterior.
+
+## Actualización (2026-11-16)
+
+Además del remito A4 y el ticket de 80 mm de la venta, el módulo `document` genera
+la lista de precios filtrada (A4) y el estado de deuda del cliente (A4 y 80 mm),
+leyendo sus datos por JDBC sin depender de otros módulos de negocio. Los tickets de
+58/88 mm previstos no se implementaron: el formato de ticket vigente es 80 mm. La
+interfaz imprime directamente (iframe oculto con el PDF y diálogo de impresión del
+navegador; en dispositivos táctiles abre el PDF en una pestaña) o descarga el
+archivo. Contrato: [`docs/api/documents.md`](../api/documents.md).

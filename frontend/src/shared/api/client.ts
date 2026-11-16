@@ -144,6 +144,43 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
   return response.json() as Promise<T>
 }
 
+/**
+ * Prints an authenticated PDF without downloading it: loads it in a hidden iframe and opens the print dialog.
+ * Pass `target` (a window opened synchronously in the click handler) to show the PDF in a new tab instead,
+ * for touch devices whose browsers cannot print PDFs from an iframe.
+ */
+export async function apiPrintPdf(path: string, target?: Window | null): Promise<void> {
+  const response = await fetchAuthenticated(path, {})
+  if (!response.ok) {
+    target?.close()
+    if (response.status === 401) clearAccessToken()
+    throw await apiErrorFromResponse(response, response.status === 401 ? 'Sesión expirada' : 'No se pudo preparar el documento para imprimir')
+  }
+  const objectUrl = URL.createObjectURL(new Blob([await response.blob()], { type: 'application/pdf' }))
+  if (target) {
+    target.location.href = objectUrl
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+    return
+  }
+  const frame = document.createElement('iframe')
+  frame.title = 'Documento para imprimir'
+  frame.setAttribute('aria-hidden', 'true')
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
+  await new Promise<void>((resolve) => {
+    frame.onload = () => resolve()
+    frame.src = objectUrl
+    document.body.appendChild(frame)
+  })
+  try {
+    frame.contentWindow?.focus()
+    frame.contentWindow?.print()
+  } catch {
+    window.open(objectUrl, '_blank', 'noopener')
+  }
+  // Keep the document alive while the print dialog is open; browsers copy it when printing starts.
+  window.setTimeout(() => { frame.remove(); URL.revokeObjectURL(objectUrl) }, 60_000)
+}
+
 export async function apiGetBlob(path: string, filename: string): Promise<void> {
   const response = await fetchAuthenticated(path, {})
   if (!response.ok) {

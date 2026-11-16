@@ -1,3 +1,4 @@
+import { DocumentActions } from '../../shared/components/DocumentActions'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { apiGet, ApiError, type ApiPage } from '../../shared/api/client'
@@ -70,7 +71,12 @@ export default function CustomerDetailPage() {
         <Panel title="Datos del cliente" action={<Badge tone={customer.status === 'ACTIVE' ? 'strong' : 'muted'}>{customer.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}</Badge>}>
           <dl className="customer-detail-fields">{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl>
         </Panel>
-        <div className="self-start"><StatCard label="Saldo de cuenta corriente" value={money(balance)} detail={balance > 0 ? 'Saldo por cobrar al cliente.' : balance < 0 ? 'Saldo a favor del cliente.' : 'El cliente no tiene saldo pendiente.'} /></div>
+        <div className="self-start"><StatCard label="Saldo de cuenta corriente" value={money(balance)} detail={balance > 0 ? 'Saldo por cobrar al cliente.' : balance < 0 ? 'Saldo a favor del cliente.' : 'El cliente no tiene saldo pendiente.'} />
+          <div className="customer-statement-actions" aria-label="Estado de deuda">
+            <p className="helper-text m-0">Estado de deuda (ventas con saldo pendiente)</p>
+            <DocumentActions path={`/api/documents/customers/${customer.id}/statement?format=a4`} filename={`estado-deuda-${customer.name}.pdf`} printLabel="Imprimir estado A4" downloadLabel="Descargar A4" />
+            <DocumentActions path={`/api/documents/customers/${customer.id}/statement?format=ticket`} filename={`estado-deuda-${customer.name}-ticket.pdf`} printLabel="Imprimir ticket 80 mm" downloadLabel="Descargar ticket" />
+          </div></div>
       </div>
       <Panel title="Historial de pedidos" description="Pedidos del cliente, del más reciente al más antiguo. El saldo pendiente muestra la deuda actual de cada pedido en cuenta corriente.">
         {ordersQuery.isPending ? <div role="status"><EmptyState title="Cargando pedidos" description="Consultando el historial del cliente." /></div>
