@@ -113,6 +113,18 @@ Los filtros
 se conservan en la URL y cambiar una fecha vuelve a la primera página. Vaciar
 ambas permite consultar todo el historial.
 
+### Quién cargó el pedido y pagados sin entregar
+
+- `orders.orders.created_by_user_id` y `created_by_admin` (V41) registran el usuario
+  que confirmó el pedido y si actuaba como administrador (`ADMIN_ALL`) en ese
+  momento; un cambio de rol posterior no reescribe el dato. Los pedidos anteriores
+  se completan desde la auditoría `ORDER_CONFIRM` (el indicador de administrador
+  usa el rol actual del usuario); sin auditoría quedan sin dato (`null`).
+- `GET /api/orders` acepta `createdBy=ADMIN|SELLER` (otro valor: `400`) y
+  `paidUndelivered=true` (pedidos `CONFIRMED` cuya venta tiene `paid >= total`).
+  Ambos se aplican antes de paginar, junto con el alcance del vendedor. Cada fila
+  incluye `createdByAdmin` (`true`, `false` o `null`) y `paid`.
+
 ## Creación de pedidos en la interfaz
 
 `GET /api/pricing/resolve-batch?customerId=<uuid>&priceListId=<uuid>&productIds=<uuid>,<uuid>`

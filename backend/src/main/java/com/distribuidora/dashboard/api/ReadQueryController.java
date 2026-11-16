@@ -88,8 +88,10 @@ public class ReadQueryController {
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
             @RequestParam(defaultValue = "") String status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax) {
-        return queries.orders(page, size, search, status, dateMin, dateMax);
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax,
+            @RequestParam(required = false) String createdBy,
+            @RequestParam(defaultValue = "false") boolean paidUndelivered) {
+        return queries.orders(page, size, search, status, dateMin, dateMax, createdBy, paidUndelivered);
     }
 
     @GetMapping("/orders/{orderId}")

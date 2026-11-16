@@ -679,6 +679,9 @@
   .price-follow-help { @apply mt-0 mb-[14px]; }
   .document-actions { @apply inline-flex flex-wrap items-center gap-[8px]; }
   .document-actions-error { @apply basis-full m-0 text-[12px]; }
+  .order-status-badges { @apply inline-flex flex-wrap gap-[6px]; }
+  .order-navigator { @apply flex flex-wrap items-center gap-[10px] mb-[18px]; }
+  .order-navigator-position { @apply text-muted text-[12px]; }
   .customer-statement-actions { @apply mt-[14px] grid gap-[8px]; }
   .inline-price { @apply inline-grid justify-items-end gap-[4px] max-w-full; }
   .inline-price-input.input { @apply w-[min(100%,_130px)] min-h-[36px] text-right tabular-nums; }

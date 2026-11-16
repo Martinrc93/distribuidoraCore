@@ -1,6 +1,6 @@
 import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState, type FormEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
@@ -287,21 +287,43 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     setSelectedProductPriceOverride(undefined)
   }
 
-  function addProduct() {
-    if (!customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data || lines.some((line) => line.productId === selectedProductId)) return
+  /** Adds the selected product; returns true when a line was added. */
+  function addProduct(): boolean {
+    if (!customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data || lines.some((line) => line.productId === selectedProductId)) return false
     const quantity = quantityValue(selectedProductQuantity)
     const discountInput = selectedProductDiscount.trim().replace(',', '.')
     const discount = isAdmin ? Number(discountInput) : 0
     const override = selectedProductPriceOverride?.trim().replace(',', '.') ?? ''
-    if (!validQuantity(selectedProductQuantity)) { setError('La cantidad debe ser positiva y múltiplo de 0,5.'); return }
-    if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento debe estar entre 0 y 100%.'); return }
-    if (isAdmin && selectedProductPriceOverride !== undefined && (!override || !Number.isFinite(Number(override)) || Number(override) < 0)) { setError('El precio debe ser un número no negativo.'); return }
+    if (!validQuantity(selectedProductQuantity)) { setError('La cantidad debe ser positiva y múltiplo de 0,5.'); return false }
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento debe estar entre 0 y 100%.'); return false }
+    if (isAdmin && selectedProductPriceOverride !== undefined && (!override || !Number.isFinite(Number(override)) || Number(override) < 0)) { setError('El precio debe ser un número no negativo.'); return false }
     draftChanged()
     setLines((current) => [...current, { productId: selectedProductId, quantity: String(quantity), lineDiscountPercent: String(discount), unitPriceOverride: isAdmin ? override : '' }])
     setSelectedProductId('')
     setSelectedProductQuantity('1')
     setSelectedProductDiscount('0')
     setSelectedProductPriceOverride(undefined)
+    return true
+  }
+
+  // Keyboard loading: choose a product → quantity → Enter adds it and returns to the product search.
+  const quantityInput = useRef<HTMLInputElement>(null)
+  const focusQuantityAfterSelect = useRef(false)
+  useEffect(() => {
+    // Runs after the quantity input is enabled for the newly selected product.
+    if (!selectedProductId || !focusQuantityAfterSelect.current) return
+    focusQuantityAfterSelect.current = false
+    quantityInput.current?.focus()
+    quantityInput.current?.select()
+  }, [selectedProductId])
+  function focusProductSearch() {
+    window.setTimeout(() => document.querySelector<HTMLInputElement>('.order-product-choice input[role="combobox"]')?.focus(), 0)
+  }
+  function addFromKeyboard(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return
+    // Enter inside the product picker never submits (confirms) the whole order.
+    event.preventDefault()
+    if (addProduct()) focusProductSearch()
   }
 
   function updateLine(productId: string, field: keyof Omit<DraftLine, 'productId'>, value: string) {
@@ -420,13 +442,13 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
             </div>
             {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
             <div className={`product-picker order-product-picker${isAdmin ? ' order-product-picker-admin' : ''}`}>
-              <SearchableSelect key={customerId} label="Producto" className="order-product-choice" fullWidth preserveSearch allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" options={products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => ({ id: item.id, name: item.name, ...(item.stock !== undefined ? { detail: `Stock: ${stockUnits.format(Number(item.stock))}` } : {}) }))} value={selectedProductId} onChange={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError('') }} disabled={!customerId || !selectedList || submitting} />
+              <SearchableSelect key={customerId} label="Producto" className="order-product-choice" fullWidth preserveSearch allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" options={products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => ({ id: item.id, name: item.name, ...(item.stock !== undefined ? { detail: `Stock: ${stockUnits.format(Number(item.stock))}` } : {}) }))} value={selectedProductId} onChange={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError(''); focusQuantityAfterSelect.current = Boolean(value) }} disabled={!customerId || !selectedList || submitting} />
               {isAdmin
                 ? <label className="field"><span>Precio</span><input className="input currency-input" aria-label="Precio" aria-busy={selectedPriceQuery.isFetching} placeholder={selectedProductId && selectedPriceQuery.isFetching ? 'Consultando...' : selectedProductId && selectedPriceQuery.isError ? 'No disponible' : '—'} type="text" inputMode="decimal" value={selectedProductPriceOverride ?? (selectedProductId && selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '')} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} disabled={submitting || !customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data} /></label>
                 : <div className="field"><span>Precio</span><span className="read-only-field currency-input" aria-label="Precio" aria-live="polite" aria-busy={selectedPriceQuery.isFetching}>{!selectedProductId ? '—' : selectedPriceQuery.isFetching ? 'Consultando...' : selectedPriceQuery.isError ? 'No disponible' : selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '—'}</span></div>}
-              <label className="field"><span>Cantidad</span><input className="input order-compact-input" size={4} type="text" inputMode="decimal" aria-invalid={invalidSelectedQuantity} aria-describedby={invalidSelectedQuantity ? 'order-selected-quantity-error' : undefined} value={selectedProductQuantity} onChange={(event) => setSelectedProductQuantity(event.target.value)} disabled={!selectedProductId || submitting} /></label>
-              {isAdmin && <label className="field"><span>Descuento</span><input className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductDiscount} onChange={(event) => setSelectedProductDiscount(event.target.value)} disabled={!selectedProductId || submitting} /></label>}
-              <Button type="button" variant="secondary" onClick={addProduct} disabled={submitting || !customerId || !selectedList || !selectedProductId || invalidSelectedQuantity || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data}>Agregar producto</Button>
+              <label className="field"><span>Cantidad</span><input ref={quantityInput} onKeyDown={addFromKeyboard} className="input order-compact-input" size={4} type="text" inputMode="decimal" aria-invalid={invalidSelectedQuantity} aria-describedby={invalidSelectedQuantity ? 'order-selected-quantity-error' : undefined} value={selectedProductQuantity} onChange={(event) => setSelectedProductQuantity(event.target.value)} disabled={!selectedProductId || submitting} /></label>
+              {isAdmin && <label className="field"><span>Descuento</span><input onKeyDown={addFromKeyboard} className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductDiscount} onChange={(event) => setSelectedProductDiscount(event.target.value)} disabled={!selectedProductId || submitting} /></label>}
+              <Button type="button" variant="secondary" onClick={() => { if (addProduct()) focusProductSearch() }} disabled={submitting || !customerId || !selectedList || !selectedProductId || invalidSelectedQuantity || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data}>Agregar producto</Button>
               {selectedProductId && productsById.get(selectedProductId)?.stock !== undefined && <p className="order-product-choice helper-text m-0" aria-live="polite">Stock disponible: {stockUnits.format(Number(productsById.get(selectedProductId)?.stock))}{Number(productsById.get(selectedProductId)?.stock) <= 0 ? ' · sin stock (el pedido puede dejarlo negativo)' : ''}</p>}
               {invalidSelectedQuantity && <p id="order-selected-quantity-error" className="error-text" role="alert">La cantidad debe ser positiva y múltiplo de 0,5.</p>}
               {selectedProductId && selectedPriceQuery.isError && <p className="order-product-choice error-text" role="alert">No se pudo consultar el precio de la lista. {selectedPriceQuery.error?.message} <Button type="button" variant="link" onClick={() => selectedPriceQuery.refetch()}>Reintentar precio</Button></p>}

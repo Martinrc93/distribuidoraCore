@@ -118,7 +118,9 @@ class OrderConfirmationServiceTest {
         assertThat(response.previousBalanceAmount()).isEqualByComparingTo("40");
         var insert = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("previous_balance_amount"), insert.capture());
-        assertThat((BigDecimal) insert.getValue()[insert.getValue().length - 1]).isEqualByComparingTo("40");
+        // previous_balance_amount precedes created_by_user_id and created_by_admin.
+        assertThat((BigDecimal) insert.getValue()[insert.getValue().length - 3]).isEqualByComparingTo("40");
+        assertThat(insert.getValue()[insert.getValue().length - 1]).isEqualTo(false);
         var debit = org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(contains("insert into customer.account_ledger"), debit.capture());
         assertThat((BigDecimal) debit.getValue()[3]).isEqualByComparingTo("20");

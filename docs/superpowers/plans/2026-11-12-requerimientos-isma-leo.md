@@ -134,6 +134,14 @@ precios es una iniciativa aparte (L) y no se recomienda ahora.
 
 ### Fase 4 — Pedidos y carga ágil
 
+**Estado (2026-11-16):** implementados 4.1 (carga con teclado; Enter ya no confirma
+el pedido desde el selector), 4.2 (↑/↓ en el listado, ← / → y botones en el detalle),
+4.3 (V41 `created_by_user_id`/`created_by_admin`, columna y filtro «Cargado por»),
+4.6 (filtro «Pagados sin entregar» y badge «Pagado») y 4.7 (acciones de documentos
+desde el pedido, en Fase 3). Pendientes: 4.4 (pago al confirmar el pedido con
+imputación a saldos anteriores) y 4.5 (preparación separada, con la decisión de
+descontar stock al preparar).
+
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
 | 4.1 | Teclado en la carga | M | Producto → cantidad → Enter agrega y vuelve al buscador; Tab ordenado; sin mouse. `SearchableSelect` ya maneja flechas y Enter. |

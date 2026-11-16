@@ -33,7 +33,9 @@ class OrdersDateFilterTest {
         jdbc.execute("create schema seller");
         jdbc.execute("create table customer.customers(id uuid primary key, business_name varchar, seller_id uuid)");
         jdbc.execute("create table seller.seller_profiles(id uuid primary key, display_name varchar)");
-        jdbc.execute("create table orders.orders(id uuid primary key, order_number varchar, customer_id uuid, seller_id uuid, total decimal, status varchar, created_at timestamp with time zone)");
+        jdbc.execute("create table orders.orders(id uuid primary key, order_number varchar, customer_id uuid, seller_id uuid, total decimal, status varchar, created_at timestamp with time zone, created_by_admin boolean)");
+        jdbc.execute("create schema if not exists sale");
+        jdbc.execute("create table sale.sales(id uuid primary key, order_id uuid, total decimal, paid decimal)");
         jdbc.update("insert into customer.customers values (?, 'Almacén Norte', ?)", customerId, sellerId);
         service = new ReadQueryService(jdbc);
     }
@@ -82,7 +84,7 @@ class OrdersDateFilterTest {
     }
 
     private void insert(String number, String timestamp, UUID seller, String status) {
-        jdbc.update("insert into orders.orders values (?, ?, ?, ?, 10, ?, ?)",
+        jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, total, status, created_at) values (?, ?, ?, ?, 10, ?, ?)",
             UUID.randomUUID(), number, customerId, seller, status, Timestamp.from(Instant.parse(timestamp)));
     }
 }

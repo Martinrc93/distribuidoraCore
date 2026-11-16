@@ -310,4 +310,45 @@ describe('OrdersPage', () => {
     fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '29/02/2024' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('dateMin=2024-02-29&dateMax=2026-09-30'), expect.anything()))
   })
+
+  it('filters paid undelivered orders and by creator, shows who loaded them and moves between rows with arrows', async () => {
+    const user = userEvent.setup()
+    sessionStorage.clear()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({
+      content: [
+        { id: 'order-1', number: 'PED-001', customer: 'Almacén Norte', seller: 'Lucía', total: 300, paid: 300, status: 'CONFIRMED', date: '2026-09-30T02:00:00Z', createdByAdmin: true },
+        { id: 'order-2', number: 'PED-002', customer: 'Almacén Sur', seller: 'Lucía', total: 200, paid: 50, status: 'CONFIRMED', date: '2026-09-30T03:00:00Z', createdByAdmin: false },
+      ],
+      page: 0, size: 20, totalElements: 2, totalPages: 1,
+    }))
+    renderOrders('/orders?dateMin=&dateMax=', ['ADMIN_ALL'])
+
+    const first = await screen.findByRole('row', { name: /PED-001/ })
+    expect(first).toHaveTextContent('Administrador')
+    expect(within(first).getByText('Pagado')).toBeInTheDocument()
+    const second = screen.getByRole('row', { name: /PED-002/ })
+    expect(second).toHaveTextContent('Vendedor')
+    expect(within(second).queryByText('Pagado')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Filtrar por cobro'), 'UNDELIVERED')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('&paidUndelivered=true'), expect.anything()))
+    await user.selectOptions(screen.getByLabelText('Filtrar por quién cargó el pedido'), 'SELLER')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('&createdBy=SELLER&paidUndelivered=true'), expect.anything()))
+
+    screen.getByRole('link', { name: 'Abrir pedido PED-001' }).focus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('link', { name: 'Abrir pedido PED-002' })).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('link', { name: 'Abrir pedido PED-001' })).toHaveFocus()
+    expect(JSON.parse(sessionStorage.getItem('distribuidora.orders.navigation') ?? '{}')).toMatchObject({ ids: ['order-1', 'order-2'], numbers: ['PED-001', 'PED-002'] })
+  })
+
+  it('hides the creator filter and column from sellers', async () => {
+    mockOrders()
+    renderOrders('/orders', ['ORDER_CREATE'])
+    await screen.findByText('PED-001')
+    expect(screen.queryByLabelText('Filtrar por quién cargó el pedido')).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Cargado por' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Filtrar por cobro')).toBeInTheDocument()
+  })
 })

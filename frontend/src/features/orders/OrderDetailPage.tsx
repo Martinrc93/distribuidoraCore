@@ -9,6 +9,7 @@ import { Badge } from '../../shared/components/Badge'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
+import { OrderNavigator, readOrderNavigation } from './orderNavigation'
 import { Panel } from '../../shared/components/Panel'
 import OrderLifecycleActions from './OrderLifecycleActions'
 import OrderForm from './OrderForm'
@@ -93,7 +94,8 @@ export default function OrderDetailPage() {
   ]
 
   return <>
-    <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href="/orders">Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
+    <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href={readOrderNavigation()?.returnTo ?? "/orders"}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
+    <OrderNavigator orderId={orderId} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {Number(order.previousBalanceAmount ?? 0) > 0 && <Panel title="Importe para la entrega"><dl className="confirmation-result"><dt>Total del pedido</dt><dd><CurrencyText>{money(order.total)}</CurrencyText></dd><dt>Saldo anterior incluido</dt><dd><CurrencyText>{money(order.previousBalanceAmount)}</CurrencyText></dd><dt>Total a cobrar</dt><dd><CurrencyText>{money(order.collectionTotal ?? order.total + Number(order.previousBalanceAmount))}</CurrencyText></dd></dl></Panel>}
     <div className="stats-grid compact">

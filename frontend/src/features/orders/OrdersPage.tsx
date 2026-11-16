@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useLocation, useSearchParams } from 'react-router-dom'
+import { saveOrderNavigation } from './orderNavigation'
 import { useQuery } from '@tanstack/react-query'
 import { apiGet, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
@@ -14,7 +15,7 @@ import { OrderDateFilter } from './OrderDateFilter'
 import { DeliveryAttemptDialog } from './DeliveryAttemptDialog'
 import { useOrderDelivery } from './useOrderDelivery'
 
-type Order = { id: string; number: string; customer: string; seller: string; total: number; status: string; date: string }
+type Order = { id: string; number: string; customer: string; seller: string; total: number; status: string; date: string; createdByAdmin?: boolean | null; paid?: number }
 type Row = Record<string, string>
 type DeliveryOrder = { id: string; number: string; saleBalance: number; previousDebtAvailable: number }
 
@@ -56,7 +57,10 @@ export default function OrdersPage() {
     target?.focus()
     setDeliveryFocusTarget('')
   }, [deliveryOrder, deliveryFocusTarget])
-  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'status'])
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'status', 'createdBy', 'paid'])
+  const createdBy = isAdmin && ['ADMIN', 'SELLER'].includes(getFilter('createdBy')) ? getFilter('createdBy') : ''
+  const paidUndelivered = getFilter('paid') === 'UNDELIVERED'
+  const location = useLocation()
   const search = getFilter('search')
   const status = getFilter('status')
   const [params, setParams] = useSearchParams()
@@ -67,7 +71,7 @@ export default function OrdersPage() {
   const max = parseDate(dateMax)
   const invalidRange = Boolean(min && max && min > max)
   const dateError = min === null || max === null ? 'Las fechas deben ser válidas y tener formato dd/mm/aaaa.' : invalidRange ? 'La fecha mínima no puede ser posterior a la fecha máxima.' : ''
-  const path = `/api/orders?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&status=${encodeURIComponent(status)}&dateMin=${min ?? ''}&dateMax=${max ?? ''}`
+  const path = `/api/orders?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&status=${encodeURIComponent(status)}&dateMin=${min ?? ''}&dateMax=${max ?? ''}${createdBy ? `&createdBy=${createdBy}` : ''}${paidUndelivered ? '&paidUndelivered=true' : ''}`
   const query = useQuery({ queryKey: [path], queryFn: () => apiGet<ApiPage<Order>>(path), enabled: !dateError })
 
   async function openDelivery(row: Row) {
@@ -97,12 +101,14 @@ export default function OrdersPage() {
     next.delete('page')
     setParams(next, { replace: true })
   }
-  const hasFilters = Boolean(search || status || dateMin || dateMax)
+  const hasFilters = Boolean(search || status || dateMin || dateMax || createdBy || paidUndelivered)
 
   function clearFilters() {
     const next = new URLSearchParams(params)
     next.delete('search')
     next.delete('status')
+    next.delete('createdBy')
+    next.delete('paid')
     next.delete('page')
     next.set('dateMin', '')
     next.set('dateMax', '')
@@ -116,15 +122,35 @@ export default function OrdersPage() {
     total: money(order.total),
     status: order.status,
     date: formatDate(order.date),
+    createdBy: order.createdByAdmin === true ? 'Administrador' : order.createdByAdmin === false ? 'Vendedor' : '—',
+    fullyPaid: order.status === 'CONFIRMED' && Number(order.paid ?? 0) >= Number(order.total) ? 'true' : '',
     action: order.number,
   }))
+  // The detail page moves between the orders of this page with ← and →.
+  useEffect(() => {
+    const content = Array.isArray(query.data?.content) ? query.data.content : null
+    if (!content) return
+    saveOrderNavigation({ ids: content.map((order) => order.id), numbers: content.map((order) => order.number), returnTo: `${location.pathname}${location.search}` })
+  }, [query.data, location.pathname, location.search])
+
+  /** ↑/↓ move between the «Ver detalle» links of the rows. */
+  function moveBetweenRows(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    const links = [...event.currentTarget.querySelectorAll<HTMLElement>('[id^="order-details-"]')]
+    const current = links.indexOf(document.activeElement as HTMLElement)
+    if (current < 0) return
+    event.preventDefault()
+    links[Math.min(links.length - 1, Math.max(0, current + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus()
+  }
+
   const columns: TableColumn[] = [
     { key: 'number', label: 'Pedido', emphasis: true },
     { key: 'customer', label: 'Cliente' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'date', label: 'Fecha' },
     { key: 'total', label: 'Total', align: 'right' },
-    { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'CANCELLED' ? 'muted' : value === 'DELIVERED' ? 'strong' : 'soft'}>{value}</Badge> },
+    ...(isAdmin ? [{ key: 'createdBy', label: 'Cargado por' } satisfies TableColumn] : []),
+    { key: 'status', label: 'Estado', render: (value, row) => <span className="order-status-badges"><Badge tone={value === 'CANCELLED' ? 'muted' : value === 'DELIVERED' ? 'strong' : 'soft'}>{value}</Badge>{row.fullyPaid && <Badge tone="strong">Pagado</Badge>}</span> },
     { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button id={`order-details-${row.id}`} variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button>{isAdmin && row.status === 'CONFIRMED' && <Button variant="secondary" href={`/orders/${row.id}?edit=true`} aria-label={`Editar pedido ${row.number}`}>Editar</Button>}{canDeliver && row.status === 'CONFIRMED' && <Button id={`order-delivery-${row.id}`} type="button" onClick={() => void openDelivery(row)} disabled={Boolean(loadingDeliveryId)} aria-busy={loadingDeliveryId === row.id} aria-label={`Pasar a entregado pedido ${row.number}`}>{loadingDeliveryId === row.id ? 'Cargando...' : 'Pasar a entregado'}</Button>}</div> },
   ]
 
@@ -134,6 +160,8 @@ export default function OrdersPage() {
       <form className="toolbar orders-toolbar" onSubmit={(event) => event.preventDefault()}>
         <label className="field"><span>Buscar pedidos</span><input id="orders-search" className="input search-input" placeholder="Cliente o número" aria-label="Buscar pedidos" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
         <label className="field"><span>Filtrar por estado</span><select className="select" aria-label="Filtrar por estado" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="">Todos los estados</option><option value="CONFIRMED">Confirmado</option><option value="DELIVERED">Entregado</option><option value="CANCELLED">Cancelado</option></select></label>
+        <label className="field"><span>Cobro</span><select className="select" aria-label="Filtrar por cobro" value={paidUndelivered ? 'UNDELIVERED' : ''} onChange={(event) => setFilter('paid', event.target.value)}><option value="">Todos</option><option value="UNDELIVERED">Pagados sin entregar</option></select></label>
+        {isAdmin && <label className="field"><span>Cargado por</span><select className="select" aria-label="Filtrar por quién cargó el pedido" value={createdBy} onChange={(event) => setFilter('createdBy', event.target.value)}><option value="">Todos</option><option value="ADMIN">Administrador</option><option value="SELLER">Vendedor</option></select></label>}
         <div className="orders-date-filters">
           <OrderDateFilter id="orders-date-min" label="Desde" value={dateMin} isoValue={min ?? ''} onChange={(value) => setDateFilter('dateMin', value)} invalid={min === null || invalidRange} describedBy={dateError ? 'orders-date-error' : undefined} />
           <OrderDateFilter id="orders-date-max" label="Hasta" value={dateMax} isoValue={max ?? ''} onChange={(value) => setDateFilter('dateMax', value)} invalid={max === null || invalidRange} describedBy={dateError ? 'orders-date-error' : undefined} />
@@ -141,7 +169,7 @@ export default function OrdersPage() {
       </form>
       {deliveryLoadError && <p className="error-text" role="alert">{deliveryLoadError} Puedes volver a intentar desde el botón del pedido.</p>}
       {deliveryFeedback && <p className="success-text" role="status">{deliveryFeedback}</p>}
-      {dateError ? <p id="orders-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title={hasFilters ? 'No hay pedidos para estos filtros' : 'No hay pedidos para mostrar'} description={hasFilters ? 'No se encontraron pedidos para la búsqueda y el rango de fechas seleccionados. Podés quitar los filtros para consultar todos los pedidos.' : 'Todavía no hay pedidos registrados para tu usuario.'} action={hasFilters ? <Button variant="secondary" type="button" onClick={clearFilters}>Ver todos los pedidos</Button> : <Button href="/orders/new">+ Nuevo pedido</Button>} /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+      {dateError ? <p id="orders-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title={hasFilters ? 'No hay pedidos para estos filtros' : 'No hay pedidos para mostrar'} description={hasFilters ? 'No se encontraron pedidos para la búsqueda y el rango de fechas seleccionados. Podés quitar los filtros para consultar todos los pedidos.' : 'Todavía no hay pedidos registrados para tu usuario.'} action={hasFilters ? <Button variant="secondary" type="button" onClick={clearFilters}>Ver todos los pedidos</Button> : <Button href="/orders/new">+ Nuevo pedido</Button>} /> : <><div onKeyDown={moveBetweenRows}><DataTable columns={columns} rows={rows} /></div><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {deliveryOrder && <DeliveryAttemptDialog mode="delivery" returnFocusId={`order-delivery-${deliveryOrder.id}`} orderNumber={deliveryOrder.number} saleBalance={deliveryOrder.saleBalance} previousDebtAvailable={deliveryOrder.previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setDeliveryOrder(undefined)} />}
   </>

@@ -267,6 +267,18 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
             LocalDate dateMin, LocalDate dateMax) {
+        return orders(page, size, search, status, dateMin, dateMax, null, false);
+    }
+
+    /**
+     * Orders list. {@code createdBy} is ADMIN or SELLER (who registered the order, snapshot at confirmation);
+     * {@code paidUndelivered} keeps confirmed orders whose sale is fully paid but not delivered yet.
+     */
+    public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
+            LocalDate dateMin, LocalDate dateMax, String createdBy, boolean paidUndelivered) {
+        if (createdBy != null && !createdBy.isBlank() && !"ADMIN".equals(createdBy) && !"SELLER".equals(createdBy)) {
+            throw new IllegalArgumentException("createdBy debe ser ADMIN o SELLER");
+        }
         if (dateMin != null && dateMax != null && dateMin.isAfter(dateMax)) {
             throw new IllegalArgumentException("La fecha mínima no puede ser posterior a la fecha máxima");
         }
@@ -289,15 +301,21 @@ public class ReadQueryService {
             where += " and o.created_at < ?";
             parameters.add(Timestamp.from(dateMax.plusDays(1).atStartOfDay(zone).toInstant()));
         }
+        if ("ADMIN".equals(createdBy)) where += " and o.created_by_admin = true";
+        if ("SELLER".equals(createdBy)) where += " and o.created_by_admin = false";
+        if (paidUndelivered) where += " and o.status = 'CONFIRMED' and s.id is not null and s.paid >= s.total";
         return page("""
             select o.id, o.order_number as number, c.business_name as customer,
                    coalesce(sp.display_name, 'Sin asignar') as seller,
-                   o.total, o.status, o.created_at as date
+                   o.total, o.status, o.created_at as date,
+                   o.created_by_admin as "createdByAdmin", coalesce(s.paid, 0) as paid
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
             left join seller.seller_profiles sp on sp.id = o.seller_id
+            left join sale.sales s on s.order_id = o.id
             """ + where + " order by o.created_at desc, o.id desc", """
             select count(*) from orders.orders o join customer.customers c on c.id = o.customer_id
+            left join sale.sales s on s.order_id = o.id
              """ + where, page, size, parameters.toArray());
     }
 

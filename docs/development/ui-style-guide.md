@@ -545,6 +545,24 @@ El listado de clientes muestra su número debajo del nombre en `11px`, y la fich
 lo incluye como dato «N.º de cliente». Contrato en
 [`order-numbering.md`](../api/order-numbering.md).
 
+
+Filtros adicionales del listado: «Cobro» (Todos / Pagados sin entregar) para todos
+los usuarios y «Cargado por» (Todos / Administrador / Vendedor) solo para
+administradores, guardados en la URL (`paid`, `createdBy`). Los administradores ven
+la columna «Cargado por» (Administrador, Vendedor o «—» si no hay dato). Un pedido
+confirmado totalmente pagado muestra el badge «Pagado» junto al estado
+(`.order-status-badges`).
+
+Teclado: en la tabla, ↑/↓ mueven el foco entre los enlaces «Ver detalle». El listado
+guarda en `sessionStorage` los pedidos de la página visible; el detalle muestra
+`OrderNavigator` («← Anterior», «N de M», «Siguiente →», `.order-navigator`) y ← / →
+cambian de pedido cuando el foco no está en un campo y no hay un diálogo abierto.
+«Volver a pedidos» regresa al listado con sus filtros.
+
+En la carga de pedidos, elegir un producto con Enter pasa el foco a «Cantidad»
+(seleccionada); Enter en «Cantidad» o «Descuento» agrega la línea y vuelve al
+buscador de productos. Enter dentro del selector de productos nunca confirma el
+pedido.
 En el listado, `.table-row-actions` agrupa «Ver detalle», «Editar» y «Pasar a
 entregado». «Editar» solo aparece para administradores en pedidos confirmados.
 «Pasar a entregado» aparece en pedidos confirmados con `SALE_DELIVER` o

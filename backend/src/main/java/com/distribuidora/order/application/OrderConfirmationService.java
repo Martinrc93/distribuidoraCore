@@ -187,11 +187,11 @@ public class OrderConfirmationService {
         Timestamp registeredAt = request.orderDate() == null ? now : Timestamp.from(
             request.orderDate().atTime(businessNow.toLocalTime()).atZone(businessNow.getZone()).toInstant());
         String saleNumber = number("SAL");
-        jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, previous_balance_amount) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, idempotency_key, idempotency_fingerprint, credit_limit_exceeded, credit_limit_snapshot, projected_balance_snapshot, order_discount_percent, previous_balance_amount, created_by_user_id, created_by_admin) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             orderId, orderNumber, customerId, sellerId, calculated.subtotal(),
             calculated.lineDiscount().add(calculated.orderDiscount()), calculated.total(), registeredAt,
             request.idempotencyKey(), fingerprint, creditLimitExceeded, creditLimit, projectedBalance,
-            calculated.orderDiscountPercent(), previousBalanceAmount);
+            calculated.orderDiscountPercent(), previousBalanceAmount, actorId(), hasAuthority("ADMIN_ALL"));
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
         jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)",
