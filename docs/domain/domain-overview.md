@@ -84,6 +84,7 @@ confirmación → SALE
 edición       → delta compensatorio
 cancelación   → SALE_CANCELLATION
 ajuste admin  → MANUAL_ADJUSTMENT
+compra        → PURCHASE / PURCHASE_ADJUSTMENT / PURCHASE_CANCELLATION
 ```
 
 ## Cuenta corriente

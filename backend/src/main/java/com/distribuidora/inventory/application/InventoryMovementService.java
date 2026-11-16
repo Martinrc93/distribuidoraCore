@@ -14,7 +14,8 @@ import java.util.UUID;
 public class InventoryMovementService {
     private static final BigDecimal HALF = new BigDecimal("0.5");
     private static final Set<String> SUPPORTED_MOVEMENT_TYPES = Set.of(
-        "SALE", "SALE_CANCELLATION", "MANUAL_ADJUSTMENT", "RETURN");
+        "SALE", "SALE_CANCELLATION", "MANUAL_ADJUSTMENT", "RETURN",
+        "PURCHASE", "PURCHASE_ADJUSTMENT", "PURCHASE_CANCELLATION");
 
     private final JdbcTemplate jdbc;
 
@@ -95,7 +96,9 @@ public class InventoryMovementService {
     }
 
     private boolean isHistoricalReversal(String movementType) {
-        return "SALE_CANCELLATION".equals(movementType) || "RETURN".equals(movementType);
+        // Reversals must work even if the product was deactivated after the original movement.
+        return "SALE_CANCELLATION".equals(movementType) || "RETURN".equals(movementType)
+            || "PURCHASE_CANCELLATION".equals(movementType);
     }
 
     private void validate(UUID productId, BigDecimal delta, String movementType, String reason) {

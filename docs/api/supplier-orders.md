@@ -59,12 +59,41 @@ si existe devuelve `order`, `items` y `available: true`. Cada item incluye
 cantidades con costos actuales; productos inactivos impiden la copia. Cargar
 el anterior requiere confirmación si reemplazará productos del borrador.
 
+## Estados y stock (V40)
+
+| Estado | Significado | Stock |
+|---|---|---|
+| `DRAFT` (Borrador) | Compra registrada sin confirmar | No lo mueve |
+| `CONFIRMED` (Confirmada) | Mercadería ingresada | Suma las cantidades (`PURCHASE`) |
+| `CANCELLED` (Anulada) | No puede modificarse | Si estaba confirmada, descuenta (`PURCHASE_CANCELLATION`) |
+| `LEGACY` (Histórica) | Registrada antes de V40, cuando las compras no movían stock | Nunca lo mueve: editarla o anularla no cambia el stock (evita contar dos veces mercadería ya ajustada a mano) |
+
+- `POST /api/supplier-orders` acepta `confirm: true` para registrar y confirmar en
+  una sola transacción; sin ese campo queda `DRAFT`. La respuesta incluye `status`.
+  `confirm` forma parte de la huella de idempotencia.
+- `POST /api/supplier-orders/{id}/confirm`: solo `DRAFT` → `CONFIRMED`; registra un
+  movimiento `PURCHASE` por línea con referencia a la compra.
+- `PUT /api/supplier-orders/{id}` con `supplierId`, `orderDate` y `lines` (sin clave
+  de idempotencia) reemplaza proveedor, fecha y líneas. En una compra `CONFIRMED`
+  registra `PURCHASE_ADJUSTMENT` por producto con la diferencia (positiva o
+  negativa, incluidas líneas agregadas o quitadas). Una compra anulada devuelve `409`.
+- `POST /api/supplier-orders/{id}/cancel`: anula cualquier estado salvo `CANCELLED`.
+- Las cantidades de compras nuevas y editadas (no históricas) deben ser múltiplos
+  de `0.5`, como el stock. Las operaciones bloquean la compra (`for update`) y los
+  saldos de stock; se auditan como `SUPPLIER_ORDER_CREATE`, `_CONFIRM`, `_UPDATE`
+  (con los cambios de stock) y `_CANCEL`.
+- Listado y detalle incluyen `status`; el detalle agrega `confirmedAt` y `cancelledAt`.
+
 ## Alcance
 
-V35 crea `catalog.product_suppliers` y el schema `purchasing`. La solicitud se
-registra y audita como `SUPPLIER_ORDER_CREATE`; no envía mensajes al proveedor,
-registra pagos ni movimientos de stock. Recepción de mercadería, seguimiento de
-entregas, facturas de compra y envío por mail/WhatsApp requieren un flujo separado.
+V35 crea `catalog.product_suppliers` y el schema `purchasing`. No envía mensajes
+al proveedor ni registra pagos o facturas de compra; el envío por mail/WhatsApp
+requiere un flujo separado.
+
+**Reposición:** el formulario ofrece «Agregar productos sin stock», que agrega los
+productos activos con stock menor o igual a cero (solo los asociados al proveedor
+elegido, si tiene asociaciones). Sugiere cubrir el saldo negativo más una unidad,
+en múltiplos de 0,5; el usuario ajusta la cantidad.
 
 Errores: `400` por datos inválidos, `401` sin sesión, `403` sin `ADMIN_ALL`,
 `404` para proveedor/producto/pedido inexistente y `409` por reutilizar una clave

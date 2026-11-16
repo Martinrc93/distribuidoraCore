@@ -36,6 +36,18 @@ public class SupplierOrderController {
     @GetMapping("/{id}")
     public Map<String, Object> detail(@PathVariable UUID id) { return service.detail(id); }
 
+    /** Replaces supplier, date and lines; a confirmed purchase moves stock by the difference. */
+    @PutMapping("/{id}")
+    public Map<String, Object> update(@PathVariable UUID id, @RequestBody OrderInput input) { return service.update(id, input); }
+
+    /** Confirms a draft and adds its quantities to stock. */
+    @PostMapping("/{id}/confirm")
+    public Map<String, Object> confirm(@PathVariable UUID id) { return service.confirm(id); }
+
+    /** Cancels the purchase; a confirmed one gives its quantities back. */
+    @PostMapping("/{id}/cancel")
+    public Map<String, Object> cancel(@PathVariable UUID id) { return service.cancel(id); }
+
     @GetMapping("/supplier/{supplierId}/last-order")
     public Map<String, Object> lastOrder(@PathVariable UUID supplierId) { return service.lastOrder(supplierId); }
 }

@@ -238,6 +238,10 @@ Respuestas del usuario (2026-11-12):
 7. **Compras:** sí. Una compra **confirmada** ingresa el stock de lo comprado. Hace
    falta un estado (borrador / confirmada) y que editar o anular una compra
    confirmada genere movimientos compensatorios.
+   **Implementado (2026-11-16, 6.2–6.4):** V40 con estados DRAFT / CONFIRMED /
+   CANCELLED / LEGACY (compras previas, sin efecto en stock), movimientos
+   `PURCHASE`, `PURCHASE_ADJUSTMENT` y `PURCHASE_CANCELLATION`, edición y anulación,
+   cantidades en múltiplos de 0,5 y «Agregar productos sin stock» en el formulario.
 8. **Edición de precios en la tabla (2.4):** sí, como número simple, **nunca menor al
    costo**. Además, al modificar un costo que queda por encima del precio de alguna
    lista, debe abrirse un **modal para corregir esos precios en el momento**.

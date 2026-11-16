@@ -398,6 +398,15 @@ sin fechas incluyen todo el historial. «Todas las fechas» limpia solo el rango
 Fechas inválidas o invertidas bloquean la consulta y ocultan datos anteriores.
 La tabla presenta número, proveedor, fecha, total estimado y enlace al detalle;
 hasta `640px` usa las tarjetas compartidas. Al volver del detalle conserva filtros.
+La columna «Estado» usa `Badge`: «Confirmada» (`strong`), «Borrador» (`soft`),
+«Anulada» e «Histórica» (`muted`). El alta ofrece «Guardar borrador» (secundario) y
+«Confirmar compra» (principal; suma al stock). El detalle muestra el estado con una
+explicación de su efecto en el stock y las acciones «Confirmar compra» (solo
+borrador), «Editar compra» y «Anular compra» (`danger`), todas con
+`ConfirmationDialog` salvo editar, que reutiliza el formulario con una descripción
+según el estado. Las cantidades de compras no históricas deben ser múltiplos de 0,5.
+«Agregar productos sin stock (N)» carga los productos activos con stock ≤ 0 del
+proveedor (o todos si no tiene productos asociados).
 
 La solicitud se crea en un panel en la misma página, con proveedor, fecha,
 selector de productos activos, cantidades y costos editables. Reutiliza

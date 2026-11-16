@@ -67,6 +67,9 @@ class SupplierOrderControllerTest {
         mvc.perform(post("/api/supplier-orders").contentType(APPLICATION_JSON).content("{}" )).andExpect(status().isForbidden());
         mvc.perform(get("/api/supplier-orders/" + UUID.randomUUID())).andExpect(status().isForbidden());
         mvc.perform(get("/api/supplier-orders/supplier/" + UUID.randomUUID() + "/last-order")).andExpect(status().isForbidden());
+        mvc.perform(put("/api/supplier-orders/" + UUID.randomUUID()).contentType(APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/supplier-orders/" + UUID.randomUUID() + "/confirm")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/supplier-orders/" + UUID.randomUUID() + "/cancel")).andExpect(status().isForbidden());
         verifyNoInteractions(service);
     }
 }

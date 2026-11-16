@@ -28,8 +28,8 @@ El sistema es una aplicación para una empresa por instancia. Incluye:
 - Envío opcional por WhatsApp.
 - Auditoría de operaciones.
 
-No se implementan actualmente impuestos, facturación electrónica, proveedores,
-compras, reportes analíticos avanzados, notificaciones generales ni portal de
+No se implementan actualmente impuestos, facturación electrónica, facturas de
+compra, reportes analíticos avanzados, notificaciones generales ni portal de
 clientes. El resumen operativo está disponible exclusivamente para administradores:
 permite elegir Desde/Hasta (hoy en Argentina por defecto) y muestra pedidos
 realizados, entregados, total facturado, total pagado y saldo en cuenta corriente,
@@ -208,6 +208,9 @@ SALE_CANCELLATION
 MANUAL_ENTRY
 MANUAL_ADJUSTMENT
 RETURN
+PURCHASE
+PURCHASE_ADJUSTMENT
+PURCHASE_CANCELLATION
 ```
 
 El stock activo es un saldo único por producto. V24 suma por producto los

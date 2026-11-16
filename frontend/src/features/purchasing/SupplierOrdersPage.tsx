@@ -13,7 +13,8 @@ import { useUrlListState } from '../../shared/useUrlListState'
 import { displayDate, parseDate } from '../dashboard/dashboardDates'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 import { SupplierOrderForm } from './SupplierOrderForm'
-import { money, supplierOrdersKey, suppliersOptionsKey, type Supplier, type SupplierOrder } from './supplierOrders'
+import { Badge } from '../../shared/components/Badge'
+import { money, purchaseStatusLabel, purchaseStatusTone, supplierOrdersKey, suppliersOptionsKey, type Supplier, type SupplierOrder } from './supplierOrders'
 
 export default function SupplierOrdersPage() {
   const [params, setParams] = useSearchParams()
@@ -32,7 +33,7 @@ export default function SupplierOrdersPage() {
   const orders = useQuery({ queryKey: [...supplierOrdersKey, path], queryFn: ({ signal }) => apiGet<ApiPage<SupplierOrder>>(path, signal), enabled: !dateError, retry: false })
   const suppliers = useQuery({ queryKey: suppliersOptionsKey, queryFn: () => apiGetAllPages<Supplier>('/api/suppliers?page=0&size=100'), retry: false })
   const [showForm, setShowForm] = useState(false)
-  const [saved, setSaved] = useState<{ id: string; number: string }>()
+  const [saved, setSaved] = useState<{ id: string; number: string; status?: string }>()
   const suffix = params.toString() ? `?${params}` : ''
   function clearDates() {
     const next = new URLSearchParams(params)
@@ -42,7 +43,7 @@ export default function SupplierOrdersPage() {
 
   return <>
     <PageHeader eyebrow="Operación" title="Compras" description="Solicitudes de compra e historial por proveedor y fecha." actions={<Button type="button" disabled={showForm} onClick={() => { setSaved(undefined); setShowForm(true) }}>+ Nueva compra</Button>} />
-    {saved && <p className="success-text" role="status">Compra {saved.number} registrada correctamente. <Button variant="link" href={`/supplier-orders/${saved.id}`}>Ver compra registrada</Button></p>}
+    {saved && <p className="success-text" role="status">Compra {saved.number} {saved.status === 'CONFIRMED' ? 'confirmada: las cantidades se sumaron al stock.' : 'guardada como borrador.'} <Button variant="link" href={`/supplier-orders/${saved.id}`}>Ver compra registrada</Button></p>}
     {showForm && <SupplierOrderForm onClose={() => setShowForm(false)} onSaved={(result) => { setSaved(result); setShowForm(false); setPage(0) }} />}
     <Panel title="Compras realizadas" description="Sin fechas seleccionadas se muestra todo el historial. Los importes corresponden a la solicitud registrada.">
       <div className="toolbar items-end">
@@ -60,8 +61,9 @@ export default function SupplierOrdersPage() {
             : <DataTable columns={[
               { key: 'number', label: 'Compra', emphasis: true }, { key: 'supplier', label: 'Proveedor' }, { key: 'date', label: 'Fecha' },
               { key: 'total', label: 'Total estimado', align: 'right' },
+              { key: 'status', label: 'Estado', render: (value) => value ? <Badge tone={purchaseStatusTone[value as keyof typeof purchaseStatusTone] ?? 'muted'}>{purchaseStatusLabel[value as keyof typeof purchaseStatusLabel] ?? value}</Badge> : null },
               { key: 'action', label: 'Detalle', render: (_, row) => <Button variant="link" href={`/supplier-orders/${row.id}${suffix}`} aria-label={`Ver compra ${row.number}`}>Ver compra</Button> },
-            ]} rows={(orders.data?.content ?? []).map((order) => ({ ...order, date: displayDate(order.date), total: money(order.total) }))}
+            ]} rows={(orders.data?.content ?? []).map((order) => ({ ...order, date: displayDate(order.date), total: money(order.total), status: order.status ?? '' }))}
               emptyContent={<p className="table-empty-message">No hay compras para los filtros seleccionados.</p>} />}
       {!dateError && orders.data && !orders.isError && <div className="pagination"><span>Página {page + 1} de {Math.max(1, orders.data.totalPages)} · {orders.data.totalElements} compras</span><div><Button type="button" variant="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</Button><Button type="button" variant="secondary" disabled={page + 1 >= orders.data.totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button></div></div>}
     </Panel>

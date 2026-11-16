@@ -57,7 +57,7 @@ describe('Supplier orders', () => {
     expect(fetch.mock.calls.some(([input]) => String(input).startsWith('/api/supplier-orders'))).toBe(false)
   })
   it('copies the latest order of the selected supplier with current costs and preserves its quantities', async () => {
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => init?.method === 'POST' ? json({ id: 'new', number: 'PRV-00000002', total: 75 }, 201) : fixture(input))
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => init?.method === 'POST' ? json({ id: 'new', number: 'PRV-00000002', total: 75, status: 'CONFIRMED' }, 201) : fixture(input))
     renderPage()
     await startForm()
     const load = screen.getByRole('button', { name: 'Cargar compra anterior' })
@@ -65,10 +65,10 @@ describe('Supplier orders', () => {
     await userEvent.setup().click(load)
     expect(await screen.findByLabelText('Cantidad de Harina')).toHaveValue('3')
     expect(screen.getByLabelText('Costo de Harina')).toHaveValue('25')
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Registrar compra' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Compra PRV-00000002 registrada correctamente.')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Confirmar compra' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Compra PRV-00000002 confirmada: las cantidades se sumaron al stock.')
     const body = JSON.parse(String(fetch.mock.calls.find(([, init]) => init?.method === 'POST')![1]!.body))
-    expect(body).toMatchObject({ supplierId: supplierA.id, lines: [{ productId: product.id, quantity: 3, unitCost: 25 }] })
+    expect(body).toMatchObject({ supplierId: supplierA.id, lines: [{ productId: product.id, quantity: 3, unitCost: 25 }], confirm: true })
     expect(body.idempotencyKey).toBeTruthy()
   })
   it('allows a new order without history and adds products with editable quantity and cost', async () => {
@@ -83,7 +83,7 @@ describe('Supplier orders', () => {
     expect(screen.getByLabelText('Cantidad de Harina')).toHaveValue('1')
     expect(screen.getByLabelText('Costo de Harina')).toHaveValue('20')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Quitar Harina' }))
-    expect(screen.getByRole('button', { name: 'Registrar compra' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Guardar borrador' })).toBeDisabled()
   })
   it('reuses the same idempotency payload after a failed submission and keeps the draft', async () => {
     const submissions: string[] = []
@@ -95,11 +95,11 @@ describe('Supplier orders', () => {
     await startForm()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Cargar compra anterior' })).toBeEnabled())
     await userEvent.setup().click(screen.getByRole('button', { name: 'Cargar compra anterior' }))
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Registrar compra' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Guardar borrador' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Error temporal')
     expect(screen.getByLabelText('Cantidad de Harina')).toHaveValue('3')
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Registrar compra' }))
-    await screen.findByText(/Compra PRV-00000002 registrada/)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Guardar borrador' }))
+    await screen.findByText(/Compra PRV-00000002 guardada como borrador/)
     expect(submissions).toHaveLength(2)
     expect(submissions[0]).toBe(submissions[1])
   })
@@ -116,5 +116,22 @@ describe('Supplier orders', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Cargar compra anterior' }))
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Reemplazar productos' }))
     expect(screen.getByLabelText('Cantidad de Harina')).toHaveValue('3')
+  })
+
+  it('adds the products without stock of the selected supplier to restock them', async () => {
+    const lowStock = { ...product, stock: -2, suppliers: [supplierA] }
+    const otherLow = { id: 'product-b', name: 'Azúcar', cost: 15, status: 'ACTIVE', stock: 0, suppliers: [supplierB] }
+    const stocked = { id: 'product-c', name: 'Yerba', cost: 30, status: 'ACTIVE', stock: 8, suppliers: [supplierA] }
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => String(input).startsWith('/api/products')
+      ? json(paged([lowStock, otherLow, stocked])) : fixture(input))
+    renderPage()
+    await startForm()
+
+    const restock = await screen.findByRole('button', { name: 'Agregar productos sin stock (1)' })
+    await userEvent.setup().click(restock)
+    expect(await screen.findByLabelText('Cantidad de Harina')).toHaveValue('3')
+    expect(screen.queryByLabelText('Cantidad de Azúcar')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Cantidad de Yerba')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Agregar productos sin stock' })).toBeDisabled()
   })
 })
