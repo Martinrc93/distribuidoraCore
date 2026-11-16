@@ -128,7 +128,7 @@ class OrderCalculationServiceTest {
             .getDeclaredConstructor(String.class, UUID.class, UUID.class, List.class, BigDecimal.class, List.class))
             .isNotNull();
         assertThat(OrderConfirmationDtos.LineRequest.class.getRecordComponents()).hasSize(4);
-        assertThat(OrderConfirmationDtos.PaymentRequest.class.getRecordComponents()).hasSize(2);
+        assertThat(OrderConfirmationDtos.PaymentRequest.class.getRecordComponents()).hasSize(3);
     }
 
     private OrderCalculationService.CalculatedLine line(String quantity, String price, String discount) {

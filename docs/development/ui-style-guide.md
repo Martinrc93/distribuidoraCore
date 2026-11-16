@@ -499,7 +499,13 @@ saldo anterior y muestran «Total a cobrar». Cambiar cliente elimina la selecci
 actualizar el importe reemplaza la fila existente. En móvil, importe y acciones
 se apilan sin desbordar. El importe se guarda en el pedido para el futuro remito
 y no genera un nuevo débito, descuento ni movimiento de stock.
-Esta variante no incluye controles de cobro. Al cambiar de cliente se selecciona
+Debajo, `.order-collection` («Cobro al confirmar (opcional)», solo en pedidos
+nuevos) agrupa en un `fieldset` por concepto «Pago de este pedido» y, si el
+cliente tiene deuda, «Pago de deuda anterior»: medio (efectivo o transferencia),
+importe, número de transferencia solo con transferencia, un botón de enlace para
+completar el total y una ayuda que aclara a qué se imputa. Con importes cargados se
+muestra «Cobrado ahora» y lo que queda del pedido en cuenta corriente. A `640px` o
+menos los campos se apilan. La edición de pedidos no incluye controles de cobro. Al cambiar de cliente se selecciona
 su lista asignada o `GENERAL` si no tiene una, y se descarta la selección manual
 del cliente anterior. Se cargan todas las páginas de listas para poder mostrar
 la asignada. Una lista asignada no disponible se señala y requiere seleccionar

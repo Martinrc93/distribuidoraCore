@@ -343,6 +343,12 @@ La deuda se representa mediante un ledger. Una venta a cuenta genera débito y
 un pago genera crédito. El usuario puede aplicar un pago a una deuda específica
 o dejar que el sistema utilice FIFO sobre el saldo más antiguo.
 
+Al confirmar un pedido se puede cobrar en el momento, en efectivo o
+transferencia, con dos importes separados: «Pago de este pedido» (solo se imputa
+a la venta nueva, hasta su total) y «Pago de deuda anterior» (se imputa por FIFO
+a las deudas previas, hasta la deuda actual, nunca al pedido nuevo). Lo no
+cobrado queda en cuenta corriente.
+
 #### Límite de crédito
 
 - Es global para todos los clientes.

@@ -337,6 +337,47 @@ describe('OrderCreatePage', () => {
 
   const previous = { available: true, orderId: 'old-order', orderNumber: 'PED-ANTERIOR', orderDiscountPercent: 5, items: [{ productId: 'product-2', productName: 'Arroz', presentation: 'Bolsa', status: 'ACTIVE', quantity: 3, lineDiscountPercent: 10 }] }
 
+  it('collects this order and previous debt separately at confirmation', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      if (String(input).startsWith('/api/customers') && !String(input).endsWith('/last-order')) return response({ ...customers, content: [{ ...customers.content[0], balance: 1000 }, customers.content[1]] })
+      if (String(input) === '/api/orders/confirm') return response({ orderId: 'new', saleId: 'sale', orderNumber: 'PED-COBRO', saleNumber: 'VEN-COBRO', total: 150.5, paid: 100, balance: 50.5 })
+      return catalogResponse(input)
+    })
+    renderPage(['ADMIN_ALL', 'ORDER_CREATE'])
+    await selectEntity(user, 'Cliente', 'Almacén Norte')
+    await user.type(screen.getByLabelText('Importe: Pago de este pedido'), '10')
+    await user.type(screen.getByLabelText('Importe: Pago de deuda anterior'), '50')
+    await selectEntity(user, 'Cliente', 'Almacén Sur')
+    expect(screen.getByLabelText('Importe: Pago de este pedido')).toHaveValue('')
+    expect(screen.queryByLabelText('Importe: Pago de deuda anterior')).not.toBeInTheDocument()
+    await selectEntity(user, 'Cliente', 'Almacén Norte')
+    expect(screen.getByLabelText('Importe: Pago de deuda anterior')).toHaveValue('')
+    await selectEntity(user, 'Producto', /^Harina$/)
+    await findPrice('150,5')
+    await user.click(screen.getByRole('button', { name: 'Agregar producto' }))
+    expect(screen.getByRole('heading', { name: 'Cobro al confirmar (opcional)' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Importe: Pago de este pedido'), '200')
+    await user.type(screen.getByLabelText('Importe: Pago de deuda anterior'), '1500')
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+    expect(await screen.findByText(/no puede superar su total/)).toBeInTheDocument()
+    await user.clear(screen.getByLabelText('Importe: Pago de este pedido'))
+    await user.type(screen.getByLabelText('Importe: Pago de este pedido'), '100')
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+    expect(await screen.findByText(/no puede superar la deuda actual/)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Medio: Pago de deuda anterior'), 'BANK_TRANSFER')
+    await user.click(screen.getByRole('button', { name: 'Cobrar toda la deuda' }))
+    await user.type(screen.getByLabelText('Número de transferencia: Pago de deuda anterior'), ' TR-9 ')
+    expect(screen.getByText('Cobrado ahora').nextElementSibling).toHaveTextContent('1.100,00')
+    expect(screen.getByText('Queda de este pedido en cuenta corriente').nextElementSibling).toHaveTextContent('50,50')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/orders/confirm', expect.anything())
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+    await screen.findByText(/Pedido PED-COBRO/)
+    const request = JSON.parse(String(fetchMock.mock.calls.find(([path]) => path === '/api/orders/confirm')?.[1]?.body))
+    expect(request.payments).toEqual([{ method: 'CASH', amount: 100 }])
+    expect(request.previousDebtPayments).toEqual([{ method: 'BANK_TRANSFER', amount: 1000, transferReference: 'TR-9' }])
+  })
+
   it('includes partial previous balance as a separate undiscounted amount in confirmation', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
@@ -643,9 +684,8 @@ describe('OrderCreatePage', () => {
     await screen.findAllByText(/150,50/)
     await user.clear(screen.getByLabelText('Cantidad de Harina'))
     await user.type(screen.getByLabelText('Cantidad de Harina'), '2')
-    expect(screen.queryByRole('heading', { name: 'Cobro' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Medio de pago')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Importe de pago')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Cobro al confirmar (opcional)' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Importe: Pago de deuda anterior')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar pedido/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders/confirm', expect.objectContaining({

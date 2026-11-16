@@ -45,6 +45,7 @@ flowchart TD
     notification --> document
     notification --> shared
     order --> audit
+    order --> customer
     order --> inventory
     order --> notification
     order --> pricing

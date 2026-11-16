@@ -1,6 +1,7 @@
 package com.distribuidora.order.application;
 
 import com.distribuidora.audit.application.AuditService;
+import com.distribuidora.customer.application.AccountPaymentService;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.notification.application.OutboxService;
 
@@ -47,6 +48,7 @@ public class OrderConfirmationService {
     public interface PaymentCommand {
         String method();
         BigDecimal amount();
+        default String transferReference() { return null; }
     }
 
     public interface ConfirmationCommand {
@@ -59,6 +61,8 @@ public class OrderConfirmationService {
         default UUID sellerId() { return null; }
         default BigDecimal previousBalanceAmount() { return ZERO; }
         default LocalDate orderDate() { return null; }
+        /** Payments of older debts made while confirming: applied FIFO to previous sales, never to this order. */
+        default List<? extends PaymentCommand> previousDebtPayments() { return List.of(); }
     }
 
     public interface EditCommand {
@@ -92,6 +96,12 @@ public class OrderConfirmationService {
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
     private final OutboxService outbox;
+    private AccountPaymentService accountPayments;
+
+    @Autowired(required = false)
+    public void setAccountPayments(AccountPaymentService accountPayments) {
+        this.accountPayments = accountPayments;
+    }
 
     @Autowired
     public OrderConfirmationService(JdbcTemplate jdbc, PricingQueryService pricing,
@@ -138,12 +148,17 @@ public class OrderConfirmationService {
             throw new IllegalStateException("El cliente no está activo");
         }
         validatePriceList(request, customer);
-        BigDecimal balanceBeforeOrder = decimalOrZero(customer.get("balance"));
+        BigDecimal previousDebtPaid = payPreviousDebts(customerId, request.previousDebtPayments());
+        // Paying older debts lowers the balance this order starts from (credit limit and previous balance checks).
+        BigDecimal balanceBeforeOrder = previousDebtPaid.signum() > 0
+            ? decimalOrZero(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId))
+            : decimalOrZero(customer.get("balance"));
         BigDecimal previousBalanceAmount = previousBalanceAmount(request);
         if (previousBalanceAmount.signum() > 0) {
             BigDecimal currentBalance = jdbc.queryForObject(
                 "select balance from customer.customers where id = ? for update", BigDecimal.class, customerId);
-            if (currentBalance == null || previousBalanceAmount.compareTo(currentBalance) > 0) {
+            // The remito may include debt paid in this same confirmation: compare with the balance before paying it.
+            if (currentBalance == null || previousBalanceAmount.compareTo(currentBalance.add(previousDebtPaid)) > 0) {
                 throw new IllegalArgumentException("El importe del saldo anterior supera el saldo actual del cliente");
             }
             balanceBeforeOrder = currentBalance;
@@ -218,6 +233,7 @@ public class OrderConfirmationService {
         auditDetails.put("paid", responsePaid);
         auditDetails.put("balance", response.balance());
         auditDetails.put("previousBalanceAmount", previousBalanceAmount);
+        if (previousDebtPaid.signum() > 0) auditDetails.put("previousDebtPaid", previousDebtPaid);
         auditDetails.put("orderDate", registeredAt.toInstant().atZone(businessNow.getZone()).toLocalDate().toString());
         auditDetails.put("creditLimit", creditLimit);
         auditDetails.put("projectedBalance", projectedBalance);
@@ -391,8 +407,9 @@ public class OrderConfirmationService {
         Timestamp now = Timestamp.from(Instant.now());
         for (var payment : payments) {
             if (!"CUSTOMER_ACCOUNT".equals(payment.method())) {
-                jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, created_at) values (?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), saleId, customerId, payment.amount(), payment.method(), now);
+                jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, transfer_reference, created_at) values (?, ?, ?, ?, ?, ?, ?)",
+                    UUID.randomUUID(), saleId, customerId, payment.amount(), payment.method(),
+                    "BANK_TRANSFER".equals(payment.method()) ? normalizeReference(payment.transferReference()) : null, now);
             }
         }
     }
@@ -485,8 +502,29 @@ public class OrderConfirmationService {
                     throw new IllegalArgumentException("El importe del pago debe ser positivo");
                 }
                 validateScale(payment.amount(), "payment.amount");
+                validateReference(payment);
             }
         }
+        if (request.previousDebtPayments() != null) {
+            if (request.previousDebtPayments().size() > 20) throw new IllegalArgumentException("Se admiten hasta 20 pagos de deuda anterior");
+            for (PaymentCommand payment : request.previousDebtPayments()) {
+                if (payment == null || payment.method() == null || !Set.of("CASH", "BANK_TRANSFER").contains(payment.method())) {
+                    throw new IllegalArgumentException("La deuda anterior solo admite pagos en efectivo o transferencia");
+                }
+                if (payment.amount() == null || payment.amount().signum() <= 0) {
+                    throw new IllegalArgumentException("El importe del pago de deuda anterior debe ser positivo");
+                }
+                validateScale(payment.amount(), "previousDebtPayments.amount");
+                validateReference(payment);
+            }
+        }
+    }
+
+    private void validateReference(PaymentCommand payment) {
+        if (payment.transferReference() != null && !payment.transferReference().isBlank() && !"BANK_TRANSFER".equals(payment.method())) {
+            throw new IllegalArgumentException("transferReference requiere method BANK_TRANSFER");
+        }
+        normalizeReference(payment.transferReference());
     }
 
     private void validatePercent(BigDecimal value, String field) {
@@ -580,7 +618,47 @@ public class OrderConfirmationService {
             append(canonical, "previousBalanceAmount");
             append(canonical, previousBalanceAmount(request));
         }
+        // Only appended when present so fingerprints of requests without these fields keep their value.
+        if (request.payments() != null && request.payments().stream().anyMatch(payment -> payment.transferReference() != null)) {
+            append(canonical, "transferReferences");
+            request.payments().forEach(payment -> append(canonical, payment.transferReference()));
+        }
+        if (request.previousDebtPayments() != null && !request.previousDebtPayments().isEmpty()) {
+            append(canonical, "previousDebtPayments");
+            request.previousDebtPayments().forEach(payment -> {
+                append(canonical, payment.method());
+                append(canonical, payment.amount());
+                append(canonical, payment.transferReference());
+            });
+        }
         return hex(sha256(canonical.toString()));
+    }
+
+    /**
+     * Applies the payments of older debts through the account payment flow (same locks, seller scope, ledger
+     * credits and audit), before the new sale exists, so they can never be allocated to this order.
+     */
+    private BigDecimal payPreviousDebts(UUID customerId, List<? extends PaymentCommand> payments) {
+        if (payments == null || payments.isEmpty()) return ZERO;
+        if (accountPayments == null) throw new IllegalStateException("El pago de deuda anterior no está disponible");
+        BigDecimal paid = ZERO;
+        for (PaymentCommand payment : payments) {
+            accountPayments.apply(customerId, new PreviousDebtPayment(payment.amount().setScale(4), payment.method(),
+                "BANK_TRANSFER".equals(payment.method()) ? normalizeReference(payment.transferReference()) : null));
+            paid = paid.add(payment.amount());
+        }
+        return paid.setScale(4);
+    }
+
+    private record PreviousDebtPayment(BigDecimal amount, String method, String transferReference)
+        implements AccountPaymentService.PaymentCommand {
+        @Override public UUID saleId() { return null; }
+    }
+
+    private static String normalizeReference(String reference) {
+        if (reference == null || reference.isBlank()) return null;
+        if (reference.trim().length() > 100) throw new IllegalArgumentException("transferReference no puede superar 100 caracteres");
+        return reference.trim();
     }
 
     private BigDecimal previousBalanceAmount(ConfirmationCommand request) {

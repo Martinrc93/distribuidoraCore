@@ -29,12 +29,19 @@ public final class OrderConfirmationDtos {
         List<@NotNull @Valid PaymentRequest> payments,
         UUID sellerId,
         @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousBalanceAmount,
-        LocalDate orderDate
+        LocalDate orderDate,
+        /** Payments of older debts made at confirmation (CASH or BANK_TRANSFER), applied FIFO to previous sales. */
+        @Size(max = 20) List<@NotNull @Valid PaymentRequest> previousDebtPayments
     ) implements OrderConfirmationService.ConfirmationCommand {
         public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
                                    List<LineRequest> lines, BigDecimal orderDiscountPercent,
                                    List<PaymentRequest> payments, UUID sellerId, BigDecimal previousBalanceAmount) {
-            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, sellerId, previousBalanceAmount, null);
+            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, sellerId, previousBalanceAmount, null, null);
+        }
+        public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
+                                   List<LineRequest> lines, BigDecimal orderDiscountPercent,
+                                   List<PaymentRequest> payments, UUID sellerId, BigDecimal previousBalanceAmount, LocalDate orderDate) {
+            this(idempotencyKey, customerId, priceListId, lines, orderDiscountPercent, payments, sellerId, previousBalanceAmount, orderDate, null);
         }
         public ConfirmationRequest(String idempotencyKey, UUID customerId, UUID priceListId,
                                    List<LineRequest> lines, BigDecimal orderDiscountPercent,
@@ -61,8 +68,10 @@ public final class OrderConfirmationDtos {
     public record PaymentRequest(
         @NotBlank @Pattern(regexp = "CASH|BANK_TRANSFER|CUSTOMER_ACCOUNT") String method,
         @NotNull @DecimalMin(value = "0.0000", inclusive = false) @Digits(integer = 15, fraction = 4)
-        BigDecimal amount
+        BigDecimal amount,
+        @Size(max = 100) String transferReference
     ) implements OrderConfirmationService.PaymentCommand {
+        public PaymentRequest(String method, BigDecimal amount) { this(method, amount, null); }
     }
 
     public record ConfirmationResponse(

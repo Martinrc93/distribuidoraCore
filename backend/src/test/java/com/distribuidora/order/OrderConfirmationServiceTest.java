@@ -146,6 +146,24 @@ class OrderConfirmationServiceTest {
     }
 
     @Test
+    void rejectsInvalidPreviousDebtPaymentsAndMisplacedTransferReferencesBeforeSideEffects() {
+        authenticate("ORDER_CREATE");
+        var line = List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null));
+        for (var previous : List.of(
+            new OrderConfirmationDtos.PaymentRequest("CUSTOMER_ACCOUNT", BigDecimal.ONE),
+            new OrderConfirmationDtos.PaymentRequest("CASH", BigDecimal.ONE, "TR-1"),
+            new OrderConfirmationDtos.PaymentRequest("CASH", new BigDecimal("0.00001")))) {
+            var request = new OrderConfirmationDtos.ConfirmationRequest("invalid-previous", UUID.randomUUID(), null, line,
+                BigDecimal.ZERO, List.of(), null, null, null, List.of(previous));
+            assertThatThrownBy(() -> service.confirm(request)).isInstanceOf(IllegalArgumentException.class);
+        }
+        var cashWithReference = new OrderConfirmationDtos.ConfirmationRequest("invalid-reference", UUID.randomUUID(), null, line,
+            BigDecimal.ZERO, List.of(new OrderConfirmationDtos.PaymentRequest("CASH", BigDecimal.ONE, "TR-2")));
+        assertThatThrownBy(() -> service.confirm(cashWithReference)).isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(jdbc, pricing, inventory);
+    }
+
+    @Test
     void rejectsNegativeOrOverprecisePreviousBalanceAmounts() {
         authenticate("ORDER_CREATE");
         for (String value : List.of("-1", "0.00001")) {

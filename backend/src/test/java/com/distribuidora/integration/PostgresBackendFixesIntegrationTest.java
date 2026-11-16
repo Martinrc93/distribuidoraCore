@@ -591,6 +591,47 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void confirmationPaysThisOrderAndOlderDebtsSeparatelyWithoutDoubleChargingOnRetry() {
+        UUID customerId = createCustomer(null);
+        AccountDebtSale older = createAccountDebtSale(customerId, new BigDecimal("30"), 7200);
+        AccountDebtSale newer = createAccountDebtSale(customerId, new BigDecimal("40"), 3600);
+        UUID productId = createProduct("previous-debt-order");
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", productId);
+        putGeneralPrice(productId, new BigDecimal("10.0000"));
+        UUID actorId = createUser("previous-debt-order");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        var request = new OrderConfirmationDtos.ConfirmationRequest(
+            "previous-debt-order-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(new OrderConfirmationDtos.PaymentRequest("CASH", new BigDecimal("10"))), null, null, null,
+            List.of(new OrderConfirmationDtos.PaymentRequest("BANK_TRANSFER", new BigDecimal("35"), "TR-PREV")));
+
+        var result = orderConfirmationService.confirm(request);
+        orders.add(result.orderId());
+        sales.add(result.saleId());
+        assertThat(result.paid()).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, older.saleId())).isEqualByComparingTo("30");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, newer.saleId())).isEqualByComparingTo("5");
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId)).isEqualByComparingTo("35");
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where customer_id = ? and transfer_reference = 'TR-PREV'", Long.class, customerId)).isEqualTo(2L);
+
+        var retry = orderConfirmationService.confirm(request);
+        assertThat(retry.orderId()).isEqualTo(result.orderId());
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId)).isEqualByComparingTo("35");
+
+        var excessive = new OrderConfirmationDtos.ConfirmationRequest(
+            "previous-debt-excess-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), null, null, null,
+            List.of(new OrderConfirmationDtos.PaymentRequest("CASH", new BigDecimal("100"))));
+        long ordersBefore = jdbc.queryForObject("select count(*) from orders.orders where customer_id = ?", Long.class, customerId);
+        assertThatThrownBy(() -> orderConfirmationService.confirm(excessive)).isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("select count(*) from orders.orders where customer_id = ?", Long.class, customerId)).isEqualTo(ordersBefore);
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId)).isEqualByComparingTo("35");
+    }
+
+    @Test
     void administratorSellerSelectionPersistsOnOrderWithoutReassigningCustomer() {
         UUID customerSellerId = createSeller("order-customer");
         UUID selectedSellerId = createSeller("order-selected");

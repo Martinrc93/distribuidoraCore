@@ -682,6 +682,17 @@
   .order-status-badges { @apply inline-flex flex-wrap gap-[6px]; }
   .order-navigator { @apply flex flex-wrap items-center gap-[10px] mb-[18px]; }
   .order-navigator-position { @apply text-muted text-[12px]; }
+  .order-collection { @apply mt-[18px] grid gap-[12px] rounded-[8px] border border-line bg-surface p-[16px]; }
+  .order-collection h3 { @apply m-0 text-[15px]; }
+  .order-collection > .helper-text { @apply m-0; }
+  .order-collection-row { @apply m-0 grid grid-cols-[minmax(130px,_180px)_minmax(120px,_180px)_minmax(140px,_1fr)] items-end gap-[10px_14px] border-0 p-0 min-w-0; }
+  .order-collection-row legend { @apply mb-[6px] p-0 text-[13px] font-semibold text-ink; }
+  .order-collection-row > .button { @apply justify-self-start; }
+  .order-collection-help { @apply col-span-full m-0; }
+  .order-collection-summary { @apply m-0 flex flex-wrap gap-[8px_24px] text-[13px]; }
+  .order-collection-summary dt { @apply text-muted; }
+  .order-collection-summary dd { @apply m-0 font-bold; }
+  @media (max-width: 640px) { .order-collection-row { @apply grid-cols-[minmax(0,_1fr)]; } }
   .customer-statement-actions { @apply mt-[14px] grid gap-[8px]; }
   .inline-price { @apply inline-grid justify-items-end gap-[4px] max-w-full; }
   .inline-price-input.input { @apply w-[min(100%,_130px)] min-h-[36px] text-right tabular-nums; }

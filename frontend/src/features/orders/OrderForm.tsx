@@ -38,8 +38,16 @@ type ConfirmationRequest = {
   lines: Array<{ productId: string; quantity: number; lineDiscountPercent: number; unitPriceOverride?: number }>
   orderDiscountPercent: number
   previousBalanceAmount?: number
-  payments: []
+  payments: CollectionPayment[]
+  previousDebtPayments?: CollectionPayment[]
 }
+type CollectionPayment = { method: 'CASH' | 'BANK_TRANSFER'; amount: number; transferReference?: string }
+type CollectionDraft = { method: 'CASH' | 'BANK_TRANSFER'; amount: string; reference: string }
+/** Parses an es-AR amount; empty means 0, invalid means NaN. */
+const collectionAmount = (value: string) => !value.trim() ? 0 : /^\d+(?:[.,]\d{1,4})?$/.test(value.trim()) ? Number(value.trim().replace(',', '.')) : NaN
+const collectionPayment = (draft: CollectionDraft, amount: number): CollectionPayment => ({
+  method: draft.method, amount, ...(draft.method === 'BANK_TRANSFER' && draft.reference.trim() ? { transferReference: draft.reference.trim() } : {}),
+})
 type ConfirmationResponse = {
   orderId: string
   saleId: string
@@ -147,6 +155,11 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const [discountPrompt, setDiscountPrompt] = useState<{ order: PreviousOrder; anchor: HTMLElement }>()
   const customer = customers.find((item) => item.id === customerId)
   const customerBalance = Number(customer?.balance ?? 0)
+  // Optional collection at confirmation: this order and older debts are paid separately.
+  const [orderPayment, setOrderPayment] = useState<CollectionDraft>({ method: 'CASH', amount: '', reference: '' })
+  const [debtPayment, setDebtPayment] = useState<CollectionDraft>({ method: 'CASH', amount: '', reference: '' })
+  const orderPaid = collectionAmount(orderPayment.amount)
+  const debtPaid = collectionAmount(debtPayment.amount)
   const defaultListId = customer ? customer.priceListId || activeLists.find((list) => list.code === 'GENERAL')?.id || '' : ''
   const resolvedListId = (canChangeList ? explicitListId : '') || defaultListId
   const selectedList = activeLists.find((list) => list.id === resolvedListId)
@@ -244,6 +257,8 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     setSelectedProductPriceOverride(undefined)
     setPreviousBalanceInput('')
     setSelectedPreviousBalance(0)
+    setOrderPayment({ method: 'CASH', amount: '', reference: '' })
+    setDebtPayment({ method: 'CASH', amount: '', reference: '' })
     setPreviousBalanceError('')
   }
 
@@ -366,7 +381,15 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
 
     const discount = isAdmin ? orderDiscountValue : 0
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento general debe estar entre 0 y 100%.'); return undefined }
-    return { idempotencyKey: newKey(), customerId, ...(!editOrder ? { orderDate: parsedOrderDate! } : {}), ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments: [] }
+    if (!editOrder) {
+      if (!Number.isFinite(orderPaid) || orderPaid < 0) { setError('Ingresá un importe válido para el pago de este pedido.'); return undefined }
+      if (orderPaid > previewTotal + 0.00005) { setError(`El pago de este pedido no puede superar su total (${money(previewTotal)}).`); return undefined }
+      if (!Number.isFinite(debtPaid) || debtPaid < 0) { setError('Ingresá un importe válido para el pago de deuda anterior.'); return undefined }
+      if (debtPaid > Math.max(0, customerBalance) + 0.00005) { setError(`El pago de deuda anterior no puede superar la deuda actual (${money(Math.max(0, customerBalance))}).`); return undefined }
+    }
+    const payments = !editOrder && orderPaid > 0 ? [collectionPayment(orderPayment, orderPaid)] : []
+    const previousDebtPayments = !editOrder && debtPaid > 0 ? [collectionPayment(debtPayment, debtPaid)] : []
+    return { idempotencyKey: newKey(), customerId, ...(!editOrder ? { orderDate: parsedOrderDate! } : {}), ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments, ...(previousDebtPayments.length ? { previousDebtPayments } : {}) }
   }
 
   async function confirm(event: FormEvent) {
@@ -463,6 +486,25 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
                 <Button type="button" variant="link" onClick={() => includePreviousBalance(String(customerBalance))} disabled={customerBalance <= 0 || submitting}>Agregar saldo total</Button>
               </div>
               {previousBalanceError && <p className="error-text" id="order-account-error" role="alert"><CurrencyText>{previousBalanceError}</CurrencyText></p>}
+            </section>}
+            {customer && !editOrder && <section className="order-collection" aria-labelledby="order-collection-title">
+              <h3 id="order-collection-title">Cobro al confirmar (opcional)</h3>
+              <p className="helper-text">El pago de este pedido y el de la deuda anterior se registran por separado. Lo que no se cobre queda en la cuenta corriente.</p>
+              {([
+                ['order', 'Pago de este pedido', orderPayment, setOrderPayment, previewTotal, 'Cobrar el total del pedido', 'Se aplica solo a este pedido.'],
+                ...(customerBalance > 0 ? [['debt', 'Pago de deuda anterior', debtPayment, setDebtPayment, customerBalance, 'Cobrar toda la deuda', `Deuda anterior: ${money(customerBalance)}. Se aplica a las deudas más antiguas, nunca a este pedido.`]] : []),
+              ] as Array<[string, string, CollectionDraft, (value: CollectionDraft) => void, number, string, string]>).map(([key, title, draft, setDraft, max, fillLabel, help]) => <fieldset className="order-collection-row" key={key} disabled={submitting}>
+                <legend>{title}</legend>
+                <label className="field"><span>Medio de pago</span><select className="select" aria-label={`Medio: ${title}`} value={draft.method} onChange={(event) => { draftChanged(); setDraft({ ...draft, method: event.target.value as CollectionDraft['method'] }) }}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>
+                <label className="field"><span>Importe</span><input className="input currency-input" type="text" inputMode="decimal" aria-label={`Importe: ${title}`} placeholder="0,00" value={draft.amount} onChange={(event) => { draftChanged(); setDraft({ ...draft, amount: event.target.value }) }} /></label>
+                {draft.method === 'BANK_TRANSFER' && <label className="field"><span>Nº de transferencia</span><input className="input" aria-label={`Número de transferencia: ${title}`} maxLength={100} value={draft.reference} onChange={(event) => { draftChanged(); setDraft({ ...draft, reference: event.target.value }) }} /></label>}
+                <Button type="button" variant="link" disabled={max <= 0} onClick={() => { draftChanged(); setDraft({ ...draft, amount: String(Number(max.toFixed(4))).replace('.', ',') }) }}>{fillLabel}</Button>
+                <p className="helper-text order-collection-help"><CurrencyText>{help}</CurrencyText></p>
+              </fieldset>)}
+              {(orderPaid > 0 || debtPaid > 0) && Number.isFinite(orderPaid) && Number.isFinite(debtPaid) && <dl className="order-collection-summary" aria-live="polite">
+                <div><dt>Cobrado ahora</dt><dd><CurrencyText>{money(orderPaid + debtPaid)}</CurrencyText></dd></div>
+                <div><dt>Queda de este pedido en cuenta corriente</dt><dd><CurrencyText>{money(Math.max(0, previewTotal - orderPaid))}</CurrencyText></dd></div>
+              </dl>}
             </section>}
             <div className={`order-checkout${isAdmin ? '' : ' order-checkout-standard'}`}>
               {isAdmin && <div className="order-checkout-discount">

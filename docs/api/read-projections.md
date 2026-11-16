@@ -143,8 +143,16 @@ pricing. Elegir otra lista activa requiere `ADMIN_ALL` u `ORDER_PRICE_LIST_CHANG
 (V39 lo otorga a `ADMIN` y `SELLER`; se puede quitar por rol). Sin ese permiso el
 selector queda deshabilitado y la confirmación rechaza con `403` una lista distinta a la asignada (o `GENERAL`). Si la lista
 asignada no está disponible, se bloquea la creación y se solicita revisión
-administrativa. La confirmación envía `payments: []`: el pedido se registra sin cobro
-inicial y su importe queda pendiente en cuenta corriente. El resumen de totales
+administrativa. La confirmación admite dos cobros opcionales y separados, cada uno con `method`
+(`CASH` o `BANK_TRANSFER`), `amount` positivo de hasta cuatro decimales y
+`transferReference` opcional (hasta 100 caracteres, solo con `BANK_TRANSFER`):
+`payments` se imputa únicamente a la venta del nuevo pedido y no puede superar su
+total; `previousDebtPayments` (hasta 20) se registra como pago de cuenta corriente
+y se imputa a las deudas más antiguas por antigüedad, antes de crear la venta nueva,
+por lo que nunca alcanza a este pedido y no puede superar la deuda previa. Lo no
+cobrado queda pendiente en cuenta corriente. Ambos forman parte de la huella de
+idempotencia: un reintento con la misma clave no vuelve a cobrar, y un error
+revierte pedido y pagos juntos. Sin cobro se envía `payments: []`. El resumen de totales
 y el botón de confirmación aparecen debajo de los productos.
 
 La confirmación admite `previousBalanceAmount` opcional (cero por defecto),
