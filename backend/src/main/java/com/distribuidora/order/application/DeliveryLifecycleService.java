@@ -39,18 +39,16 @@ public class DeliveryLifecycleService {
     private final InventoryMovementService inventory;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
-
-    public DeliveryLifecycleService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit) {
-        this(jdbc, inventory, audit, null);
-    }
+    private final OrderFulfillmentService fulfillment;
 
     @Autowired
     public DeliveryLifecycleService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit,
-                                    CurrentUserAccess currentUser) {
+                                    CurrentUserAccess currentUser, OrderFulfillmentService fulfillment) {
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.audit = audit;
         this.currentUser = currentUser;
+        this.fulfillment = fulfillment;
     }
 
     @Transactional
@@ -68,6 +66,7 @@ public class DeliveryLifecycleService {
         DeliveryPaymentResult paymentResult = "DELIVERED".equals(request.result())
             ? collectDeliveryPayments(lifecycle, request, now)
             : new DeliveryPaymentResult(ZERO, decimal(lifecycle.get("paid")), ZERO);
+        if ("DELIVERED".equals(request.result())) fulfillment.prepareLocked(orderId, lifecycle, now);
 
         int nextAttempt = jdbc.queryForObject(
             "select coalesce(max(attempt_number), 0) from orders.delivery_attempts where order_id = ?",
@@ -218,7 +217,7 @@ public class DeliveryLifecycleService {
                 UUID.randomUUID(), customerId, saleId, credit, now);
             jdbc.update("update customer.customers set balance = balance - ? where id = ?", credit, customerId);
         }
-        jdbc.update("update orders.orders set status = 'CANCELLED', cancelled_at = ? where id = ? and status = 'CONFIRMED'",
+        jdbc.update("update orders.orders set status = 'CANCELLED', cancelled_at = ?, fulfillment_status = 'PENDING', prepared_at = null, prepared_by_user_id = null, legacy_fulfillment = false where id = ? and status = 'CONFIRMED'",
             now, orderId);
         jdbc.update("update sale.sales set status = 'CANCELLED', cancelled_at = ? where id = ? and status = 'CONFIRMED'",
             now, saleId);
@@ -248,14 +247,6 @@ public class DeliveryLifecycleService {
         }
         jdbc.queryForMap("select id, balance from customer.customers where id = ? for update", customerId);
 
-        List<Map<String, Object>> lines = jdbc.queryForList(
-            "select product_id, sum(quantity) as quantity from orders.order_items where order_id = ? "
-                + "group by product_id order by product_id", orderId);
-        for (Map<String, Object> line : lines) {
-            inventory.apply(uuid(line, "product_id"), decimal(line.get("quantity")).negate(),
-                "SALE", orderId, "Reactivated cancelled order");
-        }
-
         BigDecimal total = decimal(lifecycle.get("total")).setScale(4);
         Timestamp now = Timestamp.from(Instant.now());
         if (total.signum() > 0) {
@@ -266,7 +257,7 @@ public class DeliveryLifecycleService {
         jdbc.update("update orders.orders set status = 'CONFIRMED', cancelled_at = null where id = ? and status = 'CANCELLED'", orderId);
         jdbc.update("update sale.sales set status = 'CONFIRMED', cancelled_at = null where id = ? and status = 'CANCELLED'", saleId);
         audit.recordWithinTransaction(actorId(), "ORDER_REACTIVATE", "ORDER", orderId.toString(), "SUCCESS",
-            Map.of("saleId", saleId.toString(), "total", total, "stockProducts", lines.size()));
+            Map.of("saleId", saleId.toString(), "total", total, "fulfillmentStatus", "PENDING"));
     }
 
     private void reversePersistedSaleMovements(UUID orderId, UUID saleId) {
@@ -285,7 +276,7 @@ public class DeliveryLifecycleService {
 
     private Map<String, Object> lockOrderAndSale(UUID orderId) {
         try {
-            return jdbc.queryForMap("select o.id as order_id, o.status as order_status, s.id as sale_id, s.status as sale_status, s.customer_id, s.total, s.paid "
+            return jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.fulfillment_status, s.id as sale_id, s.status as sale_status, s.customer_id, s.total, s.paid "
                 + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update", orderId);
         } catch (EmptyResultDataAccessException exception) {
             throw exception;

@@ -42,8 +42,8 @@ export function useOrderDelivery({ orderId, saleBalance, previousDebtAvailable =
       })
       await queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
         const key = String(queryKey[0])
-        return ['/api/orders', '/api/sales', '/api/payments', '/api/customers', '/api/dashboard'].some(prefix => key.startsWith(prefix))
-          || ['sale-detail', 'customer-debts', 'dashboard'].includes(key)
+        return ['/api/orders', '/api/sales', '/api/payments', '/api/customers', '/api/dashboard', '/api/products', '/api/inventory'].some(prefix => key.startsWith(prefix))
+          || ['sale-detail', 'customer-debts', 'dashboard', 'dashboard-analytics', 'order-reviews'].includes(key)
       } })
       onSaved(result)
     } catch (cause) {

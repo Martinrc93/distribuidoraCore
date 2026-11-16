@@ -141,7 +141,9 @@ el pedido desde el selector), 4.2 (↑/↓ en el listado, ← / → y botones en
 nueva y «Pago de deuda anterior» imputado por FIFO a deudas previas antes de crear
 la venta; ambos en la huella de idempotencia), 4.6 (filtro «Pagados sin entregar»
 y badge «Pagado») y 4.7 (acciones de documentos desde el pedido, en Fase 3).
-Pendiente: 4.5 (preparación separada, con la decisión de descontar stock al preparar).
+4.5 implementada: V42 con preparación separada y stock al preparar, entrega implícita,
+edición según preparación y revisión administrativa de pedidos creados por vendedores.
+La revisión no bloquea operaciones: conserva un distintivo hasta la confirmación del administrador.
 
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
@@ -149,11 +151,16 @@ Pendiente: 4.5 (preparación separada, con la decisión de descontar stock al pr
 | 4.2 | Navegar pedidos con flechas | S–M | Flechas ↑/↓ en el listado y «anterior/siguiente» en el detalle, respetando filtros y página de la URL. |
 | 4.3 | Admin vs vendedor | M | Migración: `orders.orders.created_by_user_id`. Históricos: completar desde auditoría si existe el actor; si no, «Sin dato». Badge y filtro en Pedidos. |
 | 4.4 | Pago al generar el pedido + saldos anteriores | M–L | Habilitar pagos en la confirmación (hoy `payments: []`) reutilizando la imputación de la entrega: primero el pedido nuevo, luego deuda anterior por antigüedad. Separar en la UI «pago de este pedido» y «pago a deuda anterior» (punto 4 del documento original). Revisar idempotencia: el fingerprint debe incluir los pagos. |
-| 4.5 | Preparación separada de la entrega | L | Sin tocar los estados de negocio: agregar `fulfillment_status` (`PENDING`, `PREPARED`, `DISPATCHED`) con fecha y usuario. Vista «A preparar» y «Listos para entregar». Si una instancia no usa la preparación, el flujo actual sigue funcionando (entregar desde `PENDING`). |
+| 4.5 | Preparación separada de la entrega | L | Implementada con V42: `PENDING` / `PREPARED`, fecha/usuario, stock al preparar y entrega desde pendiente en una transacción. Históricos preparados por equivalencia. `ORDER_PREPARE` para ADMIN/SELLER; revisión administrativa independiente, distintivo y panel en Resumen. No se agregó despacho porque la entrega ya tiene su estado comercial. |
 | 4.6 | Pagados no entregados | S | Filtro en Pedidos: `CONFIRMED` con `paid >= total`. Ya es un estado posible hoy; falta visibilidad. |
 | 4.7 | Acciones desde pedidos | S | Enviar, imprimir y descargar en la fila y el detalle (`DocumentActions`). |
 
 ### Fase 5 — Permisos configurables
+
+`ORDER_PREPARE` y `ORDER_REVIEW` se incorporaron con 4.5 como permisos propios
+permanentes (5.1 parcial). La UI de roles, roles personalizados y revisión por área
+siguen pendientes. Ninguna función nueva debe reutilizar un permiso ajeno como
+solución temporal.
 
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
@@ -243,10 +250,14 @@ Respuestas del usuario (2026-11-12):
    clientes asociados; cómo les cobra él no le importa al sistema. Los pedidos de
    esos clientes debitan la cuenta corriente del revendedor.
 4. **Preparación:** el stock se descuenta **al preparar**, no al confirmar; si el
-   pedido se cancela después de preparado, se revierte el movimiento. Cambia la
-   regla de ADR-006/007 (hoy confirmar descuenta stock). Abierto: qué pasa con un
-   pedido que se entrega sin pasar por preparación (propuesta: entregar prepara y
-   descuenta en ese momento), y si un pedido sin preparar puede editarse libremente.
+   pedido se cancela después de preparado, se revierte el movimiento. Implementado
+   con V42 y ADR-006/007 actualizados. Decisiones confirmadas el 2026-11-16:
+   entregar desde pendiente prepara y descuenta en ese momento; el administrador
+   edita pendientes sin stock y preparados con deltas. Vendedores pueden preparar
+   mediante `ORDER_PREPARE`. Los pedidos creados por vendedores conservan el
+   distintivo hasta revisión manual del administrador al cierre del día, sin
+   bloquear creación, preparación, cobro ni entrega. La revisión conserva fecha,
+   administrador y auditoría; no altera stock ni estados comerciales.
 5. **Impresión 80 mm:** sin definir; usar 80 mm donde hoy existe (pedido) y para el
    estado de deuda.
 6. **Permisos:** se posterga; el usuario quiere revisarlos en detalle.

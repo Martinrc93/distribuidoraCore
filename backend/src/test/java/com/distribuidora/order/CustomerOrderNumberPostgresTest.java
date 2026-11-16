@@ -115,7 +115,7 @@ class CustomerOrderNumberPostgresTest {
         }
         assertThat(transactions.execute(status -> service.confirm(request(other, product, "other"))).orderNumber()).isEqualTo(prefix(other) + "00001");
         assertThat(jdbc.queryForObject("select count(*) from orders.orders where customer_id = ?", Integer.class, customer)).isEqualTo(13);
-        assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?", BigDecimal.class, product)).isEqualByComparingTo("86");
+        assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?", BigDecimal.class, product)).isEqualByComparingTo("100");
     }
 
     @Test void preservesAllDigitsAndRejectsExhaustedCountersInsteadOfTruncating() {

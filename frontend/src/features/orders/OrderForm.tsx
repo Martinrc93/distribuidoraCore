@@ -407,6 +407,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
           queryClient.invalidateQueries({ queryKey: ['/api/orders'] }),
           queryClient.invalidateQueries({ queryKey: ['/api/sales'] }),
           queryClient.invalidateQueries({ queryKey: CUSTOMER_KEY }),
+          queryClient.invalidateQueries({ predicate: ({ queryKey }) => ['/api/orders', '/api/products'].some(prefix => String(queryKey[0]).startsWith(prefix)) || queryKey[0] === 'order-reviews' }),
           queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
           queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('/api/inventory') }),
         ])
@@ -417,6 +418,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
       setResponseData(result)
       setAttempt(undefined)
       await Promise.all([
+        queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/orders') || queryKey[0] === 'order-reviews' }),
         queryClient.invalidateQueries({ queryKey: ['/api/orders'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/sales'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/payments'] }),

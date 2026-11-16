@@ -1,5 +1,10 @@
 # Cobros durante la entrega
 
+Desde V42 una entrega exitosa desde preparación pendiente prepara y descuenta
+stock en la misma transacción. Un fallo revierte también cobros y preparación.
+Los intentos fallidos no preparan. La revisión administrativa pendiente no bloquea
+la entrega ni el cobro; ver [preparación y revisión](order-fulfillment.md).
+
 ## Endpoint
 
 `POST /api/orders/{orderId}/delivery-attempts`

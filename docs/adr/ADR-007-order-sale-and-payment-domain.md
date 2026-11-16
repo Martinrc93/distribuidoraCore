@@ -10,8 +10,8 @@ El usuario carga un pedido en el frontend, selecciona un cliente y obtiene su
 vendedor asignado como valor inicial. Un administrador puede seleccionar otro
 perfil seller existente para el pedido; los demás usuarios deben conservar la
 atribución a su perfil seller autenticado. El pedido no se persiste como
-borrador: recién al confirmar se crea el pedido confirmado, la venta, el impacto
-de stock y la información de pago.
+borrador: recién al confirmar se crea el pedido confirmado, la venta y la
+información de pago. Desde V42 el impacto de stock ocurre al preparar.
 
 El sistema necesita listas de precios, overrides, descuentos acumulables,
 pagos parciales, pagos combinados y cuenta corriente interna.
@@ -28,8 +28,8 @@ formulario no persistido
 → confirmar
 → crear Order CONFIRMED
 → crear Sale
-→ afectar Inventory
 → registrar Payment o CustomerAccountLedger
+→ preparar (explícitamente o al entregar) y afectar Inventory
 ```
 
 Los únicos estados de negocio serán:
@@ -52,7 +52,19 @@ Reglas:
 - Una venta parcialmente pagada puede entregarse.
 - El vendedor no puede modificar pedidos, precios ni descuentos.
 - El administrador puede modificar cualquier pedido.
-- La modificación conserva snapshots históricos y genera deltas de stock.
+- La modificación conserva snapshots históricos y genera deltas de stock solo si está preparado.
+- `fulfillment_status` (`PENDING` / `PREPARED`) es independiente del estado comercial.
+- Preparar requiere `ORDER_PREPARE` o `ADMIN_ALL`; V42 lo asigna a `ADMIN` y `SELLER`.
+- Entregar desde pendiente prepara y descuenta stock en la misma transacción.
+- La cancelación revierte los movimientos existentes y vuelve la preparación a pendiente.
+  Reactivar restaura la deuda sin descontar stock.
+- Los pedidos históricos activos quedan preparados por equivalencia sin un nuevo descuento;
+  `legacy_fulfillment` los identifica sin inventar fecha ni usuario de preparación.
+- Los pedidos creados por vendedores requieren revisión administrativa, que no bloquea
+  creación, preparación, cobro ni entrega. Hasta entonces conservan el distintivo.
+  La revisión guarda fecha/administrador y auditoría `ORDER_REVIEW`, sin cambiar
+  estado comercial, stock ni importes. Repetirla es idempotente.
+- `ORDER_REVIEW` es un permiso administrativo, asignado solo a `ADMIN`.
 - Los precios aplicados se guardan en `OrderItem` y `Sale`.
 - El cliente puede tener una lista de precios opcional.
 - Si no tiene lista, se utiliza `GENERAL`.

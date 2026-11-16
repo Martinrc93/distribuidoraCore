@@ -50,9 +50,13 @@ un usuario sin `STOCK_ADJUST`, `403 Forbidden`; y una solicitud sin autenticaci�
 ## Pedidos, devoluciones y cancelaciones
 
 `POST /api/orders/confirm` no requiere ni contiene un campo de depósito. La
-confirmación descuenta directamente del saldo único de cada producto. Editar un
-pedido confirmado aplica los deltas al mismo saldo. Las devoluciones y
-cancelaciones también lo restauran directamente, dentro de sus transacciones.
+confirmación no modifica stock. `POST /api/orders/{id}/prepare` descuenta del saldo
+único y registra la preparación; entregar un pendiente prepara en la misma
+transacción. Editar un confirmado aplica deltas solo si ya está preparado.
+Las cancelaciones revierten el efecto neto existente y las devoluciones de ventas
+entregadas restauran las cantidades devueltas, dentro de sus transacciones.
+Reactivar deja el pedido pendiente de preparación y no modifica stock.
+Contrato completo: [preparación y revisión](order-fulfillment.md).
 
 No existen los endpoints `/api/inventory/depots`,
 `/api/inventory/depots/{depotId}/balances` ni

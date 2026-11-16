@@ -417,7 +417,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             }
             String status = index % 10 == 0 ? "DELIVERED" : "CONFIRMED";
             String orderNumber = jdbc.queryForObject("select orders.next_customer_order_number(?)", String.class, customerId);
-            jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, legacy_order_number) values (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+            jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, legacy_order_number, fulfillment_status, legacy_fulfillment) values (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'PREPARED', true)",
                 orderId, orderNumber, customerId, sellerProfiles.get(index % sellerProfiles.size()), status, total, total, timestamp(createdAt), "PED-%05d".formatted(index));
             jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
                 saleId, "V-%06d".formatted(index), orderId, customerId, status, total, total.multiply(BigDecimal.valueOf(index % 3 == 0 ? 0.5 : 1)), timestamp(createdAt));

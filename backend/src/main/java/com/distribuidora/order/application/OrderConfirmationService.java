@@ -171,6 +171,7 @@ public class OrderConfirmationService {
         }
 
         List<ResolvedLine> resolved = resolveLines(request);
+        resolved.stream().map(ResolvedLine::productId).distinct().forEach(this::requireActiveProduct);
         OrderCalculationService.OrderCalculation calculated = calculation.calculate(
             resolved.stream().map(line -> new OrderCalculationService.CalculatedLine(
                 line.productId(), line.quantity(), line.unitPrice(), line.discount())).toList(),
@@ -190,13 +191,6 @@ public class OrderConfirmationService {
         UUID orderId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
         String orderNumber = jdbc.queryForObject("select orders.next_customer_order_number(?)", String.class, customerId);
-        resolved.stream().map(ResolvedLine::productId).distinct().sorted(Comparator.comparing(UUID::toString))
-            .forEach(productId -> {
-                BigDecimal quantity = resolved.stream().filter(line -> line.productId().equals(productId))
-                    .map(ResolvedLine::quantity).reduce(ZERO, BigDecimal::add);
-                inventory.apply(productId, quantity.negate(), "SALE", orderId, "Order confirmation");
-            });
-
         Timestamp now = Timestamp.from(Instant.now());
         var businessNow = now.toInstant().atZone(ZoneId.of("America/Argentina/Buenos_Aires"));
         Timestamp registeredAt = request.orderDate() == null ? now : Timestamp.from(
@@ -265,7 +259,7 @@ public class OrderConfirmationService {
         }
 
         Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, "
-            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid, o.previous_balance_amount "
+            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid, o.previous_balance_amount, o.fulfillment_status "
             + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update of o, s", orderId);
         if (!"CONFIRMED".equals(lifecycle.get("order_status")) || !"CONFIRMED".equals(lifecycle.get("sale_status"))) {
             throw new IllegalStateException("Solo se pueden editar pedidos y ventas confirmados");
@@ -309,6 +303,8 @@ public class OrderConfirmationService {
         for (UUID productId : productIds.stream().sorted(Comparator.comparing(UUID::toString)).toList()) {
             BigDecimal stockDelta = oldQuantities.getOrDefault(productId, ZERO)
                 .subtract(newQuantities.getOrDefault(productId, ZERO));
+            if (stockDelta.signum() < 0) requireActiveProduct(productId);
+            if (!"PREPARED".equals(lifecycle.get("fulfillment_status"))) continue;
             if (stockDelta.signum() < 0) {
                 inventory.apply(productId, stockDelta, "SALE", orderId, "Confirmed order edit");
                 inventoryMovementsApplied++;
@@ -370,6 +366,11 @@ public class OrderConfirmationService {
             return authenticatedSellerId;
         }
         return requestedSellerId != null ? requestedSellerId : uuidOrNull(customer.get("seller_id"));
+    }
+
+    private void requireActiveProduct(UUID productId) {
+        String status = jdbc.queryForObject("select status from catalog.products where id = ?", String.class, productId);
+        if (!"ACTIVE".equals(status)) throw new IllegalStateException("El producto no está activo");
     }
 
     private UUID uuidOrNull(Object value) {

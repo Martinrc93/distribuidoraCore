@@ -24,7 +24,7 @@ class DeliveryLifecycleServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
-    private final DeliveryLifecycleService service = new DeliveryLifecycleService(jdbc, inventory, audit);
+    private final DeliveryLifecycleService service = new DeliveryLifecycleService(jdbc, inventory, audit, null, new com.distribuidora.order.application.OrderFulfillmentService(jdbc, inventory, audit, null));
 
     @AfterEach
     void clearAuthentication() {
@@ -257,7 +257,7 @@ class DeliveryLifecycleServiceTest {
     private Map<String, Object> confirmed(UUID orderId) {
         return Map.of("order_id", orderId, "sale_id", UUID.randomUUID(), "customer_id", UUID.randomUUID(),
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
-            "total", new BigDecimal("10.0000"));
+            "total", new BigDecimal("10.0000"), "fulfillment_status", "PREPARED");
     }
 
     private UUID authenticate(String... authorities) {

@@ -82,7 +82,7 @@ responsabilidad de validar su propio dominio:
 - `payment` registra pagos o deuda.
 - `audit` registra la operación.
 
-Confirmaciones, ediciones, devoluciones y cancelaciones bloquean y actualizan el
+Preparaciones, ediciones de preparados, devoluciones y cancelaciones bloquean y actualizan el
 saldo único por producto dentro de sus transacciones. No hay operaciones de
 transferencia entre depósitos.
 

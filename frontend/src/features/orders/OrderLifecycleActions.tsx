@@ -60,9 +60,10 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
         queryClient.invalidateQueries({ queryKey: [`/api/orders/${orderId}`] }),
         queryClient.invalidateQueries({ queryKey: ['/api/orders'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/sales'] }),
+        queryClient.invalidateQueries({ predicate: ({ queryKey }) => ['/api/orders', '/api/sales', '/api/customers', '/api/products', '/api/inventory'].some(prefix => String(queryKey[0]).startsWith(prefix)) || ['dashboard', 'order-reviews'].includes(String(queryKey[0])) }),
       ])
       setShowCancel(false)
-      setFeedback('Pedido cancelado y stock revertido.')
+      setFeedback('Pedido cancelado. Se revirtió el stock si estaba preparado.')
       onChanged()
     } catch (cause) {
       setError(apiMessage(cause, 'No se pudo cancelar el pedido.'))
@@ -72,6 +73,7 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
   }
 
   async function reactivateOrder() {
+    if (busy) return
     setBusy(true)
     setError('')
     try {
@@ -86,7 +88,7 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ])
       setShowReactivate(false)
-      setFeedback('Pedido reactivado y confirmado. Se volvió a descontar el stock y restaurar la deuda.')
+      setFeedback('Pedido reactivado, pendiente de preparación. Se restauró la deuda.')
       onChanged()
     } catch (cause) {
       setError(apiMessage(cause, 'No se pudo reactivar el pedido.'))
@@ -134,8 +136,8 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
       </div>
     </Panel>
     {showDelivery && <DeliveryAttemptDialog orderNumber={orderNumber} saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setShowDelivery(false)} />}
-    {showCancel && <ConfirmationDialog title={`¿Cancelar el pedido ${orderNumber}?`} description="Se cancelará el pedido y se devolverán sus productos al stock si cumple las condiciones de cancelación." confirmLabel="Confirmar cancelación" pendingLabel="Cancelando..." pending={busy} error={error} onCancel={() => setShowCancel(false)} onConfirm={() => void cancelOrder()} />}
-    {showReactivate && <div role="dialog" aria-modal="true" aria-labelledby="reactivate-title" className="modal-backdrop"><Panel title="Reactivar pedido"><h2 id="reactivate-title">¿Reactivar el pedido {orderNumber} como confirmado?</h2><p>Se volverá a descontar el stock de sus productos y se restaurará el saldo de la venta en la cuenta corriente.</p>{error && <p className="error-text" role="alert">{error}</p>}<div className="page-actions"><Button variant="secondary" onClick={() => setShowReactivate(false)} disabled={busy}>Volver</Button><Button onClick={reactivateOrder} disabled={busy}>{busy ? 'Reactivando...' : 'Confirmar reactivación'}</Button></div></Panel></div>}
+    {showCancel && <ConfirmationDialog title={`¿Cancelar el pedido ${orderNumber}?`} description="Se cancelará el pedido. Si estaba preparado, se devolverán sus productos al stock." confirmLabel="Confirmar cancelación" pendingLabel="Cancelando..." pending={busy} error={error} onCancel={() => setShowCancel(false)} onConfirm={() => void cancelOrder()} />}
+    {showReactivate && <ConfirmationDialog title={`¿Reactivar el pedido ${orderNumber} como confirmado?`} description="Se restaurará el saldo de la venta y quedará pendiente de preparación. El stock se descontará al preparar o entregar." confirmLabel="Confirmar reactivación" pendingLabel="Reactivando..." confirmVariant="primary" pending={busy} error={error} onCancel={() => setShowReactivate(false)} onConfirm={() => void reactivateOrder()} />}
     {showNotification && <Panel title="Enviar comprobante por email o WhatsApp"><form className="form-grid" onSubmit={requestNotification}>
       <label className="field"><span>Canal de envío</span><select className="select" value={channel} onChange={(event) => updateNotification('channel', event.target.value as 'EMAIL' | 'WHATSAPP')}><option value="EMAIL">Email</option><option value="WHATSAPP">WhatsApp</option></select></label>
       <label className="field"><span>Destinatario</span><input className="input" aria-label="Destinatario" value={recipient} onChange={(event) => updateNotification('recipient', event.target.value)} placeholder={channel === 'EMAIL' ? 'compras@empresa.com' : '+549...'} required /></label>

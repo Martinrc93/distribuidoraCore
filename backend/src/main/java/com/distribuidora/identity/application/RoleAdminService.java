@@ -86,8 +86,8 @@ public class RoleAdminService {
             throw new IllegalArgumentException("El rol ADMIN debe conservar ADMIN_ALL");
         }
         if (!"ADMIN".equals(normalizedRole)
-            && (requested.contains("ADMIN_ALL") || requested.contains("USER_MANAGE"))) {
-            throw new IllegalArgumentException("ADMIN_ALL y USER_MANAGE solo se pueden asignar al rol ADMIN");
+            && (requested.contains("ADMIN_ALL") || requested.contains("USER_MANAGE") || requested.contains("ORDER_REVIEW"))) {
+            throw new IllegalArgumentException("ADMIN_ALL, USER_MANAGE y ORDER_REVIEW solo se pueden asignar al rol ADMIN");
         }
 
         List<String> current = jdbc.queryForList("""

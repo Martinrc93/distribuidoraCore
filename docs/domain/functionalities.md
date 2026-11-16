@@ -192,9 +192,9 @@ Reglas:
   la diferencia) o una diferencia a sumar/restar. En ambos casos queda un movimiento
   `MANUAL_ADJUSTMENT` inmutable.
 - No se editan ni eliminan movimientos históricos.
-- La confirmación de una venta registra una salida.
+- La preparación del pedido registra una salida. Confirmar no modifica stock.
 - La cancelación de una venta no pagada registra una reversión.
-- La edición de un pedido confirmado calcula un delta y registra movimientos
+- La edición de un pedido confirmado preparado calcula un delta y registra movimientos
   compensatorios. Solo puede editarse mientras pedido y venta sigan en
   `CONFIRMED`, mediante `ADMIN_ALL`; se conservan los pagos existentes y la
   cuenta corriente se ajusta por el cambio de total. No se permite reducir el
@@ -245,7 +245,7 @@ Al confirmar se ejecuta una transacción que debe:
 3. Aplicar overrides permitidos.
 4. Calcular descuentos.
 5. Validar cantidades.
-6. Registrar la salida de stock.
+6. Dejar la preparación pendiente, sin descontar stock.
 7. Crear la venta.
 8. Registrar pagos o deuda.
 9. Guardar el pedido como `CONFIRMED`.
@@ -253,6 +253,24 @@ Al confirmar se ejecuta una transacción que debe:
 
 La operación debe ser idempotente para no crear ventas duplicadas ante doble
 click o reintento de red.
+
+#### Preparación y revisión administrativa
+
+La preparación es independiente de los estados comerciales: `PENDING` / `PREPARED`.
+`ORDER_PREPARE` permite preparar a administradores y vendedores por defecto,
+respetando el acceso del vendedor a sus pedidos. Preparar descuenta stock una
+sola vez y guarda fecha/usuario; entregar un pendiente prepara automáticamente.
+Un intento fallido no prepara. Los administradores editan confirmados pendientes
+sin stock y preparados con deltas. Cancelar revierte solo lo descontado;
+reactivar restaura deuda y deja pendiente de preparación.
+
+Los pedidos creados por vendedores conservan «Vendedor · Pendiente de revisión»
+en la vista administrativa hasta que un administrador confirma su revisión.
+La revisión al cierre del día es manual, admite pedidos ya entregados y no bloquea
+ninguna operación de los vendedores. Guarda fecha, administrador y auditoría;
+no cambia estados comerciales, stock ni cobros. Resumen muestra todos los
+pendientes, incluso de fechas anteriores; Pedidos permite filtrarlos y revisarlos.
+La atribución original del creador se conserva después de revisar.
 
 #### Estados
 

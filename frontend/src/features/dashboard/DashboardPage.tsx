@@ -11,6 +11,7 @@ import { StatCard } from '../../shared/components/StatCard'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 import { parseDashboardData } from './dashboardResponses'
 import { SellerOrdersDialog, type SellerOrderSelection } from './SellerOrdersDialog'
+import { PendingOrderReviews } from './PendingOrderReviews'
 
 type Metrics = {
   performedOrders: number
@@ -111,6 +112,7 @@ export default function DashboardPage() {
       {dateError && <p id="dashboard-date-error" className="error-text" role="alert">{dateError}</p>}
     </Panel>
     </div>
+    <PendingOrderReviews />
     {!dateError && (query.isLoading ? <div role="status"><EmptyState title="Cargando resumen" description="Consultando pedidos y sus saldos." /></div>
       : query.isError ? <EmptyState title="No se pudo cargar el resumen" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />
       : data && <>

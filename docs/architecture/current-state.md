@@ -88,13 +88,16 @@ sequenceDiagram
     UI->>Order: POST /api/orders/confirm
     Order->>Auth: Valida ORDER_CREATE o ADMIN_ALL
     Order->>Catalog: Resuelve productos y precios
-    Order->>Stock: Bloquea balances y registra SALE
+    Note over Order,Stock: Confirmar deja preparación PENDING, sin mover stock
     Order->>Sale: Crea venta y snapshots
     Order->>Payment: Registra pagos o cuenta corriente
     Order->>Audit: Registra operación
     Order->>DB: Confirma una transacción única
     DB-->>Order: Commit
     Order-->>UI: Pedido, venta, pagos y saldo
+    UI->>Order: Preparar (o entregar desde PENDING)
+    Order->>Stock: Bloquea balances y registra SALE una vez
+    Order->>Audit: ORDER_PREPARE con usuario y fecha
 ```
 
 ## Lifecycle Y Documentos

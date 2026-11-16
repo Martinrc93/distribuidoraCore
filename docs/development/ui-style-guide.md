@@ -565,6 +565,27 @@ guarda en `sessionStorage` los pedidos de la página visible; el detalle muestra
 cambian de pedido cuando el foco no está en un campo y no hay un diálogo abierto.
 «Volver a pedidos» regresa al listado con sus filtros.
 
+Preparación y revisión (V42): el listado agrega «Preparación» (Todas / A preparar /
+Listos para entregar), en `fulfillment`, y para administradores «Revisión
+administrativa» (Todas / Pendientes de revisión), en `review`. Cambiar filtros
+reinicia la página. La preparación usa `Badge` con texto español.
+`OrderOperationalActions` comparte botones entre fila, detalle y Resumen; usa
+`ConfirmationDialog` (`primary`), permite reintentar errores y bloquea cierre y
+doble envío durante guardado.
+
+La celda administrativa «Cargado por» conserva la atribución y agrega
+`OrderReviewBadge`: «Vendedor · Pendiente de revisión», con texto y color de
+advertencia mediante `.order-review-pending .badge` (variante local). Preparar o
+entregar no lo elimina; solo la revisión del administrador lo quita. Las tablas
+mantienen tarjetas hasta `640px` y las acciones usan el wrap compartido.
+
+El detalle presenta preparación, revisión y aviso para históricos cuyo stock ya
+estaba descontado. Resumen incorpora `PendingOrderReviews`, con contador y hasta
+cinco pendientes de todas las fechas, incluidos entregados, más enlace al listado
+completo. Tiene carga, vacío, error con reintento y revisión individual. Al revisar,
+el foco vuelve al enlace estable; en Pedidos, a «Ver detalle» o búsqueda si salió
+del filtro; en el detalle, al bloque de operaciones. No se bloquea el trabajo vendedor.
+
 En la carga de pedidos, elegir un producto con Enter pasa el foco a «Cantidad»
 (seleccionada); Enter en «Cantidad» o «Descuento» agrega la línea y vuelve al
 buscador de productos. Enter dentro del selector de productos nunca confirma el

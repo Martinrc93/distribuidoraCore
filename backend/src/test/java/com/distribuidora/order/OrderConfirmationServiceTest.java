@@ -46,6 +46,7 @@ class OrderConfirmationServiceTest {
 
     @BeforeEach
     void numberOrders() {
+        when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), any(UUID.class))).thenReturn("ACTIVE");
         when(jdbc.queryForObject(eq("select orders.next_customer_order_number(?)"), eq(String.class), any(UUID.class)))
             .thenReturn("000100004");
     }
@@ -125,7 +126,7 @@ class OrderConfirmationServiceTest {
         verify(jdbc).update(contains("insert into customer.account_ledger"), debit.capture());
         assertThat((BigDecimal) debit.getValue()[3]).isEqualByComparingTo("20");
         verify(jdbc).update(eq("update customer.customers set balance = balance + ? where id = ?"), eq(new BigDecimal("20.0000")), eq(customerId));
-        verify(inventory).apply(eq(productId), argThat(value -> value.compareTo(new BigDecimal("-2")) == 0), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
+        verifyNoInteractions(inventory);
         verify(jdbc, never()).update(contains("payment.payments"), any(Object[].class));
     }
 
@@ -218,7 +219,7 @@ class OrderConfirmationServiceTest {
 
         assertThat(result.total()).isEqualByComparingTo("10");
         verify(pricing).resolve(customerId, productId, listId);
-        verify(inventory).apply(eq(productId), any(), eq("SALE"), eq(result.orderId()), anyString());
+        verifyNoInteractions(inventory);
     }
 
     @Test
@@ -244,8 +245,7 @@ class OrderConfirmationServiceTest {
         assertThat(response.saleId()).isNotNull();
         assertThat(response.total()).isEqualByComparingTo("20.0000");
         assertThat(response.paid()).isEqualByComparingTo("20.0000");
-        verify(inventory).apply(eq(productId), argThat(value -> value.compareTo(new BigDecimal("-2.0")) == 0),
-            eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
+        verifyNoInteractions(inventory);
         verify(jdbc).update(contains("payment.payments"), any(Object[].class));
         verify(jdbc, never()).update(contains("account_ledger"), any(Object[].class));
         verify(audit).recordWithinTransaction(any(), eq("ORDER_CONFIRM"), eq("ORDER"), eq(response.orderId().toString()), eq("SUCCESS"), anyMap());
@@ -388,7 +388,7 @@ class OrderConfirmationServiceTest {
             new BigDecimal("5.00"), List.of()));
 
         assertThat(response.total()).isEqualByComparingTo("9.0250");
-        verify(inventory).apply(eq(productId), any(), eq("SALE"), eq(response.orderId()), eq("Order confirmation"));
+        verifyNoInteractions(inventory);
     }
 
     @Test

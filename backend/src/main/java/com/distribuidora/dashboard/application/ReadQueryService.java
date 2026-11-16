@@ -276,6 +276,16 @@ public class ReadQueryService {
      */
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
             LocalDate dateMin, LocalDate dateMax, String createdBy, boolean paidUndelivered) {
+        return orders(page, size, search, status, dateMin, dateMax, createdBy, paidUndelivered, null, false);
+    }
+
+    public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
+            LocalDate dateMin, LocalDate dateMax, String createdBy, boolean paidUndelivered,
+            String fulfillmentStatus, boolean reviewPending) {
+        if (fulfillmentStatus != null && !fulfillmentStatus.isBlank()
+            && !List.of("PENDING", "PREPARED").contains(fulfillmentStatus)) {
+            throw new IllegalArgumentException("fulfillmentStatus debe ser PENDING o PREPARED");
+        }
         if (createdBy != null && !createdBy.isBlank() && !"ADMIN".equals(createdBy) && !"SELLER".equals(createdBy)) {
             throw new IllegalArgumentException("createdBy debe ser ADMIN o SELLER");
         }
@@ -304,11 +314,18 @@ public class ReadQueryService {
         if ("ADMIN".equals(createdBy)) where += " and o.created_by_admin = true";
         if ("SELLER".equals(createdBy)) where += " and o.created_by_admin = false";
         if (paidUndelivered) where += " and o.status = 'CONFIRMED' and s.id is not null and s.paid >= s.total";
+        if (fulfillmentStatus != null && !fulfillmentStatus.isBlank()) {
+            where += " and o.status = 'CONFIRMED' and o.fulfillment_status = ?";
+            parameters.add(fulfillmentStatus);
+        }
+        if (reviewPending) where += " and o.created_by_admin = false and o.reviewed_at is null";
         return page("""
             select o.id, o.order_number as number, c.business_name as customer,
                    coalesce(sp.display_name, 'Sin asignar') as seller,
                    o.total, o.status, o.created_at as date,
-                   o.created_by_admin as "createdByAdmin", coalesce(s.paid, 0) as paid
+                   o.created_by_admin as "createdByAdmin", coalesce(s.paid, 0) as paid,
+                   o.fulfillment_status as "fulfillmentStatus",
+                   (o.created_by_admin = false and o.reviewed_at is null) as "reviewPending"
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
             left join seller.seller_profiles sp on sp.id = o.seller_id
@@ -385,6 +402,11 @@ public class ReadQueryService {
                    c.business_name as customer,
                    coalesce(assigned_seller.display_name, customer_seller.display_name, 'Sin asignar') as seller,
                    o.status, o.subtotal, o.discount, o.total,
+                   o.fulfillment_status as "fulfillmentStatus", o.prepared_at as "preparedAt",
+                   o.prepared_by_user_id as "preparedByUserId", o.legacy_fulfillment as "legacyFulfillment",
+                   o.created_by_admin as "createdByAdmin", o.created_by_user_id as "createdByUserId",
+                   (o.created_by_admin = false and o.reviewed_at is null) as "reviewPending",
+                   o.reviewed_at as "reviewedAt", o.reviewed_by_user_id as "reviewedByUserId",
                    o.order_discount_percent as "orderDiscountPercent",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",

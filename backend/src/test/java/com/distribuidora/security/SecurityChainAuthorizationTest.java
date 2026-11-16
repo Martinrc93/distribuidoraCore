@@ -53,6 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     DocumentController.class,
     AccountPaymentController.class,
     DeliveryLifecycleController.class,
+    com.distribuidora.order.api.OrderFulfillmentController.class,
     InventoryCommandController.class,
     UserAdminController.class,
     com.distribuidora.identity.api.RoleAdminController.class
@@ -90,6 +91,27 @@ class SecurityChainAuthorizationTest {
 
     @MockitoBean
     private DeliveryLifecycleService deliveryLifecycleService;
+
+    @MockitoBean
+    private com.distribuidora.order.application.OrderFulfillmentService fulfillmentService;
+
+    @Test
+    void preparationHasItsOwnPermissionAndOnlyAdminsCanReview() throws Exception {
+        UserAccount user = activeUser();
+        UUID order = UUID.randomUUID();
+        mockMvc.perform(post("/api/orders/{id}/prepare", order)).andExpect(status().isUnauthorized());
+        String deliveryOnly = jwtService.issue(user, List.of("SALE_DELIVER"));
+        mockMvc.perform(post("/api/orders/{id}/prepare", order).header("Authorization", "Bearer " + deliveryOnly)).andExpect(status().isForbidden());
+        String preparation = jwtService.issue(user, List.of("ORDER_PREPARE"));
+        mockMvc.perform(post("/api/orders/{id}/prepare", order).header("Authorization", "Bearer " + preparation)).andExpect(status().isNoContent());
+        verify(fulfillmentService).prepare(order);
+        mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + preparation)).andExpect(status().isForbidden());
+        String reviewOnly = jwtService.issue(user, List.of("ORDER_REVIEW"));
+        mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + reviewOnly)).andExpect(status().isForbidden());
+        String admin = jwtService.issue(user, List.of("ADMIN_ALL"));
+        mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + admin)).andExpect(status().isNoContent());
+        verify(fulfillmentService).review(order);
+    }
 
     @MockitoBean
     private InventoryCommandService inventoryCommandService;

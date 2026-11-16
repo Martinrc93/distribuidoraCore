@@ -14,8 +14,9 @@ import { useUrlListState } from '../../shared/useUrlListState'
 import { OrderDateFilter } from './OrderDateFilter'
 import { DeliveryAttemptDialog } from './DeliveryAttemptDialog'
 import { useOrderDelivery } from './useOrderDelivery'
+import { OrderOperationalActions, OrderReviewBadge } from './OrderOperationalActions'
 
-type Order = { id: string; number: string; customer: string; seller: string; total: number; status: string; date: string; createdByAdmin?: boolean | null; paid?: number }
+type Order = { id: string; number: string; customer: string; seller: string; total: number; status: string; date: string; createdByAdmin?: boolean | null; paid?: number; fulfillmentStatus?: string; reviewPending?: boolean }
 type Row = Record<string, string>
 type DeliveryOrder = { id: string; number: string; saleBalance: number; previousDebtAvailable: number }
 
@@ -57,7 +58,9 @@ export default function OrdersPage() {
     target?.focus()
     setDeliveryFocusTarget('')
   }, [deliveryOrder, deliveryFocusTarget])
-  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'status', 'createdBy', 'paid'])
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'status', 'createdBy', 'paid', 'fulfillment', 'review'])
+  const fulfillment = ['PENDING', 'PREPARED'].includes(getFilter('fulfillment')) ? getFilter('fulfillment') : ''
+  const reviewPending = isAdmin && getFilter('review') === 'PENDING'
   const createdBy = isAdmin && ['ADMIN', 'SELLER'].includes(getFilter('createdBy')) ? getFilter('createdBy') : ''
   const paidUndelivered = getFilter('paid') === 'UNDELIVERED'
   const location = useLocation()
@@ -71,7 +74,7 @@ export default function OrdersPage() {
   const max = parseDate(dateMax)
   const invalidRange = Boolean(min && max && min > max)
   const dateError = min === null || max === null ? 'Las fechas deben ser válidas y tener formato dd/mm/aaaa.' : invalidRange ? 'La fecha mínima no puede ser posterior a la fecha máxima.' : ''
-  const path = `/api/orders?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&status=${encodeURIComponent(status)}&dateMin=${min ?? ''}&dateMax=${max ?? ''}${createdBy ? `&createdBy=${createdBy}` : ''}${paidUndelivered ? '&paidUndelivered=true' : ''}`
+  const path = `/api/orders?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&status=${encodeURIComponent(status)}&dateMin=${min ?? ''}&dateMax=${max ?? ''}${createdBy ? `&createdBy=${createdBy}` : ''}${paidUndelivered ? '&paidUndelivered=true' : ''}${fulfillment ? `&fulfillmentStatus=${fulfillment}` : ''}${reviewPending ? '&reviewPending=true' : ''}`
   const query = useQuery({ queryKey: [path], queryFn: () => apiGet<ApiPage<Order>>(path), enabled: !dateError })
 
   async function openDelivery(row: Row) {
@@ -101,7 +104,7 @@ export default function OrdersPage() {
     next.delete('page')
     setParams(next, { replace: true })
   }
-  const hasFilters = Boolean(search || status || dateMin || dateMax || createdBy || paidUndelivered)
+  const hasFilters = Boolean(search || status || dateMin || dateMax || createdBy || paidUndelivered || fulfillment || reviewPending)
 
   function clearFilters() {
     const next = new URLSearchParams(params)
@@ -109,6 +112,8 @@ export default function OrdersPage() {
     next.delete('status')
     next.delete('createdBy')
     next.delete('paid')
+    next.delete('fulfillment')
+    next.delete('review')
     next.delete('page')
     next.set('dateMin', '')
     next.set('dateMax', '')
@@ -121,6 +126,8 @@ export default function OrdersPage() {
     seller: order.seller,
     total: money(order.total),
     status: order.status,
+    fulfillmentStatus: order.fulfillmentStatus ?? '',
+    reviewPending: order.reviewPending ? 'true' : '',
     date: formatDate(order.date),
     createdBy: order.createdByAdmin === true ? 'Administrador' : order.createdByAdmin === false ? 'Vendedor' : '—',
     fullyPaid: order.status === 'CONFIRMED' && Number(order.paid ?? 0) >= Number(order.total) ? 'true' : '',
@@ -149,9 +156,10 @@ export default function OrdersPage() {
     { key: 'seller', label: 'Vendedor' },
     { key: 'date', label: 'Fecha' },
     { key: 'total', label: 'Total', align: 'right' },
-    ...(isAdmin ? [{ key: 'createdBy', label: 'Cargado por' } satisfies TableColumn] : []),
+    ...(isAdmin ? [{ key: 'createdBy', label: 'Cargado por', render: (value: string, row: Row) => <span className="grid gap-[6px]">{value}<OrderReviewBadge pending={row.reviewPending === 'true'} /></span> } satisfies TableColumn] : []),
+    { key: 'fulfillmentStatus', label: 'Preparación', render: (value, row) => row.status === 'CANCELLED' ? '—' : <Badge tone={value === 'PREPARED' ? 'strong' : 'soft'}>{value === 'PREPARED' ? 'Preparado' : value === 'PENDING' ? 'A preparar' : '—'}</Badge> },
     { key: 'status', label: 'Estado', render: (value, row) => <span className="order-status-badges"><Badge tone={value === 'CANCELLED' ? 'muted' : value === 'DELIVERED' ? 'strong' : 'soft'}>{value}</Badge>{row.fullyPaid && <Badge tone="strong">Pagado</Badge>}</span> },
-    { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button id={`order-details-${row.id}`} variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button>{isAdmin && row.status === 'CONFIRMED' && <Button variant="secondary" href={`/orders/${row.id}?edit=true`} aria-label={`Editar pedido ${row.number}`}>Editar</Button>}{canDeliver && row.status === 'CONFIRMED' && <Button id={`order-delivery-${row.id}`} type="button" onClick={() => void openDelivery(row)} disabled={Boolean(loadingDeliveryId)} aria-busy={loadingDeliveryId === row.id} aria-label={`Pasar a entregado pedido ${row.number}`}>{loadingDeliveryId === row.id ? 'Cargando...' : 'Pasar a entregado'}</Button>}</div> },
+    { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button id={`order-details-${row.id}`} variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button>{isAdmin && row.status === 'CONFIRMED' && <Button variant="secondary" href={`/orders/${row.id}?edit=true`} aria-label={`Editar pedido ${row.number}`}>Editar</Button>}<OrderOperationalActions order={{ id: row.id, number: row.number, status: row.status, fulfillmentStatus: row.fulfillmentStatus, reviewPending: row.reviewPending === 'true' }} onSaved={message => { setDeliveryFeedback(message); setDeliveryFocusTarget(`order-details-${row.id}`) }} />{canDeliver && row.status === 'CONFIRMED' && <Button id={`order-delivery-${row.id}`} type="button" onClick={() => void openDelivery(row)} disabled={Boolean(loadingDeliveryId)} aria-busy={loadingDeliveryId === row.id} aria-label={`Pasar a entregado pedido ${row.number}`}>{loadingDeliveryId === row.id ? 'Cargando...' : 'Pasar a entregado'}</Button>}</div> },
   ]
 
   return <>
@@ -161,6 +169,8 @@ export default function OrdersPage() {
         <label className="field"><span>Buscar pedidos</span><input id="orders-search" className="input search-input" placeholder="Cliente o número" aria-label="Buscar pedidos" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
         <label className="field"><span>Filtrar por estado</span><select className="select" aria-label="Filtrar por estado" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="">Todos los estados</option><option value="CONFIRMED">Confirmado</option><option value="DELIVERED">Entregado</option><option value="CANCELLED">Cancelado</option></select></label>
         <label className="field"><span>Cobro</span><select className="select" aria-label="Filtrar por cobro" value={paidUndelivered ? 'UNDELIVERED' : ''} onChange={(event) => setFilter('paid', event.target.value)}><option value="">Todos</option><option value="UNDELIVERED">Pagados sin entregar</option></select></label>
+        <label className="field"><span>Preparación</span><select className="select" aria-label="Filtrar por preparación" value={fulfillment} onChange={(event) => setFilter('fulfillment', event.target.value)}><option value="">Todas</option><option value="PENDING">A preparar</option><option value="PREPARED">Listos para entregar</option></select></label>
+        {isAdmin && <label className="field"><span>Revisión administrativa</span><select className="select" aria-label="Filtrar por revisión" value={reviewPending ? 'PENDING' : ''} onChange={(event) => setFilter('review', event.target.value)}><option value="">Todas</option><option value="PENDING">Pendientes de revisión</option></select></label>}
         {isAdmin && <label className="field"><span>Cargado por</span><select className="select" aria-label="Filtrar por quién cargó el pedido" value={createdBy} onChange={(event) => setFilter('createdBy', event.target.value)}><option value="">Todos</option><option value="ADMIN">Administrador</option><option value="SELLER">Vendedor</option></select></label>}
         <div className="orders-date-filters">
           <OrderDateFilter id="orders-date-min" label="Desde" value={dateMin} isoValue={min ?? ''} onChange={(value) => setDateFilter('dateMin', value)} invalid={min === null || invalidRange} describedBy={dateError ? 'orders-date-error' : undefined} />

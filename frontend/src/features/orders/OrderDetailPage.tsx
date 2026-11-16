@@ -1,6 +1,6 @@
 import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { apiGet } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
@@ -13,12 +13,13 @@ import { OrderNavigator, readOrderNavigation } from './orderNavigation'
 import { Panel } from '../../shared/components/Panel'
 import OrderLifecycleActions from './OrderLifecycleActions'
 import OrderForm from './OrderForm'
+import { OrderOperationalActions, OrderReviewBadge } from './OrderOperationalActions'
 
 type OrderItem = { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; priceListId: string; priceListCode: string; lineDiscountPercent: number }
 type Payment = { id: string; amount: number; method: string; transferReference?: string | null; date: string }
 type DeliveryAttempt = { id: string; attemptNumber: number; result: 'DELIVERED' | 'FAILED'; observation?: string | null; attemptedAt: string; attemptedBy: string }
 type OrderDetail = {
-  order: { id: string; number: string; customerId: string; customer: string; seller?: string; status: string; subtotal: number; discount: number; orderDiscountPercent?: number; total: number; customerBalance: number; date: string; previousBalanceAmount?: number; collectionTotal?: number }
+  order: { id: string; number: string; customerId: string; customer: string; seller?: string; status: string; subtotal: number; discount: number; orderDiscountPercent?: number; total: number; customerBalance: number; date: string; previousBalanceAmount?: number; collectionTotal?: number; fulfillmentStatus?: string; preparedAt?: string; legacyFulfillment?: boolean; reviewPending?: boolean; reviewedAt?: string }
   items: OrderItem[]
   sale: { id: string; number: string; status: string; total: number; paid: number; balance: number; previousDebtAvailable?: number; date: string }
   payments: Payment[]
@@ -40,6 +41,7 @@ export default function OrderDetailPage() {
   const [params, setParams] = useSearchParams()
   const editing = params.get('edit') === 'true'
   const [feedback, setFeedback] = useState('')
+  useEffect(() => { if (feedback) document.getElementById('order-operations')?.focus() }, [feedback])
 
   function setEditing(value: boolean) {
     const next = new URLSearchParams(params)
@@ -97,6 +99,15 @@ export default function OrderDetailPage() {
     <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href={readOrderNavigation()?.returnTo ?? "/orders"}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
     <OrderNavigator orderId={orderId} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
+    <Panel title="Preparación y revisión"><div id="order-operations" tabIndex={-1} className="page-actions">
+      {order.status !== 'CANCELLED' && <Badge tone={order.fulfillmentStatus === 'PREPARED' ? 'strong' : 'soft'}>{order.fulfillmentStatus === 'PREPARED' ? 'Preparado' : 'A preparar'}</Badge>}
+      {isAdmin && <OrderReviewBadge pending={order.reviewPending} />}
+      <OrderOperationalActions order={order} onSaved={setFeedback} />
+    </div>
+      {order.legacyFulfillment && <p className="helper-text">Pedido histórico: el stock ya se descontó al confirmar.</p>}
+      {order.preparedAt && <p className="helper-text">Preparado el {date(order.preparedAt)}.</p>}
+      {order.reviewedAt && <p className="helper-text">Revisión administrativa confirmada el {date(order.reviewedAt)}.</p>}
+    </Panel>
     {Number(order.previousBalanceAmount ?? 0) > 0 && <Panel title="Importe para la entrega"><dl className="confirmation-result"><dt>Total del pedido</dt><dd><CurrencyText>{money(order.total)}</CurrencyText></dd><dt>Saldo anterior incluido</dt><dd><CurrencyText>{money(order.previousBalanceAmount)}</CurrencyText></dd><dt>Total a cobrar</dt><dd><CurrencyText>{money(order.collectionTotal ?? order.total + Number(order.previousBalanceAmount))}</CurrencyText></dd></dl></Panel>}
     <div className="stats-grid compact">
       <article className="stat-card"><span>Estado del pedido</span><strong><Badge tone="soft">{order.status}</Badge></strong><small className="[overflow-wrap:anywhere]">{order.customer}</small></article>

@@ -29,7 +29,7 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 - `paid` y las filas de pago existentes se conservan. El total nuevo no puede ser menor que el importe ya pagado; no se generan devoluciones monetarias.
 - Se reemplazan los snapshots de líneas de pedido y venta con los precios y descuentos calculados para esta edición.
 - El ledger de la venta se ajusta por la diferencia entre el total nuevo y el total anterior con un asiento append-only `DEBIT` o `CREDIT`; así se conservan pagos a cuenta previamente imputados. El balance agregado del cliente se ajusta por el mismo delta.
-- La diferencia de cantidades por producto genera movimientos compensatorios: más unidades vendidas crea `SALE` negativo; reducción o eliminación de unidades crea `SALE_CANCELLATION` positivo.
+- Si el pedido está `PREPARED`, la diferencia de cantidades por producto genera movimientos compensatorios: más unidades vendidas crea `SALE` negativo; reducción o eliminación de unidades crea `SALE_CANCELLATION` positivo. En `PENDING` se editan las líneas sin mover stock.
 - Los deltas de cantidades se aplican al saldo único por producto; el pedido no tiene atributo de depósito.
 - Todos los cambios de líneas, stock, ledger, balance y auditoría `ORDER_EDIT` ocurren en una transacción. Si falla una parte, no persisten cambios parciales.
 - La cancelación posterior revierte el efecto neto por producto de movimientos `SALE` y `SALE_CANCELLATION`, incluso si el pedido tuvo ediciones previas.
@@ -41,8 +41,8 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 y su venta de `CANCELLED` a `CONFIRMED`. En el detalle del pedido aparece la
 acción **Reactivar pedido** para administradores.
 
-La reactivación exige que no existan pagos asociados. En una transacción vuelve
-a descontar del stock las cantidades guardadas en el pedido, agrega un débito
+La reactivación exige que no existan pagos asociados. En una transacción deja el
+pedido pendiente de preparación sin mover stock, agrega un débito
 por el total de la venta al ledger y aumenta el saldo del cliente. Los
 movimientos y asientos anteriores se conservan como historial append-only. La
 respuesta es `204 No Content`; si los estados no son ambos `CANCELLED` o hay

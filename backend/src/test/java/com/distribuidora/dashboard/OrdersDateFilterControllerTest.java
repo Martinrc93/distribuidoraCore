@@ -27,17 +27,17 @@ class OrdersDateFilterControllerTest {
     void bindsIsoDatesAndPassesSearchStatusAndPage() throws Exception {
         LocalDate min = LocalDate.of(2026, 9, 1);
         LocalDate max = LocalDate.of(2026, 9, 30);
-        when(service.orders(1, 10, "Norte", "CONFIRMED", min, max, null, false)).thenReturn(PageResponse.of(List.of(), 1, 10, 0));
+        when(service.orders(1, 10, "Norte", "CONFIRMED", min, max, null, false, null, false)).thenReturn(PageResponse.of(List.of(), 1, 10, 0));
         mvc.perform(get("/api/orders").param("page", "1").param("size", "10")
             .param("search", "Norte").param("status", "CONFIRMED")
             .param("dateMin", "2026-09-01").param("dateMax", "2026-09-30"))
             .andExpect(status().isOk());
-        verify(service).orders(1, 10, "Norte", "CONFIRMED", min, max, null, false);
+        verify(service).orders(1, 10, "Norte", "CONFIRMED", min, max, null, false, null, false);
     }
 
     @Test
     void acceptsEmptyAndMissingDates() throws Exception {
-        when(service.orders(0, 20, "", "", null, null, null, false)).thenReturn(PageResponse.of(List.of(), 0, 20, 0));
+        when(service.orders(0, 20, "", "", null, null, null, false, null, false)).thenReturn(PageResponse.of(List.of(), 0, 20, 0));
         mvc.perform(get("/api/orders").param("dateMin", "").param("dateMax", "")).andExpect(status().isOk());
         mvc.perform(get("/api/orders")).andExpect(status().isOk());
     }
@@ -53,7 +53,7 @@ class OrdersDateFilterControllerTest {
     void returnsBadRequestForReversedRanges() throws Exception {
         LocalDate min = LocalDate.of(2026, 10, 1);
         LocalDate max = LocalDate.of(2026, 9, 30);
-        when(service.orders(0, 20, "", "", min, max, null, false)).thenThrow(new IllegalArgumentException("Rango inválido"));
+        when(service.orders(0, 20, "", "", min, max, null, false, null, false)).thenThrow(new IllegalArgumentException("Rango inválido"));
         mvc.perform(get("/api/orders").param("dateMin", "2026-10-01").param("dateMax", "2026-09-30"))
             .andExpect(status().isBadRequest());
     }

@@ -21,10 +21,14 @@ decisión, se conserva el comportamiento vigente. La pantalla de gestión de
 stock y movimientos está integrada en Productos; esto no implica que el dominio
 ni sus dependencias hayan sido eliminados.
 
+Actualización (2026-11-16, V42): los nuevos pedidos descuentan stock al preparar,
+incluida la preparación implícita al entregar. Los históricos activos quedan
+preparados por equivalencia, sin nuevos movimientos ni fecha/operador inventados.
+
 ## Context
 
 El stock requiere trazabilidad completa, permite valores negativos y puede ser
-modificado por confirmaciones, ediciones, cancelaciones y ajustes. Guardar solo
+modificado por preparaciones, ediciones de pedidos preparados, cancelaciones y ajustes. Guardar solo
 un campo en `Product` perdería historial y dificultaría la auditoría.
 
 ## Decision
@@ -56,8 +60,13 @@ Reglas:
 - El stock negativo está permitido.
 - Las cantidades son decimales en múltiplos de `0.5`.
 - Las salidas, entradas y ajustes ocurren dentro de una transacción.
-- Editar un pedido confirmado calcula un delta y crea movimientos compensatorios.
-- Cancelar crea una reversión de stock.
+- Confirmar crea el pedido `PENDING`, sin movimientos de stock.
+- Preparar crea la salida `SALE`, registra fecha/usuario y cambia a `PREPARED`.
+  Repetir o concurrir con otra preparación no vuelve a descontar.
+- Entregar desde `PENDING` prepara en la misma transacción. Un intento fallido no prepara.
+- Editar un pedido confirmado crea deltas solo si está `PREPARED`.
+- Cancelar revierte el efecto neto persistido; sin preparación no restaura stock.
+- Reactivar restaura deuda y vuelve a `PENDING`, sin descontar stock.
 - Los movimientos nunca se editan ni eliminan.
 - Solo el administrador puede ajustar stock.
 - Todos los ajustes requieren auditoría.

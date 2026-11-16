@@ -127,6 +127,22 @@ ambas permite consultar todo el historial.
 
 ## Creación de pedidos en la interfaz
 
+### Preparación y revisión administrativa (V42)
+
+El listado también devuelve `fulfillmentStatus` y `reviewPending`. Los filtros
+`fulfillmentStatus=PENDING|PREPARED` seleccionan confirmados «A preparar» o «Listos
+para entregar»; `reviewPending=true` incluye pedidos de vendedores aún sin
+revisión administrativa, incluso entregados. Se combinan con los demás filtros
+antes de contar/paginar y conservan el alcance del vendedor.
+
+El detalle expone preparación, fecha/usuario, equivalencia histórica y
+fecha/administrador de revisión. La interfaz administrativa conserva un distintivo
+textual con color de advertencia hasta revisar. Resumen muestra pendientes de
+todas las fechas. La revisión es manual y no bloquea operaciones ni cambia stock.
+Contratos: [preparación y revisión](order-fulfillment.md).
+
+### Formulario y precios
+
 `GET /api/pricing/resolve-batch?customerId=<uuid>&priceListId=<uuid>&productIds=<uuid>,<uuid>`
 devuelve un arreglo con `productId`, `priceListId`, `priceListCode` y `unitPrice`.
 Admite entre 1 y 100 IDs y elimina duplicados. Requiere `ORDER_CREATE` o

@@ -36,7 +36,7 @@ class RoleAdminServiceTest {
         when(jdbc.queryForObject("select id from identity.roles where code = ? for update", UUID.class, "SELLER"))
             .thenReturn(sellerRoleId);
         when(jdbc.queryForList("select code from identity.permissions", String.class))
-            .thenReturn(List.of("ADMIN_ALL", "USER_MANAGE", "ORDER_CREATE", "SALE_DELIVER", "STOCK_ADJUST"));
+            .thenReturn(List.of("ADMIN_ALL", "USER_MANAGE", "ORDER_CREATE", "SALE_DELIVER", "STOCK_ADJUST", "ORDER_PREPARE", "ORDER_REVIEW"));
     }
 
     @Test
@@ -64,6 +64,13 @@ class RoleAdminServiceTest {
         assertThrows(IllegalArgumentException.class,
             () -> service.replacePermissions("ADMIN", Set.of("USER_MANAGE", "STOCK_ADJUST")));
 
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void sellerCannotReceiveAdministrativeReview() {
+        assertThrows(IllegalArgumentException.class,
+            () -> service.replacePermissions("SELLER", Set.of("ORDER_PREPARE", "ORDER_REVIEW")));
         verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 }

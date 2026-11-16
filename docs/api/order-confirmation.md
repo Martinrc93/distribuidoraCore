@@ -1,5 +1,10 @@
 # Confirmación del pedido
 
+Desde V42 la confirmación crea el pedido con `fulfillmentStatus: PENDING`, sin
+descontar stock. Los pagos y la deuda se registran como parte de la confirmación.
+El stock se descuenta al preparar explícitamente o al entregar un pendiente;
+ver [preparación y revisión administrativa](order-fulfillment.md).
+
 ## Lista de precios
 
 `priceListId` es opcional. Sin el campo o con `null`, se usa la lista asignada

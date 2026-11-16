@@ -67,9 +67,15 @@ sesión, revoca refresh tokens y registra auditoría.
 
 El catálogo se mantiene en migraciones Flyway; los cambios requieren una
 migración y no se crean permisos arbitrarios por HTTP. `ADMIN_ALL` debe
-permanecer en `ADMIN`; `ADMIN_ALL` y `USER_MANAGE` no se asignan a otros roles.
+permanecer en `ADMIN`; `ADMIN_ALL`, `USER_MANAGE` y `ORDER_REVIEW` no se asignan a otros roles.
 Un cambio efectivo invalida sesiones de los usuarios asignados al rol y registra
 auditoría.
+
+V42 agrega `ORDER_PREPARE` (asignado inicialmente a `ADMIN` y `SELLER`) y
+`ORDER_REVIEW` (solo `ADMIN`). Son permisos propios, integrados a este catálogo.
+La preparación no depende de `SALE_DELIVER`; este último autoriza la preparación
+implícita cuando se entrega un pedido pendiente. La revisión exige administrador
+en backend y nunca bloquea la operación comercial del vendedor.
 
 Roles y permisos devuelven `200 OK`; datos inválidos `400`, recursos
 inexistentes `404`, conflictos `409` y falta de autoridad `403`.

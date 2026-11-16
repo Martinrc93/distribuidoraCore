@@ -119,6 +119,7 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired SaleReturnService saleReturnService;
     @Autowired OrderConfirmationService orderConfirmationService;
     @Autowired DeliveryLifecycleService deliveryLifecycleService;
+    @Autowired com.distribuidora.order.application.OrderFulfillmentService orderFulfillmentService;
     @Autowired ReadQueryService readQueryService;
     @Autowired AccountPaymentService accountPaymentService;
     @Autowired BusinessSettingsService businessSettingsService;
@@ -779,6 +780,8 @@ class PostgresBackendFixesIntegrationTest {
             BigDecimal.ZERO, List.of()));
         orders.add(firstSale.orderId());
         sales.add(firstSale.saleId());
+        assertThat(stock(productId)).isEqualByComparingTo("10.0");
+        orderFulfillmentService.prepare(firstSale.orderId());
         assertThat(stock(productId)).isEqualByComparingTo("9.0");
 
         orderConfirmationService.editConfirmed(firstSale.orderId(), new OrderEditDtos.EditRequest(null,
@@ -800,6 +803,7 @@ class PostgresBackendFixesIntegrationTest {
             BigDecimal.ZERO, List.of()));
         orders.add(secondSale.orderId());
         sales.add(secondSale.saleId());
+        orderFulfillmentService.prepare(secondSale.orderId());
         assertThat(stock(productId)).isEqualByComparingTo("8.0");
         deliveryLifecycleService.cancel(secondSale.orderId());
         assertThat(stock(productId)).isEqualByComparingTo("8.5");
@@ -816,6 +820,163 @@ class PostgresBackendFixesIntegrationTest {
     private BigDecimal stock(UUID productId) {
         return jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?",
             BigDecimal.class, productId);
+    }
+
+    @Test
+    void pendingOrdersEditWithoutStockAndPreparedOrdersAdjustExactlyOnceAcrossTheirLifecycle() {
+        authenticateOrderActor(createUser("fulfillment-lifecycle"), "ADMIN_ALL");
+        EditableSaleFixture fixture = freshPendingOrder();
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
+        deliveryLifecycleService.recordAttempt(fixture.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("FAILED", "Ausente"));
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
+
+        editQuantity(fixture, "2");
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
+        orderFulfillmentService.prepare(fixture.orderId());
+        orderFulfillmentService.prepare(fixture.orderId());
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("8");
+        editQuantity(fixture, "3");
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("7");
+        deliveryLifecycleService.cancel(fixture.orderId());
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
+        deliveryLifecycleService.reactivate(fixture.orderId());
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select fulfillment_status from orders.orders where id = ?", String.class, fixture.orderId())).isEqualTo("PENDING");
+        // Successful delivery from PENDING performs preparation atomically.
+        deliveryLifecycleService.recordAttempt(fixture.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null));
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("7");
+        assertThat(jdbc.queryForObject("select prepared_at is not null and prepared_by_user_id is not null from orders.orders where id = ?", Boolean.class, fixture.orderId())).isTrue();
+        assertThatThrownBy(() -> orderFulfillmentService.prepare(fixture.orderId())).isInstanceOf(IllegalStateException.class);
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("7");
+    }
+
+    @Test
+    void cancellationWithoutPreparationNeverRestoresStockAndFailedPreparationRollsBackAllProducts() {
+        authenticateOrderActor(createUser("fulfillment-rollback"), "ADMIN_ALL");
+        EditableSaleFixture cancelled = freshPendingOrder();
+        deliveryLifecycleService.cancel(cancelled.orderId());
+        assertThat(stock(cancelled.productId())).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where reference_id = ?", Long.class, cancelled.orderId())).isZero();
+
+        EditableSaleFixture fixture = freshPendingOrder();
+        UUID second = createProduct("fulfillment-inactive");
+        putGeneralPrice(second, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", second);
+        orderConfirmationService.editConfirmed(fixture.orderId(), new OrderEditDtos.EditRequest(null, List.of(
+            new OrderConfirmationDtos.LineRequest(fixture.productId(), BigDecimal.ONE, BigDecimal.ZERO, null),
+            new OrderConfirmationDtos.LineRequest(second, BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO));
+        // Fail on the last product after the first movement, proving transaction rollback.
+        UUID inactive = fixture.productId().toString().compareTo(second.toString()) > 0 ? fixture.productId() : second;
+        jdbc.update("update catalog.products set status = 'INACTIVE' where id = ?", inactive);
+        assertThatThrownBy(() -> orderFulfillmentService.prepare(fixture.orderId())).isInstanceOf(IllegalStateException.class);
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
+        assertThat(stock(second)).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select fulfillment_status from orders.orders where id = ?", String.class, fixture.orderId())).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where reference_id = ?", Long.class, fixture.orderId())).isZero();
+    }
+
+    @Test
+    void concurrentPreparationAndEditingLeaveOneNetStockDeduction() throws Exception {
+        UUID actor = createUser("fulfillment-concurrent");
+        authenticateOrderActor(actor, "ADMIN_ALL");
+        EditableSaleFixture fixture = freshPendingOrder();
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(3)) {
+            List<Future<?>> jobs = new ArrayList<>();
+            for (int index = 0; index < 3; index++) {
+                boolean edit = index == 2;
+                jobs.add(executor.submit(() -> {
+                    authenticateOrderActor(actor, "ADMIN_ALL");
+                    try {
+                        if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Timed out");
+                        if (edit) editQuantity(fixture, "2"); else orderFulfillmentService.prepare(fixture.orderId());
+                    } catch (InterruptedException exception) { throw new IllegalStateException(exception); }
+                    finally { SecurityContextHolder.clearContext(); }
+                }));
+            }
+            start.countDown();
+            for (var job : jobs) job.get(20, TimeUnit.SECONDS);
+        }
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("8");
+        assertThat(jdbc.queryForObject("select sum(quantity) from inventory.stock_movements where reference_id = ?", BigDecimal.class, fixture.orderId())).isEqualByComparingTo("-2");
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where operation = 'ORDER_PREPARE' and resource_id = ?", Long.class, fixture.orderId().toString())).isEqualTo(1L);
+    }
+
+    @Test
+    void sellerCanPrepareAndDeliverBeforeAdminReviewAndOnlyReviewRemovesTheMarker() {
+        UUID seller = createSeller("fulfillment-review");
+        UUID actor = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, seller);
+        UUID customer = createCustomer(seller);
+        UUID product = createProduct("fulfillment-review");
+        putGeneralPrice(product, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", product);
+        authenticateOrderActor(actor, "ORDER_CREATE", "ORDER_PREPARE", "SALE_DELIVER");
+        var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest("review-" + UUID.randomUUID(), customer, null,
+            List.of(new OrderConfirmationDtos.LineRequest(product, BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of()));
+        orders.add(result.orderId()); sales.add(result.saleId());
+        assertThat(orderReviewPending(result.orderId())).isTrue();
+        orderFulfillmentService.prepare(result.orderId());
+        deliveryLifecycleService.recordAttempt(result.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null));
+        assertThat(stock(product)).isEqualByComparingTo("9");
+        assertThat(orderReviewPending(result.orderId())).isTrue();
+        assertThatThrownBy(() -> orderFulfillmentService.review(result.orderId())).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        authenticateOrderActor(actor, "ORDER_REVIEW");
+        assertThatThrownBy(() -> orderFulfillmentService.review(result.orderId())).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+
+        UUID admin = createUser("fulfillment-review-admin");
+        authenticateOrderActor(admin, "ADMIN_ALL");
+        assertThat(readQueryService.orders(0, 100, "", "", null, null, null, false, null, true).content()).anySatisfy(row -> assertThat(row.get("id")).isEqualTo(result.orderId()));
+        orderFulfillmentService.review(result.orderId());
+        orderFulfillmentService.review(result.orderId());
+        assertThat(orderReviewPending(result.orderId())).isFalse();
+        assertThat(jdbc.queryForObject("select reviewed_by_user_id from orders.orders where id = ?", UUID.class, result.orderId())).isEqualTo(admin);
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where operation = 'ORDER_REVIEW' and resource_id = ?", Long.class, result.orderId().toString())).isEqualTo(1L);
+        assertThat(stock(product)).isEqualByComparingTo("9");
+        assertThat(jdbc.queryForObject("select status from orders.orders where id = ?", String.class, result.orderId())).isEqualTo("DELIVERED");
+        EditableSaleFixture foreign = freshPendingOrder();
+        authenticateOrderActor(actor, "ORDER_PREPARE");
+        assertThatThrownBy(() -> orderFulfillmentService.prepare(foreign.orderId())).isInstanceOf(org.springframework.dao.EmptyResultDataAccessException.class);
+        assertThat(stock(foreign.productId())).isEqualByComparingTo("10");
+    }
+
+    private boolean orderReviewPending(UUID orderId) {
+        return jdbc.queryForObject("select created_by_admin = false and reviewed_at is null from orders.orders where id = ?", Boolean.class, orderId);
+    }
+
+    @Test
+    void confirmationAndPendingEditsStillRejectInactiveProductsWithoutCreatingStockMovements() {
+        authenticateOrderActor(createUser("fulfillment-inactive-confirm"), "ADMIN_ALL");
+        EditableSaleFixture fixture = freshPendingOrder();
+        jdbc.update("update catalog.products set status = 'INACTIVE' where id = ?", fixture.productId());
+        assertThatThrownBy(() -> editQuantity(fixture, "2")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "inactive-" + UUID.randomUUID(), fixture.customerId(), null,
+            List.of(new OrderConfirmationDtos.LineRequest(fixture.productId(), BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of())))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select count(*) from orders.orders where customer_id = ?", Integer.class, fixture.customerId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select total from orders.orders where id = ?", BigDecimal.class, fixture.orderId())).isEqualByComparingTo("10");
+    }
+
+    private void authenticateOrderActor(UUID actor, String... permissions) {
+        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(actor.toString(), "test",
+            java.util.Arrays.stream(permissions).map(SimpleGrantedAuthority::new).toList()));
+    }
+
+    private EditableSaleFixture freshPendingOrder() {
+        UUID customer = createCustomer(null);
+        UUID product = createProduct("fulfillment-" + UUID.randomUUID());
+        putGeneralPrice(product, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", product);
+        var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest("fulfillment-" + UUID.randomUUID(), customer, null,
+            List.of(new OrderConfirmationDtos.LineRequest(product, BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of()));
+        orders.add(result.orderId()); sales.add(result.saleId());
+        return new EditableSaleFixture(result.orderId(), result.saleId(), customer, product);
+    }
+
+    private void editQuantity(EditableSaleFixture fixture, String quantity) {
+        orderConfirmationService.editConfirmed(fixture.orderId(), new OrderEditDtos.EditRequest(null,
+            List.of(new OrderConfirmationDtos.LineRequest(fixture.productId(), new BigDecimal(quantity), BigDecimal.ZERO, null)), BigDecimal.ZERO));
     }
 
     @Test
@@ -1713,6 +1874,7 @@ class PostgresBackendFixesIntegrationTest {
     private SaleFixture createDeliveredSale(BigDecimal quantity) {
         UUID customerId = createCustomer(null);
         UUID orderId = createOrder(customerId, null, "DELIVERED");
+        jdbc.update("update orders.orders set fulfillment_status = 'PREPARED', legacy_fulfillment = true where id = ?", orderId);
         UUID productId = createProduct("return-sale");
         jdbc.update("update inventory.inventory_balances set quantity = 2 where product_id = ?", productId);
         inventoryMovementService.apply(productId, quantity.negate(), "SALE", orderId, "Fixture sale");
@@ -1732,7 +1894,7 @@ class PostgresBackendFixesIntegrationTest {
         UUID productId = createProduct("editable-sale");
         BigDecimal total = quantity.multiply(unitPrice).setScale(4);
         BigDecimal debt = total.subtract(paid).setScale(4);
-        jdbc.update("update orders.orders set subtotal = ?, total = ? where id = ?", total, total, orderId);
+        jdbc.update("update orders.orders set subtotal = ?, total = ?, fulfillment_status = 'PREPARED', legacy_fulfillment = true where id = ?", total, total, orderId);
         jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", productId);
         inventoryMovementService.apply(productId, quantity.negate(), "SALE", orderId, "Fixture confirmed sale");
         UUID saleId = UUID.randomUUID();
@@ -1761,7 +1923,8 @@ class PostgresBackendFixesIntegrationTest {
     private AccountDebtSale createAccountDebtSale(UUID customerId, BigDecimal debt, int secondsOlder) {
         UUID orderId = createOrder(customerId, null, "CONFIRMED");
         Timestamp createdAt = Timestamp.from(Instant.now().minusSeconds(secondsOlder));
-        jdbc.update("update orders.orders set subtotal = ?, total = ?, created_at = ? where id = ?", debt, debt, createdAt, orderId);
+        // Financial fixtures represent historical sales, already fulfilled before this workflow.
+        jdbc.update("update orders.orders set subtotal = ?, total = ?, created_at = ?, fulfillment_status = 'PREPARED', legacy_fulfillment = true where id = ?", debt, debt, createdAt, orderId);
         UUID saleId = UUID.randomUUID();
         sales.add(saleId);
         jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, 'CONFIRMED', ?, 0, ?)",

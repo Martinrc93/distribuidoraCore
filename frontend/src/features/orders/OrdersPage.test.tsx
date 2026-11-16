@@ -26,6 +26,25 @@ function mockOrders() {
 }
 
 describe('OrdersPage', () => {
+  it('combines fulfillment and review filters and removes the seller marker only after admin review', async () => {
+    const user = userEvent.setup()
+    let reviewed = false
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/orders/o1/review' && init?.method === 'POST') { reviewed = true; return response({}, 204) }
+      return response({ content: reviewed ? [] : [{ id: 'o1', number: 'PED-REVIEW', customer: 'Almacén Norte', seller: 'Lucía', total: 10, status: 'CONFIRMED', date: '2026-11-16T12:00:00Z', fulfillmentStatus: 'PENDING', reviewPending: true, createdByAdmin: false }], page: 0, size: 20, totalElements: reviewed ? 0 : 1, totalPages: 1 })
+    })
+    renderOrders('/orders?dateMin=&dateMax=&fulfillment=PENDING&review=PENDING&createdBy=SELLER', ['ADMIN_ALL'])
+    expect(await screen.findByText('Vendedor · Pendiente de revisión')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Preparar pedido PED-REVIEW' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Pasar a entregado pedido PED-REVIEW' })).toBeEnabled()
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('&createdBy=SELLER&fulfillmentStatus=PENDING&reviewPending=true'), expect.anything())
+    await user.click(screen.getByRole('button', { name: 'Confirmar revisión del pedido PED-REVIEW' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar revisión' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Revisión del pedido PED-REVIEW confirmada')
+    expect(screen.queryByText('Vendedor · Pendiente de revisión')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('Buscar pedidos')).toHaveFocus())
+  })
+
   it.each([['ADMIN_ALL', true], ['SALE_DELIVER', true], ['ORDER_CREATE', false]] as const)('restricts direct delivery by permission and confirmed status: %s', async (authority, allowed) => {
     vi.spyOn(global, 'fetch').mockImplementation(() => response({
       content: ['CONFIRMED', 'DELIVERED', 'CANCELLED'].map(status => ({ id: status, number: `PED-${status}`, customer: 'Almacén Norte', seller: 'Lucía', total: 300, status, date: '2026-10-01T15:00:00Z' })),

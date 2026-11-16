@@ -680,6 +680,8 @@
   .document-actions { @apply inline-flex flex-wrap items-center gap-[8px]; }
   .document-actions-error { @apply basis-full m-0 text-[12px]; }
   .order-status-badges { @apply inline-flex flex-wrap gap-[6px]; }
+  .order-review-pending { @apply inline-flex min-w-[160px] max-w-[190px]; }
+  .order-review-pending .badge { @apply bg-[var(--detail-warning-bg,#faf4eb)] text-[var(--detail-warning-text,#79501e)] whitespace-normal; }
   .order-navigator { @apply flex flex-wrap items-center gap-[10px] mb-[18px]; }
   .order-navigator-position { @apply text-muted text-[12px]; }
   .order-collection { @apply mt-[18px] grid gap-[12px] rounded-[8px] border border-line bg-surface p-[16px]; }

@@ -33,7 +33,7 @@ class OrdersDateFilterTest {
         jdbc.execute("create schema seller");
         jdbc.execute("create table customer.customers(id uuid primary key, business_name varchar, seller_id uuid)");
         jdbc.execute("create table seller.seller_profiles(id uuid primary key, display_name varchar)");
-        jdbc.execute("create table orders.orders(id uuid primary key, order_number varchar, customer_id uuid, seller_id uuid, total decimal, status varchar, created_at timestamp with time zone, created_by_admin boolean)");
+        jdbc.execute("create table orders.orders(id uuid primary key, order_number varchar, customer_id uuid, seller_id uuid, total decimal, status varchar, created_at timestamp with time zone, created_by_admin boolean, fulfillment_status varchar default 'PENDING', reviewed_at timestamp with time zone)");
         jdbc.execute("create schema if not exists sale");
         jdbc.execute("create table sale.sales(id uuid primary key, order_id uuid, total decimal, paid decimal)");
         jdbc.update("insert into customer.customers values (?, 'Almacén Norte', ?)", customerId, sellerId);
