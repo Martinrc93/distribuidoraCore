@@ -158,15 +158,19 @@ La revisión no bloquea operaciones: conserva un distintivo hasta la confirmaci�
 ### Fase 5 — Permisos configurables
 
 `ORDER_PREPARE` y `ORDER_REVIEW` se incorporaron con 4.5 como permisos propios
-permanentes (5.1 parcial). La UI de roles, roles personalizados y revisión por área
-siguen pendientes. Ninguna función nueva debe reutilizar un permiso ajeno como
+permanentes (5.1 parcial). La UI de roles (5.2) está implementada: consulta y edición
+de roles existentes, restricciones derivadas del backend, confirmación de diferencias,
+protección de concurrencia y cierre de sesiones. 5.3 incorpora alta de roles
+personalizados y su asignación a usuarios, limitados a datos asignados mediante
+perfil seller y sin heredar permisos de SELLER. La revisión por área sigue
+pendiente. Ninguna función nueva debe reutilizar un permiso ajeno como
 solución temporal.
 
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
 | 5.1 | Permisos nuevos | M | Cada función nueva nace con su permiso (`ORDER_PRICE_LIST_CHANGE`, `STOCK_SHRINKAGE`, `COMMISSION_VIEW`, `REPORTS_VIEW`, `PURCHASE_EDIT`, …) en lugar de `ADMIN_ALL`. |
-| 5.2 | UI de roles | M | El backend ya permite reemplazar permisos por rol; falta la pantalla (aplazada antes por decisión del usuario). |
-| 5.3 | Roles nuevos | M | Alta de roles personalizados (requisito del revendedor). |
+| 5.2 | UI de roles | M | Implementada: `/admin/roles`, solo administradores, catálogo completo, modal con permisos obligatorios/reservados, confirmación de altas/bajas, descarte y cierre de sesiones. `expectedPermissionCodes` evita sobrescribir cambios concurrentes; la API informa si se revocó la sesión propia. |
+| 5.3 | Roles nuevos | M | Implementada: alta con catálogo de permisos y alcance asignado, selección en altas/invitaciones y cambio de rol conservando perfil e historial. Sin permisos administrativos ni acceso global. |
 | 5.4 | Desacoplar `ADMIN_ALL` | XL | Reemplazar los 56 chequeos directos por permisos granulares. Hacerlo **solo por área cuando el cliente lo pida**, no de una vez. «Revisar permisos de roles» de Isma sigue sin detalle. |
 
 ### Fase 6 — Stock y compras
@@ -260,7 +264,10 @@ Respuestas del usuario (2026-11-12):
    administrador y auditoría; no altera stock ni estados comerciales.
 5. **Impresión 80 mm:** sin definir; usar 80 mm donde hoy existe (pedido) y para el
    estado de deuda.
-6. **Permisos:** se posterga; el usuario quiere revisarlos en detalle.
+6. **Permisos:** inicialmente postergados para revisarlos en detalle. El 2026-11-16
+   Mateo autorizó retomar 5.2 y 5.3, implementadas. Confirmó que los roles
+   personalizados quedan limitados a datos asignados. Desacoplamiento por área
+   de `ADMIN_ALL` (5.4) sigue pendiente.
 7. **Compras:** sí. Una compra **confirmada** ingresa el stock de lo comprado. Hace
    falta un estado (borrador / confirmada) y que editar o anular una compra
    confirmada genere movimientos compensatorios.

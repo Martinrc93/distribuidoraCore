@@ -40,6 +40,7 @@ function parseDate(value: string) {
 
 export default function OrdersPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
+  const canCreate = isAdmin || hasAuthority('ORDER_CREATE')
   const canDeliver = isAdmin || hasAuthority('SALE_DELIVER')
   const [deliveryOrder, setDeliveryOrder] = useState<DeliveryOrder>()
   const [loadingDeliveryId, setLoadingDeliveryId] = useState('')
@@ -163,7 +164,7 @@ export default function OrdersPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Operación" title="Pedidos" description="Consultá pedidos, cobros, entregas y snapshots comerciales." actions={<Button href="/orders/new">+ Nuevo pedido</Button>} />
+    <PageHeader eyebrow="Operación" title="Pedidos" description="Consultá pedidos, cobros, entregas y snapshots comerciales." actions={canCreate ? <Button href="/orders/new">+ Nuevo pedido</Button> : undefined} />
     <Panel>
       <form className="toolbar orders-toolbar" onSubmit={(event) => event.preventDefault()}>
         <label className="field"><span>Buscar pedidos</span><input id="orders-search" className="input search-input" placeholder="Cliente o número" aria-label="Buscar pedidos" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
@@ -179,7 +180,7 @@ export default function OrdersPage() {
       </form>
       {deliveryLoadError && <p className="error-text" role="alert">{deliveryLoadError} Puedes volver a intentar desde el botón del pedido.</p>}
       {deliveryFeedback && <p className="success-text" role="status">{deliveryFeedback}</p>}
-      {dateError ? <p id="orders-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title={hasFilters ? 'No hay pedidos para estos filtros' : 'No hay pedidos para mostrar'} description={hasFilters ? 'No se encontraron pedidos para la búsqueda y el rango de fechas seleccionados. Podés quitar los filtros para consultar todos los pedidos.' : 'Todavía no hay pedidos registrados para tu usuario.'} action={hasFilters ? <Button variant="secondary" type="button" onClick={clearFilters}>Ver todos los pedidos</Button> : <Button href="/orders/new">+ Nuevo pedido</Button>} /> : <><div onKeyDown={moveBetweenRows}><DataTable columns={columns} rows={rows} /></div><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+      {dateError ? <p id="orders-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title={hasFilters ? 'No hay pedidos para estos filtros' : 'No hay pedidos para mostrar'} description={hasFilters ? 'No se encontraron pedidos para la búsqueda y el rango de fechas seleccionados. Podés quitar los filtros para consultar todos los pedidos.' : 'Todavía no hay pedidos registrados para tu usuario.'} action={hasFilters ? <Button variant="secondary" type="button" onClick={clearFilters}>Ver todos los pedidos</Button> : canCreate ? <Button href="/orders/new">+ Nuevo pedido</Button> : undefined} /> : <><div onKeyDown={moveBetweenRows}><DataTable columns={columns} rows={rows} /></div><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {deliveryOrder && <DeliveryAttemptDialog mode="delivery" returnFocusId={`order-delivery-${deliveryOrder.id}`} orderNumber={deliveryOrder.number} saleBalance={deliveryOrder.saleBalance} previousDebtAvailable={deliveryOrder.previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setDeliveryOrder(undefined)} />}
   </>

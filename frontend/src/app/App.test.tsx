@@ -20,6 +20,14 @@ function renderApp(initialEntry: string, queryClient = new QueryClient({ default
 }
 
 describe('App shell', () => {
+  it('redirects assigned users without ORDER_CREATE away from order creation', async () => {
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ORDER_PREPARE'] }))}.signature`)
+    const fetch = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], totalElements: 0, totalPages: 0 }))
+    renderApp('/orders/new')
+    expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '+ Nuevo pedido' })).not.toBeInTheDocument()
+    expect(fetch.mock.calls.some(([input]) => String(input).startsWith('/api/products') || String(input).startsWith('/api/customers'))).toBe(false)
+  })
   afterEach(() => {
     cleanup()
     sessionStorage.clear()
@@ -148,13 +156,14 @@ describe('App shell', () => {
     expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith('/api/customers?'))).toBe(true)
   })
 
-  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/customers/customer-1', '/products', '/catalog', '/price-lists', '/suppliers', '/supplier-orders', '/supplier-orders/order-1'])('keeps %s restricted to administrators', async (route) => {
+  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/admin/roles', '/customers/customer-1', '/products', '/catalog', '/price-lists', '/suppliers', '/supplier-orders', '/supplier-orders/order-1'])('keeps %s restricted to administrators', async (route) => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`)
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
     renderApp(route)
 
     expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Roles y permisos' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     for (const name of ['Stock', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()

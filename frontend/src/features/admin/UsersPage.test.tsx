@@ -7,6 +7,8 @@ import { ActivateUserPage, UsersPage } from './UsersPage'
 
 function token(authorities: string[]) { return `header.${btoa(JSON.stringify({ authorities }))}.signature` }
 function response(body?: unknown, status = 200) { return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response) }
+const roles = [{ code: 'ADMIN', description: 'Administrador', requiresSellerProfile: false }, { code: 'SELLER', description: 'Vendedor', requiresSellerProfile: true }, { code: 'LOGISTICS', description: 'Logística', requiresSellerProfile: true }]
+function mockFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) { return vi.spyOn(global, 'fetch').mockImplementation((input, init) => String(input) === '/api/roles' ? response(roles) : handler(input, init)) }
 const users = { content: [{ id: 'user-1', email: 'seller@example.com', name: 'seller@example.com', status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
 function renderUsers() {
@@ -20,20 +22,20 @@ describe('UsersPage', () => {
   afterEach(() => { cleanup(); sessionStorage.clear() })
   beforeEach(() => vi.restoreAllMocks())
 
-  it('shows returned roles as read-only labels and preserves unknown role codes', async () => {
-    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/users?')
+  it('shows role labels and allows active users to change roles', async () => {
+    mockFetch((input) => String(input).startsWith('/api/users?')
       ? response({ ...users, content: [{ ...users.content[0], roles: 'SELLER,UNKNOWN_ROLE' }] })
       : response({}))
     renderUsers()
 
     expect(await screen.findByText('Vendedor')).toBeInTheDocument()
     expect(screen.getByText('UNKNOWN_ROLE')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /cambiar rol|permisos/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /cambiar rol/i })).toBeInTheDocument()
   })
 
   it('creates a user with role and queues the invitation email', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    const fetchMock = mockFetch((input, init) => {
       if (String(input).startsWith('/api/users?')) return response(users)
       if (String(input) === '/api/users/invite' && init?.method === 'POST') return response({ userId: 'user-2', email: 'new@example.com', deliveryStatus: 'QUEUED', expiresAt: '2026-09-24T11:00:00Z' }, 201)
       return response({}, 204)
@@ -55,12 +57,13 @@ describe('UsersPage', () => {
 
   it('keeps the form and email available when invitation email is not configured', async () => {
     const user = userEvent.setup()
-    vi.spyOn(global, 'fetch').mockImplementation((input) => String(input).startsWith('/api/users?')
+    mockFetch((input) => String(input).startsWith('/api/users?')
       ? response(users)
       : response({ detail: 'El envío de invitaciones por email no está configurado.' }, 503))
     renderUsers()
     await user.click(await screen.findByRole('button', { name: /crear usuario/i }))
     await user.type(screen.getByLabelText('Email del usuario'), 'new@example.com')
+    await user.type(screen.getByLabelText('Nombre para mostrar'), 'Nuevo vendedor')
     await user.click(screen.getByRole('button', { name: /^confirmar$/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('El envío de invitaciones por email no está configurado.')
     expect(screen.getByLabelText('Email del usuario')).toHaveValue('new@example.com')
@@ -69,7 +72,7 @@ describe('UsersPage', () => {
 
   it('creates an account with a temporary password when requested', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    const fetchMock = mockFetch((input, init) => {
       if (String(input).startsWith('/api/users?')) return response(users)
       if (String(input) === '/api/users' && init?.method === 'POST') return response({ id: 'user-3' }, 201)
       return response({})
@@ -92,7 +95,7 @@ describe('UsersPage', () => {
   it('confirms block/unblock and session revocation commands', async () => {
     const user = userEvent.setup()
     let status = 'ACTIVE'
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    const fetchMock = mockFetch((input, init) => {
       if (String(input).startsWith('/api/users?')) return response({ ...users, content: [{ ...users.content[0], status }] })
       if (String(input) === '/api/users/user-1/block') { status = 'BLOCKED'; return response(undefined, 204) }
       if (String(input) === '/api/users/user-1/unblock') { status = 'ACTIVE'; return response(undefined, 204) }
@@ -110,6 +113,35 @@ describe('UsersPage', () => {
     await user.click(screen.getByRole('button', { name: /confirmar/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/users/user-1/revoke-sessions', expect.objectContaining({ method: 'POST' })))
   })
+
+  it('loads custom roles for invitations and requires the assigned profile name', async () => {
+    const user = userEvent.setup()
+    const fetch = mockFetch((input) => String(input).startsWith('/api/users?') ? response(users) : response({ email: 'custom@example.test', expiresAt: '2026-11-17T12:00:00Z' }, 201))
+    renderUsers()
+    await user.click(await screen.findByRole('button', { name: /crear usuario/i }))
+    await screen.findByRole('option', { name: 'Logística' })
+    await user.selectOptions(screen.getByLabelText('Rol'), 'LOGISTICS')
+    await user.type(screen.getByLabelText('Email del usuario'), 'custom@example.test')
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+    expect(screen.getByLabelText('Nombre para mostrar')).toBeInvalid()
+    expect(fetch.mock.calls.some(([input]) => input === '/api/users/invite')).toBe(false)
+    await user.type(screen.getByLabelText('Nombre para mostrar'), 'Asignado')
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+    await screen.findByRole('status')
+    expect(fetch).toHaveBeenCalledWith('/api/users/invite', expect.objectContaining({ body: JSON.stringify({ email: 'custom@example.test', role: 'LOGISTICS', displayName: 'Asignado' }) }))
+  })
+
+  it('blocks creation until a failed role catalog is retried successfully', async () => {
+    const user = userEvent.setup(); let attempts = 0
+    vi.spyOn(global, 'fetch').mockImplementation(input => String(input) === '/api/roles' ? ++attempts === 1 ? response({}, 503) : response(roles) : response(users))
+    renderUsers()
+    await user.click(await screen.findByRole('button', { name: /crear usuario/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron cargar los roles')
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Reintentar roles' }))
+    await screen.findByRole('option', { name: 'Logística' })
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()
+  })
 })
 
 describe('ActivateUserPage', () => {
@@ -117,7 +149,7 @@ describe('ActivateUserPage', () => {
 
   it('submits the activation token and chosen password without requiring a session', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response(undefined, 204))
+    const fetchMock = mockFetch(() => response(undefined, 204))
     render(<MemoryRouter initialEntries={['/activate?token=activation-1']}><Routes><Route path="/activate" element={<ActivateUserPage />} /></Routes></MemoryRouter>)
 
     await user.type(screen.getByLabelText('Contraseña', { exact: true }), 'StrongPass123')
@@ -132,7 +164,7 @@ describe('ActivateUserPage', () => {
 
   it('rejects mismatched passwords and allows correcting the confirmation', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response(undefined, 204))
+    const fetchMock = mockFetch(() => response(undefined, 204))
     render(<MemoryRouter initialEntries={['/activate?token=activation-1']}><ActivateUserPage /></MemoryRouter>)
 
     await user.type(screen.getByLabelText('Contraseña', { exact: true }), 'StrongPass123')
@@ -155,7 +187,7 @@ describe('ActivateUserPage', () => {
 
   it('requires a repeated password before submitting activation', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response(undefined, 204))
+    const fetchMock = mockFetch(() => response(undefined, 204))
     render(<MemoryRouter initialEntries={['/activate?token=activation-1']}><ActivateUserPage /></MemoryRouter>)
 
     await user.type(screen.getByLabelText('Contraseña', { exact: true }), 'StrongPass123')

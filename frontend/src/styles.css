@@ -466,6 +466,18 @@
   .account-ledger dt { @apply text-muted; }
   .account-ledger dd { @apply m-[0] text-ink font-bold text-right; }
   .warning-text { @apply p-[12px] [border-left:3px_solid_var(--copper)] bg-[var(--detail-warning-bg,#faf4eb)] text-[var(--detail-warning-text,#79501e)] text-[12px] leading-[1.5]; }
+  .roles-table .data-table td { @apply whitespace-normal [overflow-wrap:anywhere]; }
+  .role-permissions-list { @apply m-0 pl-[18px] grid gap-[6px]; }
+  .role-permissions-grid { @apply grid grid-cols-2 gap-[10px] min-w-0 border-0 p-0 mt-[18px] mx-0 mb-0; }
+  .role-permission-option { @apply flex items-start gap-[10px] min-h-[44px] min-w-0 rounded-[5px] border border-line p-[12px] text-[12px] cursor-pointer [overflow-wrap:anywhere]; }
+  .role-permission-option[aria-disabled="true"] { @apply cursor-default; }
+  .role-permission-option input { @apply w-[18px] h-[18px] mt-[2px] mx-0 mb-0 shrink-0 accent-accent; }
+  .role-permission-name { @apply block font-semibold; }
+  .role-permission-help { @apply block mt-[5px] text-[11px] text-muted leading-[1.5]; }
+  .role-permissions-changes { @apply mt-[18px] rounded-[5px] bg-canvas p-[12px] text-[12px] leading-[1.5]; }
+  .role-permissions-changes p { @apply my-[4px]; }
+  .role-permissions-actions { @apply mt-[20px] justify-end; }
+  @media (max-width: 760px) { .role-permissions-grid { @apply grid-cols-1; } }
   .modal-backdrop { @apply fixed inset-[0] z-[20] grid place-items-center p-[20px] bg-[rgba(25,_58,_67,_.38)]; }
   .modal-backdrop .panel { @apply w-[min(100%,_520px)] [box-shadow:0_18px_55px_rgba(25,_58,_67,_.2)]; }
   .modal-backdrop > .panel { @apply max-h-[calc(100dvh_-_40px)] overflow-y-auto; }

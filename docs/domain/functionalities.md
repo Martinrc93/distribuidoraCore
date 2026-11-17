@@ -60,6 +60,21 @@ Responsable de la identidad y el acceso al sistema:
 Un usuario inhabilitado no puede iniciar sesión ni ser asignado como vendedor.
 Sus referencias históricas permanecen válidas.
 
+Los administradores disponen de «Roles y permisos» para consultar y editar los
+permisos de los roles existentes. La pantalla preserva los permisos obligatorios
+y las restricciones administrativas y confirma las diferencias antes de guardar.
+Los cambios efectivos invalidan las sesiones del rol y quedan auditados; si
+afectan al administrador actual, vuelve al login con confirmación del guardado.
+Una edición desactualizada no sobrescribe cambios de otro administrador.
+Los administradores pueden crear roles personalizados con permisos del catálogo,
+sin heredar SELLER ni recibir ADMIN_ALL, USER_MANAGE u ORDER_REVIEW. Su alcance
+se limita a datos asignados mediante un perfil de vendedor. El alta y la invitación
+crean ese perfil automáticamente para todo rol distinto de ADMIN. Usuarios permite
+cambiar de rol conservando perfil, asignaciones e historial e invalidando sesiones;
+requiere perfil activo para roles asignados y desactivarlo antes de pasar a ADMIN.
+El acceso completo de `ADMIN_ALL` y las pantallas exclusivas de administradores
+conservan sus reglas; el desacoplamiento por área sigue pendiente (5.4).
+
 ### Seller
 
 Representa la capacidad comercial de un usuario.

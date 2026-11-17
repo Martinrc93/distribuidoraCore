@@ -1,6 +1,6 @@
 import AppShell from './AppShell'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { getAccessToken, login } from '../shared/api/client'
 import { hasAuthority } from '../shared/auth/permissions'
@@ -27,6 +27,7 @@ import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
 import AuditPage from '../features/admin/AuditPage'
 import ZonesPage from '../features/admin/ZonesPage'
 import AnalyticsDashboardPage from '../features/dashboard/AnalyticsDashboardPage'
+import RolesPage from '../features/admin/RolesPage'
 
 function RequireAuth() {
   return getAccessToken() ? <Outlet /> : <Navigate to="/login" replace />
@@ -36,7 +37,12 @@ function RequireAdmin({ children }: { children: ReactNode }) {
   return hasAuthority('ADMIN_ALL') ? children : <Navigate to="/orders" replace />
 }
 
+function RequireOrderCreate() {
+  return hasAuthority('ADMIN_ALL') || hasAuthority('ORDER_CREATE') ? <OrderCreatePage /> : <Navigate to="/orders" replace />
+}
+
 function LoginPage() {
+  const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [email, setEmail] = useState('')
@@ -60,7 +66,7 @@ function LoginPage() {
     }
   }
 
-  return <main className="login-page"><Panel title="Ingresar" description="Usá un usuario creado en la base de datos."><form className="login-form" onSubmit={submit}><label className="field"><span>Email</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label className="field"><span>Contraseña</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error-text" role="alert">{error}</p>}<Button fullWidth disabled={submitting}>{submitting ? 'Ingresando...' : 'Ingresar'}</Button></form></Panel></main>
+  return <main className="login-page"><Panel title="Ingresar" description="Usá un usuario creado en la base de datos.">{(location.state?.rolePermissionsUpdated === true || location.state?.userRoleUpdated === true) && <p className="success-text" role="status">{location.state?.userRoleUpdated ? 'El rol de tu usuario se actualizó. Volvé a ingresar para continuar.' : 'Los permisos de tu rol se guardaron. Volvé a ingresar para continuar con los permisos actualizados.'}</p>}<form className="login-form" onSubmit={submit}><label className="field"><span>Email</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label className="field"><span>Contraseña</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error-text" role="alert">{error}</p>}<Button fullWidth disabled={submitting}>{submitting ? 'Ingresando...' : 'Ingresar'}</Button></form></Panel></main>
 }
 
 function PlaceholderPage({ title, description }: { title: string; description: string }) {
@@ -78,7 +84,7 @@ export default function App() {
         <Route path="/dashboard" element={<RequireAdmin><DashboardPage /></RequireAdmin>} />
         <Route path="/analytics" element={<RequireAdmin><AnalyticsDashboardPage /></RequireAdmin>} />
         <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/orders/new" element={<OrderCreatePage />} />
+        <Route path="/orders/new" element={<RequireOrderCreate />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/supplier-orders" element={<RequireAdmin><SupplierOrdersPage /></RequireAdmin>} />
@@ -91,6 +97,7 @@ export default function App() {
         <Route path="/price-lists" element={<RequireAdmin><PriceListsPage /></RequireAdmin>} />
         <Route path="/payments" element={<Navigate to="/orders" replace />} />
         <Route path="/admin/users" element={<UsersPage />} />
+        <Route path="/admin/roles" element={<RequireAdmin><RolesPage /></RequireAdmin>} />
         <Route path="/admin/sellers" element={<SellersPage />} />
         <Route path="/admin/zones" element={<RequireAdmin><ZonesPage /></RequireAdmin>} />
         <Route path="/admin/settings" element={<CreditLimitPage />} />

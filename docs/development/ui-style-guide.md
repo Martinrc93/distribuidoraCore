@@ -776,6 +776,47 @@ const columns: TableColumn[] = [
 
 ## Formularios
 
+### Roles y permisos
+
+`RolesPage` usa `PageHeader`, `Panel` y `DataTable` en `/admin/roles`, con enlace
+en Administración y acceso exclusivo de `ADMIN_ALL` en menú y ruta. La tabla
+presenta rol, permisos asignados y «Editar permisos»; hasta `640px` conserva las
+tarjetas compartidas. `.roles-table` permite envolver descripciones largas, y
+`.role-permissions-list` presenta los permisos sin introducir un patrón de tabla global.
+
+La edición usa `FormModal` y un `fieldset.role-permissions-grid`: dos columnas,
+una hasta `760px`. Cada `label.role-permission-option` conserva borde, tokens,
+padding de `12px`, checkbox nativo de `18px` y área de al menos `44px`. El texto
+explica permisos obligatorios o reservados, derivados de la API; el bloqueo no
+depende solo del color. Los nombres largos se envuelven. Tab/Espacio permiten
+operar las casillas; las restricciones conservan su texto legible en ambos temas.
+
+«Revisar cambios» se habilita solo ante diferencias y abre `ConfirmationDialog`
+con altas, bajas y efecto sobre sesiones. Cancelar/Escape usan `useDiscardChanges`;
+los errores conservan el borrador. Guardar bloquea campos, acciones y cierre. Un
+conflicto devuelve al formulario, informa cómo recargar y bloquea otro guardado
+con el mismo borrador. Si se invalida la sesión propia, se limpia la caché y el
+login muestra el resultado del guardado. Al cerrar normalmente vuelve el foco al
+botón del rol. Las variantes `.role-permission-*` son específicas de esta pantalla.
+
+«Crear rol» usa `CreateRoleDialog` sobre `FormModal`, con nombre, código único y
+`RolePermissionFields`, compartido con la edición. El código se presenta en
+mayúsculas y su ayuda se asocia mediante `aria-describedby`, fuera de la etiqueta.
+La grilla alinea ambos campos al inicio para conservar la altura de los inputs
+cuando solo el código tiene ayuda. Explica el alcance limitado a datos asignados y que no se heredan permisos de
+Vendedor. Permite una selección vacía y confirma antes de crear. Un duplicado
+conserva el borrador para corregir el código; cancelar/Escape piden descarte.
+
+Usuarios carga el catálogo completo para crear/invitar o cambiar roles, con
+carga, error y reintento; no guarda sin catálogo disponible. El alta usa `FormModal`
+y pide nombre para los roles que requieren perfil de vendedor. `UserRoleDialog`
+es compacto, deshabilita opciones incompatibles con el estado del perfil y
+confirma reemplazo y cierre de sesiones, conservando asignaciones e historial.
+Los errores permanecen dentro del diálogo. El cambio propio limpia sesión/caché
+y explica el nuevo ingreso; el foco vuelve al disparador al cerrar normalmente.
+No reemplazar los selectores compartidos de clientes/vendedores por estos
+selects de roles. «Nuevo pedido» solo aparece con `ORDER_CREATE` o `ADMIN_ALL`.
+
 En Productos, el alta y la edición requieren categoría, marca y descripción
 (hasta 200 caracteres). «Nombre» es un `output.read-only-field` con nombre
 accesible y actualización anunciada: concatena marca y descripción separadas

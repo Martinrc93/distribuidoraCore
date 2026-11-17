@@ -303,7 +303,7 @@ describe('OrdersPage', () => {
 
   it('offers creation rather than clearing filters when no orders exist without filters', async () => {
     vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
-    renderOrders('/orders?dateMin=&dateMax=')
+    renderOrders('/orders?dateMin=&dateMax=', ['ORDER_CREATE'])
     expect(await screen.findByText('No hay pedidos para mostrar')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ver todos los pedidos' })).not.toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: '+ Nuevo pedido' })).toHaveLength(2)

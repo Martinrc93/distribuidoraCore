@@ -11,7 +11,7 @@ const compactNavigationQuery = '(max-width: 1050px)'
 const menuGroups = [
   { id: 'operation', label: 'Operación', links: [['Resumen', '/dashboard'], ['Dashboard', '/analytics'], ['Pedidos', '/orders'], ['Ventas', '/sales'], ['Compras', '/supplier-orders'], ['Clientes', '/customers']] },
   { id: 'catalog', label: 'Catálogo', links: [['Stock', '/products'], ['Marcas y categorías', '/catalog'], ['Listas de precios', '/price-lists'], ['Proveedores', '/suppliers']] },
-  { id: 'administration', label: 'Administración', links: [['Usuarios', '/admin/users'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
+  { id: 'administration', label: 'Administración', links: [['Usuarios', '/admin/users'], ['Roles y permisos', '/admin/roles'], ['Vendedores', '/admin/sellers'], ['Zonas', '/admin/zones'], ['Configuración', '/admin/settings'], ['Auditoría', '/admin/audit']] },
 ]
 
 type NavigationState = {

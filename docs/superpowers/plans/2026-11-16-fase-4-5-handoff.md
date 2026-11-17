@@ -2,7 +2,9 @@
 
 Actualizado el 2026-11-16. La Fase 4.4 quedó commiteada en `aefd9ab`:
 `feat(orders): collect order and previous debt payments at confirmation`.
-La Fase 4.5 está implementada y verificada, todavía sin commit.
+La Fase 4.5 quedó commiteada en `3564e74`:
+`feat(orders): separate preparation and administrative review`.
+La continuidad de 5.2 está en [su handoff](2026-11-16-fase-5-2-handoff.md).
 
 ## Decisiones confirmadas por Mateo
 
@@ -72,7 +74,10 @@ La Fase 4.5 está implementada y verificada, todavía sin commit.
 ## Pendientes del plan
 
 Fase 4 completa. Fase 5.1 parcial: permisos propios de preparación/revisión listos;
-la pantalla de roles (5.2), roles personalizados (5.3) y desacoplamiento por área
-(5.4) siguen pendientes. No se presentó la Fase 5 completa como implementada.
+la pantalla de roles (5.2) fue retomada e implementada después de este cierre.
+Roles personalizados (5.3) también fueron implementados después de este cierre,
+limitados a datos asignados; ver `2026-11-16-fase-5-3-handoff.md`. El desacoplamiento
+por área (5.4) sigue pendiente.
+No se presentó la Fase 5 completa como implementada.
 Siguen pendientes comisiones (requieren decisiones de base de cálculo),
 revendedores (requieren diseño/roles) y reportes de Fase 7.
