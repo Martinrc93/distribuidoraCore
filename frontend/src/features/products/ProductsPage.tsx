@@ -1,6 +1,7 @@
 import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiPut, ApiError, type AffectedPriceList, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
@@ -17,6 +18,7 @@ import { useUrlListState } from '../../shared/useUrlListState'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import { FormModal } from '../../shared/components/FormModal'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
+import { ShrinkageDialog } from '../inventory/ShrinkageDialog'
 
 type Product = {
   id: string
@@ -329,6 +331,8 @@ function CostPriceFixDialog({ cost, lists, pending, defaultListCode, onCancel, o
 
 export default function ProductsPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
+  const canRecordShrinkage = isAdmin && hasAuthority('STOCK_SHRINKAGE')
+  const { search: stockSearch } = useLocation()
   const queryClient = useQueryClient()
   const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
   const search = getFilter('search')
@@ -354,6 +358,8 @@ export default function ProductsPage() {
   const [formSaving, setFormSaving] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | undefined>()
   const [adjustmentProduct, setAdjustmentProduct] = useState<Product | undefined>()
+  const [shrinkageProduct, setShrinkageProduct] = useState<Product>()
+  const [shrinkageFocus, setShrinkageFocus] = useState('')
   const [quantity, setQuantity] = useState('')
   const [adjustmentMode, setAdjustmentMode] = useState<StockAdjustmentMode>('target')
   const [reason, setReason] = useState('')
@@ -370,6 +376,24 @@ export default function ProductsPage() {
   const movementsPath = selectedProduct ? `/api/inventory/${selectedProduct.id}/movements?page=0&size=20` : ''
   const movementsKey = [movementsPath]
   const movementsQuery = useQuery({ queryKey: movementsKey, queryFn: () => apiGet<ApiPage<Movement>>(movementsPath), enabled: Boolean(selectedProduct) })
+
+  useEffect(() => {
+    if (shrinkageProduct || !shrinkageFocus) return
+    const target = document.getElementById(shrinkageFocus) ?? document.getElementById('products-search')
+    target?.focus()
+    setShrinkageFocus('')
+  }, [shrinkageProduct, shrinkageFocus])
+
+  async function shrinkageSaved(productId: string) {
+    await queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
+      const key = String(queryKey[0])
+      return key.startsWith('/api/products') || key.startsWith('/api/inventory')
+        || key === 'order-create-products' || key === 'dashboard' || key.startsWith('/api/dashboard')
+    } })
+    setShrinkageFocus(`shrinkage-${productId}`)
+    setShrinkageProduct(undefined)
+    setFeedback('Merma registrada. El stock fue actualizado.')
+  }
 
   async function submitAdjustment(event: FormEvent) {
     event.preventDefault()
@@ -431,9 +455,11 @@ export default function ProductsPage() {
       if (!product) return null
       return <div className="product-row-controls">
         <StatusBadge value={product.status ?? 'ACTIVE'} />
-        <div className="table-row-actions">
+        <div className={canRecordShrinkage ? 'table-row-actions flex-wrap' : 'table-row-actions'}>
           <Button variant="secondary" onClick={() => setSelectedProduct(product)} aria-label={`Ver movimientos de ${product.name}`}>Ver movimientos</Button>
           {hasAuthority('STOCK_ADJUST') && <Button variant="secondary" onClick={() => { setAdjustmentProduct(product); setAdjustmentMode('target'); setQuantity(''); setReason(''); setAdjustmentError('') }} aria-label={`Ajustar stock de ${product.name}`}>Ajustar stock</Button>}
+          {canRecordShrinkage && product.status !== 'INACTIVE' && <Button id={`shrinkage-${product.id}`} variant="secondary"
+            onClick={() => { setShrinkageProduct(product); setFeedback('') }} aria-label={`Registrar merma de ${product.name}`}>Registrar merma</Button>}
           {isAdmin && <Button variant="secondary" onClick={() => { setFormProduct(product); setShowForm(false); setFeedback('') }} disabled={formSaving || mutating} aria-label={`Editar ${product.name}`}>Editar</Button>}
         </div>
       </div>
@@ -441,7 +467,7 @@ export default function ProductsPage() {
   ]
 
   const movementRows: Row[] = (movementsQuery.data?.content ?? []).map((movement) => ({
-    id: movement.id, type: movement.movementType, quantity: String(movement.quantity), reason: movement.reason,
+    id: movement.id, type: movement.movementType === 'SHRINKAGE' ? 'Merma' : movement.movementType, quantity: String(movement.quantity), reason: movement.reason,
     reference: movement.referenceType ? `${movement.referenceType} ${movement.referenceId ?? ''}`.trim() : '—', date: dateTime(movement.date),
   }))
   const movementColumns: TableColumn[] = [
@@ -453,13 +479,16 @@ export default function ProductsPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Catálogo" title="Stock" description="Productos, stock, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button> : <Button variant="secondary" href="/price-lists">Ver listas de precios</Button>} />
+    <PageHeader eyebrow="Catálogo" title="Stock" description="Productos, stock, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <>
+      <Button variant="secondary" href={stockSearch ? `/products/shrinkages?stockSearch=${encodeURIComponent(stockSearch)}` : '/products/shrinkages'}>Ver mermas</Button>
+      <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button>
+    </> : <Button variant="secondary" href="/price-lists">Ver listas de precios</Button>} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {actionError && <p className="error-text" role="alert"><CurrencyText>{actionError}</CurrencyText></p>}
     {isAdmin && (showForm || formProduct) && <ProductForm initial={formProduct} activeLists={activeLists} categories={categories} brands={brands} optionsLoading={optionsLoading} optionsError={optionsError} onDone={() => { setShowForm(false); setFormProduct(undefined) }} onSuccess={setFeedback} onBusyChange={setFormSaving} onChangeStatus={(product) => { setActionError(''); setStatusProduct(product) }} />}
     <Panel>
       <div className="toolbar items-end">
-        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar productos</span><input className="input search-input [@media(max-width:640px)]:max-w-none" aria-label="Buscar productos" placeholder="Nombre del producto" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
+        <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar productos</span><input id="products-search" className="input search-input [@media(max-width:640px)]:max-w-none" aria-label="Buscar productos" placeholder="Nombre del producto" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
         <SearchableSelect label="Buscar por marca" options={brands} value={brandId} onChange={(value) => setFilter('brandId', value)} allLabel="Todas las marcas" unavailableLabel="Marca no disponible" loadingLabel="Cargando marcas…" loading={brandsQuery.isLoading} disabled={brandsQuery.isError} />
         <SearchableSelect label="Buscar por categoría" options={categories} value={categoryId} onChange={(value) => setFilter('categoryId', value)} allLabel="Todas las categorías" unavailableLabel="Categoría no disponible" loadingLabel="Cargando categorías…" loading={categoriesQuery.isLoading} disabled={categoriesQuery.isError} />
         <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Stock</span><select className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={stock} onChange={(event) => setFilter('stock', event.target.value)}>
@@ -481,6 +510,8 @@ export default function ProductsPage() {
       onReasonChange={(value) => { setReason(value); setAdjustmentError('') }}
       onSubmit={submitAdjustment} onCancel={() => setAdjustmentProduct(undefined)}
     />}
+    {canRecordShrinkage && shrinkageProduct && <ShrinkageDialog product={shrinkageProduct}
+      onClose={() => setShrinkageProduct(undefined)} onSaved={() => shrinkageSaved(shrinkageProduct.id)} />}
     {statusProduct && <ConfirmationDialog
       title={statusProduct.status === 'ACTIVE' ? 'Desactivar producto' : 'Activar producto'}
       description={`¿Querés ${statusProduct.status === 'ACTIVE' ? 'desactivar' : 'activar'} a ${statusProduct.name}?`}

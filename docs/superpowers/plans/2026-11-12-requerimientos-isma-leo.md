@@ -183,7 +183,7 @@ para pedidos conservan el catálogo compartido y el alcance del cliente.
 
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
-| 6.1 | Mermas | M | Movimiento `SHRINKAGE` con motivo obligatorio, permiso `STOCK_SHRINKAGE` (solo admins por defecto), reporte de mermas por período. Comparte `InventoryMovementService` con los ajustes, con operaciones diferenciadas. |
+| 6.1 | Mermas | M | Implementada con V46. Registro desde Stock con motivo obligatorio y `STOCK_SHRINKAGE` reservado a ADMIN. Movimiento, saldo y auditoría en una transacción con reintentos sin doble descuento. Reporte paginado por período con total de unidades perdidas. |
 | 6.2 | Editar compras | M | Implementada con V40. La edición de una compra confirmada aplica la diferencia de cantidades y registra auditoría. |
 | 6.3 | Pedir productos para reponer | S–M | Implementado «Agregar productos sin stock» en Compras. Queda como ampliación iniciar la compra desde Stock o el dashboard. |
 | 6.4 | Ingreso de stock por confirmación de compra | L | Implementado con V40. Confirmar ingresa stock. Anular una confirmada registra movimientos compensatorios. |
@@ -273,9 +273,9 @@ Respuestas del usuario (2026-11-12):
 6. **Permisos:** inicialmente postergados para revisarlos en detalle. El 2026-11-16
    Mateo autorizó retomar 5.2 y 5.3, implementadas. Confirmó que los roles
    personalizados quedan limitados a datos asignados. Desacoplamiento por área
-   de `ADMIN_ALL` (5.4) completado según ese alcance. Las operaciones globales de
-   Stock/catálogo, Compras y Administración requieren administrador. La tarea
-   siguiente de Stock es 6.1, Mermas.
+   de `ADMIN_ALL` (5.4) completado en `6bd6cfa` según ese alcance. Las
+   operaciones globales de Stock/catálogo, Compras y Administración requieren
+   administrador. Mermas (6.1) está implementada con V46.
 7. **Compras:** sí. Una compra **confirmada** ingresa el stock de lo comprado. Hace
    falta un estado (borrador / confirmada) y que editar o anular una compra
    confirmada genere movimientos compensatorios.

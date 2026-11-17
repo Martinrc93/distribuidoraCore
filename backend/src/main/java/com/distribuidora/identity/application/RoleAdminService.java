@@ -22,7 +22,8 @@ import java.util.UUID;
 
 @Service
 public class RoleAdminService {
-    private static final Set<String> ADMIN_ONLY_PERMISSIONS = Set.of("ADMIN_ALL", "USER_MANAGE", "ORDER_REVIEW", "STOCK_ADJUST");
+    private static final Set<String> ADMIN_ONLY_PERMISSIONS = Set.of(
+        "ADMIN_ALL", "USER_MANAGE", "ORDER_REVIEW", "STOCK_ADJUST", "STOCK_SHRINKAGE");
 
     public record RoleView(UUID id, String code, String description, List<String> permissions,
                            List<String> requiredPermissions, boolean assignedToCurrentUser) {

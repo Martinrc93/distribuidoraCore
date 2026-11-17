@@ -1083,7 +1083,7 @@ el borrador y arma el cuerpo (`targetQuantity` o `quantity`) para ambas pantalla
 El resultado solo aparece para cantidades válidas múltiplos de `0,5` (en delta,
 distintas de cero); un saldo negativo mantiene una advertencia textual. El motivo
 es opcional, usa un textarea de al menos `88px`; los controles tienen `44px` de
-altura mínima. Las variantes `.stock-adjustment-*` solo afectan este formulario.
+altura mínima. El resumen y los campos se comparten con el formulario de mermas.
 
 Usa un diálogo nativo con foco inicial en cantidad, contención y restauración del
 foco, bloqueo del fondo y scroll interno limitado al viewport. Cancelar y Escape
@@ -1094,6 +1094,20 @@ campos y cierre; los errores conservan los datos y se anuncian dentro del diálo
 Hasta `760px` conserva los márgenes y padding del diálogo compartido y hasta
 `640px` sus acciones se expanden por igual. El nombre del producto admite varias
 líneas sin desbordar y la ayuda está asociada al campo de cantidad.
+
+### Mermas
+
+Stock muestra «Registrar merma» en acciones de productos activos con
+`ADMIN_ALL` y `STOCK_SHRINKAGE`. Reutiliza `FormModal` compacto,
+`.stock-adjustment-summary` y `.stock-adjustment-fields`. Cantidad perdida
+acepta múltiplos positivos de 0,5. El motivo es obligatorio. El stock estimado
+advierte cuando queda negativo. Escape y Cancelar protegen el borrador.
+Al guardar, vuelve al botón o a la búsqueda si la fila sale del filtro.
+
+«Ver mermas» lleva a `/products/shrinkages` con acceso administrativo.
+El reporte reutiliza `OrderDateFilter`, `DataTable` y la paginación
+compartida. El período se conserva en la URL y se evalúa en hora argentina.
+«Volver a Stock» recupera los filtros del listado de origen.
 
 ### Variantes específicas por pantalla
 

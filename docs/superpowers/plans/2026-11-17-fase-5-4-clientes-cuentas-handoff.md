@@ -122,9 +122,8 @@ conserva disponibilidad de productos para esos dos permisos.
 Verificación de V45 y del cierre de 5.4. Pasaron 558 pruebas de backend con las
 nueve clases anteriores excluidas, 372 de frontend, cuatro E2E de Stock, nueve
 de Roles y seis de Compras. La compilación de frontend pasó. PostgreSQL
-desechable se detuvo tras la prueba. Los cambios de este cierre quedaron
-pendientes de commit.
+desechable se detuvo tras la prueba. El cierre quedó registrado en `6bd6cfa`.
 
 El [plan general](2026-11-12-requerimientos-isma-leo.md) registra el cierre de
-5.4 y el pendiente de Mermas (6.1). La revisión de pedidos sigue a cargo del
-administrador. Comisiones, revendedores y reportes conservan sus pendientes.
+5.4 y la implementación de Mermas (6.1). La revisión de pedidos sigue a cargo
+del administrador. Comisiones, revendedores y reportes conservan sus pendientes.

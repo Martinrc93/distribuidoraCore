@@ -67,7 +67,8 @@ Los cambios efectivos invalidan las sesiones del rol y quedan auditados; si
 afectan al administrador actual, vuelve al login con confirmación del guardado.
 Una edición desactualizada no sobrescribe cambios de otro administrador.
 Los administradores pueden crear roles personalizados con permisos del catálogo,
-sin heredar SELLER ni recibir ADMIN_ALL, USER_MANAGE, ORDER_REVIEW o STOCK_ADJUST. Su alcance
+sin heredar SELLER ni recibir ADMIN_ALL, USER_MANAGE, ORDER_REVIEW, STOCK_ADJUST
+o STOCK_SHRINKAGE. Su alcance
 se limita a datos asignados mediante un perfil de vendedor. El alta y la invitación
 crean ese perfil automáticamente para todo rol distinto de ADMIN. Usuarios permite
 cambiar de rol conservando perfil, asignaciones e historial e invalidando sesiones;
@@ -221,6 +222,10 @@ Reglas:
 - El ajuste puede indicar la cantidad final contada (el sistema calcula y registra
   la diferencia) o una diferencia a sumar/restar. En ambos casos queda un movimiento
   `MANUAL_ADJUSTMENT` inmutable.
+- Una merma descuenta una cantidad positiva de un producto activo y exige un
+  motivo. Requiere `ADMIN_ALL` y `STOCK_SHRINKAGE`. Se distingue del ajuste en
+  historial y auditoría. El reporte administrativo muestra los registros y
+  cantidades perdidas por período.
 - No se editan ni eliminan movimientos históricos.
 - La preparación del pedido registra una salida. Confirmar no modifica stock.
 - La cancelación de una venta no pagada registra una reversión.

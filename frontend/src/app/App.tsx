@@ -15,6 +15,7 @@ import SupplierOrdersPage from '../features/purchasing/SupplierOrdersPage'
 import SupplierOrderDetailPage from '../features/purchasing/SupplierOrderDetailPage'
 import CustomerDetailPage from '../features/customers/CustomerDetailPage'
 import ProductsPage from '../features/products/ProductsPage'
+import ShrinkagesPage from '../features/inventory/ShrinkagesPage'
 import PriceListsPage from '../features/pricing/PriceListsPage'
 import CatalogAdminPage from '../features/catalog/CatalogAdminPage'
 import OrderCreatePage from '../features/orders/OrderCreatePage'
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="/suppliers" element={<RequireAdmin><SuppliersPage /></RequireAdmin>} />
         <Route path="/customers/:customerId" element={<RequireCustomerView />} />
         <Route path="/products" element={<RequireAdmin><ProductsPage /></RequireAdmin>} />
+        <Route path="/products/shrinkages" element={<RequireAdmin><ShrinkagesPage /></RequireAdmin>} />
         <Route path="/catalog" element={<RequireAdmin><CatalogAdminPage /></RequireAdmin>} />
         <Route path="/price-lists" element={<RequireAdmin><PriceListsPage /></RequireAdmin>} />
         <Route path="/payments" element={<Navigate to="/orders" replace />} />

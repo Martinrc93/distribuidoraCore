@@ -2,6 +2,8 @@ package com.distribuidora.inventory.api;
 
 import com.distribuidora.inventory.application.InventoryCommandService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -40,4 +42,14 @@ public class InventoryCommandController {
         BigDecimal targetQuantity,
         @Size(max = 500) String reason
     ) { }
+
+    @PostMapping("/{productId}/shrinkages")
+    @PreAuthorize("hasAuthority('ADMIN_ALL') and hasAuthority('STOCK_SHRINKAGE')")
+    public ResponseEntity<Void> recordShrinkage(@PathVariable UUID productId, @Valid @RequestBody ShrinkageRequest request) {
+        service.recordShrinkage(productId, request.idempotencyKey(), request.quantity(), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    public record ShrinkageRequest(@NotNull UUID idempotencyKey, @NotNull BigDecimal quantity,
+                                   @NotBlank @Size(max = 500) String reason) { }
 }

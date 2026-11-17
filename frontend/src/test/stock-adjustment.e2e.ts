@@ -4,7 +4,7 @@ const productName = 'Marca Demo 01 Producto Demo 001'
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL', 'STOCK_ADJUST'] }))}.signature`)
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL', 'STOCK_ADJUST', 'STOCK_SHRINKAGE'] }))}.signature`)
   })
   await page.route(/^https?:\/\/[^/]+\/api\//, (route) => {
     const path = new URL(route.request().url()).pathname
@@ -92,3 +92,83 @@ test('keeps the draft after failure, blocks pending closure and submits the adju
   await expect(page.getByRole('status')).toHaveText('Ajuste de stock registrado.')
   expect(attempts).toBe(2)
 })
+
+for (const width of [320, 390, 1440]) {
+  test(`records a shrinkage with safe retries and reports it by period at ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: width === 320 ? 640 : 900 })
+    const name = width === 320 ? `Marca Demo ${'Producto'.repeat(14)}` : productName
+    let stock = 2
+    let attempts = 0
+    let movementId = ''
+    const queriedPeriods: string[] = []
+    await page.route((url) => url.pathname === '/api/products', (route) => {
+      const positive = new URL(route.request().url()).searchParams.get('stock') === 'POSITIVE'
+      const content = positive && stock <= 0 ? [] : [{ id: 'product-1', name, stock, category: 'Almacén', cost: 100, status: 'ACTIVE' }]
+      return route.fulfill({ json: { content, page: 0, totalElements: content.length, totalPages: content.length } })
+    })
+    await page.route((url) => url.pathname === '/api/inventory/product-1/shrinkages', (route) => {
+      const body = route.request().postDataJSON()
+      expect(body).toEqual({ idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/), quantity: 2.5, reason: 'Envases dañados' })
+      attempts++
+      if (attempts === 1) {
+        movementId = body.idempotencyKey
+        stock -= body.quantity
+        return route.fulfill({ status: 503, json: { detail: 'No llegó la confirmación.' } })
+      }
+      expect(body.idempotencyKey).toBe(movementId)
+      return route.fulfill({ status: 204 })
+    })
+    await page.route((url) => url.pathname === '/api/inventory/shrinkages', (route) => {
+      const params = new URL(route.request().url()).searchParams
+      queriedPeriods.push(`${params.get('dateMin') ?? ''}|${params.get('dateMax') ?? ''}`)
+      return route.fulfill({ json: {
+        totalQuantity: 2.5,
+        movements: { content: [{ id: movementId, product: name, date: '2026-11-17T13:00:00Z', quantity: 2.5, reason: 'Envases dañados' }],
+          page: 0, size: 20, totalElements: 1, totalPages: 1 },
+      } })
+    })
+    await page.goto('/products?stock=POSITIVE')
+    await page.getByRole('button', { name: `Registrar merma de ${name}` }).click()
+    const dialog = page.getByRole('dialog', { name: 'Registrar merma', exact: true })
+    const quantity = dialog.getByLabel('Cantidad perdida')
+    const reason = dialog.getByLabel('Motivo (obligatorio)')
+    const confirm = dialog.getByRole('button', { name: 'Confirmar merma' })
+    await expect(quantity).toBeFocused()
+    await quantity.fill('0,25')
+    await reason.fill('   ')
+    await confirm.click()
+    await expect(dialog.getByRole('alert')).toContainText('múltiplos de 0,5')
+    await quantity.fill('2,5')
+    await confirm.click()
+    await expect(dialog.getByRole('alert')).toContainText('Ingresá el motivo')
+    expect(attempts).toBe(0)
+    await reason.fill(' Envases dañados ')
+    await expect(dialog.getByText('El saldo estimado quedará negativo (-0,5).')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Seguir editando' }).click()
+    await expect(reason).toHaveValue(' Envases dañados ')
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await page.screenshot({ path: info.outputPath(`merma-${width}.png`) })
+    await confirm.click()
+    await expect(dialog.getByRole('alert')).toContainText('No llegó la confirmación.')
+    await confirm.click()
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByRole('status')).toHaveText('Merma registrada. El stock fue actualizado.')
+    await expect(page.getByRole('textbox', { name: 'Buscar productos' })).toBeFocused()
+    expect(attempts).toBe(2)
+
+    await page.getByRole('link', { name: 'Ver mermas' }).click()
+    await expect(page.getByRole('heading', { name: 'Mermas', exact: true })).toBeVisible()
+    await page.getByLabel('Desde', { exact: true }).fill('17/11/2026')
+    await page.getByLabel('Hasta', { exact: true }).fill('16/11/2026')
+    await expect(page.getByRole('alert')).toContainText('La fecha inicial no puede ser posterior a la final.')
+    await expect(page.getByText('Envases dañados', { exact: true })).toHaveCount(0)
+    await page.getByLabel('Hasta', { exact: true }).fill('17/11/2026')
+    await expect(page.getByText('Envases dañados', { exact: true })).toBeVisible()
+    await expect(page.getByText(/Cantidad perdida en el período/)).toContainText('2,5')
+    expect(queriedPeriods).toContain('2026-11-17|2026-11-17')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: info.outputPath(`reporte-mermas-${width}.png`) })
+    await expect(page.getByRole('link', { name: 'Volver a Stock' })).toHaveAttribute('href', '/products?stock=POSITIVE')
+  })
+}

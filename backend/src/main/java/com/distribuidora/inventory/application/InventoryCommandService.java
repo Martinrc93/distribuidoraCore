@@ -7,8 +7,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -52,6 +50,23 @@ public class InventoryCommandService {
         audit.recordWithinTransaction(actorId, "STOCK_ADJUSTMENT", "PRODUCT", productId.toString(), "SUCCESS",
             Map.of("quantity", result.delta(), "previousQuantity", result.previousQuantity(),
                 "targetQuantity", targetQuantity, "reason", normalizedReason));
+    }
+
+    @Transactional
+    public void recordShrinkage(UUID productId, UUID movementId, BigDecimal quantity, String reason) {
+        if (quantity == null || quantity.signum() <= 0 || quantity.compareTo(InventoryMovementService.MAX_QUANTITY) > 0
+            || quantity.remainder(HALF).signum() != 0) {
+            throw new IllegalArgumentException("La cantidad de merma debe ser positiva y múltiplo de 0.5");
+        }
+        String description = reason == null ? "" : reason.strip();
+        if (description.isBlank() || description.length() > 500) {
+            throw new IllegalArgumentException("El motivo de la merma es obligatorio y admite hasta 500 caracteres");
+        }
+        UUID actor = actorId();
+        if (movements.applyShrinkage(movementId, productId, quantity.negate(), description)) {
+            audit.recordWithinTransaction(actor, "STOCK_SHRINKAGE", "STOCK_MOVEMENT", movementId.toString(), "SUCCESS",
+                Map.of("productId", productId, "quantity", quantity.negate(), "reason", description));
+        }
     }
 
     private static final BigDecimal HALF = new BigDecimal("0.5");

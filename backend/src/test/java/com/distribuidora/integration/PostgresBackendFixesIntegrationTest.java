@@ -899,6 +899,128 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(orderProjection).doesNotContainKey("depotId");
     }
 
+    @Test
+    void shrinkageIsAuthorizedAndConcurrentRetriesDeductAndAuditOnlyOnce() throws Exception {
+        UUID admin = createUser("shrinkage-admin");
+        assignRole(admin, "ADMIN");
+        String token = "Bearer " + loginHttp(email(admin));
+        UUID assigned = createUser("shrinkage-assigned");
+        assignRole(assigned, createRoleWithPermission("STOCK_SHRINKAGE"));
+        String assignedToken = "Bearer " + loginHttp(email(assigned));
+        UUID adjustmentAdmin = createUser("shrinkage-adjustment-admin");
+        assignRole(adjustmentAdmin, createRoleWithPermission("ADMIN_ALL"));
+        assignRole(adjustmentAdmin, createRoleWithPermission("STOCK_ADJUST"));
+        String adjustmentToken = "Bearer " + loginHttp(email(adjustmentAdmin));
+        UUID product = createProduct("shrinkage-write");
+        jdbc.update("update inventory.inventory_balances set quantity = 2 where product_id = ?", product);
+        UUID key = UUID.randomUUID();
+        var request = shrinkageRequest(product, key, "2.5", " Envase roto ");
+
+        mockMvc.perform(request).andExpect(status().isUnauthorized());
+        mockMvc.perform(shrinkageRequest(product, key, "2.5", "Envase roto").header("Authorization", assignedToken))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(shrinkageRequest(product, key, "2.5", "Envase roto").header("Authorization", adjustmentToken))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/inventory/shrinkages").header("Authorization", assignedToken))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/inventory/shrinkages").header("Authorization", adjustmentToken))
+            .andExpect(status().isOk());
+        for (String invalidQuantity : List.of("0", "-1", "0.25", "1000000000000000")) {
+            mockMvc.perform(shrinkageRequest(product, key, invalidQuantity, "Daño").header("Authorization", token))
+                .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(shrinkageRequest(product, key, "1", "   ").header("Authorization", token))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(shrinkageRequest(UUID.randomUUID(), key, "2.5", "Envase roto").header("Authorization", token))
+            .andExpect(status().isNotFound());
+        assertThat(stock(product)).isEqualByComparingTo("2");
+
+        try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch go = new CountDownLatch(1);
+            java.util.concurrent.Callable<Integer> submit = () -> {
+                ready.countDown();
+                if (!go.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("No se coordinó el reintento");
+                return mockMvc.perform(shrinkageRequest(product, key, "2.5", " Envase roto ").header("Authorization", token))
+                    .andReturn().getResponse().getStatus();
+            };
+            var first = workers.submit(submit);
+            var second = workers.submit(submit);
+            boolean bothReady = ready.await(10, TimeUnit.SECONDS);
+            go.countDown();
+            assertThat(bothReady).isTrue();
+            assertThat(first.get(10, TimeUnit.SECONDS)).isEqualTo(204);
+            assertThat(second.get(10, TimeUnit.SECONDS)).isEqualTo(204);
+        }
+        assertThat(stock(product)).isEqualByComparingTo("-0.5");
+        assertThat(jdbc.queryForMap("select movement_type, quantity, reason from inventory.stock_movements where id = ?", key))
+            .containsEntry("movement_type", "SHRINKAGE").containsEntry("quantity", new BigDecimal("-2.5000"))
+            .containsEntry("reason", "Envase roto");
+        mockMvc.perform(shrinkageRequest(product, key, "3", "Envase roto").header("Authorization", token))
+            .andExpect(status().isConflict());
+        jdbc.update("update catalog.products set status = 'INACTIVE' where id = ?", product);
+        mockMvc.perform(shrinkageRequest(product, UUID.randomUUID(), "1", "Envase roto").header("Authorization", token))
+            .andExpect(status().isConflict());
+        mockMvc.perform(shrinkageRequest(product, key, "2.5", "Envase roto").header("Authorization", token))
+            .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("""
+            select count(*) from audit.audit_events where operation = 'STOCK_SHRINKAGE' and resource_id = ? and actor_user_id = ?
+            """, Long.class, key.toString(), admin)).isEqualTo(1L);
+
+        UUID overflow = createProduct("shrinkage-overflow");
+        jdbc.update("update inventory.inventory_balances set quantity = -999999999999999.5 where product_id = ?", overflow);
+        UUID failed = UUID.randomUUID();
+        mockMvc.perform(shrinkageRequest(overflow, failed, "1", "Daño").header("Authorization", token))
+            .andExpect(status().isBadRequest());
+        assertThat(stock(overflow)).isEqualByComparingTo("-999999999999999.5");
+        assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where id = ?", Long.class, failed)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where resource_id = ?", Long.class, failed.toString())).isZero();
+    }
+
+    @Test
+    void shrinkageReportUsesArgentineDayBoundsAndTotalsOverAllPages() throws Exception {
+        UUID admin = createUser("shrinkage-report");
+        assignRole(admin, "ADMIN");
+        String token = "Bearer " + loginHttp(email(admin));
+        UUID product = createProduct("shrinkage-report");
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID outside = UUID.randomUUID();
+        for (UUID id : List.of(first, second, outside)) {
+            String quantity = id.equals(first) ? "1.5" : id.equals(second) ? "2" : "100";
+            mockMvc.perform(shrinkageRequest(product, id, quantity, "Rotura").header("Authorization", token))
+                .andExpect(status().isNoContent());
+        }
+        jdbc.update("update inventory.stock_movements set created_at = ? where id = ?", Timestamp.from(Instant.parse("2026-11-12T03:00:00Z")), first);
+        jdbc.update("update inventory.stock_movements set created_at = ? where id = ?", Timestamp.from(Instant.parse("2026-11-13T02:59:59Z")), second);
+        jdbc.update("update inventory.stock_movements set created_at = ? where id = ?", Timestamp.from(Instant.parse("2026-11-13T03:00:00Z")), outside);
+        jdbc.update("""
+            insert into inventory.stock_movements(id, product_id, movement_type, quantity, reason, created_at)
+            values (?, ?, 'MANUAL_ADJUSTMENT', -20, 'Conteo', ?)
+            """, UUID.randomUUID(), product, Timestamp.from(Instant.parse("2026-11-12T12:00:00Z")));
+        for (int page = 0; page < 2; page++) {
+            mockMvc.perform(get("/api/inventory/shrinkages").header("Authorization", token)
+                    .param("page", String.valueOf(page)).param("size", "1")
+                    .param("dateMin", "2026-11-12").param("dateMax", "2026-11-12"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalQuantity").value(3.5))
+                .andExpect(jsonPath("$.movements.totalElements").value(2))
+                .andExpect(jsonPath("$.movements.content[0].id").value((page == 0 ? second : first).toString()))
+                .andExpect(jsonPath("$.movements.content[0].quantity").value(page == 0 ? 2.0 : 1.5))
+                .andExpect(jsonPath("$.movements.content[0].reason").value("Rotura"));
+        }
+        mockMvc.perform(get("/api/inventory/shrinkages").header("Authorization", token)
+                .param("dateMin", "2026-11-13").param("dateMax", "2026-11-12"))
+            .andExpect(status().isBadRequest());
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder shrinkageRequest(
+        UUID product, UUID key, String quantity, String reason
+    ) throws Exception {
+        return post("/api/inventory/{productId}/shrinkages", product).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "idempotencyKey", key, "quantity", new BigDecimal(quantity), "reason", reason)));
+    }
+
     private BigDecimal stock(UUID productId) {
         return jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?",
             BigDecimal.class, productId);
