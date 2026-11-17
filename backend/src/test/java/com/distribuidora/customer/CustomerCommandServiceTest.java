@@ -32,7 +32,15 @@ class CustomerCommandServiceTest {
     void setUp() {
         jdbc = mock(JdbcTemplate.class);
         audit = mock(AuditService.class);
-        service = new CustomerCommandService(jdbc, audit);
+        var access = mock(com.distribuidora.shared.security.CurrentUserAccess.class);
+        when(access.isAdmin()).thenReturn(true);
+        service = new CustomerCommandService(jdbc, audit, access);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.TestingAuthenticationToken(UUID.randomUUID().toString(), "fixture", "ADMIN_ALL"));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -58,7 +66,7 @@ class CustomerCommandServiceTest {
         service.assignPriceList(customerId, priceListId);
 
         verify(jdbc).update(anyString(), eq(priceListId), eq(customerId));
-        verify(audit).record(any(), eq("CUSTOMER_PRICE_LIST_ASSIGNMENT"), eq("CUSTOMER"),
+        verify(audit).recordWithinTransaction(any(), eq("CUSTOMER_PRICE_LIST_ASSIGNMENT"), eq("CUSTOMER"),
             eq(customerId.toString()), eq("SUCCESS"), any());
     }
 
@@ -72,7 +80,7 @@ class CustomerCommandServiceTest {
 
         verify(jdbc).update(anyString(), eq(null), eq(customerId));
         ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);
-        verify(audit).record(any(), eq("CUSTOMER_PRICE_LIST_ASSIGNMENT"), eq("CUSTOMER"),
+        verify(audit).recordWithinTransaction(any(), eq("CUSTOMER_PRICE_LIST_ASSIGNMENT"), eq("CUSTOMER"),
             eq(customerId.toString()), eq("SUCCESS"), details.capture());
         assertThat(details.getValue()).containsKey("priceListId").containsEntry("priceListId", null);
     }
@@ -110,11 +118,11 @@ class CustomerCommandServiceTest {
     }
 
     @Test
-    void requiresAdminAuthorityAndReturnsNoContent() throws Exception {
+    void requiresPriceListPermissionAndReturnsNoContent() throws Exception {
         PreAuthorize authorization = CustomerCommandController.class
             .getDeclaredMethod("assignPriceList", UUID.class, CustomerCommandController.PriceListPayload.class)
             .getAnnotation(PreAuthorize.class);
-        assertThat(authorization.value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+        assertThat(authorization.value()).isEqualTo("hasAnyAuthority('CUSTOMER_PRICE_LIST_CHANGE', 'ADMIN_ALL')");
 
         CustomerCommandService controllerService = mock(CustomerCommandService.class);
         CustomerCommandController controller = new CustomerCommandController(controllerService);

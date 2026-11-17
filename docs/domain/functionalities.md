@@ -73,8 +73,10 @@ crean ese perfil automáticamente para todo rol distinto de ADMIN. Usuarios perm
 cambiar de rol conservando perfil, asignaciones e historial e invalidando sesiones;
 requiere perfil activo para roles asignados y desactivarlo antes de pasar a ADMIN.
 El acceso completo de `ADMIN_ALL` y las pantallas exclusivas de administradores
-conservan sus reglas. 5.4 incorpora permisos independientes en Pedidos y ventas;
-el resto de las áreas sigue pendiente. Ver [permisos comerciales](../api/commerce-permissions.md).
+conservan sus reglas. 5.4 incorpora permisos independientes en Pedidos y ventas
+y en Clientes y cuentas corrientes; el resto de las áreas sigue pendiente.
+Ver [permisos comerciales](../api/commerce-permissions.md) y
+[permisos de clientes](../api/customer-permissions.md).
 
 ### Seller
 
@@ -105,6 +107,15 @@ Responsable de los clientes comerciales:
 
 No existe acceso directo del cliente al sistema. La información de deuda solo
 está disponible para usuarios internos autorizados.
+
+Ficha, alta, edición, estado, lista predeterminada, cobros combinados y documentos
+tienen permisos independientes. Un rol con alcance asignado crea clientes para
+su propio perfil y solo puede operar sobre clientes asignados; no puede tomarlos
+de otro vendedor ni reasignarlos. Su saldo e historial incluyen únicamente ventas
+y pedidos propios (o sin vendedor del cliente asignado), con saldo limitado a la
+deuda global positiva. El administrador conserva asignaciones y saldo global.
+Cambiar la lista predeterminada del cliente es distinto de elegir otra para un
+pedido y no modifica precios históricos. Ver [contratos de permisos](../api/customer-permissions.md).
 
 ### Catalog
 
@@ -491,8 +502,9 @@ la aplicación.
 
 ## Permisos funcionales
 
-La tabla indica valores por defecto. Los permisos de Pedidos y ventas pueden
-configurarse por rol, conservando el alcance asignado de los usuarios sin ADMIN_ALL.
+La tabla indica valores por defecto. Los permisos de Pedidos y ventas y de
+Clientes y cuentas corrientes pueden configurarse por rol, conservando el alcance
+asignado de los usuarios sin ADMIN_ALL.
 Precios manuales, descuentos, edición, cancelación, reactivación y devoluciones
 requieren sus permisos específicos y no se conceden al vendedor por defecto.
 
@@ -500,6 +512,11 @@ requieren sus permisos específicos y no se conceden al vendedor por defecto.
 |---|---:|---:|
 | Ver clientes asignados | Sí | Sí |
 | Ver clientes no asignados | No | Sí |
+| Ver ficha e historial asignado | No (`CUSTOMER_VIEW` configurable) | Sí |
+| Crear o editar clientes asignados | No (permisos configurables) | Sí |
+| Cambiar estado o lista predeterminada del cliente | No (permisos configurables) | Sí |
+| Registrar pagos combinados desde Clientes | No (`ACCOUNT_SETTLE` configurable) | Sí |
+| Exportar estado de deuda asignado | Sí (`CUSTOMER_STATEMENT_EXPORT`) | Sí |
 | Crear pedidos | Sí | Sí |
 | Confirmar pedidos | Sí | Sí |
 | Modificar pedidos | No | Sí |

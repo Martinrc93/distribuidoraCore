@@ -1,6 +1,7 @@
 package com.distribuidora.dashboard.application;
 
 import com.distribuidora.shared.security.CurrentUserAccess;
+import com.distribuidora.customer.application.CustomerAccountBalanceQuery;
 import com.distribuidora.shared.web.PageResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -22,17 +23,34 @@ public class CustomerReadService {
 
     public Map<String, Object> customer(UUID customerId) {
         currentUser.requireCustomerAccess(customerId);
+        var balance = new CustomerAccountBalanceQuery(jdbc, currentUser).projection();
+        List<Object> parameters = new ArrayList<>(balance.parameters()); parameters.add(customerId);
+        String scope = "";
+        if (!currentUser.isAdmin()) { scope = " and c.seller_id = ?"; parameters.add(currentUser.requireSellerProfile()); }
         return jdbc.queryForMap("""
             select c.id, lpad(cast(c.customer_number as varchar), greatest(4, length(cast(c.customer_number as varchar))), '0') as "number", c.business_name as name, c.tax_id as "cuitId",
                    c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                    coalesce(sp.display_name, 'Sin asignar') as seller,
                    c.price_list_id as "priceListId", pl.code as "priceListCode", pl.name as "priceList",
-                   c.balance, c.status, c.created_at as "createdAt"
+                   %s as balance, c.status, c.created_at as "createdAt"
             from customer.customers c
             left join seller.seller_profiles sp on sp.id = c.seller_id
             left join catalog.price_lists pl on pl.id = c.price_list_id
             where c.id = ?
-            """, customerId);
+            """.formatted(balance.sql()) + scope, parameters.toArray());
+    }
+
+    public Map<String, Object> accountBalance(UUID customerId) {
+        Map<String, Object> customer = customer(customerId);
+        return Map.of("id", customer.get("id"), "name", customer.get("name"), "balance", customer.get("balance"), "status", customer.get("status"));
+    }
+
+    public Map<String, Object> assignmentContext() {
+        return jdbc.queryForMap("""
+            select sp.id, sp.display_name as "displayName", u.email
+            from seller.seller_profiles sp join identity.users u on u.id = sp.user_id
+            where sp.user_id = ? and sp.status = 'ACTIVE'
+            """, currentUser.userId());
     }
 
     public PageResponse<Map<String, Object>> orders(UUID customerId, int page, int size) {
@@ -44,7 +62,8 @@ public class CustomerReadService {
         List<Object> parameters = new ArrayList<>(List.of(customerId));
         if (!currentUser.isAdmin()) {
             UUID sellerId = currentUser.requireSellerProfile();
-            where += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            where += " and c.seller_id = ? and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+            parameters.add(sellerId);
             parameters.add(sellerId);
             parameters.add(sellerId);
         }

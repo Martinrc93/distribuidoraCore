@@ -5,7 +5,8 @@
 - Mateo pidió commitear 5.2/5.3 y avanzar a 5.4. Se registraron dos commits en
   `support`: `0f15563` (backend/API) y `957ba83` (interfaz/documentación).
   No hubo push. Mateo autorizó el cierre de Pedidos y ventas y continuar con
-  Clientes y cuentas corrientes; el commit de este cierre incluye este handoff.
+  Clientes y cuentas corrientes. Cierre registrado en `45165f7`
+  (`feat(permissions): separate order and sale actions from administrator access`).
 - Se tomó Pedidos y ventas como primera área, siguiendo el plan de avanzar por
   áreas. No se migraron todas las restricciones administrativas de la aplicación.
 - Sigue vigente la decisión de Mateo: roles personalizados limitados a datos
@@ -59,8 +60,9 @@
 
 ## Continuidad
 
-Primera área de 5.4 implementada. Stock/catálogo, compras/proveedores,
-clientes/cuentas y administración siguen pendientes de su trabajo por área.
+Primera área de 5.4 implementada. La continuación de Clientes/cuentas está en
+[su handoff](2026-11-17-fase-5-4-clientes-cuentas-handoff.md). Stock/catálogo,
+compras/proveedores y administración siguen pendientes de su trabajo por área.
 No presentar toda 5.4 ni toda Fase 5 como completas. Comisiones, revendedores y
 reportes también conservan sus pendientes. Nuevas áreas deben definir permisos y
 alcance explícitamente; otorgar un permiso nunca debe convertir un rol asignado

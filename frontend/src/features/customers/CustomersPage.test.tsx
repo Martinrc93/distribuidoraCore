@@ -66,7 +66,7 @@ describe('CustomersPage', () => {
     let settled = false
     const fetchMock = mockFetch((input, init) => {
       const path = String(input)
-      if (path === '/api/customers/customer-1') return response({ ...customers.content[0], balance: 1200 })
+      if (path === '/api/customers/customer-1/account-balance') return response({ ...customers.content[0], balance: 1200 })
       if (path.endsWith('/settlement')) { settled = true; return response({ balanceAfter: 0 }, 201) }
       if (path.startsWith('/api/customers?page=')) return response({ ...customers, content: [{ ...customers.content[0], balance: settled ? 0 : 1000 }] })
       return response({ content: [] })
@@ -97,7 +97,7 @@ describe('CustomersPage', () => {
     const fetchMock = mockFetch((input, init) => {
       const path = String(input)
       if (path.endsWith('/settlement') && init?.method === 'POST') return response({ balanceAfter: 700 }, 201)
-      return path === '/api/customers/customer-1' ? response({ ...customers.content[0], balance: 1000 }) : response(customers)
+      return path === '/api/customers/customer-1/account-balance' ? response({ ...customers.content[0], balance: 1000 }) : response(customers)
     })
     renderPage()
     await user.click(await screen.findByRole('button', { name: /registrar pago/i }))
@@ -113,7 +113,7 @@ describe('CustomersPage', () => {
 
   it('rejects payments above the balance and validates the transfer reference before submitting', async () => {
     const user = userEvent.setup()
-    const fetchMock = mockFetch(input => String(input) === '/api/customers/customer-1' ? response({ ...customers.content[0], balance: 1000 }) : response(customers))
+    const fetchMock = mockFetch(input => String(input) === '/api/customers/customer-1/account-balance' ? response({ ...customers.content[0], balance: 1000 }) : response(customers))
     renderPage()
     await user.click(await screen.findByRole('button', { name: /registrar pago/i }))
     const dialog = await screen.findByRole('dialog', { name: 'Pago de cuenta corriente' })
@@ -137,7 +137,7 @@ describe('CustomersPage', () => {
         paymentCalls += 1
         return paymentCalls === 1 ? response({ detail: 'El saldo cambió. Revisa los importes.' }, 409) : response({ balanceAfter: 0 }, 201)
       }
-      if (path === '/api/customers/customer-1') return response({ ...customers.content[0], balance: paymentCalls ? 800 : 1000 })
+      if (path === '/api/customers/customer-1/account-balance') return response({ ...customers.content[0], balance: paymentCalls ? 800 : 1000 })
       return response(customers)
     })
     renderPage()
@@ -155,7 +155,7 @@ describe('CustomersPage', () => {
 
   it('does not open settlement when another payment has already cleared the balance', async () => {
     const user = userEvent.setup()
-    mockFetch(input => String(input) === '/api/customers/customer-1' ? response({ ...customers.content[0], balance: 0 }) : response(customers))
+    mockFetch(input => String(input) === '/api/customers/customer-1/account-balance' ? response({ ...customers.content[0], balance: 0 }) : response(customers))
     renderPage()
     await user.click(await screen.findByRole('button', { name: /registrar pago/i }))
     expect(await screen.findByText('El cliente no tiene saldo pendiente.')).toBeInTheDocument()
@@ -167,7 +167,7 @@ describe('CustomersPage', () => {
     let resolvePayment!: (value: Response) => void
     const fetchMock = mockFetch((input, init) => init?.method === 'POST'
       ? new Promise(resolve => { resolvePayment = resolve })
-      : response(String(input) === '/api/customers/customer-1' ? customers.content[0] : customers))
+      : response(String(input) === '/api/customers/customer-1/account-balance' ? customers.content[0] : customers))
     renderPage()
     const trigger = await screen.findByRole('button', { name: /registrar pago/i })
     await user.click(trigger)
@@ -282,7 +282,7 @@ describe('CustomersPage', () => {
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
     await waitFor(() => expect(screen.queryByRole('button', { name: /guardar cambios/i })).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: /editar/i }))
-    await user.click(screen.getByRole('button', { name: /desactivar cliente/i }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Editar cliente' })).getByRole('button', { name: /desactivar cliente/i }))
     expect(screen.getByRole('dialog', { name: /desactivar a/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar/i }))
 
@@ -323,7 +323,7 @@ describe('CustomersPage', () => {
 
     if (path.endsWith('/status')) {
       await user.click(await screen.findByRole('button', { name: /editar/i }))
-      await user.click(await screen.findByRole('button', { name: /desactivar cliente/i }))
+      await user.click(await within(screen.getByRole('dialog', { name: 'Editar cliente' })).findByRole('button', { name: /desactivar cliente/i }))
       await user.click(screen.getByRole('button', { name: /confirmar/i }))
     } else {
       await user.click(await screen.findByRole('button', { name: /editar/i }))

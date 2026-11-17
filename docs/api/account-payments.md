@@ -33,10 +33,12 @@ Si `saleId` se informa, el pago se asigna a esa venta. Si se omite, se distribuy
 
 Respuesta `201 Created`:
 
-Para vendedores, `balanceBefore` y `balanceAfter` representan la suma de las
-deudas abiertas de sus pedidos para ese cliente. Para administradores mantienen
-el saldo global del cliente. Las actualizaciones contables siempre modifican el
-saldo global persistido, dentro de la misma transacción.
+Para usuarios con alcance asignado, `balanceBefore` y `balanceAfter` representan
+la deuda abierta de sus pedidos para ese cliente, limitada al saldo global
+positivo. Pedidos sin vendedor usan la asignación actual del cliente. El listado,
+la ficha y la consulta de saldo usan la misma definición. Para administradores
+mantienen el saldo global, incluido un posible crédito. Las actualizaciones
+contables siempre modifican el saldo global persistido, en la misma transacción.
 
 ```json
 {
@@ -60,12 +62,21 @@ saldo global persistido, dentro de la misma transacción.
 - `404 NOT_FOUND`: cliente o venta indicada inexistentes o fuera del alcance del vendedor.
 - `409 CONFLICT`: el cliente no tiene deuda positiva suficiente, la asignación excede el saldo o la venta no está abierta.
 
-## Liquidación completa para administradores
+## Pagos combinados y liquidación de cuenta
 
 `POST /api/customers/{customerId}/account-payments/settlement` requiere
-`ADMIN_ALL`, también cuando el usuario tiene `SALE_PAYMENT`. El listado de
-Clientes ofrece «Saldar cuenta» únicamente para saldos positivos y consulta el
-saldo actual antes de abrir el mismo modal de pago utilizado en entregas.
+`ACCOUNT_SETTLE` o `ADMIN_ALL`. Es independiente de `SALE_PAYMENT`: tener uno
+no concede el otro. El listado de Clientes ofrece «Registrar pago» para saldos
+positivos y consulta `GET /api/customers/{customerId}/account-balance` antes de
+abrir el diálogo compartido con entregas. Esta lectura mínima admite
+`ACCOUNT_SETTLE`, `SALE_PAYMENT` o `ADMIN_ALL` y devuelve solo `id`, `name`,
+`balance` y `status`; no exige `CUSTOMER_VIEW` ni habilita ficha o historial.
+
+Sin `ADMIN_ALL` se exige un perfil activo y un cliente asignado. Solo se cobran
+ventas de pedidos propios, o sin vendedor del cliente asignado; las ventas de
+otro vendedor quedan fuera. La liquidación completa salda la deuda visible,
+aunque quede deuda global de otras ventas. Un cliente ajeno devuelve `404` y
+la falta del permiso de operación devuelve `403`.
 
 ```json
 {
@@ -78,7 +89,7 @@ saldo actual antes de abrir el mismo modal de pago utilizado en entregas.
 
 Admite entre 1 y 100 pagos válidos. Cada transferencia exige una referencia no
 vacía de hasta 100 caracteres. Sin `partial` (o con `false`), la suma debe
-coincidir exactamente con el saldo deudor actual, verificado después de bloquear
+coincidir exactamente con el saldo deudor visible actual, verificado después de bloquear
 ventas y cliente en el mismo orden que los pagos individuales. Un saldo cambiado,
 cero, negativo o un importe incompleto/excesivo devuelve `409` sin registrar cobros.
 
@@ -110,4 +121,4 @@ rollback ante un fallo posterior y reintentos sin doble cobro. El flujo de naveg
 verifica 320, 640 y 1280 px, teclado, restauración del foco, estado pendiente y
 actualización del listado filtrado.
 
-Los tests PostgreSQL cubren imputación FIFO, asignación específica, límites por deuda, referencia de transferencia y concurrencia sin doble cobro. También verifican aislamiento entre vendedores con ventas del mismo cliente, saldos restringidos y autorización por API.
+Los tests PostgreSQL cubren imputación FIFO, asignación específica, límites por deuda, referencia de transferencia y concurrencia sin doble cobro. También verifican aislamiento entre vendedores con ventas del mismo cliente, saldos restringidos, pagos combinados con ACCOUNT_SETTLE sin CUSTOMER_VIEW ni SALE_PAYMENT y autorización por API. La matriz de permisos se documenta en [Clientes y cuentas](customer-permissions.md).

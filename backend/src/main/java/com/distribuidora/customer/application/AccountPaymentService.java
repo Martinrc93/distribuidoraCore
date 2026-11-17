@@ -2,6 +2,7 @@ package com.distribuidora.customer.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
+import com.distribuidora.shared.security.PermissionAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -57,7 +58,8 @@ public class AccountPaymentService {
      */
     @Transactional
     public PaymentResult settle(UUID customerId, List<? extends PaymentCommand> payments, boolean allowPartial) {
-        if (!currentUser.isAdmin()) throw new AccessDeniedException("Solo administradores pueden saldar cuentas");
+        PermissionAccess.require("ACCOUNT_SETTLE");
+        currentUser.requireCustomerAccess(customerId);
         if (payments == null || payments.isEmpty() || payments.size() > 100) {
             throw new IllegalArgumentException("Se requiere al menos un pago y se admiten hasta 100");
         }
@@ -73,6 +75,8 @@ public class AccountPaymentService {
         lockCandidateSales(customerId, null);
         BigDecimal balance = jdbc.queryForObject(
             "select balance from customer.customers where id = ? for update", BigDecimal.class, customerId).setScale(4);
+        currentUser.requireCustomerAccess(customerId);
+        if (!currentUser.isAdmin()) balance = new CustomerAccountBalanceQuery(jdbc, currentUser).balance(customerId);
         BigDecimal total = payments.stream().map(PaymentCommand::amount).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(4);
         if (balance.signum() <= 0) {
             throw new IllegalStateException("El cliente no tiene saldo pendiente.");
@@ -99,12 +103,13 @@ public class AccountPaymentService {
         List<Map<String, Object>> candidates = lockCandidateSales(customerId, request.saleId());
         Map<String, Object> customer = jdbc.queryForMap(
             "select id, balance from customer.customers where id = ? for update", customerId);
+        currentUser.requireCustomerAccess(customerId);
         BigDecimal balanceBefore = decimal(customer.get("balance")).setScale(4);
         BigDecimal ledgerBalance = jdbc.queryForObject(
             "select coalesce(sum(case when entry_type = 'DEBIT' then amount else -amount end), 0) "
                 + "from customer.account_ledger where customer_id = ?", BigDecimal.class, customerId).setScale(4);
         BigDecimal globallyAvailable = balanceBefore.max(ZERO).min(ledgerBalance.max(ZERO));
-        BigDecimal visibleBalanceBefore = currentUser.isAdmin() ? balanceBefore : sellerDebtBalance(customerId);
+        BigDecimal visibleBalanceBefore = currentUser.isAdmin() ? balanceBefore : new CustomerAccountBalanceQuery(jdbc, currentUser).balance(customerId);
         BigDecimal amount = request.amount().setScale(4);
         if (amount.compareTo(globallyAvailable) > 0) {
             throw new IllegalStateException("El cobro supera la deuda vigente del cliente");
@@ -166,8 +171,8 @@ public class AccountPaymentService {
 
     private List<Map<String, Object>> lockCandidateSales(UUID customerId, UUID saleId) {
         if (saleId != null) {
-            List<Map<String, Object>> rows = jdbc.queryForList("select id, sale_number, status, total, paid "
-                + "from sale.sales where id = ? and customer_id = ? for update", saleId, customerId);
+            List<Map<String, Object>> rows = jdbc.queryForList("select s.id, s.sale_number, s.status, s.total, s.paid "
+                + "from sale.sales s join orders.orders o on o.id = s.order_id where s.id = ? and s.customer_id = ? for update of o, s", saleId, customerId);
             if (rows.isEmpty()) throw new EmptyResultDataAccessException(1);
             UUID orderId = jdbc.queryForObject("select order_id from sale.sales where id = ?", UUID.class, saleId);
             currentUser.requireOrderAccess(orderId);
@@ -188,23 +193,7 @@ public class AccountPaymentService {
         }
         return jdbc.queryForList("select s.id, s.sale_number, s.status, s.total, s.paid " + source
             + "and exists (select 1 from customer.account_ledger l where l.sale_id = s.id) "
-            + "order by s.created_at, s.id for update of s", parameters.toArray());
-    }
-
-    private BigDecimal sellerDebtBalance(UUID customerId) {
-        UUID sellerId = currentUser.requireSellerProfile();
-        return jdbc.queryForObject("""
-            select coalesce(sum(least(greatest(coalesce(l.balance, 0), 0), greatest(s.total - s.paid, 0))), 0)
-            from sale.sales s
-            join orders.orders o on o.id = s.order_id
-            join customer.customers c on c.id = s.customer_id
-            left join lateral (
-                select sum(case when entry_type = 'DEBIT' then amount else -amount end) as balance
-                from customer.account_ledger where sale_id = s.id
-            ) l on true
-            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
-              and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
-            """, BigDecimal.class, customerId, sellerId, sellerId).setScale(4);
+            + "order by s.created_at, s.id for update of o, s", parameters.toArray());
     }
 
     private void validate(UUID customerId, PaymentCommand request) {

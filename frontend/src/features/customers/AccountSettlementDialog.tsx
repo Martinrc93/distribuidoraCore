@@ -56,7 +56,7 @@ export function AccountSettlementDialog({ customer, onClose, onSaved }: {
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
         try {
-          const current = await apiGet<Customer>(`/api/customers/${customer.id}`)
+          const current = await apiGet<Customer>(`/api/customers/${customer.id}/account-balance`)
           setBalance(Number(current.balance ?? 0))
         } catch { /* Keep the draft available if the balance refresh fails. */ }
       }

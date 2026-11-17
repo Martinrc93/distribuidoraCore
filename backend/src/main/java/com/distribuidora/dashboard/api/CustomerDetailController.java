@@ -14,7 +14,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/customers")
-@PreAuthorize("hasAuthority('ADMIN_ALL')")
 public class CustomerDetailController {
     private final CustomerReadService queries;
 
@@ -23,13 +22,23 @@ public class CustomerDetailController {
     }
 
     @GetMapping("/{customerId}")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_VIEW', 'ADMIN_ALL')")
     public Map<String, Object> customer(@PathVariable UUID customerId) {
         return queries.customer(customerId);
     }
 
     @GetMapping("/{customerId}/orders")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_VIEW', 'ADMIN_ALL')")
     public PageResponse<Map<String, Object>> orders(@PathVariable UUID customerId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
         return queries.orders(customerId, page, size);
     }
+
+    @GetMapping("/assignment-context")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_CREATE', 'CUSTOMER_EDIT', 'ADMIN_ALL')")
+    public Map<String, Object> assignmentContext() { return queries.assignmentContext(); }
+
+    @GetMapping("/{customerId}/account-balance")
+    @PreAuthorize("hasAnyAuthority('ACCOUNT_SETTLE', 'SALE_PAYMENT', 'ADMIN_ALL')")
+    public Map<String, Object> accountBalance(@PathVariable UUID customerId) { return queries.accountBalance(customerId); }
 }

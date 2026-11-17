@@ -48,7 +48,7 @@ public class ExportDocumentController {
 
     /** Customer debt statement in A4 ({@code format=a4}, default) or 80 mm ticket ({@code format=ticket}). */
     @GetMapping("/customers/{customerId}/statement")
-    @PreAuthorize("hasAnyAuthority('SALE_PAYMENT', 'ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_STATEMENT_EXPORT', 'ADMIN_ALL')")
     public ResponseEntity<byte[]> statement(@PathVariable UUID customerId, @RequestParam(defaultValue = "a4") String format) {
         if (!"a4".equals(format) && !"ticket".equals(format)) throw new IllegalArgumentException("format debe ser a4 o ticket");
         AccountStatementModel model = statements.load(customerId);

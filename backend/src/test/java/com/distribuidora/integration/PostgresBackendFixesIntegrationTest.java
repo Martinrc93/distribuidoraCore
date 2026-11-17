@@ -2021,6 +2021,131 @@ class PostgresBackendFixesIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("accessToken").asText();
     }
 
+    @Test
+    void customerActionsAndAccountCollectionStayInsideAssignedData() throws Exception {
+        UUID admin = createUser("customer-actions-admin"); assignRole(admin, "ADMIN"); authenticateOrderActor(admin, "ADMIN_ALL");
+        UUID profile = createSeller("customer-actions"); UUID otherProfile = createSeller("customer-actions-other");
+        UUID actor = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        UUID customer = createCustomer(profile); UUID onlyForeignDebt = createCustomer(profile); UUID foreignCustomer = createCustomer(otherProfile);
+        String prefix = "CUSTOMER-SCOPE-" + UUID.randomUUID().toString().substring(0, 8);
+        for (UUID id : List.of(customer, onlyForeignDebt, foreignCustomer)) jdbc.update("update customer.customers set business_name = ? where id = ?", prefix + id, id);
+        AccountDebtSale own = createAccountDebtSale(customer, new BigDecimal("100"), 7200);
+        AccountDebtSale inherited = createAccountDebtSale(customer, new BigDecimal("50"), 3600);
+        AccountDebtSale other = createAccountDebtSale(customer, new BigDecimal("250"), 10800);
+        AccountDebtSale hidden = createAccountDebtSale(onlyForeignDebt, new BigDecimal("25"), 3600);
+        jdbc.update("update orders.orders set seller_id = ? where id = ?", profile, own.orderId());
+        for (UUID id : List.of(other.orderId(), hidden.orderId())) jdbc.update("update orders.orders set seller_id = ? where id = ?", otherProfile, id);
+        var role = roleAdminService.create("CUSTOMER_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(), "Clientes asignados", Set.of(
+            "CUSTOMER_VIEW", "CUSTOMER_CREATE", "CUSTOMER_EDIT", "CUSTOMER_STATUS_CHANGE", "CUSTOMER_PRICE_LIST_CHANGE", "ACCOUNT_SETTLE", "CUSTOMER_STATEMENT_EXPORT"));
+        roles.add(role.id()); auditResources.add(role.code()); assignRole(actor, role.code());
+        String token = loginHttp(email(actor));
+        mockMvc.perform(get("/api/customers").param("search", prefix).param("hasBalance", "true").param("size", "1").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1)).andExpect(jsonPath("$.content[0].balance").value(150));
+        mockMvc.perform(get("/api/customers/{id}", customer).header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andExpect(jsonPath("$.balance").value(150));
+        mockMvc.perform(get("/api/customers/{id}", onlyForeignDebt).header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andExpect(jsonPath("$.balance").value(0));
+        mockMvc.perform(get("/api/customers/{id}/orders", customer).header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
+        mockMvc.perform(get("/api/customers/assignment-context").header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andExpect(jsonPath("$.id").value(profile.toString()));
+        mockMvc.perform(get("/api/sellers").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/zones").header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        var created = mockMvc.perform(post("/api/customers").header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("businessName", prefix + "-new")))).andExpect(status().isCreated()).andReturn();
+        UUID createdId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).path("id").asText()); customers.add(createdId);
+        assertThat(jdbc.queryForObject("select seller_id from customer.customers where id = ?", UUID.class, createdId)).isEqualTo(profile);
+        mockMvc.perform(post("/api/customers").header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("businessName", "Rechazado", "sellerId", otherProfile)))).andExpect(status().isForbidden());
+        String contact = objectMapper.writeValueAsString(Map.of("businessName", prefix + "-edited", "sellerId", profile));
+        mockMvc.perform(put("/api/customers/{id}", customer).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(contact)).andExpect(status().isNoContent());
+        mockMvc.perform(put("/api/customers/{id}", foreignCustomer).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(contact)).andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/customers/{id}", customer).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("businessName", "Rechazado", "sellerId", otherProfile)))).andExpect(status().isForbidden());
+        UUID general = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL'", UUID.class);
+        for (UUID id : List.of(customer, foreignCustomer)) {
+            boolean accessible = id.equals(customer);
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/customers/{id}/price-list", id).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("priceListId", general)))).andExpect(accessible ? status().isNoContent() : status().isNotFound());
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/customers/{id}/status", id).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"INACTIVE\"}")).andExpect(accessible ? status().isNoContent() : status().isNotFound());
+            for (String path : List.of("/api/customers/" + id, "/api/customers/" + id + "/orders", "/api/customers/" + id + "/account-balance", "/api/documents/customers/" + id + "/statement")) {
+                mockMvc.perform(get(path).header("Authorization", "Bearer " + token)).andExpect(accessible ? status().isOk() : status().isNotFound());
+            }
+        }
+        authenticateOrderActor(admin, "ADMIN_ALL"); roleAdminService.replacePermissions(role.code(), Set.of("ACCOUNT_SETTLE"));
+        mockMvc.perform(get("/api/customers").header("Authorization", "Bearer " + token)).andExpect(status().isUnauthorized());
+        String collector = loginHttp(email(actor));
+        mockMvc.perform(get("/api/customers/{id}", customer).header("Authorization", "Bearer " + collector)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/customers/{id}/account-balance", customer).header("Authorization", "Bearer " + collector)).andExpect(status().isOk()).andExpect(jsonPath("$.balance").value(150)).andExpect(jsonPath("$.email").doesNotExist());
+        mockMvc.perform(post("/api/customers/{id}/account-payments", customer).header("Authorization", "Bearer " + collector).contentType(MediaType.APPLICATION_JSON).content("{\"amount\":1,\"method\":\"CASH\"}")).andExpect(status().isForbidden());
+        String excess = "{\"partial\":true,\"payments\":[{\"amount\":151,\"method\":\"CASH\"}]}";
+        mockMvc.perform(post("/api/customers/{id}/account-payments/settlement", customer).header("Authorization", "Bearer " + collector).contentType(MediaType.APPLICATION_JSON).content(excess)).andExpect(status().isConflict());
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where customer_id = ?", Long.class, customer)).isZero();
+        String partial = "{\"partial\":true,\"payments\":[{\"amount\":20,\"method\":\"CASH\"}]}";
+        mockMvc.perform(post("/api/customers/{id}/account-payments/settlement", foreignCustomer).header("Authorization", "Bearer " + collector).contentType(MediaType.APPLICATION_JSON).content(partial)).andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/customers/{id}/account-payments/settlement", customer).header("Authorization", "Bearer " + collector).contentType(MediaType.APPLICATION_JSON).content(partial))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.balanceBefore").value(150)).andExpect(jsonPath("$.balanceAfter").value(130));
+        String complete = "{\"payments\":[{\"amount\":80,\"method\":\"CASH\"},{\"amount\":50,\"method\":\"BANK_TRANSFER\",\"transferReference\":\"TEST-TRANSFER\"}]}";
+        mockMvc.perform(post("/api/customers/{id}/account-payments/settlement", customer).header("Authorization", "Bearer " + collector).contentType(MediaType.APPLICATION_JSON).content(complete)).andExpect(status().isCreated()).andExpect(jsonPath("$.balanceAfter").value(0));
+        assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("250");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, other.saleId())).isZero();
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, own.saleId())).isEqualByComparingTo("100");
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, inherited.saleId())).isEqualByComparingTo("50");
+        jdbc.update("update seller.seller_profiles set status = 'INACTIVE' where id = ?", profile);
+        mockMvc.perform(get("/api/customers/{id}/account-balance", customer).header("Authorization", "Bearer " + collector)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void customerContactPermissionPreservesTheDefaultListButCannotChangeOrClearIt() throws Exception {
+        UUID profile = createSeller("customer-contact-permission");
+        UUID actor = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        assignRole(actor, createRoleWithPermission("CUSTOMER_EDIT"));
+        assignRole(actor, createRoleWithPermission("CUSTOMER_CREATE"));
+        UUID customer = createCustomer(profile);
+        UUID general = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL'", UUID.class);
+        UUID other = jdbc.queryForObject("select id from catalog.price_lists where code = 'LISTA_2'", UUID.class);
+        jdbc.update("update customer.customers set price_list_id = ? where id = ?", general, customer);
+        String token = loginHttp(email(actor));
+        String contact = objectMapper.writeValueAsString(Map.of("businessName", "Contact updated", "email", "contact@example.test", "priceListId", general));
+        mockMvc.perform(put("/api/customers/{id}", customer).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(contact))
+            .andExpect(status().isNoContent());
+        for (String body : List.of(
+            objectMapper.writeValueAsString(Map.of("businessName", "Unauthorized change", "priceListId", other)),
+            "{\"businessName\":\"Unauthorized clear\",\"priceListId\":null}")) {
+            mockMvc.perform(put("/api/customers/{id}", customer).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+        }
+        assertThat(jdbc.queryForMap("select business_name, email, seller_id, price_list_id from customer.customers where id = ?", customer))
+            .containsEntry("business_name", "Contact updated").containsEntry("email", "contact@example.test")
+            .containsEntry("seller_id", profile).containsEntry("price_list_id", general);
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where resource_id = ? and operation = 'CUSTOMER_UPDATE'", Long.class, customer.toString())).isEqualTo(1);
+        String creationName = "Unauthorized default " + UUID.randomUUID();
+        mockMvc.perform(post("/api/customers").header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("businessName", creationName, "priceListId", general))))
+            .andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("select count(*) from customer.customers where business_name = ?", Long.class, creationName)).isZero();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"CUSTOMER_VIEW", "CUSTOMER_CREATE", "CUSTOMER_EDIT", "CUSTOMER_STATUS_CHANGE", "CUSTOMER_PRICE_LIST_CHANGE", "ACCOUNT_SETTLE", "CUSTOMER_STATEMENT_EXPORT"})
+    void customerPermissionsDoNotGrantOtherActions(String permission) throws Exception {
+        UUID profile = createSeller("customer-permission");
+        UUID actor = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        assignRole(actor, createRoleWithPermission(permission)); String token = loginHttp(email(actor)); UUID missing = UUID.randomUUID();
+        var creation = mockMvc.perform(post("/api/customers").header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content("{\"businessName\":\"Permission fixture\"}"))
+            .andExpect(permission.equals("CUSTOMER_CREATE") ? status().isCreated() : status().isForbidden()).andReturn();
+        if (permission.equals("CUSTOMER_CREATE")) customers.add(UUID.fromString(objectMapper.readTree(creation.getResponse().getContentAsString()).path("id").asText()));
+        mockMvc.perform(get("/api/customers/{id}", missing).header("Authorization", "Bearer " + token)).andExpect(permission.equals("CUSTOMER_VIEW") ? status().isNotFound() : status().isForbidden());
+        mockMvc.perform(put("/api/customers/{id}", missing).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content("{\"businessName\":\"Fixture\"}"))
+            .andExpect(permission.equals("CUSTOMER_EDIT") ? status().isNotFound() : status().isForbidden());
+        for (String action : List.of("status", "price-list")) {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/customers/{id}/{action}", missing, action).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                .content(action.equals("status") ? "{\"status\":\"INACTIVE\"}" : "{\"priceListId\":null}"))
+                .andExpect(permission.equals(action.equals("status") ? "CUSTOMER_STATUS_CHANGE" : "CUSTOMER_PRICE_LIST_CHANGE") ? status().isNotFound() : status().isForbidden());
+        }
+        mockMvc.perform(post("/api/customers/{id}/account-payments/settlement", missing).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content("{\"payments\":[{\"amount\":1,\"method\":\"CASH\"}]}"))
+            .andExpect(permission.equals("ACCOUNT_SETTLE") ? status().isNotFound() : status().isForbidden());
+        mockMvc.perform(get("/api/documents/customers/{id}/statement", missing).header("Authorization", "Bearer " + token))
+            .andExpect(permission.equals("CUSTOMER_STATEMENT_EXPORT") ? status().isNotFound() : status().isForbidden());
+    }
+
     private UUID createSeller(String suffix) {
         UUID userId = createUser("seller-" + suffix);
         UUID sellerId = UUID.randomUUID();

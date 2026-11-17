@@ -347,8 +347,11 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 
 ### Ficha del cliente
 
-El listado ofrece «Ver cliente» y «Editar» solo para administradores,
-dentro de `.table-row-actions`. Abre
+El listado autoriza cada acción por separado mediante su permiso o ADMIN_ALL:
+«Ver cliente» (CUSTOMER_VIEW), alta (CUSTOMER_CREATE), edición (CUSTOMER_EDIT),
+estado (CUSTOMER_STATUS_CHANGE), lista predeterminada (CUSTOMER_PRICE_LIST_CHANGE),
+cobro (ACCOUNT_SETTLE) y documentos (CUSTOMER_STATEMENT_EXPORT). Las acciones de
+fila usan `.table-row-actions`. «Ver cliente» abre
 `/customers/{customerId}` como página con `PageHeader`, `Panel` y `StatCard`:
 datos de contacto, vendedor, lista, estado, fecha de alta y saldo actual. La
 tarjeta de saldo se alinea arriba sin estirarse a la altura de los datos.
@@ -356,16 +359,34 @@ Los datos usan un `dl.customer-detail-fields` con dos columnas, etiquetas de
 `11px`, valores de `13px` y ajuste de nombres/direcciones largos. A `760px`
 los datos y el resumen de saldo se apilan en una columna.
 
-Los administradores también tienen «Registrar pago» en las filas con saldo deudor
-positivo, incluidos clientes inactivos al seleccionar ese filtro. Consulta el
-saldo actual antes de abrir el diálogo y conserva filtros y paginación. Reutiliza
+La ficha muestra «Saldo de cuenta corriente» al administrador y «Saldo de tus
+ventas» a usuarios con alcance asignado. Los documentos requieren su permiso
+propio; en la fila permiten imprimir/descargar A4 sin acceso a ficha, y en la ficha
+se mantienen A4 y ticket. Reutilizan `DocumentActions`.
+
+Alta y edición usan `FormModal` y los estilos existentes del formulario de cliente,
+con foco contenido, Escape/descarte, protección de salida y campos bloqueados al
+guardar. El vendedor asignado usa `SellerSelect`: los administradores cargan todas
+las páginas autorizadas; otros roles ven solo su perfil propio, seleccionado y
+bloqueado. Un error de asignación impide guardar y ofrece reintento sin perder el
+borrador. La lista predeterminada queda bloqueada sin su permiso y conserva el
+valor histórico, incluso inactivo. «Cambiar lista» abre un `FormModal` compacto
+independiente de la edición general; cambiarla no modifica pedidos históricos.
+Los metadatos ofrecen reintento. El estado usa `ConfirmationDialog`, con acción
+`danger` al desactivar y principal al activar. Al terminar vuelve al botón de
+estado o a la búsqueda si el cliente salió del filtro activo.
+
+«Registrar pago» aparece con ACCOUNT_SETTLE en filas con saldo deudor positivo,
+incluidos clientes inactivos al seleccionar ese filtro. Consulta la lectura mínima
+`account-balance`, sin exigir ficha, y conserva filtros y paginación. Reutiliza
 `DeliveryAttemptDialog` en modo `account`: muestra el cliente, el saldo de cuenta
 corriente y los mismos controles y estilos de pago de las entregas, sin resultado
 de entrega ni selección de deuda anterior; el título es «Pago de cuenta corriente». Precarga el saldo completo en efectivo;
 permite combinar efectivo y transferencia y exige el número de transferencia.
 «Pagar total» completa el importe. «Confirmar pago» acepta el total o una parte (sin superar la
-deuda; un pago parcial envía `partial: true` e informa el saldo pendiente). La API exclusiva de administradores registra todos los pagos en una sola
-transacción e imputa primero las deudas más antiguas. Si cambió el saldo, muestra
+deuda; un pago parcial envía `partial: true` e informa el saldo pendiente). La API registra todos los pagos en una sola
+transacción e imputa primero las deudas visibles más antiguas. Una liquidación
+asignada informa «Deuda asignada saldada correctamente». Si cambió el saldo, muestra
 el error, actualiza el saldo y conserva el borrador para corregirlo. Al guardar
 refresca clientes, ventas, pedidos, pagos y métricas. El diálogo conserva el foco,
 Escape, bloqueo durante guardado y adaptación móvil del pago de entregas; al
@@ -383,9 +404,11 @@ volver. Carga y errores se anuncian y ofrecen reintento; un error del historial
 conserva los datos del cliente. Cliente inexistente o ajeno no muestra pedidos.
 El listado de Clientes está disponible para vendedores en escritorio y móvil,
 con búsqueda, estado y saldo; la API limita filas y conteos a sus clientes
-asignados. El filtro de vendedor y las acciones son exclusivos de `ADMIN_ALL`.
-La ficha y el historial también exigen `ADMIN_ALL`: entrar a la ficha por URL
-como vendedor redirige a Pedidos sin consultarla. Los selectores de cliente para pedidos y
+asignados. Saldo, filtro de saldo y conteos usan solo deuda propia para usuarios
+sin alcance global; el administrador conserva saldo global y créditos.
+El filtro global de vendedor sigue siendo exclusivo de `ADMIN_ALL`.
+La ruta de ficha exige CUSTOMER_VIEW o ADMIN_ALL; sin permiso redirige a Pedidos
+sin consultarla. El historial también filtra pedidos ajenos. Los selectores de cliente para pedidos y
 pagos mantienen sus opciones autorizadas y el acceso al último pedido.
 
 ### Compras (pedidos a proveedores)

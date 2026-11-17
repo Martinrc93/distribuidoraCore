@@ -3,7 +3,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { getAccessToken, login } from '../shared/api/client'
-import { hasAuthority } from '../shared/auth/permissions'
+import { hasAuthority, hasPermission } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
 import { EmptyState } from '../shared/components/EmptyState'
 import { PageHeader } from '../shared/components/PageHeader'
@@ -35,6 +35,10 @@ function RequireAuth() {
 
 function RequireAdmin({ children }: { children: ReactNode }) {
   return hasAuthority('ADMIN_ALL') ? children : <Navigate to="/orders" replace />
+}
+
+function RequireCustomerView() {
+  return hasPermission('CUSTOMER_VIEW') ? <CustomerDetailPage /> : <Navigate to="/orders" replace />
 }
 
 function RequireOrderCreate() {
@@ -91,7 +95,7 @@ export default function App() {
         <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/suppliers" element={<RequireAdmin><SuppliersPage /></RequireAdmin>} />
-        <Route path="/customers/:customerId" element={<RequireAdmin><CustomerDetailPage /></RequireAdmin>} />
+        <Route path="/customers/:customerId" element={<RequireCustomerView />} />
         <Route path="/products" element={<RequireAdmin><ProductsPage /></RequireAdmin>} />
         <Route path="/catalog" element={<RequireAdmin><CatalogAdminPage /></RequireAdmin>} />
         <Route path="/price-lists" element={<RequireAdmin><PriceListsPage /></RequireAdmin>} />

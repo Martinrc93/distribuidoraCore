@@ -21,6 +21,13 @@ import static org.mockito.Mockito.mock;
 
 @Testcontainers
 class CustomerNumberCapacityPostgresTest {
+    @org.junit.jupiter.api.BeforeEach void authenticate() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+            new org.springframework.security.authentication.TestingAuthenticationToken(UUID.randomUUID().toString(), "fixture", "ADMIN_ALL"));
+    }
+    @org.junit.jupiter.api.AfterEach void clearAuthentication() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
     @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Test void upgradesWithoutRenumberingAndPreservesLongNumbersInCreationReadsAndOrders() {
@@ -37,8 +44,8 @@ class CustomerNumberCapacityPostgresTest {
         jdbc.queryForObject("select setval('customer.customer_number_seq', 9999)", Long.class);
 
         Flyway.configure().dataSource(source).load().migrate();
-        var commands = new CustomerCommandService(jdbc, mock(AuditService.class));
-        var details = new CustomerReadService(jdbc, mock(CurrentUserAccess.class));
+        var commands = new CustomerCommandService(jdbc, mock(AuditService.class), new CurrentUserAccess(jdbc));
+        var details = new CustomerReadService(jdbc, new CurrentUserAccess(jdbc));
         var reads = new ReadQueryService(jdbc);
         assertThat(details.customer(smallCustomer).get("number")).isEqualTo("0001");
         assertThat(details.customer(existingCustomer).get("number")).isEqualTo("9999");

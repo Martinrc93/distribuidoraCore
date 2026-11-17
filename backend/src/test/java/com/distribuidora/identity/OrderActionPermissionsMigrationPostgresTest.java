@@ -33,7 +33,7 @@ class OrderActionPermissionsMigrationPostgresTest {
                 jdbc.update("insert into identity.refresh_tokens(id, user_id, token_hash, expires_at, created_at) values (?, ?, ?, now() + interval '1 hour', now())", UUID.randomUUID(), user, "fixture-" + user);
             }
             jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", affected, role);
-            var flyway = Flyway.configure().dataSource(url, username, password).load();
+            var flyway = Flyway.configure().dataSource(url, username, password).target("43").load();
             assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
             assertThat(jdbc.queryForList("select p.code from identity.role_permissions rp join identity.permissions p on p.id = rp.permission_id where rp.role_id = ?", String.class, role))
                 .containsExactlyInAnyOrder("ORDER_CREATE", "ORDER_DOCUMENT_EXPORT", "ORDER_NOTIFY");

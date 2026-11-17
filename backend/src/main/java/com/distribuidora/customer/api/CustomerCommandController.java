@@ -16,25 +16,25 @@ public class CustomerCommandController {
     public CustomerCommandController(CustomerCommandService service) { this.service = service; }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_CREATE', 'ADMIN_ALL')")
     public ResponseEntity<IdResponse> create(@Valid @RequestBody CustomerPayload body) {
         return ResponseEntity.status(201).body(new IdResponse(service.create(body.input())));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_EDIT', 'ADMIN_ALL')")
     public ResponseEntity<Void> update(@PathVariable UUID id, @Valid @RequestBody CustomerPayload body) {
         service.update(id, body.input()); return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_STATUS_CHANGE', 'ADMIN_ALL')")
     public ResponseEntity<Void> status(@PathVariable UUID id, @RequestBody StatusPayload body) {
         service.setStatus(id, body.status()); return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{customerId}/price-list")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_PRICE_LIST_CHANGE', 'ADMIN_ALL')")
     public ResponseEntity<Void> assignPriceList(
         @PathVariable UUID customerId,
         @RequestBody PriceListPayload body

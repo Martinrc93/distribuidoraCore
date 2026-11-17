@@ -139,8 +139,11 @@ public class ReadQueryService {
             throw new IllegalArgumentException("El estado del cliente debe ser ACTIVE o INACTIVE");
         }
         String term = like(search);
+        var balance = new com.distribuidora.customer.application.CustomerAccountBalanceQuery(jdbc, currentUser).projection();
+        String source = " from (select c.*, " + balance.sql() + " as scoped_balance from customer.customers c) c "
+            + "left join seller.seller_profiles sp on sp.id = c.seller_id ";
         String where = " where (lower(c.business_name) like ? or lower(c.tax_id) like ?)";
-        List<Object> parameters = new ArrayList<>(List.of(term, term));
+        List<Object> parameters = new ArrayList<>(balance.parameters()); parameters.add(term); parameters.add(term);
         if (sellerScoped()) {
             where += " and c.seller_id = ?";
             parameters.add(currentUser.requireSellerProfile());
@@ -149,7 +152,7 @@ public class ReadQueryService {
             where += " and c.seller_id = ?";
             parameters.add(sellerId);
         }
-        if (hasBalance) where += " and c.balance <> 0";
+        if (hasBalance) where += " and c.scoped_balance <> 0";
         if (!state.isEmpty()) {
             where += " and c.status = ?";
             parameters.add(state);
@@ -157,10 +160,8 @@ public class ReadQueryService {
         return page("""
             select c.id, lpad(cast(c.customer_number as varchar), greatest(4, length(cast(c.customer_number as varchar))), '0') as "number", c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                    c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller,
-                   c.balance, c.status
-            from customer.customers c
-            left join seller.seller_profiles sp on sp.id = c.seller_id
-            """ + where + " order by c.business_name, c.id", "select count(*) from customer.customers c" + where,
+                   c.scoped_balance as balance, c.status
+            """ + source + where + " order by c.business_name, c.id", "select count(*)" + source + where,
             page, size, parameters.toArray());
     }
 

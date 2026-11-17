@@ -26,7 +26,10 @@ descarga, con el componente compartido `DocumentActions`.
 
 `GET /api/documents/customers/{customerId}/statement?format=a4|ticket`
 
-- Requiere `SALE_PAYMENT` o `ADMIN_ALL`. Un vendedor solo ve clientes asignados y
+- Requiere `CUSTOMER_STATEMENT_EXPORT` o `ADMIN_ALL`, independientemente de
+  `CUSTOMER_VIEW` y `SALE_PAYMENT`. V44 conserva el acceso previo a documentos
+  concediendo el permiso a los roles existentes que tenían `SALE_PAYMENT`.
+  Un vendedor solo ve clientes asignados y
   ventas de sus pedidos (o de pedidos sin vendedor de sus clientes), igual que
   `GET /api/customers/{customerId}/debts`.
 - Lista las ventas `CONFIRMED`/`DELIVERED` con saldo pendiente, de la más antigua a

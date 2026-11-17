@@ -36,17 +36,22 @@ GET /api/customers?page=0&size=20&search=&sellerId=<uuid>&hasBalance=true&status
 ```
 
 `search` busca por nombre o identificación; `sellerId` filtra por vendedor
-asignado. `hasBalance=true` incluye saldos de cuenta corriente distintos de cero,
-tanto deuda como saldo a favor. `status` admite `ACTIVE`, `INACTIVE` o vacío para
+asignado. `hasBalance=true` incluye saldos visibles distintos de cero: para
+administradores, deuda o saldo a favor global; para usuarios con alcance asignado,
+solo deuda de sus pedidos, limitada al saldo global positivo. Pedidos sin vendedor
+usan la asignación actual del cliente. `status` admite `ACTIVE`, `INACTIVE` o vacío para
 todos. Omitir estos filtros conserva la consulta completa para otros consumidores;
 la pantalla de clientes envía `ACTIVE` por defecto y ofrece Activo/Inactivo/Todos.
 Un vendedor autenticado sigue limitado a sus clientes, incluso con otro
 `sellerId`. Todos los filtros se combinan antes de paginar y calcular los totales.
 Un UUID, booleano o estado inválido devuelve `400`.
 
-El listado de Clientes está habilitado para vendedores como consulta de sus
-clientes asignados. La pantalla no ofrece alta, edición, cambios de estado ni
-acceso a ficha para esos usuarios; la ficha e historial mantienen `ADMIN_ALL`.
+El listado básico de Clientes está habilitado para usuarios autenticados dentro
+de su alcance. Alta, edición, estado, lista predeterminada, ficha, pagos combinados
+y documentos se autorizan por separado; ver [matriz de permisos](customer-permissions.md).
+Otorgar estas acciones no habilita el filtro global de vendedores ni clientes ajenos.
+El cálculo del saldo y `hasBalance` se aplican antes de contar y paginar: una deuda
+exclusiva de otro vendedor no vuelve visible una fila en el filtro con saldo.
 
 El alcance se obtiene del perfil activo del usuario autenticado: omitir filtros
 o enviar IDs de otro vendedor o cliente no amplía el acceso. Ventas y pedidos
@@ -82,15 +87,26 @@ pagos parciales o la cancelación de la deuda se reflejan en el historial.
 El tamaño se limita a `1–100` y la página
 negativa se normaliza a cero.
 
-Ambos endpoints requieren `ADMIN_ALL`. Los vendedores reciben `403` sin
-consultar la ficha ni el historial. Cliente inexistente devuelve `404`, no un
-historial vacío. Un UUID mal formado devuelve `400`. La lectura paginada de
+Ambos endpoints requieren `CUSTOMER_VIEW` o `ADMIN_ALL`. Sin alcance global,
+la ficha muestra el saldo de las ventas propias y el historial filtra pedidos
+propios o sin vendedor del cliente asignado antes de contar y paginar. Cliente
+inexistente o ajeno devuelve `404`, no un historial vacío. Un UUID mal formado
+devuelve `400`. La lectura paginada de
 clientes para selectores y `GET /api/customers/{customerId}/last-order`
 conservan el alcance del vendedor y siguen disponibles para crear pedidos.
 
 La acción «Ver cliente» del listado abre `/customers/{customerId}`, con los datos,
 saldo actual y pedidos. Permite abrir el detalle de cada pedido, paginar el
 historial y regresar al listado conservando sus filtros.
+
+`GET /api/customers/{customerId}/account-balance` requiere `ACCOUNT_SETTLE`,
+`SALE_PAYMENT` o `ADMIN_ALL`, independientemente de `CUSTOMER_VIEW`. Devuelve
+solo `id`, `name`, `balance` y `status` con la misma definición de saldo y alcance.
+
+`GET /api/customers/assignment-context` requiere `CUSTOMER_CREATE`,
+`CUSTOMER_EDIT` o `ADMIN_ALL`. Devuelve únicamente el perfil propio activo
+(`id`, `displayName`, `email`); sin él devuelve `404`. No es un catálogo global.
+Los formularios asignados usan esta lectura y el selector compartido bloqueado.
 
 ## Listado de pedidos por fecha
 

@@ -19,7 +19,7 @@ public class ZoneController {
     public ZoneController(ZoneService service) { this.service = service; }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('CUSTOMER_CREATE', 'CUSTOMER_EDIT', 'ADMIN_ALL')")
     public List<ZoneService.Zone> list() { return service.list(); }
 
     @PostMapping

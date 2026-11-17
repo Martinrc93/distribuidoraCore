@@ -93,7 +93,7 @@ class AccountPaymentControllerTest {
     void settlementRequiresAdminAuthority() throws Exception {
         var method = AccountPaymentController.class.getDeclaredMethod("settle", UUID.class,
             AccountPaymentDtos.SettlementRequest.class);
-        assertThat(method.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+        assertThat(method.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAnyAuthority('ACCOUNT_SETTLE', 'ADMIN_ALL')");
     }
 
     @Test

@@ -16,7 +16,7 @@ class ExportDocumentControllerTest {
         assertThat(ExportDocumentController.class.getDeclaredMethod("priceList", UUID.class, UUID.class, UUID.class, String.class)
             .getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')");
         assertThat(ExportDocumentController.class.getDeclaredMethod("statement", UUID.class, String.class)
-            .getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAnyAuthority('SALE_PAYMENT', 'ADMIN_ALL')");
+            .getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAnyAuthority('CUSTOMER_STATEMENT_EXPORT', 'ADMIN_ALL')");
     }
 
     @Test

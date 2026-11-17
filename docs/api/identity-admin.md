@@ -111,8 +111,9 @@ borrador y exige cerrar/recargar antes de otra edición.
 
 `ADMIN_ALL` mantiene acceso completo aunque se quiten permisos individuales.
 Asignar un permiso no cambia el rol ni abre pantallas reservadas a administradores.
-El desacoplamiento de `ADMIN_ALL` se inició en 5.4 por Pedidos y ventas;
-ver [permisos comerciales](commerce-permissions.md). El resto de áreas sigue pendiente.
+El desacoplamiento de `ADMIN_ALL` en 5.4 incluye [Pedidos y ventas](commerce-permissions.md)
+y [Clientes y cuentas corrientes](customer-permissions.md). Stock/catálogo,
+compras/proveedores y administración siguen pendientes.
 
 ### Alta de roles personalizados (Fase 5.3)
 
@@ -138,7 +139,11 @@ protección del acceso directo por ID, número y documentos. No reciben acceso
 global por seleccionar permisos. «Nuevo pedido» y su ruta requieren `ORDER_CREATE`
 o `ADMIN_ALL`. Las pantallas reservadas a administradores mantienen sus reglas
 hasta su trabajo por área de 5.4. Las acciones de Pedidos y ventas ya usan
-permisos específicos sin ampliar el alcance asignado.
+permisos específicos sin ampliar el alcance asignado, al igual que Clientes y
+cuentas corrientes. V44 añade siete permisos de cliente: inicialmente solo ADMIN,
+salvo exportación del estado de deuda, que conserva el acceso de roles existentes
+con SALE_PAYMENT. Se pueden asignar desde el catálogo; crear clientes con alcance
+asignado los vincula al perfil propio y no autoriza reasignaciones globales.
 
 V42 agrega `ORDER_PREPARE` (asignado inicialmente a `ADMIN` y `SELLER`) y
 `ORDER_REVIEW` (solo `ADMIN`). Son permisos propios, integrados a este catálogo.
