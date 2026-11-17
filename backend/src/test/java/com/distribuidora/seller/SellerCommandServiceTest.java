@@ -109,7 +109,8 @@ class SellerCommandServiceTest {
         assertThat(sellerId).isNotNull();
         // Verify role assignment
         verify(jdbc).update(
-            eq("insert into identity.user_roles(user_id, role_id) select ?, id from identity.roles where code = 'SELLER' on conflict do nothing"),
+            org.mockito.ArgumentMatchers.contains("r.code not in ('ADMIN', 'SELLER')"),
+            eq(userId),
             eq(userId)
         );
         // Verify audit

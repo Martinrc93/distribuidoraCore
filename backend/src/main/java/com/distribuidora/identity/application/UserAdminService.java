@@ -69,16 +69,15 @@ public class UserAdminService {
             || request.temporaryPassword().isBlank()) {
             throw new IllegalArgumentException("email, temporaryPassword y role son obligatorios");
         }
-        if (!"ADMIN".equals(request.roleCode()) && !"SELLER".equals(request.roleCode())) {
-            throw new IllegalArgumentException("role debe ser ADMIN o SELLER");
-        }
+        validateRoleCode(request.roleCode());
         String email = request.email().trim().toLowerCase(java.util.Locale.ROOT);
         if (exists(email)) throw new IllegalStateException("El email ya está registrado");
-        if ("SELLER".equals(request.roleCode())
+        if (!"ADMIN".equals(request.roleCode())
             && (request.displayName() == null || request.displayName().isBlank())) {
-            throw new IllegalArgumentException("displayName es obligatorio para SELLER");
+            throw new IllegalArgumentException("El nombre para mostrar es obligatorio para roles con datos asignados");
         }
 
+        UUID roleId = jdbc.queryForObject("select id from identity.roles where code = ?", UUID.class, request.roleCode());
         UUID userId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
         try {
@@ -87,10 +86,8 @@ public class UserAdminService {
                     created_at, updated_at, version)
                 values (?, ?, ?, 'ACTIVE', 0, ?, ?, 0)
                 """, userId, email, passwordEncoder.encode(request.temporaryPassword()), now, now);
-            UUID roleId = jdbc.queryForObject("select id from identity.roles where code = ?", UUID.class,
-                request.roleCode());
             jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", userId, roleId);
-            if ("SELLER".equals(request.roleCode())) {
+            if (!"ADMIN".equals(request.roleCode())) {
                 jdbc.update("insert into seller.seller_profiles(id, user_id, display_name, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
                     UUID.randomUUID(), userId, request.displayName().trim(), now);
             }
@@ -108,18 +105,17 @@ public class UserAdminService {
         if (request == null || request.roleCode() == null || request.email() == null || request.email().isBlank()) {
             throw new IllegalArgumentException("email y role son obligatorios");
         }
-        if (!"ADMIN".equals(request.roleCode()) && !"SELLER".equals(request.roleCode())) {
-            throw new IllegalArgumentException("role debe ser ADMIN o SELLER");
-        }
+        validateRoleCode(request.roleCode());
         String email = request.email().trim().toLowerCase(java.util.Locale.ROOT);
         if (exists(email)) {
             throw new IllegalStateException("El email ya está registrado");
         }
-        if ("SELLER".equals(request.roleCode())
+        if (!"ADMIN".equals(request.roleCode())
             && (request.displayName() == null || request.displayName().isBlank())) {
-            throw new IllegalArgumentException("displayName es obligatorio para SELLER");
+            throw new IllegalArgumentException("El nombre para mostrar es obligatorio para roles con datos asignados");
         }
 
+        UUID roleId = jdbc.queryForObject("select id from identity.roles where code = ?", UUID.class, request.roleCode());
         UUID userId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
         String unmatchableHash = "!INVITED!" + UUID.randomUUID();
@@ -131,11 +127,9 @@ public class UserAdminService {
                 values (?, ?, ?, 'INVITED', 0, ?, ?, 0)
                 """, userId, email, unmatchableHash, now, now);
 
-            UUID roleId = jdbc.queryForObject("select id from identity.roles where code = ?", UUID.class,
-                request.roleCode());
             jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", userId, roleId);
 
-            if ("SELLER".equals(request.roleCode())) {
+            if (!"ADMIN".equals(request.roleCode())) {
                 jdbc.update("insert into seller.seller_profiles(id, user_id, display_name, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
                     UUID.randomUUID(), userId, request.displayName().trim(), now);
             }
@@ -195,9 +189,7 @@ public class UserAdminService {
     @Transactional
     public void changeRole(UUID userId, String roleCode) {
         if (userId == null || roleCode == null) throw new IllegalArgumentException("userId y role son obligatorios");
-        if (!"ADMIN".equals(roleCode) && !"SELLER".equals(roleCode)) {
-            throw new IllegalArgumentException("role debe ser ADMIN o SELLER");
-        }
+        validateRoleCode(roleCode);
         jdbc.queryForObject("select id from identity.roles where code = 'ADMIN' for update", UUID.class);
         String status = jdbc.queryForObject("select status from identity.users where id = ? for update",
             String.class, userId);
@@ -213,8 +205,8 @@ public class UserAdminService {
         List<String> sellerStatuses = jdbc.queryForList(
             "select status from seller.seller_profiles where user_id = ?", String.class, userId);
         String sellerStatus = sellerStatuses.isEmpty() ? null : sellerStatuses.getFirst();
-        if ("SELLER".equals(roleCode) && !"ACTIVE".equals(sellerStatus)) {
-            throw new IllegalStateException("Para asignar SELLER se requiere un perfil de vendedor activo");
+        if (!"ADMIN".equals(roleCode) && !"ACTIVE".equals(sellerStatus)) {
+            throw new IllegalStateException("Para asignar un rol con datos asignados se requiere un perfil de vendedor activo");
         }
         if ("ADMIN".equals(roleCode) && "ACTIVE".equals(sellerStatus)) {
             throw new IllegalStateException("Desactive primero el perfil de vendedor antes de cambiar a ADMIN");
@@ -233,6 +225,10 @@ public class UserAdminService {
         refreshTokens.revokeAllByUserId(userId, now);
         audit.recordWithinTransaction(currentUser.userId(), "USER_ROLE_CHANGE", "USER", userId.toString(), "SUCCESS",
             Map.of("fromRoles", String.join(",", oldRoles), "toRole", targetRole));
+    }
+
+    private void validateRoleCode(String roleCode) {
+        if (roleCode == null || !roleCode.matches("[A-Z][A-Z0-9_]{1,79}")) throw new IllegalArgumentException("El código de rol es inválido");
     }
 
     private boolean exists(String email) {

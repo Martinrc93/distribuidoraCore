@@ -634,7 +634,7 @@ public class ReadQueryService {
                    coalesce((select string_agg(r.code, ',' order by r.code)
                        from identity.user_roles ur join identity.roles r on r.id = ur.role_id
                        where ur.user_id = u.id), '') as roles,
-                   sp.display_name as "sellerDisplayName"
+                   sp.display_name as "sellerDisplayName", sp.status as "sellerStatus"
             from identity.users u
             left join seller.seller_profiles sp on sp.user_id = u.id
             where lower(u.email) like ? order by lower(u.email)

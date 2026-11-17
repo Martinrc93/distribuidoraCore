@@ -323,7 +323,7 @@ class PostgresBackendFixesIntegrationTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("solo se pueden asignar al rol ADMIN");
 
-        userAdminService.changeRole(targetId, com.distribuidora.identity.api.UserAdminDtos.Role.ADMIN.name());
+        userAdminService.changeRole(targetId, "ADMIN");
         assertThat(jdbc.queryForList("""
             select r.code from identity.user_roles ur join identity.roles r on r.id = ur.role_id
             where ur.user_id = ?
@@ -409,6 +409,88 @@ class PostgresBackendFixesIntegrationTest {
             join identity.permissions p on p.id = rp.permission_id
             where rp.role_id = (select id from identity.roles where code = ?)
             """, String.class, roleCode)).containsExactly("SALE_DELIVER");
+    }
+
+    @Test
+    void roleEditorMetadataAndCheckedUpdatesPreserveSessionsOnNoOpAndConflict() throws Exception {
+        UUID actor = createUser("role-editor");
+        String roleCode = createRoleWithPermission("ORDER_CREATE");
+        assignRole(actor, roleCode);
+        authenticateOrderActor(actor, "ADMIN_ALL");
+        var listed = roleAdminService.listRoles().stream().filter(role -> role.code().equals(roleCode)).findFirst().orElseThrow();
+        assertThat(listed.assignedToCurrentUser()).isTrue();
+        var admin = roleAdminService.listRoles().stream().filter(role -> role.code().equals("ADMIN")).findFirst().orElseThrow();
+        assertThat(admin.requiredPermissions()).containsExactly("ADMIN_ALL");
+        long version = jdbc.queryForObject("select version from identity.users where id = ?", Long.class, actor);
+        var noOp = roleAdminService.replacePermissions(roleCode, Set.of("ORDER_CREATE"), Set.of("ORDER_CREATE"));
+        assertThat(noOp.currentSessionRevoked()).isFalse();
+        assertThat(jdbc.queryForObject("select version from identity.users where id = ?", Long.class, actor)).isEqualTo(version);
+
+        var changed = roleAdminService.replacePermissions(roleCode, Set.of("ORDER_CREATE", "ORDER_PREPARE"), Set.of("ORDER_CREATE"));
+        assertThat(changed.currentSessionRevoked()).isTrue();
+        assertThat(changed.role().permissions()).containsExactlyInAnyOrder("ORDER_CREATE", "ORDER_PREPARE");
+        assertThat(jdbc.queryForObject("select version from identity.users where id = ?", Long.class, actor)).isEqualTo(version + 1);
+        assertThatThrownBy(() -> roleAdminService.replacePermissions(roleCode, Set.of("SALE_DELIVER"), Set.of("ORDER_CREATE"))).isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("select version from identity.users where id = ?", Long.class, actor)).isEqualTo(version + 1);
+        assertThat(roleAdminService.listRoles().stream().filter(role -> role.code().equals(roleCode)).findFirst().orElseThrow().permissions()).containsExactlyInAnyOrder("ORDER_CREATE", "ORDER_PREPARE");
+
+        // HTTP clients receive the conflict rather than a successful stale overwrite.
+        assignRole(actor, "ADMIN");
+        String token = loginHttp(email(actor));
+        mockMvc.perform(put("/api/roles/{roleCode}/permissions", roleCode).header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"permissionCodes\":[\"SALE_DELIVER\"],\"expectedPermissionCodes\":[\"ORDER_CREATE\"]}"))
+            .andExpect(status().isConflict());
+    }
+
+    @Test
+    void customRoleCreationAndAssignmentPreserveProfilesAndRevokeSessions() throws Exception {
+        UUID admin = createUser("custom-admin"); assignRole(admin, "ADMIN");
+        String adminToken = loginHttp(email(admin));
+        String code = "CUSTOM_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        String payload = objectMapper.writeValueAsString(Map.of("code", code, "description", "Rol asignado", "permissionCodes", List.of("ORDER_PREPARE")));
+        var created = mockMvc.perform(post("/api/roles").header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON).content(payload))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.requiresSellerProfile").value(true))
+            .andExpect(jsonPath("$.permissions.length()").value(1)).andReturn();
+        roles.add(UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).path("id").asText()));
+        auditResources.add(code);
+        mockMvc.perform(post("/api/roles").header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isConflict());
+        for (String permission : List.of("ADMIN_ALL", "USER_MANAGE", "ORDER_REVIEW", "UNKNOWN")) {
+            mockMvc.perform(post("/api/roles").header("Authorization", "Bearer " + adminToken).contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("code", code + "_BAD", "description", "Inválido", "permissionCodes", List.of(permission)))))
+                .andExpect(status().isBadRequest());
+        }
+        String address = "custom-" + UUID.randomUUID() + "@example.test";
+        var account = mockMvc.perform(post("/api/users").header("Authorization", "Bearer " + adminToken).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("email", address, "temporaryPassword", "Passw0rd!", "role", code, "displayName", "Asignado"))))
+            .andExpect(status().isCreated()).andReturn();
+        UUID user = UUID.fromString(objectMapper.readTree(account.getResponse().getContentAsString()).path("id").asText()); users.add(user);
+        UUID profile = jdbc.queryForObject("select id from seller.seller_profiles where user_id = ? and status = 'ACTIVE'", UUID.class, user); sellers.add(profile);
+        UUID customer = createCustomer(profile);
+        String oldToken = loginHttp(address);
+        assertThat(jwtService.parse(oldToken).get("authorities", List.class)).containsExactly("ORDER_PREPARE");
+        mockMvc.perform(post("/api/roles").header("Authorization", "Bearer " + oldToken).contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/users/{id}/role", user).header("Authorization", "Bearer " + adminToken).contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"SELLER\"}"))
+            .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/orders").header("Authorization", "Bearer " + oldToken)).andExpect(status().isUnauthorized());
+        mockMvc.perform(put("/api/users/{id}/role", user).header("Authorization", "Bearer " + adminToken).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("role", code)))).andExpect(status().isNoContent());
+        assertThat(jwtService.parse(loginHttp(address)).get("authorities", List.class)).containsExactly("ORDER_PREPARE");
+        assertThat(jdbc.queryForObject("select seller_id from customer.customers where id = ?", UUID.class, customer)).isEqualTo(profile);
+        assertThat(jdbc.queryForObject("select count(*) from identity.user_roles where user_id = ?", Long.class, user)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("select count(*) from identity.refresh_tokens where user_id = ? and revoked_at is not null", Long.class, user)).isEqualTo(1L);
+        UUID noProfile = createUser("custom-missing-profile");
+        mockMvc.perform(put("/api/users/{id}/role", noProfile).header("Authorization", "Bearer " + adminToken).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("role", code)))).andExpect(status().isConflict());
+        jdbc.update("update seller.seller_profiles set status = 'INACTIVE' where id = ?", profile);
+        mockMvc.perform(put("/api/users/{id}/role", user).header("Authorization", "Bearer " + adminToken).contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"SELLER\"}"))
+            .andExpect(status().isConflict());
+        // Restoring a legacy custom user's profile must not silently add SELLER permissions.
+        assignRole(noProfile, code);
+        authenticateOrderActor(admin, "ADMIN_ALL");
+        UUID restored = sellerCommandService.create(new SellerDtos.CreateSellerRequest(noProfile, "Restaurado")); sellers.add(restored);
+        assertThat(jdbc.queryForObject("select count(*) from identity.user_roles where user_id = ?", Long.class, noProfile)).isEqualTo(1L);
     }
 
     @Test
@@ -1251,14 +1333,20 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customer)).isEqualByComparingTo("50");
     }
 
-    @Test
-    void sellerReadsOnlyAssignedCustomersAndOwnedSalesAndOrdersAcrossApiRoutes() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = { false, true })
+    void assignedRolesReadOnlyAssignedCustomersAndOwnedSalesAndOrdersAcrossApiRoutes(boolean customRole) throws Exception {
         UUID sellerId = createSeller("read-scope");
         UUID otherSellerId = createSeller("foreign-read-scope");
         UUID sellerUser = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, sellerId);
-        assignRole(sellerUser, "SELLER");
         UUID admin = createUser("read-scope-admin");
         assignRole(admin, "ADMIN");
+        if (customRole) {
+            authenticateOrderActor(admin, "ADMIN_ALL");
+            var role = roleAdminService.create("SCOPE_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(), "Asignados", Set.of("ORDER_CREATE", "SALE_DELIVER", "SALE_PAYMENT"));
+            roles.add(role.id()); auditResources.add(role.code());
+            assignRole(sellerUser, role.code());
+        } else assignRole(sellerUser, "SELLER");
         UUID customer = createCustomer(sellerId);
         UUID secondCustomer = createCustomer(sellerId);
         UUID foreignCustomer = createCustomer(otherSellerId);

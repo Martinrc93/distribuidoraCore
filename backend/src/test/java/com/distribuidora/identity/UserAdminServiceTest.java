@@ -60,7 +60,7 @@ class UserAdminServiceTest {
 
         UserAdminDtos.InviteUserRequest request = new UserAdminDtos.InviteUserRequest(
             "seller@distribuidora.local",
-            UserAdminDtos.Role.SELLER,
+            "SELLER",
             "Vendedor Uno"
         );
 
@@ -89,10 +89,21 @@ class UserAdminServiceTest {
     }
 
     @Test
+    void customRoleInvitationCreatesProfileWithoutSellerMembership() {
+        UUID roleId = UUID.randomUUID();
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("custom@example.test"))).thenReturn(false);
+        when(jdbc.queryForObject(anyString(), eq(UUID.class), eq("CUSTOM"))).thenReturn(roleId);
+        var result = service.invite(new UserAdminDtos.InviteUserRequest("custom@example.test", "CUSTOM", "Logística"));
+        verify(jdbc).update(eq("insert into identity.user_roles(user_id, role_id) values (?, ?)"), eq(result.userId()), eq(roleId));
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("insert into seller.seller_profiles"), any(), eq(result.userId()), eq("Logística"), any());
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never()).queryForObject(anyString(), eq(UUID.class), eq("SELLER"));
+    }
+
+    @Test
     void missingEmailConfigurationRejectsInvitationBeforeCreatingUser() {
         org.mockito.Mockito.doThrow(new InvitationEmailUnavailableException()).when(invitationEmails).requireConfigured();
         assertThatThrownBy(() -> service.invite(new UserAdminDtos.InviteUserRequest(
-            "seller@example.test", UserAdminDtos.Role.SELLER, "Seller")))
+            "seller@example.test", "SELLER", "Seller")))
             .isInstanceOf(InvitationEmailUnavailableException.class);
         org.mockito.Mockito.verifyNoInteractions(jdbc, activationTokens, audit);
     }
@@ -108,7 +119,7 @@ class UserAdminServiceTest {
             .thenReturn(List.of("ADMIN"), List.of("ACTIVE"));
         when(jdbc.queryForObject(anyString(), eq(Long.class), eq(userId))).thenReturn(0L);
 
-        assertThatThrownBy(() -> service.changeRole(userId, UserAdminDtos.Role.SELLER.name()))
+        assertThatThrownBy(() -> service.changeRole(userId, "SELLER"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("último administrador activo");
 
@@ -139,7 +150,7 @@ class UserAdminServiceTest {
 
         UserAdminDtos.InviteUserRequest request = new UserAdminDtos.InviteUserRequest(
             "existing@distribuidora.local",
-            UserAdminDtos.Role.ADMIN,
+            "ADMIN",
             null
         );
 

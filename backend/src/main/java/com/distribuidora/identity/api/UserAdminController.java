@@ -61,7 +61,7 @@ public class UserAdminController {
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<Void> changeRole(@PathVariable UUID id,
                                            @Valid @RequestBody UserAdminDtos.ChangeRoleRequest request) {
-        service.changeRole(id, request.role().name());
+        service.changeRole(id, request.role());
         return ResponseEntity.noContent().build();
     }
 

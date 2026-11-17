@@ -40,9 +40,22 @@ class RoleAdminControllerTest {
         mockMvc.perform(get("/api/roles"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].code").value("ADMIN"))
+            .andExpect(jsonPath("$[0].requiredPermissions[0]").value("ADMIN_ALL"))
+            .andExpect(jsonPath("$[0].assignedToCurrentUser").value(false))
             .andExpect(jsonPath("$[0].permissions[0]").value("ADMIN_ALL"));
 
         verify(service).listRoles();
+    }
+
+    @Test
+    void createsCustomRoleAndExposesAssignedScopeMetadata() throws Exception {
+        when(service.create("LOGISTICS", "Logística", Set.of("ORDER_PREPARE")))
+            .thenReturn(new RoleAdminService.RoleView(UUID.randomUUID(), "LOGISTICS", "Logística", List.of("ORDER_PREPARE")));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/roles")
+                .contentType(APPLICATION_JSON).content("{\"code\":\"LOGISTICS\",\"description\":\"Logística\",\"permissionCodes\":[\"ORDER_PREPARE\"]}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.requiresSellerProfile").value(true));
+        assertEquals("hasAuthority('ADMIN_ALL')", RoleAdminController.class
+            .getMethod("createRole", RoleAdminDtos.CreateRoleRequest.class).getAnnotation(PreAuthorize.class).value());
     }
 
     @Test
@@ -53,7 +66,8 @@ class RoleAdminControllerTest {
 
         mockMvc.perform(get("/api/permissions"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].code").value("ORDER_CREATE"));
+            .andExpect(jsonPath("$[0].code").value("ORDER_CREATE"))
+            .andExpect(jsonPath("$[0].adminOnly").value(false));
 
         verify(service).listPermissions();
     }
@@ -61,8 +75,8 @@ class RoleAdminControllerTest {
     @Test
     void replacePermissionsReturnsUpdatedRole() throws Exception {
         UUID id = UUID.randomUUID();
-        when(service.replacePermissions("SELLER", Set.of("ORDER_CREATE")))
-            .thenReturn(new RoleAdminService.RoleView(id, "SELLER", "Vendedor", List.of("ORDER_CREATE")));
+        when(service.replacePermissions("SELLER", Set.of("ORDER_CREATE"), null))
+            .thenReturn(new RoleAdminService.PermissionUpdateResult(new RoleAdminService.RoleView(id, "SELLER", "Vendedor", List.of("ORDER_CREATE")), false));
 
         mockMvc.perform(put("/api/roles/SELLER/permissions")
                 .contentType(APPLICATION_JSON)
@@ -71,7 +85,17 @@ class RoleAdminControllerTest {
             .andExpect(jsonPath("$.code").value("SELLER"))
             .andExpect(jsonPath("$.permissions[0]").value("ORDER_CREATE"));
 
-        verify(service).replacePermissions("SELLER", Set.of("ORDER_CREATE"));
+        verify(service).replacePermissions("SELLER", Set.of("ORDER_CREATE"), null);
+    }
+
+    @Test
+    void bindsExpectedPermissionsAndReturnsSessionRevocation() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.replacePermissions("ADMIN", Set.of("ADMIN_ALL"), Set.of("ADMIN_ALL", "USER_MANAGE")))
+            .thenReturn(new RoleAdminService.PermissionUpdateResult(new RoleAdminService.RoleView(id, "ADMIN", "Administrador", List.of("ADMIN_ALL")), true));
+        mockMvc.perform(put("/api/roles/ADMIN/permissions").contentType(APPLICATION_JSON)
+            .content("{\"permissionCodes\":[\"ADMIN_ALL\"],\"expectedPermissionCodes\":[\"ADMIN_ALL\",\"USER_MANAGE\"]}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.currentSessionRevoked").value(true));
     }
 
     @Test

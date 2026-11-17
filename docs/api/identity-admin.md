@@ -8,13 +8,18 @@ tokens persistidos.
 ## Usuarios
 
 `GET /api/users?page=0&size=20&search=` devuelve una página con `id`, `email`,
-`name`, `status`, `roles` y `sellerDisplayName`. `roles` contiene los códigos
+`name`, `status`, `roles`, `sellerDisplayName` y `sellerStatus`. `roles` contiene los códigos
 separados por coma; `sellerDisplayName` es nulo para usuarios sin perfil seller.
 El tamaño se limita a 100.
 
 `POST /api/users` crea un usuario activo con password temporal. `POST
 /api/users/invite` crea una invitación de un solo uso. Ambos reciben `email`,
-`role` (`ADMIN` o `SELLER`) y `displayName` cuando corresponde.
+`role` (código existente, incluido un rol personalizado) y `displayName` cuando corresponde.
+Todo rol distinto de `ADMIN` requiere nombre y crea un perfil seller activo en la
+misma transacción para vincular sus datos asignados. Solo se asigna el rol elegido;
+no se agrega `SELLER` ni se heredan sus permisos. Un código inexistente devuelve
+`404` sin crear la cuenta. Los códigos admiten de 2 a 80 letras mayúsculas,
+números o guiones bajos, comenzando con una letra.
 
 La invitación crea la cuenta en estado `INVITED`, guarda el hash del token y
 encola el correo en la misma transacción. La respuesta es
@@ -47,22 +52,31 @@ reenvío de invitaciones desde la pantalla de usuarios.
 {"role":"ADMIN"}
 ```
 
-El usuario debe estar activo. Para asignar `SELLER` debe tener un perfil seller
+El usuario debe estar activo. Para asignar cualquier rol distinto de `ADMIN` debe tener un perfil seller
 activo. Para pasar a `ADMIN`, primero hay que desactivar el perfil seller. El
 cambio conserva al menos un administrador activo, incrementa la versión de
-sesión, revoca refresh tokens y registra auditoría.
+sesión, revoca refresh tokens y registra auditoría. Conserva el perfil, las
+asignaciones y el historial. Repetir su único rol actual no invalida sesiones.
+La pantalla Usuarios ofrece los roles del catálogo completo, deshabilita los
+incompatibles con el estado del perfil y confirma antes de reemplazar los roles
+actuales por uno. Si cambia el usuario autenticado, limpia credenciales y caché
+y vuelve al login con el resultado.
 
 `POST /api/users/{id}/block`, `POST /api/users/{id}/unblock` y `POST
 /api/users/{id}/revoke-sessions` devuelven `204 No Content`.
 
 ## Roles y permisos
 
-- `GET /api/roles` devuelve roles y sus códigos de permiso.
-- `GET /api/permissions` devuelve el catálogo vigente.
+- `GET /api/roles` devuelve roles y sus códigos de permiso, `requiredPermissions`
+  (permisos que el rol debe conservar) y `assignedToCurrentUser` (el usuario
+  autenticado pertenece al rol). `currentSessionRevoked` es `false` en esta lectura.
+  `requiresSellerProfile` es `true` para todo rol distinto de `ADMIN`.
+- `GET /api/permissions` devuelve el catálogo vigente con `code`, `description`
+  y `adminOnly`. Esta última propiedad usa las mismas restricciones que la escritura.
 - `PUT /api/roles/{roleCode}/permissions` reemplaza los permisos del rol:
 
 ```json
-{"permissionCodes":["ORDER_CREATE","SALE_DELIVER"]}
+{"permissionCodes":["ORDER_CREATE","SALE_DELIVER"],"expectedPermissionCodes":["ORDER_CREATE"]}
 ```
 
 El catálogo se mantiene en migraciones Flyway; los cambios requieren una
@@ -70,6 +84,59 @@ migración y no se crean permisos arbitrarios por HTTP. `ADMIN_ALL` debe
 permanecer en `ADMIN`; `ADMIN_ALL`, `USER_MANAGE` y `ORDER_REVIEW` no se asignan a otros roles.
 Un cambio efectivo invalida sesiones de los usuarios asignados al rol y registra
 auditoría.
+
+La pantalla envía `expectedPermissionCodes` con la selección original. El servidor
+compara ese conjunto bajo el bloqueo del rol antes de guardar; si otro administrador
+lo cambió, responde `409` sin escribir permisos, invalidar sesiones ni generar
+auditoría de actualización. El campo es opcional para mantener el contrato de
+los clientes existentes; omitirlo conserva el reemplazo completo sin comparación.
+
+La respuesta del `PUT` conserva los datos del rol y agrega `currentSessionRevoked`:
+`true` solo si hubo un cambio efectivo y el usuario autenticado pertenece al rol.
+La interfaz limpia credenciales y caché y muestra el login con el resultado del
+guardado. Una actualización sin cambios no invalida sesiones ni duplica auditoría.
+
+### Pantalla de roles (Fase 5.2)
+
+`/admin/roles`, en Administración → Roles y permisos, requiere `ADMIN_ALL` tanto
+en navegación/ruta como en los endpoints. Consulta roles y catálogo completos;
+si falla una lectura, permite reintentar y no ofrece una edición parcial.
+
+La edición muestra los permisos asignados en un modal. Los obligatorios quedan
+marcados y bloqueados; los reservados a administradores no se pueden asignar a
+otros roles. Antes de guardar presenta qué permisos se agregan y quitan y avisa
+del cierre de sesiones. Cancelar o Escape conservan el borrador hasta confirmar
+su descarte. Un error de guardado permite reintentar; un conflicto conserva el
+borrador y exige cerrar/recargar antes de otra edición.
+
+`ADMIN_ALL` mantiene acceso completo aunque se quiten permisos individuales.
+Asignar un permiso no cambia el rol ni abre pantallas reservadas a administradores.
+El desacoplamiento por área de `ADMIN_ALL` sigue pendiente de 5.4.
+
+### Alta de roles personalizados (Fase 5.3)
+
+`POST /api/roles`, exclusivo de `ADMIN_ALL`, recibe:
+
+```json
+{"code":"LOGISTICS","description":"Logística","permissionCodes":["ORDER_PREPARE"]}
+```
+
+Devuelve `201` con el rol y los mismos metadatos de la lectura. `description`
+es obligatorio (máximo 255 caracteres); `code` debe ser único y cumplir el formato
+anterior. `ADMIN` y `SELLER` son códigos reservados. `permissionCodes` es obligatorio
+y puede estar vacío; solo acepta permisos del catálogo, excluyendo `ADMIN_ALL`,
+`USER_MANAGE` y `ORDER_REVIEW`. Un duplicado devuelve `409`; datos inválidos, `400`.
+La creación es transaccional y audita `ROLE_CREATE` con alcance `ASSIGNED`.
+
+«Crear rol» reutiliza las casillas de permisos de la edición, explica el alcance
+y pide confirmación antes de guardar. El rol nuevo queda disponible en el alta,
+la invitación y el cambio de rol de usuarios, sin modificar cuentas existentes.
+Los roles personalizados tienen el mismo alcance que un vendedor: clientes,
+pedidos y ventas asignados a su perfil, con filtros antes de contar y paginar y
+protección del acceso directo por ID, número y documentos. No reciben acceso
+global por seleccionar permisos. «Nuevo pedido» y su ruta requieren `ORDER_CREATE`
+o `ADMIN_ALL`. Las pantallas reservadas a administradores mantienen sus reglas
+hasta el trabajo por área de 5.4.
 
 V42 agrega `ORDER_PREPARE` (asignado inicialmente a `ADMIN` y `SELLER`) y
 `ORDER_REVIEW` (solo `ADMIN`). Son permisos propios, integrados a este catálogo.

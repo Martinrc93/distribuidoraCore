@@ -75,8 +75,15 @@ public class SellerCommandService {
         }
 
         jdbc.update(
-            "insert into identity.user_roles(user_id, role_id) select ?, id from identity.roles where code = 'SELLER' on conflict do nothing",
-            userId
+            """
+            insert into identity.user_roles(user_id, role_id)
+            select ?, id from identity.roles where code = 'SELLER'
+              and not exists (
+                select 1 from identity.user_roles ur join identity.roles r on r.id = ur.role_id
+                where ur.user_id = ? and r.code not in ('ADMIN', 'SELLER')
+              )
+            on conflict do nothing
+            """, userId, userId
         );
 
         UUID sellerId = UUID.randomUUID();

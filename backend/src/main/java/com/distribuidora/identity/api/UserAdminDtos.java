@@ -2,8 +2,8 @@ package com.distribuidora.identity.api;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Pattern;
 import com.distribuidora.identity.application.UserAdminService;
 
 import java.time.Instant;
@@ -15,18 +15,18 @@ public final class UserAdminDtos {
     public record CreateUserRequest(
         @NotBlank @Email @Size(max = 320) String email,
         @NotBlank @Size(min = 8, max = 200) String temporaryPassword,
-        @NotNull Role role,
+        @NotBlank @Pattern(regexp = "[A-Z][A-Z0-9_]{1,79}") String role,
         @Size(max = 160) String displayName
     ) implements UserAdminService.CreateUserCommand {
-        @Override public String roleCode() { return role == null ? null : role.name(); }
+        @Override public String roleCode() { return role; }
     }
 
     public record InviteUserRequest(
         @NotBlank @Email @Size(max = 320) String email,
-        @NotNull Role role,
+        @NotBlank @Pattern(regexp = "[A-Z][A-Z0-9_]{1,79}") String role,
         @Size(max = 160) String displayName
     ) implements UserAdminService.InviteUserCommand {
-        @Override public String roleCode() { return role == null ? null : role.name(); }
+        @Override public String roleCode() { return role; }
     }
 
     public record InviteUserResponse(
@@ -36,7 +36,5 @@ public final class UserAdminDtos {
         Instant expiresAt
     ) { }
 
-    public record ChangeRoleRequest(@NotNull Role role) { }
-
-    public enum Role { ADMIN, SELLER }
+    public record ChangeRoleRequest(@NotBlank @Pattern(regexp = "[A-Z][A-Z0-9_]{1,79}") String role) { }
 }

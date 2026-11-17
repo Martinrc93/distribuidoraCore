@@ -7,6 +7,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,6 +23,12 @@ public class RoleAdminController {
         this.service = service;
     }
 
+    @PostMapping("/roles")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<RoleAdminDtos.RoleResponse> createRole(@Valid @RequestBody RoleAdminDtos.CreateRoleRequest request) {
+        return ResponseEntity.status(201).body(toRoleResponse(service.create(request.code(), request.description(), request.permissionCodes())));
+    }
+
     @GetMapping("/roles")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public List<RoleAdminDtos.RoleResponse> listRoles() {
@@ -32,7 +39,7 @@ public class RoleAdminController {
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public List<RoleAdminDtos.PermissionResponse> listPermissions() {
         return service.listPermissions().stream()
-            .map(permission -> new RoleAdminDtos.PermissionResponse(permission.code(), permission.description()))
+            .map(permission -> new RoleAdminDtos.PermissionResponse(permission.code(), permission.description(), permission.adminOnly()))
             .toList();
     }
 
@@ -42,10 +49,16 @@ public class RoleAdminController {
         @PathVariable String roleCode,
         @Valid @RequestBody RoleAdminDtos.ReplaceRolePermissionsRequest request
     ) {
-        return ResponseEntity.ok(toRoleResponse(service.replacePermissions(roleCode, request.permissionCodes())));
+        var result = service.replacePermissions(roleCode, request.permissionCodes(), request.expectedPermissionCodes());
+        return ResponseEntity.ok(toRoleResponse(result.role(), result.currentSessionRevoked()));
     }
 
     private static RoleAdminDtos.RoleResponse toRoleResponse(RoleAdminService.RoleView role) {
-        return new RoleAdminDtos.RoleResponse(role.id(), role.code(), role.description(), role.permissions());
+        return toRoleResponse(role, false);
+    }
+
+    private static RoleAdminDtos.RoleResponse toRoleResponse(RoleAdminService.RoleView role, boolean currentSessionRevoked) {
+        return new RoleAdminDtos.RoleResponse(role.id(), role.code(), role.description(), role.permissions(),
+            role.requiredPermissions(), role.assignedToCurrentUser(), currentSessionRevoked, role.requiresSellerProfile());
     }
 }
