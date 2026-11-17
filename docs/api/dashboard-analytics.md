@@ -21,6 +21,8 @@ The report is read in a single transaction with repeatable-read isolation.
   sales. Revenue allocates the order discount proportionally to line totals;
   tiny allocation rounding differences may remain. Merchandise returns do not
   imply financial credits or reduce this revenue metric.
+  The Dashboard links to [Historial de artículos vendidos](sold-products.md)
+  with the selected period for product totals, returns and individual sales.
 - `sellers`: five highest revenue totals, using the seller on the order.
   Missing sellers remain in a separate unassigned group.
 - `recentOrders`: five newest orders created in the interval, including cancelled

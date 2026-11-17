@@ -2336,6 +2336,129 @@ class PostgresBackendFixesIntegrationTest {
         }
     }
 
+    @Test
+    void soldProductsReportFiltersBeforePagingAndKeepsReturnsSeparateFromRevenue() throws Exception {
+        UUID admin = createUser("sold-products-admin");
+        assignRole(admin, "ADMIN");
+        String adminToken = "Bearer " + loginHttp(email(admin));
+        UUID profile = createSeller("sold-products-owner");
+        UUID otherProfile = createSeller("sold-products-other");
+        UUID viewer = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        String sellerToken = "Bearer " + loginHttp(email(viewer));
+        String reportPath = "/api/reports/sold-products";
+        mockMvc.perform(get(reportPath)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get(reportPath).header("Authorization", sellerToken)).andExpect(status().isForbidden());
+        assignRole(viewer, createRoleWithPermission("REPORTS_VIEW"));
+        String assigned = "Bearer " + loginHttp(email(viewer));
+
+        UUID ownCustomer = createCustomer(profile);
+        UUID otherCustomer = createCustomer(otherProfile);
+        String search = "Report-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID flour = createProduct(search + " A Harina");
+        UUID rice = createProduct(search + " B Arroz");
+        UUID hidden = createProduct(search + " C Exclusivo");
+        UUID first = reportSale(otherCustomer, profile, "DELIVERED", "2026-10-02T03:00:00Z", "42.30");
+        UUID line = createSaleItem(first, flour, new BigDecimal("3"));
+        jdbc.update("update sale.sale_items set line_total = 27, line_discount_percent = 10 where id = ?", line);
+        createSaleItem(first, rice, new BigDecimal("2"));
+        jdbc.update("update sale.sales set order_discount_percent = 10 where id = ?", first);
+
+        // Two returns on the same line, both recorded after the selected sale day.
+        for (String quantity : List.of("0.5", "1")) {
+            UUID returned = UUID.randomUUID();
+            jdbc.update("insert into sale.returns(id, sale_id, returned_by, reason, created_at) values (?, ?, ?, 'Merchandise return', ?)",
+                returned, first, admin, Timestamp.from(Instant.parse("2026-10-06T15:00:00Z")));
+            jdbc.update("insert into sale.return_items(id, return_id, sale_id, sale_item_id, product_id, quantity) values (?, ?, ?, ?, ?, ?)",
+                UUID.randomUUID(), returned, first, line, flour, new BigDecimal(quantity));
+        }
+        UUID last = reportSale(ownCustomer, null, "DELIVERED", "2026-10-03T02:59:59Z", "17.50");
+        createSaleItem(last, flour, new BigDecimal("2"));
+        UUID foreign = reportSale(ownCustomer, otherProfile, "DELIVERED", "2026-10-02T15:00:00Z", "100");
+        createSaleItem(foreign, flour, BigDecimal.TEN);
+        createSaleItem(foreign, hidden, BigDecimal.ONE);
+        UUID confirmed = reportSale(ownCustomer, profile, "CONFIRMED", "2026-10-02T16:00:00Z", "40");
+        createSaleItem(confirmed, flour, new BigDecimal("4"));
+        createSaleItem(reportSale(ownCustomer, profile, "CANCELLED", "2026-10-02T17:00:00Z", "70"), flour, new BigDecimal("7"));
+        for (String timestamp : List.of("2026-10-02T02:59:59Z", "2026-10-03T03:00:00Z")) {
+            createSaleItem(reportSale(ownCustomer, profile, "DELIVERED", timestamp, "90"), flour, new BigDecimal("9"));
+        }
+
+        mockMvc.perform(get(reportPath).header("Authorization", assigned).param("search", search.toLowerCase())
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02").param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
+            .andExpect(jsonPath("$.content[0].productId").value(flour.toString()))
+            .andExpect(jsonPath("$.content[0].soldUnits").value(5))
+            .andExpect(jsonPath("$.content[0].returnedUnits").value(1.5))
+            .andExpect(jsonPath("$.content[0].netUnits").value(3.5))
+            .andExpect(jsonPath("$.content[0].amount").value(41.8));
+        mockMvc.perform(get(reportPath).header("Authorization", assigned).param("productId", rice.toString())
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].amount").value(18));
+        for (int page = 0; page < 2; page++) {
+            mockMvc.perform(get(reportPath + "/{id}/sales", flour).header("Authorization", assigned)
+                    .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02")
+                    .param("page", String.valueOf(page)).param("size", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sales.totalElements").value(2))
+                .andExpect(jsonPath("$.product.amount").value(41.8))
+                .andExpect(jsonPath("$.sales.content[0].id").value((page == 0 ? last : first).toString()))
+                .andExpect(jsonPath("$.sales.content[0].amount").value(page == 0 ? 17.5 : 24.3))
+                .andExpect(jsonPath("$.sales.content[0].returnedUnits").value(page == 0 ? 0 : 1.5));
+        }
+        mockMvc.perform(get(reportPath + "/{id}/sales", hidden).header("Authorization", assigned)
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.product").doesNotExist())
+            .andExpect(jsonPath("$.sales.totalElements").value(0));
+        mockMvc.perform(get(reportPath + "/{id}/sales", flour).header("Authorization", adminToken)
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.sales.totalElements").value(4))
+            .andExpect(jsonPath("$.product.soldUnits").value(19))
+            .andExpect(jsonPath("$.product.returnedUnits").value(1.5));
+        mockMvc.perform(get(reportPath).header("Authorization", adminToken)
+                .param("dateMin", "2026-10-03").param("dateMax", "2026-10-02"))
+            .andExpect(status().isBadRequest());
+        jdbc.update("update seller.seller_profiles set status = 'INACTIVE' where id = ?", profile);
+        mockMvc.perform(get(reportPath).header("Authorization", assigned)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void soldProductAllocationsReconcileRoundingAcrossAllItemsInHistoricalSale() throws Exception {
+        UUID admin = createUser("sold-products-rounding");
+        assignRole(admin, "ADMIN");
+        String token = "Bearer " + loginHttp(email(admin));
+        String search = "Allocation-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID sale = reportSale(createCustomer(null), null, "DELIVERED", "2026-10-10T15:00:00Z", "0.0002");
+        for (String name : List.of("A", "B", "C")) {
+            createSaleItem(sale, createProduct(search + " " + name), BigDecimal.ONE);
+        }
+        var result = mockMvc.perform(get("/api/reports/sold-products").header("Authorization", token)
+                .param("dateMin", "2026-10-10").param("dateMax", "2026-10-10").param("search", search))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3)).andReturn();
+        var products = objectMapper.readTree(result.getResponse().getContentAsString()).path("content");
+        BigDecimal amount = BigDecimal.ZERO;
+        for (var product : products) {
+            amount = amount.add(product.path("amount").decimalValue());
+            mockMvc.perform(get("/api/reports/sold-products/{id}/sales", product.path("productId").asText()).header("Authorization", token)
+                    .param("dateMin", "2026-10-10").param("dateMax", "2026-10-10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sales.content[0].amount").value(product.path("amount").doubleValue()));
+        }
+        assertThat(amount).isEqualByComparingTo("0.0002");
+    }
+
+    private UUID reportSale(UUID customer, UUID seller, String status, String soldAt, String amount) {
+        UUID order = createOrder(customer, seller, status);
+        UUID sale = UUID.randomUUID();
+        sales.add(sale);
+        Timestamp date = Timestamp.from(Instant.parse(soldAt));
+        jdbc.update("""
+            insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, delivered_at)
+            values (?, ?, ?, ?, ?, ?, 0, ?, ?)
+            """, sale, "PG-" + sale.toString().substring(0, 24), order, customer, status, new BigDecimal(amount), date,
+            "DELIVERED".equals(status) ? date : null);
+        return sale;
+    }
+
     private UUID createSeller(String suffix) {
         UUID userId = createUser("seller-" + suffix);
         UUID sellerId = UUID.randomUUID();

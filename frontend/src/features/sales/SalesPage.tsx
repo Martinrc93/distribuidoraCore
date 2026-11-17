@@ -93,6 +93,7 @@ export default function SalesPage() {
       await Promise.all([
         queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/sales?') }),
         queryClient.invalidateQueries({ queryKey: ['sale-detail', selectedSaleId] }),
+        queryClient.invalidateQueries({ queryKey: ['sold-products'] }),
         queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/inventory') }),
       ])
       setReturnReason('')
@@ -127,7 +128,8 @@ export default function SalesPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Operación" title="Ventas" description={isAdmin ? 'Consultá importes cobrados, saldos y estado de las ventas.' : 'Consultá importes cobrados y saldos de tus ventas entregadas.'} />
+    <PageHeader eyebrow="Operación" title="Ventas" description={isAdmin ? 'Consultá importes cobrados, saldos y estado de las ventas.' : 'Consultá importes cobrados y saldos de tus ventas entregadas.'}
+      actions={hasPermission('REPORTS_VIEW') ? <Button variant="secondary" href="/sales/products">Artículos vendidos</Button> : undefined} />
     <Panel>
       <form className="toolbar" onSubmit={(event) => event.preventDefault()}>
         <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar ventas</span><input className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Número de venta" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>

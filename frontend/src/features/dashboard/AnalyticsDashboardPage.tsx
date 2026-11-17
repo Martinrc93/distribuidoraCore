@@ -165,7 +165,8 @@ export default function AnalyticsDashboardPage() {
             { key: 'days', label: 'Cobertura', align: 'right' },
           ]} rows={data.stockCoverage.map((item) => ({ id: item.id, name: item.name, stock: number(item.stock), daily: new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(item.dailyUnits), days: item.days === null ? 'Sin ventas' : `${number(item.days)} días` }))} emptyContent={empty('No hay productos activos para estimar cobertura.')} />
         </Panel>
-        <Panel title="Productos más vendidos" description="Los cinco productos con más unidades vendidas en el período. Importes después de descuentos; no descuenta devoluciones de mercadería.">
+        <Panel title="Productos más vendidos" description="Los cinco productos con más unidades vendidas en el período. Importes después de descuentos; no descuenta devoluciones de mercadería."
+          action={<Button variant="link" href={`/sales/products?dateMin=${encodeURIComponent(dateMin)}&dateMax=${encodeURIComponent(dateMax)}`}>Artículos vendidos</Button>}>
           <DataTable className={compactTable} columns={[{ key: 'name', label: 'Producto', emphasis: true }, { key: 'units', label: 'Unidades', align: 'right' }, { key: 'amount', label: 'Importe', align: 'right' }]} rows={data.topProducts.map((item) => ({ id: item.id, name: item.name, units: number(item.units), amount: money(item.amount) }))} emptyContent={empty('No hay productos vendidos en este período.')} />
         </Panel>
         <Panel title="Ventas por vendedor" description="Los cinco mayores importes del período, según el vendedor del pedido.">

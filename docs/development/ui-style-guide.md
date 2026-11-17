@@ -1118,6 +1118,20 @@ El reporte reutiliza `OrderDateFilter`, `DataTable` y la paginación
 compartida. El período se conserva en la URL y se evalúa en hora argentina.
 «Volver a Stock» recupera los filtros del listado de origen.
 
+### Historial de artículos vendidos
+
+«Artículos vendidos» aparece en Ventas con `REPORTS_VIEW` o `ADMIN_ALL`.
+Dashboard enlaza al reporte con su período seleccionado. En
+`/sales/products`, el buscador por artículo y los campos Desde y Hasta
+reutilizan la barra de filtros y `OrderDateFilter`. El período usa el calendario
+argentino y empieza en el mes actual. La URL guarda búsqueda, fechas y página.
+El rango inválido muestra un aviso y oculta los resultados.
+
+La tabla comparte `DataTable`, sus tarjetas a 640px y la paginación habitual.
+«Ver ventas» abre el historial del artículo con las mismas fechas. Muestra
+ventas individuales y totales del período. Volver conserva filtros y página del
+listado. Los estados usan `Badge` y cada «Ver pedido» abre el detalle existente.
+
 ### Variantes específicas por pantalla
 
 | Variante | Alcance y diferencia |

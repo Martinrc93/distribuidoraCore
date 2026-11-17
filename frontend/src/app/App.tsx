@@ -23,6 +23,7 @@ import OrderCreatePage from '../features/orders/OrderCreatePage'
 import OrdersPage from '../features/orders/OrdersPage'
 import OrderDetailPage from '../features/orders/OrderDetailPage'
 import SalesPage from '../features/sales/SalesPage'
+import SoldProductsPage from '../features/sales/SoldProductsPage'
 import SellersPage from '../features/admin/SellersPage'
 import CreditLimitPage from '../features/admin/CreditLimitPage'
 import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
@@ -41,6 +42,10 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 
 function RequireCustomerView() {
   return hasPermission('CUSTOMER_VIEW') ? <CustomerDetailPage /> : <Navigate to="/orders" replace />
+}
+
+function RequireReportsView() {
+  return hasPermission('REPORTS_VIEW') ? <SoldProductsPage /> : <Navigate to="/sales" replace />
 }
 
 function RequireOrderCreate() {
@@ -93,6 +98,8 @@ export default function App() {
         <Route path="/orders/new" element={<RequireOrderCreate />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
+        <Route path="/sales/products" element={<RequireReportsView />} />
+        <Route path="/sales/products/:productId" element={<RequireReportsView />} />
         <Route path="/supplier-orders" element={<RequireAdmin><SupplierOrdersPage /></RequireAdmin>} />
         <Route path="/supplier-orders/restock" element={<RequireAdmin><SupplierOrderRestockPage /></RequireAdmin>} />
         <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />

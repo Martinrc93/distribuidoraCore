@@ -53,6 +53,7 @@ describe('Analytics dashboard', () => {
     expect(screen.getByRole('img', { name: /Ventas diarias/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ver deuda de Cliente principal' })).toHaveAttribute('href', '/sales?customerId=customer-1&pendingBalance=true')
     expect(screen.getByRole('link', { name: 'Abrir pedido ORD-001' })).toHaveAttribute('href', '/orders/order-1')
+    expect(screen.getByRole('link', { name: 'Artículos vendidos' })).toHaveAttribute('href', '/sales/products?dateMin=01%2F09%2F2026&dateMax=30%2F09%2F2026')
     expect(screen.queryByRole('link', { name: 'Ver pagos y deuda' })).not.toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith('/api/dashboard/analytics?dateMin=2026-09-01&dateMax=2026-09-30', expect.any(Object))
   })
