@@ -13,6 +13,7 @@ import CustomersPage from '../features/customers/CustomersPage'
 import SuppliersPage from '../features/suppliers/SuppliersPage'
 import SupplierOrdersPage from '../features/purchasing/SupplierOrdersPage'
 import SupplierOrderDetailPage from '../features/purchasing/SupplierOrderDetailPage'
+import SupplierOrderRestockPage from '../features/purchasing/SupplierOrderRestockPage'
 import CustomerDetailPage from '../features/customers/CustomerDetailPage'
 import ProductsPage from '../features/products/ProductsPage'
 import ShrinkagesPage from '../features/inventory/ShrinkagesPage'
@@ -93,6 +94,7 @@ export default function App() {
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/supplier-orders" element={<RequireAdmin><SupplierOrdersPage /></RequireAdmin>} />
+        <Route path="/supplier-orders/restock" element={<RequireAdmin><SupplierOrderRestockPage /></RequireAdmin>} />
         <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/suppliers" element={<RequireAdmin><SuppliersPage /></RequireAdmin>} />

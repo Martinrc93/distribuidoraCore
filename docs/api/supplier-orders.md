@@ -94,10 +94,27 @@ V35 crea `catalog.product_suppliers` y el schema `purchasing`. No envía mensaje
 al proveedor ni registra pagos o facturas de compra; el envío por mail/WhatsApp
 requiere un flujo separado.
 
-**Reposición:** el formulario ofrece «Agregar productos sin stock», que agrega los
-productos activos con stock menor o igual a cero (solo los asociados al proveedor
-elegido, si tiene asociaciones). Sugiere cubrir el saldo negativo más una unidad,
-en múltiplos de 0,5; el usuario ajusta la cantidad.
+## Reposición
+
+La acción «Reponer» de Stock está disponible en productos activos con saldo
+cero o negativo. También está disponible en las filas de Cobertura estimada
+de stock del Dashboard. Abre el formulario de compra con el producto, costo
+y saldo leídos del catálogo al abrir. Si el producto está inactivo o ya no está
+en el catálogo, el formulario muestra el aviso y ofrece volver al origen.
+
+Sugiere cubrir el saldo negativo más una unidad, redondeando hacia arriba al
+próximo múltiplo de 0,5. Si el saldo ya es positivo, sugiere una unidad. Completa
+el proveedor si hay una única asociación disponible. Con varias, muestra sus
+nombres y permite elegir. El selector conserva el catálogo de proveedores con
+todas sus páginas. Cantidad y costo son editables antes de guardar.
+
+«Agregar productos sin stock» sigue disponible en Compras y usa la misma
+sugerencia. Agrega productos activos con saldo menor o igual a cero. Si el
+proveedor tiene asociaciones, se limita a sus productos.
+
+La reposición guarda mediante el mismo `POST /api/supplier-orders`. Abrir el
+formulario prepara el borrador local. Guardar como borrador lo registra sin
+mover stock. Confirmar la compra ingresa las cantidades.
 
 Errores: `400` por datos inválidos, `401` sin sesión, `403` sin `ADMIN_ALL`,
 `404` para proveedor/producto/pedido inexistente y `409` por reutilizar una clave

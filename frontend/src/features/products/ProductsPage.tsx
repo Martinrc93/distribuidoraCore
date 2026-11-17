@@ -19,6 +19,7 @@ import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import { FormModal } from '../../shared/components/FormModal'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 import { ShrinkageDialog } from '../inventory/ShrinkageDialog'
+import { restockPurchasePath } from '../purchasing/supplierOrders'
 
 type Product = {
   id: string
@@ -453,13 +454,16 @@ export default function ProductsPage() {
     { key: 'actions', label: 'Estado y acciones', align: 'right', render: (_value: string, row: Record<string, string>) => {
       const product = products.find((candidate) => candidate.id === row.id)
       if (!product) return null
+      const canRestock = isAdmin && product.status === 'ACTIVE' && product.stock !== undefined && product.stock <= 0
       return <div className="product-row-controls">
         <StatusBadge value={product.status ?? 'ACTIVE'} />
-        <div className={canRecordShrinkage ? 'table-row-actions flex-wrap' : 'table-row-actions'}>
+        <div className={canRecordShrinkage || canRestock ? 'table-row-actions flex-wrap' : 'table-row-actions'}>
           <Button variant="secondary" onClick={() => setSelectedProduct(product)} aria-label={`Ver movimientos de ${product.name}`}>Ver movimientos</Button>
           {hasAuthority('STOCK_ADJUST') && <Button variant="secondary" onClick={() => { setAdjustmentProduct(product); setAdjustmentMode('target'); setQuantity(''); setReason(''); setAdjustmentError('') }} aria-label={`Ajustar stock de ${product.name}`}>Ajustar stock</Button>}
           {canRecordShrinkage && product.status !== 'INACTIVE' && <Button id={`shrinkage-${product.id}`} variant="secondary"
             onClick={() => { setShrinkageProduct(product); setFeedback('') }} aria-label={`Registrar merma de ${product.name}`}>Registrar merma</Button>}
+          {canRestock && <Button variant="secondary" href={restockPurchasePath(product.id, 'stock', stockSearch)}
+            aria-label={`Reponer ${product.name}`}>Reponer</Button>}
           {isAdmin && <Button variant="secondary" onClick={() => { setFormProduct(product); setShowForm(false); setFeedback('') }} disabled={formSaving || mutating} aria-label={`Editar ${product.name}`}>Editar</Button>}
         </div>
       </div>

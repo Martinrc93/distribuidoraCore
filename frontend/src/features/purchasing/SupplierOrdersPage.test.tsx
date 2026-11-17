@@ -134,4 +134,16 @@ describe('Supplier orders', () => {
     expect(screen.queryByLabelText('Cantidad de Yerba')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Agregar productos sin stock' })).toBeDisabled()
   })
+
+  it('keeps bulk replenishment scoped to a supplier whose only association is inactive', async () => {
+    const inactive = { ...product, status: 'INACTIVE', stock: 0, suppliers: [supplierA] }
+    const otherLow = { id: 'product-b', name: 'Azúcar', cost: 15, status: 'ACTIVE', stock: 0, suppliers: [supplierB] }
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => String(input).startsWith('/api/products')
+      ? json(paged([inactive, otherLow])) : fixture(input))
+    renderPage()
+    await startForm()
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /^Producto$/ })).toBeEnabled())
+    expect(screen.getByRole('button', { name: 'Agregar productos sin stock' })).toBeDisabled()
+  })
 })

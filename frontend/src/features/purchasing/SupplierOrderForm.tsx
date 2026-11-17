@@ -12,17 +12,21 @@ import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import { displayDate, parseDate, todayInArgentina } from '../dashboard/dashboardDates'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
-import { decimal, isHalfUnit, money, purchaseProductsKey, supplierOrdersKey, suppliersOptionsKey, type PreviousSupplierOrder, type PurchaseProduct, type Supplier, type SupplierOrderDetail } from './supplierOrders'
+import { decimal, isHalfUnit, money, purchaseProductsKey, suggestedRestockQuantity, supplierOrdersKey, suppliersOptionsKey, type PreviousSupplierOrder, type PurchaseProduct, type Supplier, type SupplierOrderDetail, type SupplierOrderResult } from './supplierOrders'
 
 type DraftLine = { productId: string; name: string; quantity: string; unitCost: string }
-type Result = { id: string; number: string; total: number; status?: string }
+type RestockProduct = PurchaseProduct & { stock: number; suppliers: Supplier[] }
 type Payload = { supplierId: string; orderDate: string; lines: Array<{ productId: string; quantity: number; unitCost: number }>; idempotencyKey: string; confirm: boolean }
 
 /**
  * Creates a purchase (as draft or confirmed) or edits an existing one when `initial` is given.
  * Confirming adds the quantities to stock; editing a confirmed purchase moves stock by the difference.
  */
-export function SupplierOrderForm({ onClose, onSaved, initial }: { onClose: () => void; onSaved: (result: Result) => void; initial?: SupplierOrderDetail }) {
+type Props = { onClose: () => void; onSaved: (result: SupplierOrderResult) => void } & (
+  { initial?: SupplierOrderDetail; restockProductId?: never } | { initial?: never; restockProductId: string }
+)
+
+export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId }: Props) {
   const queryClient = useQueryClient()
   const formRef = useRef<HTMLFormElement>(null)
   const confirmIntent = useRef(false)
@@ -35,6 +39,7 @@ export function SupplierOrderForm({ onClose, onSaved, initial }: { onClose: () =
   const [lines, setLines] = useState<DraftLine[]>(() => (initial?.items ?? []).map((item) => ({
     productId: item.productId, name: item.productName, quantity: String(item.quantity), unitCost: String(item.unitCost),
   })))
+  const [restockProduct, setRestockProduct] = useState<RestockProduct | null>()
   const [productId, setProductId] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [error, setError] = useState('')
@@ -44,19 +49,41 @@ export function SupplierOrderForm({ onClose, onSaved, initial }: { onClose: () =
   const [attempt, setAttempt] = useState<Payload>()
   const previous = useQuery({ queryKey: ['supplier-orders-last', supplierId], queryFn: ({ signal }) => apiGet<PreviousSupplierOrder>(`/api/supplier-orders/supplier/${supplierId}/last-order`, signal), enabled: Boolean(supplierId), retry: false })
   const busy = saving || loadingPrevious
+  const waitingForRestock = Boolean(restockProductId && restockProduct === undefined)
   const activeProducts = (products.data?.content ?? []).filter((product) => product.status === 'ACTIVE')
   const isoDate = parseDate(orderDate)
   const total = lines.reduce((sum, line) => sum + (decimal(line.quantity) * decimal(line.unitCost) || 0), 0)
   const pristine = useRef(JSON.stringify({ supplierId, orderDate, lines }))
-  const hasChanges = editing ? JSON.stringify({ supplierId, orderDate, lines }) !== pristine.current
+  const hasChanges = editing || restockProductId ? JSON.stringify({ supplierId, orderDate, lines }) !== pristine.current
     : Boolean(supplierId || lines.length || orderDate !== displayDate(todayInArgentina()))
   const { requestDiscard, discardDialog } = useDiscardChanges({ hasChanges, onDiscard: onClose, disabled: busy, protectUnload: true })
 
   useEffect(() => {
+    if (!waitingForRestock || !products.isSuccess || products.isFetching || !suppliers.isSuccess || suppliers.isFetching) return
+    const product = products.data.content.find((item) => item.id === restockProductId)
+    if (!product || product.status !== 'ACTIVE' || product.stock === undefined
+      || !Number.isFinite(product.stock) || !Number.isFinite(product.cost)) {
+      setRestockProduct(null)
+      return
+    }
+    const associated = suppliers.data.content.filter((supplier) => product.suppliers?.some((candidate) => candidate.id === supplier.id))
+    const suggestedSupplier = associated.length === 1 ? associated[0].id : ''
+    const suggestedLines = [{
+      productId: product.id, name: product.name, quantity: suggestedRestockQuantity(product.stock), unitCost: String(product.cost),
+    }]
+    pristine.current = JSON.stringify({ supplierId: suggestedSupplier, orderDate, lines: suggestedLines })
+    setSupplierId(suggestedSupplier)
+    setLines(suggestedLines)
+    setRestockProduct({ ...product, stock: product.stock, suppliers: associated })
+  }, [waitingForRestock, restockProductId, orderDate, products.data, products.isSuccess, products.isFetching,
+    suppliers.data, suppliers.isSuccess, suppliers.isFetching])
+
+  useEffect(() => {
+    if (waitingForRestock) return
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     formRef.current?.querySelector<HTMLInputElement>('input')?.focus()
     return () => { if (trigger?.isConnected) trigger.focus({ preventScroll: true }) }
-  }, [])
+  }, [waitingForRestock])
 
   function changed() { setAttempt(undefined); setError('') }
   function applyPrevious(data: PreviousSupplierOrder) {
@@ -82,15 +109,16 @@ export function SupplierOrderForm({ onClose, onSaved, initial }: { onClose: () =
     finally { setLoadingPrevious(false) }
   }
   /** Products to restock: active ones with stock <= 0, limited to the supplier's products when it has associations. */
-  const supplierProducts = activeProducts.filter((product) => product.suppliers?.some((candidate) => candidate.id === supplierId))
+  const supplierProducts = (products.data?.content ?? []).filter((product) => product.suppliers?.some((candidate) => candidate.id === supplierId))
   const restockCandidates = (supplierProducts.length ? supplierProducts : activeProducts)
-    .filter((product) => product.stock !== undefined && Number(product.stock) <= 0 && !lines.some((line) => line.productId === product.id))
+    .filter((product) => product.status === 'ACTIVE' && product.stock !== undefined && product.stock <= 0
+      && !lines.some((line) => line.productId === product.id))
   function addRestock() {
     if (!restockCandidates.length) return
     // Suggest enough to cover the negative balance plus one unit, in half units; the user can adjust it.
     setLines((current) => [...current, ...restockCandidates.map((product) => ({
       productId: product.id, name: product.name, unitCost: String(product.cost),
-      quantity: String(Math.ceil((Math.max(0, -Number(product.stock)) + 1) * 2) / 2).replace('.', ','),
+      quantity: suggestedRestockQuantity(Number(product.stock)),
     }))])
     changed()
   }
@@ -123,19 +151,40 @@ export function SupplierOrderForm({ onClose, onSaved, initial }: { onClose: () =
       const result = initial
         ? await apiPut<SupplierOrderDetail>(`/api/supplier-orders/${initial.order.id}`, { supplierId: payload.supplierId, orderDate: payload.orderDate, lines: payload.lines })
           .then((detail) => ({ id: detail.order.id, number: detail.order.number, total: detail.order.total, status: detail.order.status }))
-        : await apiPost<Result>('/api/supplier-orders', payload)
+        : await apiPost<SupplierOrderResult>('/api/supplier-orders', payload)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: supplierOrdersKey }),
         queryClient.invalidateQueries({ queryKey: ['supplier-orders-last', supplierId] }),
-        queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products') || String(queryKey[0]).startsWith('/api/inventory') }),
+        queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
+          const key = String(queryKey[0])
+          return key.startsWith('/api/products') || key.startsWith('/api/inventory')
+            || key === 'dashboard' || key === 'order-create-products'
+        } }),
       ])
       onSaved(result)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo registrar la compra.') }
     finally { setSaving(false) }
   }
 
+  if (waitingForRestock || restockProduct === null) {
+    return <Panel title="Nueva compra">
+      {restockProduct === null
+        ? <p role="alert" className="error-text">El producto ya no está disponible para reposición.</p>
+        : <>
+          {products.isError && <p role="alert" className="error-text">No se pudo consultar el producto. <Button type="button" variant="link" onClick={() => void products.refetch()}>Reintentar productos</Button></p>}
+          {suppliers.isError && <p role="alert" className="error-text">No se pudieron cargar los proveedores. <Button type="button" variant="link" onClick={() => void suppliers.refetch()}>Reintentar proveedores</Button></p>}
+          {(!products.isError && !suppliers.isError || products.isFetching || suppliers.isFetching)
+            && <p role="status" className="helper-text">Cargando el stock y los proveedores actuales.</p>}
+        </>}
+      <div className="page-actions"><Button type="button" variant="secondary" onClick={onClose}>Volver</Button></div>
+    </Panel>
+  }
+
   return <>
     <Panel title={initial ? `Editar compra ${initial.order.number}` : 'Nueva compra'} description={!initial ? 'Guardala como borrador o confirmala: al confirmar, las cantidades se suman al stock.' : initialStatus === 'CONFIRMED' ? 'La compra está confirmada: al guardar, el stock se ajusta por la diferencia de cantidades.' : initialStatus === 'LEGACY' ? 'Compra registrada antes de que las compras movieran stock: editarla no cambia el stock.' : 'Borrador: los cambios no mueven stock hasta confirmar la compra.'}>
+      {restockProduct && <p className="helper-text mb-[18px] [overflow-wrap:anywhere]">
+        Stock de {restockProduct.name} al abrir: {new Intl.NumberFormat('es-AR').format(restockProduct.stock)}.
+      </p>}
       <form ref={formRef} onSubmit={submit} aria-label={initial ? `Editar compra ${initial.order.number}` : 'Nueva compra'} aria-busy={busy}>
         <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0">
           <div className="form-grid items-end mb-[18px]">
@@ -143,6 +192,9 @@ export function SupplierOrderForm({ onClose, onSaved, initial }: { onClose: () =
             <OrderDateFilter id="supplier-order-date" label="Fecha de la compra" value={orderDate} isoValue={isoDate ?? ''} invalid={Boolean(orderDate && !isoDate)} required disabled={busy} onChange={(value) => { setOrderDate(value); changed() }} />
           </div>
           {suppliers.isError && <p className="error-text" role="alert">No se pudieron cargar los proveedores. <Button type="button" variant="link" onClick={() => void suppliers.refetch()}>Reintentar proveedores</Button></p>}
+          {restockProduct && restockProduct.suppliers.length > 1 && <p className="helper-text [overflow-wrap:anywhere]">
+            Proveedores asociados a {restockProduct.name}: {restockProduct.suppliers.map((supplier) => supplier.name).join(', ')}.
+          </p>}
           <div className="page-actions mb-[18px]"><Button type="button" variant="secondary" disabled={!supplierId || previous.isFetching || previous.isError || !previous.data?.available} onClick={() => void loadPrevious()}>{loadingPrevious ? 'Cargando compra...' : 'Cargar compra anterior'}</Button><Button type="button" variant="secondary" disabled={!supplierId || products.isLoading || !restockCandidates.length} title={supplierId && !products.isLoading && !restockCandidates.length ? 'No hay productos sin stock para agregar.' : undefined} onClick={addRestock}>{`Agregar productos sin stock${supplierId && restockCandidates.length ? ` (${restockCandidates.length})` : ''}`}</Button></div>
           {supplierId && previous.isFetching && <p className="helper-text" role="status">Consultando el última compra a este proveedor...</p>}
           {supplierId && previous.isError && <p className="error-text" role="alert">No se pudo consultar la compra anterior. <Button type="button" variant="link" onClick={() => void previous.refetch()}>Reintentar compra anterior</Button></p>}

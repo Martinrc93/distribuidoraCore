@@ -432,6 +432,14 @@ según el estado. Las cantidades de compras no históricas deben ser múltiplos 
 «Agregar productos sin stock (N)» carga los productos activos con stock ≤ 0 del
 proveedor (o todos si no tiene productos asociados).
 
+«Reponer» aparece en las acciones de la fila de Stock para productos activos
+con saldo ≤ 0 y debajo del nombre del producto en Cobertura estimada del
+Dashboard. Abre `/supplier-orders/restock` con el mismo panel de compra,
+una línea editable y el selector compartido de proveedor. La página espera el
+catálogo actual, muestra reintento si falla y preserva los filtros de origen
+al cancelar o volver después de guardar. La preselección por reposición queda
+como estado inicial. Si se modifica, Cancelar pide confirmar el descarte.
+
 La solicitud se crea en un panel en la misma página, con proveedor, fecha,
 selector de productos activos, cantidades y costos editables. Reutiliza
 `.form-grid` y `.product-picker`, que se apilan a `760px`, sin variantes globales.
@@ -441,7 +449,8 @@ requiere confirmación para reemplazar productos y bloquea productos inactivos.
 Cancelar un borrador modificado pide confirmación. Durante guardado/carga se
 bloquean campos y acciones; errores conservan el borrador y el intento para
 reintentar. Proveedores y productos cargan todas sus páginas y ofrecen reintento.
-Crear una solicitud no cambia stock ni envía mensajes; contrato y alcance en
+Guardar como borrador conserva el stock. Confirmar ingresa las cantidades.
+El flujo no envía mensajes al proveedor. Contrato y alcance en
 [`supplier-orders.md`](../api/supplier-orders.md).
 
 En productos, «Proveedores (opcional)» permite agregar varios mediante

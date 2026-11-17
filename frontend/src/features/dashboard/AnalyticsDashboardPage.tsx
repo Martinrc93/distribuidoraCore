@@ -10,6 +10,7 @@ import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { StatCard } from '../../shared/components/StatCard'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
+import { restockPurchasePath } from '../purchasing/supplierOrders'
 import { businessTimeZone, displayDate, parseDate, presetRange, rangeError, todayInArgentina } from './dashboardDates'
 import { parseDashboardReport } from './dashboardResponses'
 
@@ -153,7 +154,16 @@ export default function AnalyticsDashboardPage() {
           <DataTable className={compactTable} columns={[{ key: 'name', label: 'Producto', emphasis: true }, { key: 'stock', label: 'Stock', align: 'right' }, { key: 'state', label: 'Situación', render: (value) => <span className="font-bold text-danger">{value}</span> }]} rows={data.stockAlerts.map((item) => ({ id: item.id, name: item.name, stock: number(item.stock), state: item.stock < 0 ? 'Stock negativo' : 'Sin stock' }))} emptyContent={empty('No hay productos activos sin stock ni con stock negativo.')} />
         </Panel>
         <Panel title="Cobertura estimada de stock" description="Ocho productos priorizados por menor cobertura. Promedio de unidades netas vendidas en los últimos 30 días completos.">
-          <DataTable className={compactTable} columns={[{ key: 'name', label: 'Producto', emphasis: true }, { key: 'stock', label: 'Stock', align: 'right' }, { key: 'daily', label: 'Unidades/día', align: 'right' }, { key: 'days', label: 'Cobertura', align: 'right' }]} rows={data.stockCoverage.map((item) => ({ id: item.id, name: item.name, stock: number(item.stock), daily: new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(item.dailyUnits), days: item.days === null ? 'Sin ventas' : `${number(item.days)} días` }))} emptyContent={empty('No hay productos activos para estimar cobertura.')} />
+          <DataTable className={compactTable} columns={[
+            { key: 'name', label: 'Producto', emphasis: true, render: (value, row) => <div>
+              <span className="block">{value}</span>
+              <Button variant="link" href={restockPurchasePath(row.id, 'analytics', params.toString())}
+                aria-label={`Reponer ${value}`}>Reponer</Button>
+            </div> },
+            { key: 'stock', label: 'Stock', align: 'right' },
+            { key: 'daily', label: 'Unidades/día', align: 'right' },
+            { key: 'days', label: 'Cobertura', align: 'right' },
+          ]} rows={data.stockCoverage.map((item) => ({ id: item.id, name: item.name, stock: number(item.stock), daily: new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(item.dailyUnits), days: item.days === null ? 'Sin ventas' : `${number(item.days)} días` }))} emptyContent={empty('No hay productos activos para estimar cobertura.')} />
         </Panel>
         <Panel title="Productos más vendidos" description="Los cinco productos con más unidades vendidas en el período. Importes después de descuentos; no descuenta devoluciones de mercadería.">
           <DataTable className={compactTable} columns={[{ key: 'name', label: 'Producto', emphasis: true }, { key: 'units', label: 'Unidades', align: 'right' }, { key: 'amount', label: 'Importe', align: 'right' }]} rows={data.topProducts.map((item) => ({ id: item.id, name: item.name, units: number(item.units), amount: money(item.amount) }))} emptyContent={empty('No hay productos vendidos en este período.')} />

@@ -185,7 +185,7 @@ para pedidos conservan el catálogo compartido y el alcance del cliente.
 |---|---|---|---|
 | 6.1 | Mermas | M | Implementada con V46. Registro desde Stock con motivo obligatorio y `STOCK_SHRINKAGE` reservado a ADMIN. Movimiento, saldo y auditoría en una transacción con reintentos sin doble descuento. Reporte paginado por período con total de unidades perdidas. |
 | 6.2 | Editar compras | M | Implementada con V40. La edición de una compra confirmada aplica la diferencia de cantidades y registra auditoría. |
-| 6.3 | Pedir productos para reponer | S–M | Implementado «Agregar productos sin stock» en Compras. Queda como ampliación iniciar la compra desde Stock o el dashboard. |
+| 6.3 | Pedir productos para reponer | S–M | Implementada. «Agregar productos sin stock» en Compras y «Reponer» desde Stock y Cobertura del Dashboard. Se abre una compra editable con costo y saldo vigentes, sugerencia de cantidad y proveedor preseleccionado cuando es único. |
 | 6.4 | Ingreso de stock por confirmación de compra | L | Implementado con V40. Confirmar ingresa stock. Anular una confirmada registra movimientos compensatorios. |
 
 ### Fase 7 — Reportes
@@ -275,7 +275,7 @@ Respuestas del usuario (2026-11-12):
    personalizados quedan limitados a datos asignados. Desacoplamiento por área
    de `ADMIN_ALL` (5.4) completado en `6bd6cfa` según ese alcance. Las
    operaciones globales de Stock/catálogo, Compras y Administración requieren
-   administrador. Mermas (6.1) está implementada con V46.
+   administrador. Mermas (6.1) está implementada con V46 y registrada en `2f0ffd1`.
 7. **Compras:** sí. Una compra **confirmada** ingresa el stock de lo comprado. Hace
    falta un estado (borrador / confirmada) y que editar o anular una compra
    confirmada genere movimientos compensatorios.
@@ -283,6 +283,7 @@ Respuestas del usuario (2026-11-12):
    CANCELLED / LEGACY (compras previas, sin efecto en stock), movimientos
    `PURCHASE`, `PURCHASE_ADJUSTMENT` y `PURCHASE_CANCELLATION`, edición y anulación,
    cantidades en múltiplos de 0,5 y «Agregar productos sin stock» en el formulario.
+   La reposición individual abre el mismo formulario desde Stock y Dashboard.
 8. **Edición de precios en la tabla (2.4):** sí, como número simple, **nunca menor al
    costo**. Además, al modificar un costo que queda por encima del precio de alguna
    lista, debe abrirse un **modal para corregir esos precios en el momento**.
