@@ -92,7 +92,7 @@ class DocumentControllerTest {
         when(renderer.render(model)).thenReturn(pdf);
 
         mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
-                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+                .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
             .andExpect(status().isOk())
             .andExpect(content().contentType(MediaType.APPLICATION_PDF))
             .andExpect(header().string(HttpHeaders.CONTENT_LENGTH, String.valueOf(pdf.length)))
@@ -125,7 +125,7 @@ class DocumentControllerTest {
         when(ticketRenderer.render(model)).thenReturn(pdf);
 
         mockMvc.perform(get("/api/orders/{orderId}/documents/ticket", orderId)
-                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+                .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
             .andExpect(status().isOk())
             .andExpect(content().contentType(MediaType.APPLICATION_PDF))
             .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ticket-V-3.pdf\""))
@@ -153,7 +153,7 @@ class DocumentControllerTest {
         when(service.load(orderId)).thenThrow(new SaleDocumentNotFoundException(orderId));
 
         mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
-                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+                .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
             .andExpect(status().isNotFound());
     }
 
@@ -163,7 +163,7 @@ class DocumentControllerTest {
         when(service.load(orderId)).thenThrow(new SaleDocumentConflictException(orderId));
 
         mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
-                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+                .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
             .andExpect(status().isConflict());
     }
 
@@ -175,14 +175,14 @@ class DocumentControllerTest {
         doThrow(new RuntimeException("renderer failed")).when(renderer).render(model);
 
         mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
-                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+                .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
             .andExpect(status().isInternalServerError());
     }
 
     @Test
     void malformedOrderIdUsesBadRequestConvention() throws Exception {
         mockMvc.perform(get("/api/orders/not-a-uuid/documents/a4")
-                .with(user("seller").authorities(() -> "ORDER_CREATE")))
+                .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
             .andExpect(status().isBadRequest());
     }
 

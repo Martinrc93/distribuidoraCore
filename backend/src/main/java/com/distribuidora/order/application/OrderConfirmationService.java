@@ -1,5 +1,7 @@
 package com.distribuidora.order.application;
 
+import com.distribuidora.shared.security.PermissionAccess;
+
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.customer.application.AccountPaymentService;
 import com.distribuidora.inventory.application.InventoryMovementService;
@@ -250,24 +252,23 @@ public class OrderConfirmationService {
 
     @Transactional
     public EditResult editConfirmed(UUID orderId, EditCommand request) {
-        if (!hasAuthority("ADMIN_ALL")) {
-            throw new AccessDeniedException("ADMIN_ALL es requerido para editar pedidos confirmados");
-        }
+        PermissionAccess.require("ORDER_EDIT");
         if (orderId == null || request == null || request.lines() == null || request.lines().isEmpty()
             || request.orderDiscountPercent() == null) {
             throw new IllegalArgumentException("Los campos obligatorios son inválidos");
         }
 
         Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, "
-            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid, o.previous_balance_amount, o.fulfillment_status "
+            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid, o.previous_balance_amount, o.fulfillment_status, o.order_discount_percent "
             + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update of o, s", orderId);
+        if (currentUser != null) currentUser.requireOrderAccess(orderId);
         if (!"CONFIRMED".equals(lifecycle.get("order_status")) || !"CONFIRMED".equals(lifecycle.get("sale_status"))) {
             throw new IllegalStateException("Solo se pueden editar pedidos y ventas confirmados");
         }
 
         UUID customerId = uuidOrNull(lifecycle.get("customer_id"));
         Map<String, Object> customer = jdbc.queryForMap(
-            "select id, balance from customer.customers where id = ? for update", customerId);
+            "select id, balance, price_list_id from customer.customers where id = ? for update", customerId);
         BigDecimal previousBalance = request.previousBalanceAmount() == null
             ? decimal(lifecycle.get("previous_balance_amount")) : request.previousBalanceAmount();
         validateScale(previousBalance, "previousBalanceAmount");
@@ -281,8 +282,8 @@ public class OrderConfirmationService {
         ConfirmationCommand pricingRequest = new ConfirmationData(
             "confirmed-order-edit", customerId, request.priceListId(), request.lines(), request.orderDiscountPercent(), List.of());
         validateRequest(pricingRequest);
-        validateOverrides(pricingRequest);
         List<ResolvedLine> resolved = resolveLines(pricingRequest);
+        validateEditOverrides(orderId, pricingRequest, resolved, lifecycle, customer);
         OrderCalculationService.OrderCalculation calculated = calculation.calculate(
             resolved.stream().map(line -> new OrderCalculationService.CalculatedLine(
                 line.productId(), line.quantity(), line.unitPrice(), line.discount())).toList(),
@@ -452,11 +453,43 @@ public class OrderConfirmationService {
     }
 
     private void validateOverrides(ConfirmationCommand request) {
-        boolean override = request.orderDiscountPercent().signum() != 0
-            || request.lines().stream().anyMatch(line -> line.unitPriceOverride() != null
-                || line.lineDiscountPercent().signum() != 0);
-        if (override && !hasAuthority("ADMIN_ALL")) {
-            throw new AccessDeniedException("ADMIN_ALL es requerido para modificar precios o descuentos");
+        if (request.lines().stream().anyMatch(line -> line.unitPriceOverride() != null))
+            PermissionAccess.require("ORDER_PRICE_OVERRIDE");
+        if (request.orderDiscountPercent().signum() != 0 || request.lines().stream().anyMatch(line -> line.lineDiscountPercent().signum() != 0))
+            PermissionAccess.require("ORDER_DISCOUNT");
+    }
+
+    private void validateEditOverrides(UUID orderId, ConfirmationCommand request, List<ResolvedLine> resolved,
+                                       Map<String, Object> lifecycle, Map<String, Object> customer) {
+        boolean prices = PermissionAccess.allows("ORDER_PRICE_OVERRIDE");
+        boolean discounts = PermissionAccess.allows("ORDER_DISCOUNT");
+        boolean lists = PermissionAccess.allows("ORDER_PRICE_LIST_CHANGE");
+        if (prices && discounts && lists) return;
+        List<Map<String, Object>> snapshots = jdbc.queryForList(
+            "select oi.product_id, coalesce(oi.price_list_id, pl.id) as price_list_id, oi.unit_price, oi.line_discount_percent "
+                + "from orders.order_items oi left join catalog.price_lists pl on pl.code = oi.price_list_code where oi.order_id = ?", orderId);
+        if (!lists) {
+            UUID selectedList = request.priceListId() != null ? request.priceListId() : uuidOrNull(customer.get("price_list_id"));
+            if (selectedList == null) selectedList = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL' and status = 'ACTIVE'", UUID.class);
+            UUID targetList = selectedList;
+            if (snapshots.stream().anyMatch(row -> !targetList.equals(uuidOrNull(row.get("price_list_id")))))
+                throw new AccessDeniedException("Se requiere ORDER_PRICE_LIST_CHANGE para cambiar la lista del pedido");
+        }
+        if (!discounts && request.orderDiscountPercent().compareTo(decimal(lifecycle.get("order_discount_percent"))) != 0)
+            throw new AccessDeniedException("Se requiere ORDER_DISCOUNT para modificar descuentos");
+        for (int index = 0; index < request.lines().size(); index++) {
+            LineCommand line = request.lines().get(index);
+            UUID resolvedList = resolved.get(index).priceListId();
+            List<Map<String, Object>> previous = snapshots.stream()
+                .filter(row -> line.productId().equals(uuidOrNull(row.get("product_id")))).toList();
+            // Quantity edits retain historical prices and discounts, without granting the ability to change them.
+            boolean preserved = previous.stream().anyMatch(row ->
+                (prices || line.unitPriceOverride() == null || (resolvedList.equals(uuidOrNull(row.get("price_list_id")))
+                    && line.unitPriceOverride().compareTo(decimal(row.get("unit_price"))) == 0))
+                && (discounts || line.lineDiscountPercent().compareTo(decimal(row.get("line_discount_percent"))) == 0));
+            boolean standardNewLine = previous.isEmpty() && (prices || line.unitPriceOverride() == null)
+                && (discounts || line.lineDiscountPercent().signum() == 0);
+            if (!preserved && !standardNewLine) throw new AccessDeniedException("Se requieren permisos para modificar precios o descuentos");
         }
     }
 

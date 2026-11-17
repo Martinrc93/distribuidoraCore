@@ -73,7 +73,8 @@ crean ese perfil automáticamente para todo rol distinto de ADMIN. Usuarios perm
 cambiar de rol conservando perfil, asignaciones e historial e invalidando sesiones;
 requiere perfil activo para roles asignados y desactivarlo antes de pasar a ADMIN.
 El acceso completo de `ADMIN_ALL` y las pantallas exclusivas de administradores
-conservan sus reglas; el desacoplamiento por área sigue pendiente (5.4).
+conservan sus reglas. 5.4 incorpora permisos independientes en Pedidos y ventas;
+el resto de las áreas sigue pendiente. Ver [permisos comerciales](../api/commerce-permissions.md).
 
 ### Seller
 
@@ -211,7 +212,7 @@ Reglas:
 - La cancelación de una venta no pagada registra una reversión.
 - La edición de un pedido confirmado preparado calcula un delta y registra movimientos
   compensatorios. Solo puede editarse mientras pedido y venta sigan en
-  `CONFIRMED`, mediante `ADMIN_ALL`; se conservan los pagos existentes y la
+  `CONFIRMED`, mediante `ORDER_EDIT` o `ADMIN_ALL` y acceso al pedido; se conservan los pagos existentes y la
   cuenta corriente se ajusta por el cambio de total. No se permite reducir el
   total por debajo del importe pagado.
 
@@ -275,7 +276,7 @@ La preparación es independiente de los estados comerciales: `PENDING` / `PREPAR
 `ORDER_PREPARE` permite preparar a administradores y vendedores por defecto,
 respetando el acceso del vendedor a sus pedidos. Preparar descuenta stock una
 sola vez y guarda fecha/usuario; entregar un pendiente prepara automáticamente.
-Un intento fallido no prepara. Los administradores editan confirmados pendientes
+Un intento fallido no prepara. Los usuarios con ORDER_EDIT editan confirmados pendientes
 sin stock y preparados con deltas. Cancelar revierte solo lo descontado;
 reactivar restaura deuda y deja pendiente de preparación.
 
@@ -306,9 +307,10 @@ Reglas:
 - `CANCELLED` es terminal.
 - Una venta entregada no puede revertirse.
 - Una venta pagada no puede cancelarse.
-- Solo el administrador puede cancelar.
+- ORDER_CANCEL o ADMIN_ALL permiten cancelar, con acceso al pedido.
+- ORDER_REACTIVATE o ADMIN_ALL permiten reactivar cancelados sin pagos.
 - El administrador puede modificar cualquier pedido confirmado.
-- El vendedor no puede modificar pedidos.
+- Un vendedor requiere ORDER_EDIT para modificar sus pedidos. No lo recibe por defecto.
 
 Una modificación que reduzca el nuevo total por debajo de lo ya pagado debe
 rechazarse. No se generan saldos a favor ni pagos excedentes.
@@ -488,6 +490,11 @@ La auditoría es visible para administradores y no se modifica ni elimina desde
 la aplicación.
 
 ## Permisos funcionales
+
+La tabla indica valores por defecto. Los permisos de Pedidos y ventas pueden
+configurarse por rol, conservando el alcance asignado de los usuarios sin ADMIN_ALL.
+Precios manuales, descuentos, edición, cancelación, reactivación y devoluciones
+requieren sus permisos específicos y no se conceden al vendedor por defecto.
 
 | Acción | Vendedor | Administrador |
 |---|---:|---:|

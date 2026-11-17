@@ -1,5 +1,7 @@
 package com.distribuidora.pricing.api;
 
+import com.distribuidora.shared.security.PermissionAccess;
+
 import com.distribuidora.pricing.application.PricingQueryService;
 import com.distribuidora.shared.web.PageResponse;
 import com.distribuidora.shared.security.CurrentUserAccess;
@@ -69,13 +71,20 @@ public class PricingQueryController {
     }
 
     @GetMapping("/resolve-batch")
-    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ORDER_EDIT', 'ADMIN_ALL')")
     public List<Map<String, Object>> resolveBatch(
         @RequestParam UUID customerId,
         @RequestParam List<UUID> productIds,
-        @RequestParam(required = false) UUID priceListId
+        @RequestParam(required = false) UUID priceListId,
+        @RequestParam(required = false) UUID orderId
     ) {
-        access.requireCustomerAccess(customerId);
+        if (orderId == null) {
+            PermissionAccess.require("ORDER_CREATE");
+            access.requireCustomerAccess(customerId);
+        } else {
+            PermissionAccess.require("ORDER_EDIT");
+            access.requireOrderCustomerAccess(orderId, customerId);
+        }
         return queries.resolveBatch(customerId, productIds, priceListId);
     }
 }

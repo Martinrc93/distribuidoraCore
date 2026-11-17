@@ -21,7 +21,7 @@ public class NotificationController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_NOTIFY', 'ADMIN_ALL')")
     public NotificationDtos.CreateResponse create(@PathVariable UUID orderId,
                                                    @RequestBody NotificationDtos.CreateRequest request) {
         NotificationRequestService.CreateNotificationResult result = service.request(orderId, request);
@@ -29,7 +29,7 @@ public class NotificationController {
     }
 
     @GetMapping("/{requestId}")
-    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_NOTIFY', 'ADMIN_ALL')")
     public NotificationDtos.StatusResponse status(@PathVariable UUID orderId, @PathVariable UUID requestId) {
         NotificationRequestService.NotificationStatus result = service.status(orderId, requestId);
         return new NotificationDtos.StatusResponse(result.requestId(), result.status(), result.attemptCount(),

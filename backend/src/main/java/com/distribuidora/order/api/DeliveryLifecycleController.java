@@ -30,14 +30,14 @@ public class DeliveryLifecycleController {
     }
 
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_CANCEL', 'ADMIN_ALL')")
     public ResponseEntity<Void> cancel(@PathVariable UUID id) {
         service.cancel(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/reactivate")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_REACTIVATE', 'ADMIN_ALL')")
     public ResponseEntity<Void> reactivate(@PathVariable UUID id) {
         service.reactivate(id);
         return ResponseEntity.noContent().build();

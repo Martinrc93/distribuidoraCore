@@ -13,6 +13,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class PricingBatchControllerTest {
+    @org.junit.jupiter.api.BeforeEach
+    void authenticate() { org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+        new org.springframework.security.authentication.TestingAuthenticationToken(UUID.randomUUID().toString(), "test", "ORDER_CREATE")); }
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+
     @Test
     void checksCustomerScopeBeforeResolvingPrices() {
         var queries = mock(PricingQueryService.class);
@@ -20,7 +26,7 @@ class PricingBatchControllerTest {
         var controller = new PricingQueryController(queries, access);
         UUID customer = UUID.randomUUID();
         var products = List.of(UUID.randomUUID());
-        controller.resolveBatch(customer, products, null);
+        controller.resolveBatch(customer, products, null, null);
         var order = inOrder(access, queries);
         order.verify(access).requireCustomerAccess(customer);
         order.verify(queries).resolveBatch(customer, products, null);
@@ -33,7 +39,7 @@ class PricingBatchControllerTest {
         var controller = new PricingQueryController(queries, access);
         UUID customer = UUID.randomUUID();
         doThrow(new EmptyResultDataAccessException(1)).when(access).requireCustomerAccess(customer);
-        assertThatThrownBy(() -> controller.resolveBatch(customer, List.of(UUID.randomUUID()), null))
+        assertThatThrownBy(() -> controller.resolveBatch(customer, List.of(UUID.randomUUID()), null, null))
             .isInstanceOf(EmptyResultDataAccessException.class);
         verifyNoInteractions(queries);
     }

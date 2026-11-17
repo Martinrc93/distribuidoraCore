@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
-import { hasAuthority } from '../../shared/auth/permissions'
+import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
@@ -121,6 +121,8 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
+  const canOverride = hasPermission('ORDER_PRICE_OVERRIDE')
+  const canDiscount = hasPermission('ORDER_DISCOUNT')
   // Sellers may pick another active list when their role has ORDER_PRICE_LIST_CHANGE.
   const canChangeList = isAdmin || hasAuthority('ORDER_PRICE_LIST_CHANGE')
   const [initialOrderDate] = useState(currentOrderDate)
@@ -161,18 +163,18 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const orderPaid = collectionAmount(orderPayment.amount)
   const debtPaid = collectionAmount(debtPayment.amount)
   const defaultListId = customer ? customer.priceListId || activeLists.find((list) => list.code === 'GENERAL')?.id || '' : ''
-  const resolvedListId = (canChangeList ? explicitListId : '') || defaultListId
+  const resolvedListId = (editOrder || canChangeList ? explicitListId : '') || defaultListId
   const selectedList = activeLists.find((list) => list.id === resolvedListId)
   const previousOrderQuery = useQuery({
     queryKey: ['order-create-previous-order', customerId],
     queryFn: ({ signal }) => apiGet<PreviousOrder>(`/api/customers/${encodeURIComponent(customerId)}/last-order`, signal),
-    enabled: Boolean(customerId),
+    enabled: Boolean(customerId) && (!editOrder || isAdmin),
     retry: false,
   })
   const priceProductIds = products.filter((product) => product.status === 'ACTIVE' || lines.some((line) => line.productId === product.id)).map((product) => product.id).sort()
   const pricesQuery = useQuery({
-    queryKey: ['order-price-batch', customerId, resolvedListId, priceProductIds],
-    queryFn: ({ signal }) => loadOrderPrices(customerId, resolvedListId, priceProductIds, signal),
+    queryKey: ['order-price-batch', customerId, resolvedListId, priceProductIds, editOrder?.order.id ?? null],
+    queryFn: ({ signal }) => loadOrderPrices(customerId, resolvedListId, priceProductIds, signal, editOrder?.order.id),
     enabled: Boolean(customerId && selectedList && priceProductIds.length),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
@@ -194,26 +196,26 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const previewSubtotal = lines.reduce((sum, line, index) => {
     const quantity = quantityValue(line.quantity)
     const unitPrice = line.unitPriceOverride !== '' ? quantityValue(line.unitPriceOverride) : Number(resolutions[index]?.data?.unitPrice ?? 0)
-    const discount = isAdmin ? quantityValue(line.lineDiscountPercent || '0') : 0
+    const discount = quantityValue(line.lineDiscountPercent || '0')
     if (!validQuantity(line.quantity) || !Number.isFinite(unitPrice)) return sum
     return sum + quantity * unitPrice * (1 - discount / 100)
   }, 0)
   const orderDiscountValue = Number(orderDiscountPercent.trim().replace(',', '.') || 0)
-  const invalidOrderDiscount = isAdmin && (!Number.isFinite(orderDiscountValue) || orderDiscountValue < 0 || orderDiscountValue > 100)
-  const previewDiscount = isAdmin && !invalidOrderDiscount ? previewSubtotal * (orderDiscountValue / 100) : 0
+  const invalidOrderDiscount = (!Number.isFinite(orderDiscountValue) || orderDiscountValue < 0 || orderDiscountValue > 100)
+  const previewDiscount = !invalidOrderDiscount ? previewSubtotal * (orderDiscountValue / 100) : 0
   const previewTotal = Math.max(0, previewSubtotal - previewDiscount)
   const lineRows = lines.map((line, index) => {
     const product = productsById.get(line.productId)
     const resolution = resolutions[index]
     const unitPrice = line.unitPriceOverride !== '' ? quantityValue(line.unitPriceOverride) : Number(resolution?.data?.unitPrice ?? 0)
-    const discount = isAdmin ? quantityValue(line.lineDiscountPercent || '0') : 0
+    const discount = quantityValue(line.lineDiscountPercent || '0')
     return {
       kind: 'PRODUCT',
       id: line.productId,
       name: product?.name ?? 'Producto',
       quantity: line.quantity,
       price: resolution?.isLoading ? 'Resolviendo...' : resolution?.isError ? 'No disponible' : money(unitPrice),
-      discount: isAdmin ? line.lineDiscountPercent : '0',
+      discount: line.lineDiscountPercent,
       subtotal: validQuantity(line.quantity) ? money(unitPrice * quantityValue(line.quantity) * (1 - discount / 100)) : '—',
     }
   })
@@ -221,8 +223,8 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const lineColumns: TableColumn[] = [
     { key: 'name', label: 'Producto', emphasis: true, render: (value) => <span className="order-line-product" title={value}>{value}</span> },
     { key: 'quantity', label: 'Cantidad', render: (value, row) => row.kind === 'BALANCE' ? value : <input className="input order-compact-input" size={4} aria-label={`Cantidad de ${row.name}`} aria-invalid={!validQuantity(value)} aria-describedby={!validQuantity(value) ? `order-quantity-${row.id}-error` : undefined} type="text" inputMode="decimal" required disabled={submitting} value={value} onChange={(event) => updateLine(row.id, 'quantity', event.target.value)} /> },
-    { key: 'price', label: 'Precio unitario', align: 'right', render: (value, row) => editOrder && row.kind !== 'BALANCE' ? <input className="input currency-input" aria-label={`Precio unitario de ${row.name}`} type="text" inputMode="decimal" value={lines.find((line) => line.productId === row.id)?.unitPriceOverride || String(pricesById.get(row.id)?.unitPrice ?? '').replace('.', ',')} onChange={(event) => updateLine(row.id, 'unitPriceOverride', event.target.value)} disabled={submitting} /> : value },
-    { key: 'discount', label: 'Descuento (%)', render: (value, row) => row.kind === 'BALANCE' ? value : isAdmin ? <input className="input order-compact-input" size={4} aria-label={`Descuento de ${row.name}`} type="text" inputMode="decimal" disabled={submitting} value={value} onChange={(event) => updateLine(row.id, 'lineDiscountPercent', event.target.value)} /> : `${value}%` },
+    { key: 'price', label: 'Precio unitario', align: 'right', render: (value, row) => editOrder && canOverride && row.kind !== 'BALANCE' ? <input className="input currency-input" aria-label={`Precio unitario de ${row.name}`} type="text" inputMode="decimal" value={lines.find((line) => line.productId === row.id)?.unitPriceOverride || String(pricesById.get(row.id)?.unitPrice ?? '').replace('.', ',')} onChange={(event) => updateLine(row.id, 'unitPriceOverride', event.target.value)} disabled={submitting} /> : value },
+    { key: 'discount', label: 'Descuento (%)', render: (value, row) => row.kind === 'BALANCE' ? value : canDiscount ? <input className="input order-compact-input" size={4} aria-label={`Descuento de ${row.name}`} type="text" inputMode="decimal" disabled={submitting} value={value} onChange={(event) => updateLine(row.id, 'lineDiscountPercent', event.target.value)} /> : `${value}%` },
     { key: 'subtotal', label: 'Subtotal', align: 'right', emphasis: true },
     { key: 'remove', label: '', align: 'right', render: (_value, row) => <Button variant="danger" type="button" aria-label={`Quitar ${row.name}`} title={`Quitar ${row.name}`} disabled={submitting} onClick={() => removeLine(row.id)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" /></svg></Button> },
   ]
@@ -283,7 +285,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
       setError(`No se puede cargar el pedido anterior: hay productos no disponibles (${unavailable.map((item) => item.productName).join(', ')}).`)
       return
     }
-    if (isAdmin && (Number(previous.orderDiscountPercent) > 0 || previous.items.some((item) => Number(item.lineDiscountPercent) > 0))) {
+    if (canDiscount && (Number(previous.orderDiscountPercent) > 0 || previous.items.some((item) => Number(item.lineDiscountPercent) > 0))) {
       setDiscountPrompt({ order: previous, anchor: event.currentTarget })
       return
     }
@@ -294,8 +296,8 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     if (!previous.items?.length) return
     draftChanged()
     setImportedProducts(previous.items.map((item) => ({ id: item.productId, name: item.productName, status: item.status })))
-    setLines(previous.items.map((item) => ({ productId: item.productId, quantity: String(item.quantity), lineDiscountPercent: String(isAdmin && copyDiscounts ? item.lineDiscountPercent : 0), unitPriceOverride: '' })))
-    setOrderDiscountPercent(String(isAdmin && copyDiscounts ? previous.orderDiscountPercent ?? 0 : 0))
+    setLines(previous.items.map((item) => ({ productId: item.productId, quantity: String(item.quantity), lineDiscountPercent: String(canDiscount && copyDiscounts ? item.lineDiscountPercent : 0), unitPriceOverride: '' })))
+    setOrderDiscountPercent(String(canDiscount && copyDiscounts ? previous.orderDiscountPercent ?? 0 : 0))
     setSelectedProductId('')
     setSelectedProductQuantity('1')
     setSelectedProductDiscount('0')
@@ -307,13 +309,13 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     if (!customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data || lines.some((line) => line.productId === selectedProductId)) return false
     const quantity = quantityValue(selectedProductQuantity)
     const discountInput = selectedProductDiscount.trim().replace(',', '.')
-    const discount = isAdmin ? Number(discountInput) : 0
+    const discount = canDiscount ? Number(discountInput) : 0
     const override = selectedProductPriceOverride?.trim().replace(',', '.') ?? ''
     if (!validQuantity(selectedProductQuantity)) { setError('La cantidad debe ser positiva y múltiplo de 0,5.'); return false }
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento debe estar entre 0 y 100%.'); return false }
-    if (isAdmin && selectedProductPriceOverride !== undefined && (!override || !Number.isFinite(Number(override)) || Number(override) < 0)) { setError('El precio debe ser un número no negativo.'); return false }
+    if (canOverride && selectedProductPriceOverride !== undefined && (!override || !Number.isFinite(Number(override)) || Number(override) < 0)) { setError('El precio debe ser un número no negativo.'); return false }
     draftChanged()
-    setLines((current) => [...current, { productId: selectedProductId, quantity: String(quantity), lineDiscountPercent: String(discount), unitPriceOverride: isAdmin ? override : '' }])
+    setLines((current) => [...current, { productId: selectedProductId, quantity: String(quantity), lineDiscountPercent: String(discount), unitPriceOverride: canOverride ? override : '' }])
     setSelectedProductId('')
     setSelectedProductQuantity('1')
     setSelectedProductDiscount('0')
@@ -370,8 +372,8 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     const payloadLines: ConfirmationRequest['lines'] = []
     for (const [index, line] of lines.entries()) {
       const quantity = quantityValue(line.quantity)
-      const discount = isAdmin ? quantityValue(line.lineDiscountPercent || '0') : 0
-      const override = isAdmin && line.unitPriceOverride.trim() ? quantityValue(line.unitPriceOverride) : undefined
+      const discount = quantityValue(line.lineDiscountPercent || '0')
+      const override = (canOverride || Boolean(editOrder)) && line.unitPriceOverride.trim() ? quantityValue(line.unitPriceOverride) : undefined
       if (!validQuantity(line.quantity)) { setError(`La cantidad de ${productsById.get(line.productId)?.name ?? 'el producto'} debe ser positiva y múltiplo de 0,5.`); return undefined }
       if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('Los descuentos deben estar entre 0 y 100%.'); return undefined }
       if (override !== undefined && (!Number.isFinite(override) || override < 0)) { setError('El precio manual debe ser un número no negativo.'); return undefined }
@@ -379,7 +381,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
       if (resolutions[index].data?.unitPrice === undefined) { setError('Falta resolver el precio del producto.'); return undefined }
     }
 
-    const discount = isAdmin ? orderDiscountValue : 0
+    const discount = orderDiscountValue
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setError('El descuento general debe estar entre 0 y 100%.'); return undefined }
     if (!editOrder) {
       if (!Number.isFinite(orderPaid) || orderPaid < 0) { setError('Ingresá un importe válido para el pago de este pedido.'); return undefined }
@@ -466,13 +468,13 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
               <div className="order-previous-action"><Button type="button" variant="secondary" onClick={loadPreviousOrder} disabled={!customerId || !selectedList || previousOrderQuery.isFetching || previousOrderQuery.isError || !previousOrderQuery.data?.available || submitting} title={!customerId ? 'Seleccioná un cliente para consultar su último pedido.' : previousOrderQuery.isFetching ? 'Consultando el último pedido del cliente.' : previousOrderQuery.isError ? 'No se pudo consultar el pedido anterior.' : !previousOrderQuery.data?.available ? 'Este cliente no tiene pedidos anteriores.' : 'Reemplazar los productos del borrador con los del último pedido del cliente.'}>Cargar pedido anterior</Button></div>
             </div>
             {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
-            <div className={`product-picker order-product-picker${isAdmin ? ' order-product-picker-admin' : ''}`}>
+            <div className={`product-picker order-product-picker${canDiscount ? ' order-product-picker-discount' : ''}`}>
               <SearchableSelect key={customerId} label="Producto" className="order-product-choice" fullWidth preserveSearch allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" options={products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => ({ id: item.id, name: item.name, ...(item.stock !== undefined ? { detail: `Stock: ${stockUnits.format(Number(item.stock))}` } : {}) }))} value={selectedProductId} onChange={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError(''); focusQuantityAfterSelect.current = Boolean(value) }} disabled={!customerId || !selectedList || submitting} />
-              {isAdmin
+              {canOverride
                 ? <label className="field"><span>Precio</span><input className="input currency-input" aria-label="Precio" aria-busy={selectedPriceQuery.isFetching} placeholder={selectedProductId && selectedPriceQuery.isFetching ? 'Consultando...' : selectedProductId && selectedPriceQuery.isError ? 'No disponible' : '—'} type="text" inputMode="decimal" value={selectedProductPriceOverride ?? (selectedProductId && selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '')} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} disabled={submitting || !customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data} /></label>
                 : <div className="field"><span>Precio</span><span className="read-only-field currency-input" aria-label="Precio" aria-live="polite" aria-busy={selectedPriceQuery.isFetching}>{!selectedProductId ? '—' : selectedPriceQuery.isFetching ? 'Consultando...' : selectedPriceQuery.isError ? 'No disponible' : selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '—'}</span></div>}
               <label className="field"><span>Cantidad</span><input ref={quantityInput} onKeyDown={addFromKeyboard} className="input order-compact-input" size={4} type="text" inputMode="decimal" aria-invalid={invalidSelectedQuantity} aria-describedby={invalidSelectedQuantity ? 'order-selected-quantity-error' : undefined} value={selectedProductQuantity} onChange={(event) => setSelectedProductQuantity(event.target.value)} disabled={!selectedProductId || submitting} /></label>
-              {isAdmin && <label className="field"><span>Descuento</span><input onKeyDown={addFromKeyboard} className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductDiscount} onChange={(event) => setSelectedProductDiscount(event.target.value)} disabled={!selectedProductId || submitting} /></label>}
+              {canDiscount && <label className="field"><span>Descuento</span><input onKeyDown={addFromKeyboard} className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductDiscount} onChange={(event) => setSelectedProductDiscount(event.target.value)} disabled={!selectedProductId || submitting} /></label>}
               <Button type="button" variant="secondary" onClick={() => { if (addProduct()) focusProductSearch() }} disabled={submitting || !customerId || !selectedList || !selectedProductId || invalidSelectedQuantity || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data}>Agregar producto</Button>
               {selectedProductId && productsById.get(selectedProductId)?.stock !== undefined && <p className="order-product-choice helper-text m-0" aria-live="polite">Stock disponible: {stockUnits.format(Number(productsById.get(selectedProductId)?.stock))}{Number(productsById.get(selectedProductId)?.stock) <= 0 ? ' · sin stock (el pedido puede dejarlo negativo)' : ''}</p>}
               {invalidSelectedQuantity && <p id="order-selected-quantity-error" className="error-text" role="alert">La cantidad debe ser positiva y múltiplo de 0,5.</p>}
@@ -508,12 +510,12 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
                 <div><dt>Queda de este pedido en cuenta corriente</dt><dd><CurrencyText>{money(Math.max(0, previewTotal - orderPaid))}</CurrencyText></dd></div>
               </dl>}
             </section>}
-            <div className={`order-checkout${isAdmin ? '' : ' order-checkout-standard'}`}>
-              {isAdmin && <div className="order-checkout-discount">
+            <div className={`order-checkout${canDiscount ? '' : ' order-checkout-standard'}`}>
+              {canDiscount && <div className="order-checkout-discount">
                 <label className="field"><span>Descuento general</span><span className="order-discount-input"><input className="input" type="text" inputMode="decimal" aria-label="Descuento general (%)" disabled={submitting} aria-invalid={invalidOrderDiscount} aria-describedby={invalidOrderDiscount ? 'order-discount-error' : 'order-discount-hint'} value={orderDiscountPercent} onChange={(event) => { draftChanged(); setOrderDiscountPercent(event.target.value) }} /><span aria-hidden="true">%</span></span></label>
                 {invalidOrderDiscount ? <p id="order-discount-error" className="error-text" role="alert">Ingresá un descuento entre 0 y 100%.</p> : <p id="order-discount-hint" className="helper-text">De 0 a 100% sobre el subtotal.</p>}
               </div>}
-              <dl className="order-totals"><dt>Subtotal</dt><dd><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewSubtotal)}</CurrencyText></dd>{isAdmin && <><dt>Descuento general</dt><dd className={previewDiscount > 0 ? 'order-discount-value' : undefined}>{previewDiscount > 0 ? '− ' : ''}<CurrencyText>{money(previewDiscount)}</CurrencyText></dd></>}{selectedPreviousBalance > 0 && <><dt>Total del pedido</dt><dd><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewTotal)}</CurrencyText></dd><dt>Saldo anterior</dt><dd><CurrencyText>{money(selectedPreviousBalance)}</CurrencyText></dd></>}</dl>
+              <dl className="order-totals"><dt>Subtotal</dt><dd><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewSubtotal)}</CurrencyText></dd>{(canDiscount || Boolean(editOrder)) && <><dt>Descuento general</dt><dd className={previewDiscount > 0 ? 'order-discount-value' : undefined}>{previewDiscount > 0 ? '− ' : ''}<CurrencyText>{money(previewDiscount)}</CurrencyText></dd></>}{selectedPreviousBalance > 0 && <><dt>Total del pedido</dt><dd><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewTotal)}</CurrencyText></dd><dt>Saldo anterior</dt><dd><CurrencyText>{money(selectedPreviousBalance)}</CurrencyText></dd></>}</dl>
               <div className="order-checkout-actions">
                 <dl className="order-checkout-total"><dt>{selectedPreviousBalance > 0 ? 'Total a cobrar' : 'Total estimado'}</dt><dd className="total-value"><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewTotal + selectedPreviousBalance)}</CurrencyText></dd></dl>
                 <Button type="submit" fullWidth disabled={submitting || invalidOrderDate || invalidOrderDiscount || invalidQuantityLines.length > 0 || resolutions.some((resolution) => resolution.isLoading) || lines.length === 0}>{editOrder ? submitting ? 'Guardando...' : 'Guardar cambios' : submitting ? 'Confirmando...' : attempt ? 'Reintentar confirmación' : 'Confirmar pedido'}</Button>

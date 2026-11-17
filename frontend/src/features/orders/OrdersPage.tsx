@@ -3,7 +3,7 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import { saveOrderNavigation } from './orderNavigation'
 import { useQuery } from '@tanstack/react-query'
 import { apiGet, type ApiPage } from '../../shared/api/client'
-import { hasAuthority } from '../../shared/auth/permissions'
+import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
@@ -160,7 +160,7 @@ export default function OrdersPage() {
     ...(isAdmin ? [{ key: 'createdBy', label: 'Cargado por', render: (value: string, row: Row) => <span className="grid gap-[6px]">{value}<OrderReviewBadge pending={row.reviewPending === 'true'} /></span> } satisfies TableColumn] : []),
     { key: 'fulfillmentStatus', label: 'Preparación', render: (value, row) => row.status === 'CANCELLED' ? '—' : <Badge tone={value === 'PREPARED' ? 'strong' : 'soft'}>{value === 'PREPARED' ? 'Preparado' : value === 'PENDING' ? 'A preparar' : '—'}</Badge> },
     { key: 'status', label: 'Estado', render: (value, row) => <span className="order-status-badges"><Badge tone={value === 'CANCELLED' ? 'muted' : value === 'DELIVERED' ? 'strong' : 'soft'}>{value}</Badge>{row.fullyPaid && <Badge tone="strong">Pagado</Badge>}</span> },
-    { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button id={`order-details-${row.id}`} variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button>{isAdmin && row.status === 'CONFIRMED' && <Button variant="secondary" href={`/orders/${row.id}?edit=true`} aria-label={`Editar pedido ${row.number}`}>Editar</Button>}<OrderOperationalActions order={{ id: row.id, number: row.number, status: row.status, fulfillmentStatus: row.fulfillmentStatus, reviewPending: row.reviewPending === 'true' }} onSaved={message => { setDeliveryFeedback(message); setDeliveryFocusTarget(`order-details-${row.id}`) }} />{canDeliver && row.status === 'CONFIRMED' && <Button id={`order-delivery-${row.id}`} type="button" onClick={() => void openDelivery(row)} disabled={Boolean(loadingDeliveryId)} aria-busy={loadingDeliveryId === row.id} aria-label={`Pasar a entregado pedido ${row.number}`}>{loadingDeliveryId === row.id ? 'Cargando...' : 'Pasar a entregado'}</Button>}</div> },
+    { key: 'action', label: '', render: (_value, row) => <div className="table-row-actions"><Button id={`order-details-${row.id}`} variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button>{hasPermission('ORDER_EDIT') && row.status === 'CONFIRMED' && <Button variant="secondary" href={`/orders/${row.id}?edit=true`} aria-label={`Editar pedido ${row.number}`}>Editar</Button>}<OrderOperationalActions order={{ id: row.id, number: row.number, status: row.status, fulfillmentStatus: row.fulfillmentStatus, reviewPending: row.reviewPending === 'true' }} onSaved={message => { setDeliveryFeedback(message); setDeliveryFocusTarget(`order-details-${row.id}`) }} />{canDeliver && row.status === 'CONFIRMED' && <Button id={`order-delivery-${row.id}`} type="button" onClick={() => void openDelivery(row)} disabled={Boolean(loadingDeliveryId)} aria-busy={loadingDeliveryId === row.id} aria-label={`Pasar a entregado pedido ${row.number}`}>{loadingDeliveryId === row.id ? 'Cargando...' : 'Pasar a entregado'}</Button>}</div> },
   ]
 
   return <>

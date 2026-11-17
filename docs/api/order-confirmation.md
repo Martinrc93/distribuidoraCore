@@ -10,8 +10,13 @@ ver [preparación y revisión administrativa](order-fulfillment.md).
 `priceListId` es opcional. Sin el campo o con `null`, se usa la lista asignada
 al cliente, o `GENERAL` si no tiene asignación. Un vendedor puede enviar esa
 misma lista, pero enviar otra produce `403 FORBIDDEN` antes de crear el pedido
-o mover stock. Solo `ADMIN_ALL` puede elegir una lista diferente. Se mantienen
+o mover stock, salvo que tenga `ORDER_PRICE_LIST_CHANGE` o `ADMIN_ALL`. Se mantienen
 la validación de lista activa y el fallback de precios definido en pricing.
+
+Los precios manuales requieren `ORDER_PRICE_OVERRIDE` y los descuentos de línea
+y pedido requieren `ORDER_DISCOUNT`, además de `ORDER_CREATE` para confirmar.
+`ADMIN_ALL` autoriza ambas acciones. Estos permisos conservan el alcance del
+cliente y vendedor asignados; no habilitan elegir datos de otros usuarios.
 
 ## Fecha de registro
 

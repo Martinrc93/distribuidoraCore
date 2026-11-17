@@ -28,7 +28,7 @@ public class OrderConfirmationController {
     }
 
     @PutMapping("/{orderId}")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_EDIT', 'ADMIN_ALL')")
     public ResponseEntity<OrderEditDtos.EditResponse> editConfirmed(
         @PathVariable java.util.UUID orderId, @Valid @RequestBody OrderEditDtos.EditRequest request) {
         OrderConfirmationService.EditResult result = service.editConfirmed(orderId, request);

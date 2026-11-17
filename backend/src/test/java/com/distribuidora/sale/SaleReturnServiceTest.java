@@ -29,7 +29,7 @@ class SaleReturnServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
-    private final SaleReturnService service = new SaleReturnService(jdbc, inventory, audit);
+    private final SaleReturnService service = new SaleReturnService(jdbc, inventory, audit, mock(com.distribuidora.shared.security.CurrentUserAccess.class));
 
     @AfterEach
     void clearAuthentication() {
@@ -42,7 +42,7 @@ class SaleReturnServiceTest {
         UUID saleId = UUID.randomUUID();
         UUID saleItemId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
-        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("sale_status", "DELIVERED", "order_status", "DELIVERED"));
+        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("order_id", UUID.randomUUID(), "sale_status", "DELIVERED", "order_status", "DELIVERED"));
         when(jdbc.queryForList(anyString(), eq(saleItemId), eq(saleId))).thenReturn(List.of(
             Map.of("id", saleItemId, "product_id", productId, "quantity", new BigDecimal("2.0000"))));
         when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(saleId), eq(saleItemId))).thenReturn(new BigDecimal("0.5000"));
@@ -62,7 +62,7 @@ class SaleReturnServiceTest {
     void rejectsReturnWhenSaleIsNotDelivered() {
         authenticate();
         UUID saleId = UUID.randomUUID();
-        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("sale_status", "CONFIRMED", "order_status", "CONFIRMED"));
+        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("order_id", UUID.randomUUID(), "sale_status", "CONFIRMED", "order_status", "CONFIRMED"));
 
         assertThatThrownBy(() -> service.create(saleId, validRequest()))
             .isInstanceOf(IllegalStateException.class);
@@ -75,7 +75,7 @@ class SaleReturnServiceTest {
         UUID saleId = UUID.randomUUID();
         UUID saleItemId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
-        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("sale_status", "DELIVERED", "order_status", "DELIVERED"));
+        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("order_id", UUID.randomUUID(), "sale_status", "DELIVERED", "order_status", "DELIVERED"));
         when(jdbc.queryForList(anyString(), eq(saleItemId), eq(saleId))).thenReturn(List.of(
             Map.of("id", saleItemId, "product_id", productId, "quantity", new BigDecimal("1.0000"))));
         when(jdbc.queryForObject(anyString(), eq(BigDecimal.class), eq(saleId), eq(saleItemId))).thenReturn(new BigDecimal("0.5000"));
@@ -96,7 +96,7 @@ class SaleReturnServiceTest {
             new SaleReturnDtos.ReturnItemRequest(saleItemId, new BigDecimal("0.5"))));
         var fraction = new SaleReturnDtos.ReturnRequest("Daño",
             List.of(new SaleReturnDtos.ReturnItemRequest(saleItemId, new BigDecimal("0.25"))));
-        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("sale_status", "DELIVERED", "order_status", "DELIVERED"));
+        when(jdbc.queryForMap(anyString(), eq(saleId))).thenReturn(Map.of("order_id", UUID.randomUUID(), "sale_status", "DELIVERED", "order_status", "DELIVERED"));
 
         assertThatThrownBy(() -> service.create(saleId, duplicate)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.create(saleId, fraction)).isInstanceOf(IllegalArgumentException.class);
@@ -105,7 +105,7 @@ class SaleReturnServiceTest {
 
     private UUID authenticate() {
         UUID actorId = UUID.randomUUID();
-        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(actorId.toString(), "test"));
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(actorId.toString(), "test", "SALE_RETURN"));
         return actorId;
     }
 

@@ -4,7 +4,8 @@
 
 `PUT /api/orders/{orderId}`
 
-Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las líneas comerciales del pedido y su venta asociada. No cambia el cliente, el vendedor, los identificadores ni los números del pedido/venta.
+Requiere JWT con `ORDER_EDIT` o `ADMIN_ALL`, más acceso al pedido asignado para
+usuarios sin acceso global. El request reemplaza por completo las líneas comerciales del pedido y su venta asociada. No cambia el cliente, el vendedor, los identificadores ni los números del pedido/venta.
 
 ```json
 {
@@ -21,7 +22,7 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 }
 ```
 
-`priceListId` es opcional. Si se omite, cada precio se resuelve con la lista asignada al cliente o `GENERAL`; también aplica el fallback de listas ya definido por pricing. Solo se aplican los porcentajes manuales enviados: cero conserva el precio completo y no activa reglas automáticas. Los descuentos y overrides de precio requieren `ADMIN_ALL`, como toda edición. Las cantidades deben ser positivas y múltiplos de `0.5`; una solicitud vacía no está permitida.
+`priceListId` es opcional. Si se omite, cada precio se resuelve con la lista asignada al cliente o `GENERAL`; también aplica el fallback de listas ya definido por pricing. Solo se aplican los porcentajes manuales enviados: cero conserva el precio completo y no activa reglas automáticas. Cambiar precios manuales requiere `ORDER_PRICE_OVERRIDE`; cambiar descuentos requiere `ORDER_DISCOUNT` y cambiar la lista, `ORDER_PRICE_LIST_CHANGE`. Conservar los snapshots existentes no exige esos permisos adicionales. Las cantidades deben ser positivas y múltiplos de `0.5`; una solicitud vacía no está permitida. Ver [permisos comerciales](commerce-permissions.md).
 
 ## Reglas comerciales
 
@@ -37,9 +38,10 @@ Requiere JWT con la autoridad `ADMIN_ALL`. El request reemplaza por completo las
 
 ## Reactivar un pedido cancelado
 
-`POST /api/orders/{orderId}/reactivate` requiere `ADMIN_ALL` y reactiva el pedido
+`POST /api/orders/{orderId}/reactivate` requiere `ORDER_REACTIVATE` o `ADMIN_ALL`,
+con acceso al pedido, y reactiva el pedido
 y su venta de `CANCELLED` a `CONFIRMED`. En el detalle del pedido aparece la
-acción **Reactivar pedido** para administradores.
+acción **Reactivar pedido** para usuarios con ese permiso.
 
 La reactivación exige que no existan pagos asociados. En una transacción deja el
 pedido pendiente de preparación sin mover stock, agrega un débito
@@ -66,10 +68,18 @@ Respuesta `200 OK`:
 
 - `400 INVALID_REQUEST`: cuerpo inválido o cantidad no permitida.
 - `401`: JWT ausente o inválido.
-- `403 FORBIDDEN`: usuario sin `ADMIN_ALL`.
-- `404 NOT_FOUND`: pedido inexistente.
+- `403 FORBIDDEN`: falta el permiso de la acción o el cambio comercial solicitado.
+- `404 NOT_FOUND`: pedido inexistente o ajeno al alcance asignado.
 - `409 CONFLICT`: estado no editable o total recalculado menor a `paid`.
 
 ## Verificación
 
-Los tests unitarios cubren autorización administrativa. Las pruebas opt-in PostgreSQL validan edición de líneas, deltas de stock, conservación de pagos, conciliación de deuda, rollback del mínimo pagado y cancelación posterior sin sobre-restaurar stock.
+Los tests unitarios y PostgreSQL cubren permisos independientes y alcance asignado,
+además de edición de líneas, snapshots históricos, deltas de stock, conservación
+de pagos, conciliación de deuda, rollback y cancelación posterior.
+
+## Cancelar un pedido
+
+`POST /api/orders/{orderId}/cancel` requiere `ORDER_CANCEL` o `ADMIN_ALL` y acceso
+al pedido. Conserva la prohibición de cancelar ventas pagadas, la compensación
+del stock preparado y los asientos contables; devuelve `204 No Content`.

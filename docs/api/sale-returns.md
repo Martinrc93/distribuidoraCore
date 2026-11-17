@@ -4,7 +4,8 @@
 
 `POST /api/sales/{saleId}/returns`
 
-Requiere la autoridad `ADMIN_ALL`. Solo acepta ventas y pedidos con estado `DELIVERED`.
+Requiere `SALE_RETURN` o `ADMIN_ALL` y acceso al pedido de la venta. Solo acepta
+ventas y pedidos con estado `DELIVERED`.
 
 ```json
 {
@@ -44,8 +45,8 @@ Las cantidades devueltas y el stock quedan registrados, pero esta operación no 
 Respuestas de error:
 
 - `400 INVALID_REQUEST`: payload inválido, cantidad no válida o línea ajena a la venta.
-- `401/403`: usuario no autenticado o sin `ADMIN_ALL`.
-- `404`: venta inexistente.
+- `401/403`: usuario no autenticado o sin el permiso requerido.
+- `404`: venta inexistente o fuera del alcance asignado.
 - `409 CONFLICT`: venta todavía no entregada o cantidad superior al saldo disponible para devolución.
 
 Las devoluciones requieren las tablas creadas en `V15__add_sale_returns.sql`. El movimiento `RETURN` aumenta directamente el saldo único del producto.

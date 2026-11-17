@@ -2,13 +2,13 @@
 
 ## Descargar ticket
 
-`GET /api/orders/{orderId}/documents/ticket` requiere `ORDER_CREATE` o
+`GET /api/orders/{orderId}/documents/ticket` requiere `ORDER_DOCUMENT_EXPORT` o
 `ADMIN_ALL` y ownership sobre el pedido. Genera un PDF con ancho de 80 mm desde
 los snapshots persistidos de la venta; no cambia el estado comercial.
 
 ## Solicitar envío
 
-`POST /api/orders/{orderId}/notifications` requiere `ORDER_CREATE` o
+`POST /api/orders/{orderId}/notifications` requiere `ORDER_NOTIFY` o
 `ADMIN_ALL` y ownership. La llamada crea una solicitud idempotente y encola su
 despacho. El envío ocurre de forma asíncrona.
 
@@ -28,7 +28,8 @@ La respuesta contiene `requestId` y estado `QUEUED`.
 
 ## Consultar estado
 
-`GET /api/orders/{orderId}/notifications/{requestId}` aplica la misma regla de
+`GET /api/orders/{orderId}/notifications/{requestId}` requiere `ORDER_NOTIFY` o
+`ADMIN_ALL`, aplica la misma regla de
 ownership y devuelve el estado `QUEUED`, `SENDING`, `SENT`, `FAILED` o
 `RETRY_EXHAUSTED`, cantidad de intentos, fechas y tipo de último error.
 

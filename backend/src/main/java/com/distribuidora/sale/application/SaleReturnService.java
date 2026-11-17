@@ -1,5 +1,8 @@
 package com.distribuidora.sale.application;
 
+import com.distribuidora.shared.security.PermissionAccess;
+import com.distribuidora.shared.security.CurrentUserAccess;
+
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,25 +44,30 @@ public class SaleReturnService {
     private final JdbcTemplate jdbc;
     private final InventoryMovementService inventory;
     private final AuditService audit;
+    private final CurrentUserAccess currentUser;
 
-    public SaleReturnService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit) {
+    public SaleReturnService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit,
+                             CurrentUserAccess currentUser) {
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.audit = audit;
+        this.currentUser = currentUser;
     }
 
     @Transactional
     public ReturnResult create(UUID saleId, ReturnCommand request) {
+        PermissionAccess.require("SALE_RETURN");
         UUID actorId = actorId();
         validate(saleId, request);
 
         Map<String, Object> sale = jdbc.queryForMap("""
-            select s.id, s.status as sale_status, o.status as order_status
+            select s.id, o.id as order_id, s.status as sale_status, o.status as order_status
             from sale.sales s
             join orders.orders o on o.id = s.order_id
             where s.id = ?
-            for update of s
+            for update of s, o
             """, saleId);
+        currentUser.requireOrderAccess(uuid(sale.get("order_id")));
         if (!"DELIVERED".equals(sale.get("sale_status")) || !"DELIVERED".equals(sale.get("order_status"))) {
             throw new IllegalStateException("Solo se pueden devolver ventas entregadas");
         }

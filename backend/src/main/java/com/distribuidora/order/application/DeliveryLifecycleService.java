@@ -1,5 +1,7 @@
 package com.distribuidora.order.application;
 
+import com.distribuidora.shared.security.PermissionAccess;
+
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.customer.application.DeliveryDebtQuery;
 import com.distribuidora.inventory.application.InventoryMovementService;
@@ -194,10 +196,9 @@ public class DeliveryLifecycleService {
 
     @Transactional
     public void cancel(UUID orderId) {
-        if (currentUser != null && !currentUser.isAdmin()) {
-            throw new org.springframework.security.access.AccessDeniedException("Solo ADMIN_ALL puede cancelar ventas");
-        }
+        PermissionAccess.require("ORDER_CANCEL");
         Map<String, Object> lifecycle = lockOrderAndSale(orderId);
+        if (currentUser != null) currentUser.requireOrderAccess(orderId);
         requireConfirmed(lifecycle);
         BigDecimal paid = decimal(lifecycle.get("paid"));
         if (paid.signum() != 0) {
@@ -227,10 +228,9 @@ public class DeliveryLifecycleService {
 
     @Transactional
     public void reactivate(UUID orderId) {
-        if (currentUser != null && !currentUser.isAdmin()) {
-            throw new org.springframework.security.access.AccessDeniedException("Solo ADMIN_ALL puede reactivar pedidos");
-        }
+        PermissionAccess.require("ORDER_REACTIVATE");
         Map<String, Object> lifecycle = lockOrderAndSale(orderId);
+        if (currentUser != null) currentUser.requireOrderAccess(orderId);
         if (!"CANCELLED".equals(lifecycle.get("order_status")) || !"CANCELLED".equals(lifecycle.get("sale_status"))) {
             throw new IllegalStateException("Solo se pueden reactivar pedidos y ventas cancelados");
         }

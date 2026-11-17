@@ -168,7 +168,7 @@ class SecurityChainAuthorizationTest {
     @Test
     void sellerAuthorityCanReachProtectedDocumentRoute() throws Exception {
         UserAccount user = activeUser();
-        String token = jwtService.issue(user, List.of("ORDER_CREATE"));
+        String token = jwtService.issue(user, List.of("ORDER_DOCUMENT_EXPORT"));
         UUID orderId = UUID.randomUUID();
         SaleDocumentModel model = new SaleDocumentModel(
             "V-SEC-1", LocalDate.of(2026, 9, 24), "Cliente", "Vendedor",

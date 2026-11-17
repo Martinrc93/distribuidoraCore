@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { apiGet, apiPost, ApiError } from '../../shared/api/client'
 import { DocumentActions } from '../../shared/components/DocumentActions'
-import { hasAuthority } from '../../shared/auth/permissions'
+import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Panel } from '../../shared/components/Panel'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
@@ -24,8 +24,10 @@ function apiMessage(cause: unknown, fallback: string) {
 export default function OrderLifecycleActions({ orderId, orderNumber, orderStatus, saleBalance, previousDebtAvailable = 0, onChanged }: Props) {
   const queryClient = useQueryClient()
   const canDeliver = hasAuthority('SALE_DELIVER') || hasAuthority('ADMIN_ALL')
-  const canCancel = hasAuthority('ADMIN_ALL')
-  const canNotify = hasAuthority('ORDER_CREATE') || hasAuthority('ADMIN_ALL')
+  const canCancel = hasPermission('ORDER_CANCEL')
+  const canReactivate = hasPermission('ORDER_REACTIVATE')
+  const canExport = hasPermission('ORDER_DOCUMENT_EXPORT')
+  const canNotify = hasPermission('ORDER_NOTIFY')
   const [showDelivery, setShowDelivery] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
   const [showReactivate, setShowReactivate] = useState(false)
@@ -131,8 +133,8 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
       <div className="page-actions">
         {canDeliver && orderStatus === 'CONFIRMED' && <Button onClick={() => { setShowDelivery(true); setError(''); delivery.clearError() }}>Registrar entrega</Button>}
         {canCancel && orderStatus === 'CONFIRMED' && <Button variant="secondary" onClick={() => { setShowCancel(true); setError('') }}>Cancelar pedido</Button>}
-        {canCancel && orderStatus === 'CANCELLED' && <Button onClick={() => { setShowReactivate(true); setError('') }}>Reactivar pedido</Button>}
-        {canNotify && <><DocumentActions path={`/api/orders/${orderId}/documents/a4`} filename={`${orderNumber}-a4.pdf`} printLabel="Imprimir remito A4" downloadLabel="Descargar remito A4" onDone={(message) => { setError(''); setFeedback(message) }} /><DocumentActions path={`/api/orders/${orderId}/documents/ticket`} filename={`${orderNumber}-ticket.pdf`} printLabel="Imprimir ticket 80 mm" downloadLabel="Descargar ticket 80 mm" onDone={(message) => { setError(''); setFeedback(message) }} /><Button variant="secondary" aria-expanded={showNotification} onClick={() => { setShowNotification((value) => !value); setError('') }}>Enviar por email o WhatsApp</Button></>}
+        {canReactivate && orderStatus === 'CANCELLED' && <Button onClick={() => { setShowReactivate(true); setError('') }}>Reactivar pedido</Button>}
+        {canExport && <><DocumentActions path={`/api/orders/${orderId}/documents/a4`} filename={`${orderNumber}-a4.pdf`} printLabel="Imprimir remito A4" downloadLabel="Descargar remito A4" onDone={(message) => { setError(''); setFeedback(message) }} /><DocumentActions path={`/api/orders/${orderId}/documents/ticket`} filename={`${orderNumber}-ticket.pdf`} printLabel="Imprimir ticket 80 mm" downloadLabel="Descargar ticket 80 mm" onDone={(message) => { setError(''); setFeedback(message) }} /></>}{canNotify && <Button variant="secondary" aria-expanded={showNotification} onClick={() => { setShowNotification((value) => !value); setError('') }}>Enviar por email o WhatsApp</Button>}
       </div>
     </Panel>
     {showDelivery && <DeliveryAttemptDialog orderNumber={orderNumber} saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setShowDelivery(false)} />}

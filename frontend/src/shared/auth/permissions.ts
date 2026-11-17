@@ -35,3 +35,9 @@ export function getCurrentUserId(): string | undefined {
 export function hasAuthority(authority: string): boolean {
   return getAuthorities().includes(authority)
 }
+
+/** Authorizes an action; it does not change the user's assigned data scope. */
+export function hasPermission(permission: string): boolean {
+  const authorities = getAuthorities()
+  return authorities.includes('ADMIN_ALL') || authorities.includes(permission)
+}

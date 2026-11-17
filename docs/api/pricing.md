@@ -129,10 +129,18 @@ debe ajustar o cancelar primero esa vigencia.
 ## Descuentos manuales
 
 Solo se aplican los porcentajes explícitos de línea y pedido, con autorización
-`ADMIN_ALL`. Un porcentaje cero conserva el precio completo; no existen reglas
+`ORDER_DISCOUNT` o `ADMIN_ALL`. Un porcentaje cero conserva el precio completo; no existen reglas
 comerciales automáticas ni endpoints para administrarlas.
 
 La migración V32 elimina las reglas guardadas y sus referencias en pedidos y
 ventas. Conserva los porcentajes e importes históricos, los pagos y los saldos;
 no recalcula operaciones ya confirmadas. V22 permanece en el historial de
 migraciones para permitir actualizar instalaciones existentes.
+
+## Consulta de precios para editar pedidos
+
+`GET /api/pricing/resolve-batch` admite `orderId` opcional. Sin él requiere
+ORDER_CREATE y acceso al cliente; con él requiere ORDER_EDIT y verifica tanto
+el acceso al pedido como que customerId coincida con su cliente. Esto permite
+editar pedidos asignados después de reasignar su cliente, sin consultar precios
+usando un cliente ajeno como contexto. La caché de edición incluye el ID del pedido.

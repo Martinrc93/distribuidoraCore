@@ -51,7 +51,7 @@ class DeliveryLifecycleControllerTest {
     }
 
     @Test
-    void protectsEndpointsWithSellerOrAdminAndAdminOnlyAuthorities() throws Exception {
+    void protectsEndpointsWithIndependentActionAuthorities() throws Exception {
         Method attempt = DeliveryLifecycleController.class.getDeclaredMethod("recordAttempt", UUID.class,
             DeliveryLifecycleDtos.DeliveryAttemptRequest.class);
         Method cancel = DeliveryLifecycleController.class.getDeclaredMethod("cancel", UUID.class);
@@ -59,7 +59,7 @@ class DeliveryLifecycleControllerTest {
         assertThat(attempt.getAnnotation(PreAuthorize.class).value())
             .isEqualTo("hasAnyAuthority('SALE_DELIVER', 'ADMIN_ALL')");
         assertThat(cancel.getAnnotation(PreAuthorize.class).value())
-            .isEqualTo("hasAuthority('ADMIN_ALL')");
+            .isEqualTo("hasAnyAuthority('ORDER_CANCEL', 'ADMIN_ALL')");
     }
 
     @Test

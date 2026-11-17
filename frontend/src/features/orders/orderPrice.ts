@@ -31,13 +31,13 @@ export async function loadOrderPrice(customerId: string, priceListId: string, pr
   return result
 }
 
-export async function loadOrderPrices(customerId: string, priceListId: string, productIds: string[], signal: AbortSignal): Promise<PriceResolution[]> {
+export async function loadOrderPrices(customerId: string, priceListId: string, productIds: string[], signal: AbortSignal, orderId?: string): Promise<PriceResolution[]> {
   return withPriceDeadline(signal, async (requestSignal) => {
     const prices: PriceResolution[] = []
     const ids = [...new Set(productIds)].sort()
     for (let offset = 0; offset < ids.length; offset += 100) {
       const batch = ids.slice(offset, offset + 100)
-      const result = await apiGet<PriceResolution[]>(`/api/pricing/resolve-batch?customerId=${encodeURIComponent(customerId)}&priceListId=${encodeURIComponent(priceListId)}&productIds=${batch.map(encodeURIComponent).join(',')}`, requestSignal)
+      const result = await apiGet<PriceResolution[]>(`/api/pricing/resolve-batch?customerId=${encodeURIComponent(customerId)}&priceListId=${encodeURIComponent(priceListId)}&productIds=${batch.map(encodeURIComponent).join(',')}${orderId ? `&orderId=${encodeURIComponent(orderId)}` : ''}`, requestSignal)
       if (!Array.isArray(result) || result.some((price) => !batch.includes(price.productId) || !Number.isFinite(price.unitPrice) || price.unitPrice < 0)) throw new Error('La consulta no devolvió precios válidos.')
       prices.push(...result)
     }

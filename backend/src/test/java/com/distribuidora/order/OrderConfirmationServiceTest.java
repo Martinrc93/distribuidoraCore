@@ -370,9 +370,10 @@ class OrderConfirmationServiceTest {
         verifyNoInteractions(pricing, inventory, audit);
     }
 
-    @Test
-    void allowsLineAndOrderDiscountsWithAdminAll() {
-        authenticate("ORDER_CREATE", "ADMIN_ALL");
+    @ParameterizedTest
+    @ValueSource(strings = {"ADMIN_ALL", "ORDER_DISCOUNT"})
+    void allowsLineAndOrderDiscountsWithTheirOwnPermission(String authority) {
+        authenticate("ORDER_CREATE", authority);
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
@@ -558,7 +559,7 @@ class OrderConfirmationServiceTest {
     }
 
     @Test
-    void confirmedOrderEditRequiresAdminBeforeReadingOrChangingData() {
+    void confirmedOrderEditRequiresItsOwnPermissionBeforeReadingOrChangingData() {
         authenticate("ORDER_CREATE");
 
         assertThatThrownBy(() -> service.editConfirmed(UUID.randomUUID(), new com.distribuidora.order.api.OrderEditDtos.EditRequest(

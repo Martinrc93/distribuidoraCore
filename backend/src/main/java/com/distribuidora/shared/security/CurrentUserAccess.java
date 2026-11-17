@@ -73,4 +73,11 @@ public class CurrentUserAccess {
             """, Boolean.class, orderId, sellerId, sellerId));
         if (!accessible) throw new EmptyResultDataAccessException(1);
     }
+
+    public void requireOrderCustomerAccess(UUID orderId, UUID customerId) {
+        requireOrderAccess(orderId);
+        boolean matches = Boolean.TRUE.equals(jdbc.queryForObject(
+            "select exists(select 1 from orders.orders where id = ? and customer_id = ?)", Boolean.class, orderId, customerId));
+        if (!matches) throw new EmptyResultDataAccessException(1);
+    }
 }

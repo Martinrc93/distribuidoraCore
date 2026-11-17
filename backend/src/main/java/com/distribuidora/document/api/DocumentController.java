@@ -30,7 +30,7 @@ public class DocumentController {
     }
 
     @GetMapping("/{orderId}/documents/a4")
-    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_DOCUMENT_EXPORT', 'ADMIN_ALL')")
     public ResponseEntity<byte[]> a4(@PathVariable UUID orderId) {
         SaleDocumentModel model = service.load(orderId);
         byte[] pdf = renderer.render(model);
@@ -44,7 +44,7 @@ public class DocumentController {
     }
 
     @GetMapping("/{orderId}/documents/ticket")
-    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_DOCUMENT_EXPORT', 'ADMIN_ALL')")
     public ResponseEntity<byte[]> ticket(@PathVariable UUID orderId) {
         SaleDocumentModel model = service.load(orderId);
         byte[] pdf = ticketRenderer.render(model);

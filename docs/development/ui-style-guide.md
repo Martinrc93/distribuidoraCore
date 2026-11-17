@@ -515,24 +515,26 @@ en móvil se apila con ancho completo. El botón queda gris y deshabilitado sin
 cliente, durante la consulta o si no hay pedido previo. Carga el último pedido
 confirmado o entregado visible para el usuario, reemplazando los productos del
 borrador y conservando cantidades. Usa la lista y precios actuales. La carga
-inicial excluye descuentos; si el pedido anterior tiene descuentos, solo el
-administrador recibe un diálogo para cargar sin descuentos o copiarlos. Cancelar
+inicial excluye descuentos; si el pedido anterior tiene descuentos, un usuario con
+`ORDER_DISCOUNT` o `ADMIN_ALL` recibe un diálogo para cargar sin descuentos o copiarlos. Cancelar
 o Escape conserva el borrador, y el foco vuelve al botón. No copia cobros ni precios manuales históricos.
 Los productos no disponibles bloquean la carga con un mensaje, y los errores
 de consulta permiten reintentar.
 
 Al crear pedidos, «Lista de precios» usa la lista asignada al cliente o
-`GENERAL` si no hay asignación. Para vendedores, el selector está deshabilitado
-y cambia automáticamente al seleccionar otro cliente. Solo `ADMIN_ALL` puede
-elegir otra lista activa; la API rechaza cambios de lista no autorizados. Si la
+`GENERAL` si no hay asignación. Sin `ORDER_PRICE_LIST_CHANGE` o `ADMIN_ALL`, el
+selector está deshabilitado y cambia automáticamente al seleccionar otro cliente.
+Con ese permiso se puede elegir otra lista activa; la API rechaza cambios no autorizados. Si la
 lista asignada no está disponible, el vendedor ve un mensaje para solicitar
 revisión administrativa y no puede agregar productos ni confirmar.
 
 La creación y edición de pedidos comparten `OrderForm`. En edición, cliente y
 vendedor usan `CustomerSelect` y `SellerSelect` deshabilitados con los nombres
 del pedido, sin cargar opciones para modificarlos. Se precargan productos,
-cantidades, precios guardados, descuentos y saldo anterior. Los administradores
-pueden agregar/quitar productos y editar el precio unitario en la tabla; cambiar
+cantidades, precios guardados, descuentos y saldo anterior. `ORDER_EDIT` o
+`ADMIN_ALL` permiten agregar/quitar productos y editar cantidades; el precio
+unitario requiere `ORDER_PRICE_OVERRIDE` y los descuentos `ORDER_DISCOUNT`.
+Los valores históricos permanecen visibles y se conservan sin esos permisos. Cambiar
 de lista descarta los precios anteriores y consulta los de la lista elegida.
 La acción principal es «Guardar cambios» y actualiza el pedido existente, sin
 crear otra venta ni modificar los cobros. Cancelar vuelve al detalle; si hubo
@@ -591,7 +593,7 @@ En la carga de pedidos, elegir un producto con Enter pasa el foco a «Cantidad»
 buscador de productos. Enter dentro del selector de productos nunca confirma el
 pedido.
 En el listado, `.table-row-actions` agrupa «Ver detalle», «Editar» y «Pasar a
-entregado». «Editar» solo aparece para administradores en pedidos confirmados.
+entregado». «Editar» aparece con `ORDER_EDIT` o `ADMIN_ALL` en pedidos confirmados.
 «Pasar a entregado» aparece en pedidos confirmados con `SALE_DELIVER` o
 `ADMIN_ALL`, tanto en las filas de escritorio como en las tarjetas móviles.
 Consulta el saldo actual antes de abrir `DeliveryAttemptDialog` en modo de
@@ -629,16 +631,20 @@ columna y el precio conserva su énfasis numérico.
 El selector `.order-product-picker` precarga los precios de los productos
 disponibles al elegir cliente y lista, en lotes de hasta 100 productos. La caché
 se identifica por cliente, lista y productos, y permanece vigente por un minuto.
+En edición incorpora el ID del pedido y lo envía como contexto autorizado de precios.
+Los usuarios con alcance asignado no precargan el historial del cliente al editar;
+el administrador conserva la carga previa de ese historial.
 Seleccionar, agregar o quitar un producto no genera otra consulta de precio.
 No se recarga al cambiar el foco o reconectar, evitando esperas al volver a la
 pantalla en celular. Los productos importados del pedido anterior se incluyen
 en la carga. Cambiar cliente o lista cancela la consulta anterior; no se muestran
 precios de otro contexto. La confirmación valida nuevamente los precios en el servidor.
 El campo «Precio» se carga con el precio de
-lista; para vendedores se presenta como texto con `.read-only-field`, igual que
+lista; sin `ORDER_PRICE_OVERRIDE` se presenta como texto con `.read-only-field`, igual que
 «Vendedor», sin caja editable. Conserva «—», «Consultando...» y «No disponible»
 para los estados vacío, carga y error, y anuncia los cambios de precio.
-Solo el administrador tiene un input para editarlo y aplicar descuentos. La modificación
+`ORDER_PRICE_OVERRIDE` o `ADMIN_ALL` habilitan el input de precio; `ORDER_DISCOUNT`
+habilita los inputs de descuento. La modificación
 se envía como `unitPriceOverride` de la línea y solo afecta a ese pedido, sin
 actualizar la lista. Cambiar cliente, lista o producto restablece el precio de
 lista. Cantidad y «Descuento» utilizan cajas de `4ch + 22px` con `size=4`, sin
@@ -667,7 +673,7 @@ encabezados y muestra la ayuda para elegir un producto dentro de una celda que
 ocupa todas las columnas, sin reemplazar la tabla por un estado vacío externo.
 Producto, cantidad, precio unitario, descuento porcentual, subtotal y eliminación
 se muestran en una fila en escritorio. Cantidad y descuento conservan los campos
-compactos; solo el administrador puede editar descuentos. La acción final es un
+compactos; solo `ORDER_DISCOUNT` o `ADMIN_ALL` permiten editar descuentos. La acción final es un
 botón `danger` de `38px` con una papelera de `16px` y nombre accesible «Quitar
 {producto}». A `640px` o menos se utiliza el patrón de tarjetas de la tabla
 compartida, con etiquetas visibles y la papelera al final.
@@ -816,6 +822,23 @@ Los errores permanecen dentro del diálogo. El cambio propio limpia sesión/cach
 y explica el nuevo ingreso; el foco vuelve al disparador al cerrar normalmente.
 No reemplazar los selectores compartidos de clientes/vendedores por estos
 selects de roles. «Nuevo pedido» solo aparece con `ORDER_CREATE` o `ADMIN_ALL`.
+
+### Acciones comerciales por permiso
+
+`hasPermission` autoriza una acción con su permiso específico o ADMIN_ALL; no se
+usa para decidir alcance global ni mostrar datos de otros vendedores. Cancelar,
+reactivar, devolver ventas, imprimir/descargar y enviar comprobantes usan
+ORDER_CANCEL, ORDER_REACTIVATE, SALE_RETURN, ORDER_DOCUMENT_EXPORT y ORDER_NOTIFY
+respectivamente. Imprimir y enviar se muestran de manera independiente.
+Las confirmaciones y validaciones comerciales conservan sus componentes compartidos.
+La revisión del administrador y sus distintivos siguen exclusivos de ADMIN_ALL.
+
+El selector de productos usa `.order-product-picker-discount` cuando incluye
+descuentos, con las mismas cinco columnas y medidas de la variante anterior;
+sin ese permiso conserva cuatro columnas y precio editable o de lectura según
+ORDER_PRICE_OVERRIDE. A 760px se apila con el patrón existente. El descuento
+general solo tiene input con permiso; el total conserva el porcentaje histórico
+en edición aunque ese campo sea de lectura. No cambiar estas reglas por el nombre del rol.
 
 En Productos, el alta y la edición requieren categoría, marca y descripción
 (hasta 200 caracteres). «Nombre» es un `output.read-only-field` con nombre

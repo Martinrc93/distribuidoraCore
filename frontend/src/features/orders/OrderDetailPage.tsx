@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { apiGet } from '../../shared/api/client'
-import { hasAuthority } from '../../shared/auth/permissions'
+import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
@@ -56,7 +56,7 @@ export default function OrderDetailPage() {
   const { order, items, sale, payments, account, deliveryAttempts = [] } = query.data
   const commonListId = items[0]?.priceListId
   const samePriceList = items.every((item) => item.priceListId === commonListId)
-  const canEdit = isAdmin && order.status === 'CONFIRMED' && sale.status === 'CONFIRMED' && samePriceList
+  const canEdit = hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && sale.status === 'CONFIRMED' && samePriceList
 
   if (editing && canEdit) return <OrderForm editOrder={query.data} onCancel={() => setEditing(false)} onSaved={async () => {
     await queryClient.invalidateQueries({ queryKey })
@@ -96,7 +96,7 @@ export default function OrderDetailPage() {
   ]
 
   return <>
-    <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href={readOrderNavigation()?.returnTo ?? "/orders"}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{isAdmin && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
+    <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href={readOrderNavigation()?.returnTo ?? "/orders"}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
     <OrderNavigator orderId={orderId} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     <Panel title="Preparación y revisión"><div id="order-operations" tabIndex={-1} className="page-actions">

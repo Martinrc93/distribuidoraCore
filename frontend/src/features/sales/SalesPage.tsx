@@ -2,7 +2,7 @@ import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { apiGet, apiPost, ApiError, type ApiPage } from '../../shared/api/client'
-import { hasAuthority } from '../../shared/auth/permissions'
+import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
@@ -43,6 +43,7 @@ function parseDate(value: string) {
 export default function SalesPage() {
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
+  const canReturn = hasPermission('SALE_RETURN')
   const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'customerId', 'sellerId', 'pendingBalance', 'dateMin', 'dateMax'])
   const search = getFilter('search')
   const customerId = getFilter('customerId')
@@ -73,7 +74,7 @@ export default function SalesPage() {
 
   async function submitReturn(event: FormEvent) {
     event.preventDefault()
-    if (!isAdmin || savingReturn || !selectedSaleId || !detailQuery.data) return
+    if (!canReturn || savingReturn || !selectedSaleId || !detailQuery.data) return
     const items = detailQuery.data.saleItems.flatMap((item) => {
       const quantity = Number(returnQuantities[item.saleItemId] ?? 0)
       return quantity > 0 ? [{ saleItemId: item.saleItemId, quantity }] : []
@@ -175,7 +176,7 @@ export default function SalesPage() {
           { key: 'returned', label: 'Devuelta', align: 'right' },
           { key: 'available', label: 'Disponible', align: 'right' },
         ]} rows={detailQuery.data.saleItems.map((item) => ({ id: item.saleItemId, product: item.productName, sold: String(item.quantity), returned: String(item.returnedQuantity), available: String(item.returnableQuantity) }))} />
-        {isAdmin && detailQuery.data.sale.status === 'DELIVERED' && <form className="form-grid" onSubmit={submitReturn}>
+        {canReturn && detailQuery.data.sale.status === 'DELIVERED' && <form className="form-grid" onSubmit={submitReturn}>
           <label className="field"><span>Motivo de la devolución</span><input className="input" value={returnReason} onChange={(event) => setReturnReason(event.target.value)} maxLength={500} required disabled={savingReturn} /></label>
           {detailQuery.data.saleItems.filter((item) => item.returnableQuantity > 0).map((item) => <label className="field" key={item.saleItemId}><span>Cantidad a devolver · {item.productName} (máx. {item.returnableQuantity})</span><input className="input" type="text" inputMode="decimal" min="0" max={item.returnableQuantity} step="0.5" aria-label={`Cantidad a devolver · ${item.productName}`} value={returnQuantities[item.saleItemId] ?? ''} onChange={(event) => setReturnQuantities((current) => ({ ...current, [item.saleItemId]: event.target.value }))} disabled={savingReturn} /></label>)}
           <p className="helper-text">La devolución reincorpora unidades al stock del depósito original. El comando actual no realiza reintegros ni acredita la cuenta corriente.</p>

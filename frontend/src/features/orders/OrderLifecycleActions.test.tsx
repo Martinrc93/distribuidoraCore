@@ -17,6 +17,12 @@ function renderActions(authorities = ['ADMIN_ALL', 'SALE_DELIVER'], onChanged = 
 }
 
 describe('OrderLifecycleActions', () => {
+  it.each(['ORDER_CANCEL', 'ORDER_DOCUMENT_EXPORT', 'ORDER_NOTIFY', 'ORDER_CREATE'])('separates %s from the other actions', (permission) => {
+    renderActions([permission])
+    expect(Boolean(screen.queryByRole('button', { name: 'Cancelar pedido' }))).toBe(permission === 'ORDER_CANCEL')
+    expect(Boolean(screen.queryByRole('button', { name: 'Descargar remito A4' }))).toBe(permission === 'ORDER_DOCUMENT_EXPORT')
+    expect(Boolean(screen.queryByRole('button', { name: 'Enviar por email o WhatsApp' }))).toBe(permission === 'ORDER_NOTIFY')
+  })
   afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks() })
   beforeEach(() => { sessionStorage.setItem('distribuidora.accessToken', token(['ADMIN_ALL', 'SALE_DELIVER'])) })
 

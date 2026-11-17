@@ -44,6 +44,21 @@ function catalogResponse(input: RequestInfo | URL) {
 }
 
 describe('OrderDetailPage', () => {
+  it('allows assigned quantity editing without changing historical prices or discounts', async () => {
+    const user = userEvent.setup()
+    const snapshot = { ...detail, order: { ...detail.order, orderDiscountPercent: 10 }, items: [{ ...detail.items[0], lineDiscountPercent: 5 }] }
+    const fetch = vi.spyOn(global, 'fetch').mockImplementation((input, init) => String(input) === '/api/orders/order-1' ? response(init?.method === 'PUT' ? {} : snapshot) : catalogResponse(input))
+    renderPage(['ORDER_EDIT'])
+    await user.click(await screen.findByRole('button', { name: 'Editar pedido' }))
+    expect(screen.queryByLabelText('Precio unitario de Harina')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Descuento de Harina')).not.toBeInTheDocument()
+    const quantity = screen.getByLabelText('Cantidad de Harina')
+    await user.clear(quantity); await user.type(quantity, '3')
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/orders/order-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ priceListId: 'list-1', lines: [{ productId: 'product-1', quantity: 3, lineDiscountPercent: 5, unitPriceOverride: 150 }], orderDiscountPercent: 10, previousBalanceAmount: 0 }) })))
+    expect(fetch.mock.calls.some(([input]) => String(input).startsWith('/api/pricing/resolve-batch') && String(input).includes('orderId=order-1'))).toBe(true)
+    expect(fetch.mock.calls.some(([input]) => String(input).startsWith('/api/sellers') || String(input).endsWith('/last-order'))).toBe(false)
+  })
   afterEach(() => { cleanup(); sessionStorage.clear() })
   beforeEach(() => { vi.restoreAllMocks() })
 

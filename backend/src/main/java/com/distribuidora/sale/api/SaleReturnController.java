@@ -24,7 +24,7 @@ public class SaleReturnController {
 
     @PostMapping("/{saleId}/returns")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAnyAuthority('SALE_RETURN', 'ADMIN_ALL')")
     public SaleReturnDtos.ReturnResponse create(@PathVariable UUID saleId,
                                                 @Valid @RequestBody SaleReturnDtos.ReturnRequest request) {
         SaleReturnService.ReturnResult result = service.create(saleId, request);

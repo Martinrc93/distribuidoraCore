@@ -44,9 +44,9 @@ class SaleReturnControllerTest {
     }
 
     @Test
-    void requiresAdministratorAuthority() throws Exception {
+    void requiresReturnAuthority() throws Exception {
         Method method = SaleReturnController.class.getDeclaredMethod("create", UUID.class, SaleReturnDtos.ReturnRequest.class);
-        assertThat(method.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+        assertThat(method.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAnyAuthority('SALE_RETURN', 'ADMIN_ALL')");
         assertThat(method.getAnnotation(ResponseStatus.class).value().value()).isEqualTo(201);
     }
 

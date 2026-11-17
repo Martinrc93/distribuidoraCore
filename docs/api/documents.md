@@ -8,7 +8,8 @@ descarga, con el componente compartido `DocumentActions`.
 ## Remito y ticket del pedido
 
 - `GET /api/orders/{orderId}/documents/a4` y `.../documents/ticket` (80 mm):
-  `ORDER_CREATE` o `ADMIN_ALL`, con el alcance del vendedor. Ver ADR-008.
+  `ORDER_DOCUMENT_EXPORT` o `ADMIN_ALL`, con el alcance del vendedor. Ver
+  [permisos comerciales](commerce-permissions.md) para la actualización desde ORDER_CREATE.
 
 ## Lista de precios
 

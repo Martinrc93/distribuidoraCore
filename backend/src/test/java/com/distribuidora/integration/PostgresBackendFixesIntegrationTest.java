@@ -343,13 +343,13 @@ class PostgresBackendFixesIntegrationTest {
         UUID adminId = createUser("jwt-role-admin");
         assignRole(adminId, "ADMIN");
         UUID targetId = createUser("jwt-role-target");
-        String roleCode = createRoleWithPermission("ORDER_CREATE");
+        String roleCode = createRoleWithPermission("ORDER_DOCUMENT_EXPORT");
         assignRole(targetId, roleCode);
 
         String adminToken = loginHttp(email(adminId));
         String oldTargetToken = loginHttp(email(targetId));
         assertThat(jwtService.parse(oldTargetToken).get("authorities", List.class))
-            .containsExactly("ORDER_CREATE");
+            .containsExactly("ORDER_DOCUMENT_EXPORT");
 
         UUID missingOrderId = UUID.randomUUID();
         mockMvc.perform(get("/api/orders/{orderId}/documents/a4", missingOrderId)
@@ -377,7 +377,7 @@ class PostgresBackendFixesIntegrationTest {
         UUID adminId = createUser("jwt-permission-admin");
         assignRole(adminId, "ADMIN");
         UUID targetId = createUser("jwt-permission-target");
-        String roleCode = createRoleWithPermission("ORDER_CREATE");
+        String roleCode = createRoleWithPermission("ORDER_DOCUMENT_EXPORT");
         assignRole(targetId, roleCode);
 
         String adminToken = loginHttp(email(adminId));
@@ -1056,9 +1056,123 @@ class PostgresBackendFixesIntegrationTest {
         return new EditableSaleFixture(result.orderId(), result.saleId(), customer, product);
     }
 
+    @Test
+    void actionPermissionsAuthorizeOnlyAssignedOrdersAndRemainIndependentlyRevocable() throws Exception {
+        UUID admin = createUser("action-admin"); assignRole(admin, "ADMIN");
+        authenticateOrderActor(admin, "ADMIN_ALL");
+        EditableSaleFixture own = freshPendingOrder();
+        EditableSaleFixture foreign = freshPendingOrder();
+        UUID profile = createSeller("action-owner");
+        UUID user = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        jdbc.update("update orders.orders set seller_id = ? where id = ?", profile, own.orderId());
+        // Order ownership remains useful even after its customer is reassigned.
+        var role = roleAdminService.create("ACTIONS_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(), "Acciones asignadas",
+            Set.of("ORDER_EDIT", "ORDER_CANCEL", "ORDER_REACTIVATE", "SALE_RETURN", "ORDER_PRICE_OVERRIDE", "ORDER_DISCOUNT", "ORDER_PRICE_LIST_CHANGE", "ORDER_DOCUMENT_EXPORT", "ORDER_NOTIFY"));
+        roles.add(role.id()); auditResources.add(role.code()); assignRole(user, role.code());
+        String token = loginHttp(email(user));
+        UUID general = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL'", UUID.class);
+        String edit = objectMapper.writeValueAsString(Map.of("priceListId", general, "lines", List.of(Map.of("productId", own.productId(), "quantity", 2, "lineDiscountPercent", 5, "unitPriceOverride", 12)), "orderDiscountPercent", 5));
+        mockMvc.perform(put("/api/orders/{id}", own.orderId()).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(edit)).andExpect(status().isOk());
+        assertThat(stock(own.productId())).isEqualByComparingTo("10");
+        mockMvc.perform(put("/api/orders/{id}", foreign.orderId()).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(edit)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/pricing/resolve-batch").param("customerId", own.customerId().toString()).param("productIds", own.productId().toString()).param("orderId", own.orderId().toString()).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/pricing/resolve-batch").param("customerId", foreign.customerId().toString()).param("productIds", own.productId().toString()).param("orderId", own.orderId().toString()).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/pricing/resolve-batch").param("customerId", own.customerId().toString()).param("productIds", own.productId().toString()).header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        for (String action : List.of("cancel", "reactivate")) {
+            mockMvc.perform(post("/api/orders/{id}/{action}", foreign.orderId(), action).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+            mockMvc.perform(post("/api/orders/{id}/{action}", own.orderId(), action).header("Authorization", "Bearer " + token)).andExpect(status().isNoContent());
+        }
+        mockMvc.perform(post("/api/orders/{id}/review", own.orderId()).header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        authenticateOrderActor(admin, "ADMIN_ALL");
+        deliveryLifecycleService.recordAttempt(own.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null));
+        UUID item = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, own.saleId());
+        String returns = objectMapper.writeValueAsString(Map.of("reason", "Envase", "items", List.of(Map.of("saleItemId", item, "quantity", 0.5))));
+        mockMvc.perform(post("/api/sales/{id}/returns", foreign.saleId()).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(returns)).andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/sales/{id}/returns", own.saleId()).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(returns)).andExpect(status().isCreated());
+        assertThat(stock(own.productId())).isEqualByComparingTo("8.5");
+        for (String format : List.of("a4", "ticket")) {
+            mockMvc.perform(get("/api/orders/{id}/documents/{format}", own.orderId(), format).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+            mockMvc.perform(get("/api/orders/{id}/documents/{format}", foreign.orderId(), format).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+        }
+        when(notificationChannelSender.isConfigured("EMAIL")).thenReturn(true);
+        String notification = objectMapper.writeValueAsString(Map.of("channel", "EMAIL", "recipient", "assigned@example.test", "format", "TICKET", "idempotencyKey", "actions-" + UUID.randomUUID()));
+        mockMvc.perform(post("/api/orders/{id}/notifications", foreign.orderId()).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(notification)).andExpect(status().isNotFound());
+        var result = mockMvc.perform(post("/api/orders/{id}/notifications", own.orderId()).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(notification)).andExpect(status().isOk()).andReturn();
+        UUID requestId = UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString()).path("requestId").asText()); notificationRequests.add(requestId);
+        mockMvc.perform(get("/api/orders/{id}/notifications/{request}", own.orderId(), requestId).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        authenticateOrderActor(admin, "ADMIN_ALL"); roleAdminService.replacePermissions(role.code(), Set.of("ORDER_CREATE"));
+        mockMvc.perform(get("/api/orders").header("Authorization", "Bearer " + token)).andExpect(status().isUnauthorized());
+        String restricted = loginHttp(email(user));
+        for (String action : List.of("cancel", "reactivate", "notifications")) {
+            mockMvc.perform(post("/api/orders/{id}/{action}", own.orderId(), action).header("Authorization", "Bearer " + restricted).contentType(MediaType.APPLICATION_JSON).content(notification)).andExpect(status().isForbidden());
+        }
+        mockMvc.perform(put("/api/orders/{id}", own.orderId()).header("Authorization", "Bearer " + restricted).contentType(MediaType.APPLICATION_JSON).content(edit)).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/sales/{id}/returns", own.saleId()).header("Authorization", "Bearer " + restricted).contentType(MediaType.APPLICATION_JSON).content(returns)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/orders/{id}/documents/a4", own.orderId()).header("Authorization", "Bearer " + restricted)).andExpect(status().isForbidden());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void quantityEditorsPreserveSnapshotsWithoutAcquiringPriceOrDiscountPermissions(boolean legacyPriceList) throws Exception {
+        UUID admin = createUser("snapshot-admin"); assignRole(admin, "ADMIN"); authenticateOrderActor(admin, "ADMIN_ALL");
+        EditableSaleFixture own = freshPendingOrder();
+        UUID general = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL'", UUID.class);
+        orderConfirmationService.editConfirmed(own.orderId(), new OrderEditDtos.EditRequest(general, List.of(new OrderConfirmationDtos.LineRequest(own.productId(), BigDecimal.ONE, BigDecimal.TEN, new BigDecimal("12"))), new BigDecimal("5")));
+        if (legacyPriceList) jdbc.update("update orders.order_items set price_list_id = null where order_id = ?", own.orderId());
+        UUID profile = createSeller("snapshot-owner");
+        UUID user = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        jdbc.update("update orders.orders set seller_id = ? where id = ?", profile, own.orderId());
+        String role = createRoleWithPermission("ORDER_EDIT"); assignRole(user, role);
+        String token = loginHttp(email(user));
+        for (String values : List.of("12,10,5", "13,10,5", "12,11,5", "12,10,6", "12,0,5")) {
+            String[] parts = values.split(",");
+            String body = objectMapper.writeValueAsString(Map.of("priceListId", general, "lines", List.of(Map.of("productId", own.productId(), "quantity", 2, "unitPriceOverride", new BigDecimal(parts[0]), "lineDiscountPercent", new BigDecimal(parts[1]))), "orderDiscountPercent", new BigDecimal(parts[2])));
+            mockMvc.perform(put("/api/orders/{id}", own.orderId()).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(values.equals("12,10,5") ? status().isOk() : status().isForbidden());
+        }
+        assertThat(jdbc.queryForObject("select total from orders.orders where id = ?", BigDecimal.class, own.orderId())).isEqualByComparingTo("20.52");
+        assertThat(stock(own.productId())).isEqualByComparingTo("10");
+        authenticateOrderActor(admin, "ADMIN_ALL");
+        roleAdminService.replacePermissions(role, Set.of("ORDER_EDIT", "ORDER_PRICE_OVERRIDE"));
+        String priceEditor = loginHttp(email(user));
+        mockMvc.perform(put("/api/orders/{id}", own.orderId()).header("Authorization", "Bearer " + priceEditor).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("priceListId", general, "lines", List.of(Map.of("productId", own.productId(), "quantity", 2, "unitPriceOverride", 13, "lineDiscountPercent", 10)), "orderDiscountPercent", 5)))).andExpect(status().isOk());
+        authenticateOrderActor(admin, "ADMIN_ALL");
+        roleAdminService.replacePermissions(role, Set.of("ORDER_EDIT", "ORDER_DISCOUNT"));
+        String discountEditor = loginHttp(email(user));
+        mockMvc.perform(put("/api/orders/{id}", own.orderId()).header("Authorization", "Bearer " + discountEditor).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("priceListId", general, "lines", List.of(Map.of("productId", own.productId(), "quantity", 2, "unitPriceOverride", 13, "lineDiscountPercent", 11)), "orderDiscountPercent", 6)))).andExpect(status().isOk());
+        assertThat(stock(own.productId())).isEqualByComparingTo("10");
+    }
+
     private void editQuantity(EditableSaleFixture fixture, String quantity) {
         orderConfirmationService.editConfirmed(fixture.orderId(), new OrderEditDtos.EditRequest(null,
             List.of(new OrderConfirmationDtos.LineRequest(fixture.productId(), new BigDecimal(quantity), BigDecimal.ZERO, null)), BigDecimal.ZERO));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"ORDER_EDIT", "ORDER_CANCEL", "ORDER_REACTIVATE", "SALE_RETURN", "ORDER_DOCUMENT_EXPORT", "ORDER_NOTIFY", "ORDER_PRICE_OVERRIDE", "ORDER_DISCOUNT"})
+    void eachActionPermissionDoesNotAuthorizeTheOtherActions(String permission) throws Exception {
+        UUID profile = createSeller("single-action");
+        UUID user = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        assignRole(user, createRoleWithPermission(permission));
+        String token = loginHttp(email(user)); UUID missing = UUID.randomUUID();
+        String edit = objectMapper.writeValueAsString(Map.of("lines", List.of(Map.of("productId", UUID.randomUUID(), "quantity", 1, "lineDiscountPercent", 0)), "orderDiscountPercent", 0));
+        mockMvc.perform(put("/api/orders/{id}", missing).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(edit))
+            .andExpect(permission.equals("ORDER_EDIT") ? status().isNotFound() : status().isForbidden());
+        for (String action : List.of("cancel", "reactivate")) {
+            String required = action.equals("cancel") ? "ORDER_CANCEL" : "ORDER_REACTIVATE";
+            mockMvc.perform(post("/api/orders/{id}/{action}", missing, action).header("Authorization", "Bearer " + token))
+                .andExpect(permission.equals(required) ? status().isNotFound() : status().isForbidden());
+        }
+        mockMvc.perform(post("/api/sales/{id}/returns", missing).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("reason", "Envase", "items", List.of(Map.of("saleItemId", UUID.randomUUID(), "quantity", 0.5))))))
+            .andExpect(permission.equals("SALE_RETURN") ? status().isNotFound() : status().isForbidden());
+        mockMvc.perform(get("/api/orders/{id}/documents/a4", missing).header("Authorization", "Bearer " + token))
+            .andExpect(permission.equals("ORDER_DOCUMENT_EXPORT") ? status().isNotFound() : status().isForbidden());
+        when(notificationChannelSender.isConfigured("EMAIL")).thenReturn(true);
+        mockMvc.perform(post("/api/orders/{id}/notifications", missing).header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("channel", "EMAIL", "recipient", "assigned@example.test", "format", "TICKET", "idempotencyKey", UUID.randomUUID().toString()))))
+            .andExpect(permission.equals("ORDER_NOTIFY") ? status().isNotFound() : status().isForbidden());
     }
 
     @Test
@@ -1343,7 +1457,7 @@ class PostgresBackendFixesIntegrationTest {
         assignRole(admin, "ADMIN");
         if (customRole) {
             authenticateOrderActor(admin, "ADMIN_ALL");
-            var role = roleAdminService.create("SCOPE_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(), "Asignados", Set.of("ORDER_CREATE", "SALE_DELIVER", "SALE_PAYMENT"));
+            var role = roleAdminService.create("SCOPE_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(), "Asignados", Set.of("ORDER_CREATE", "SALE_DELIVER", "SALE_PAYMENT", "ORDER_DOCUMENT_EXPORT"));
             roles.add(role.id()); auditResources.add(role.code());
             assignRole(sellerUser, role.code());
         } else assignRole(sellerUser, "SELLER");
@@ -1895,6 +2009,7 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     private String loginHttp(String email) throws Exception {
+        SecurityContextHolder.clearContext();
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(java.util.Map.of(
@@ -1902,6 +2017,7 @@ class PostgresBackendFixesIntegrationTest {
                     "password", "Passw0rd!"))))
             .andExpect(status().isOk())
             .andReturn();
+        SecurityContextHolder.clearContext();
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("accessToken").asText();
     }
 
