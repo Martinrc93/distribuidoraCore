@@ -24,7 +24,7 @@ public class InventoryCommandController {
     }
 
     @PostMapping("/{productId}/adjustments")
-    @PreAuthorize("hasAuthority('STOCK_ADJUST')")
+    @PreAuthorize("hasAuthority('ADMIN_ALL') and hasAuthority('STOCK_ADJUST')")
     public ResponseEntity<Void> adjust(@PathVariable UUID productId, @Valid @RequestBody AdjustmentRequest request) {
         if ((request.quantity() == null) == (request.targetQuantity() == null)) {
             throw new IllegalArgumentException("Indicá quantity (diferencia) o targetQuantity (cantidad final), no ambos");

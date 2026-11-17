@@ -208,19 +208,20 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Escape, clic en el fondo o selección de un enlace cierran el menú, también
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
-- Las rutas de Resumen, Dashboard, ficha de cliente, Stock (`/products`), Marcas
+- Las rutas de Resumen, Dashboard, Stock (`/products`), Marcas
   y categorías, Listas de precios, Proveedores, Compras (`/supplier-orders`, listado y
-  detalle), Zonas y Auditoría usan `RequireAdmin` en
+  detalle), Usuarios, Roles, Vendedores, Zonas, Configuración y Auditoría usan `RequireAdmin` en
   [`App.tsx`](../../frontend/src/app/App.tsx): comprueba `ADMIN_ALL` al renderizar
   la ruta, incluida la navegación posterior al login. Sin ese permiso redirige
   a Pedidos. No decidir el acceso al construir la tabla de rutas, porque puede
   conservar los permisos de la sesión anterior. La API mantiene su autorización.
 - Pagos y deuda se retiró de la navegación para todos los usuarios, incluido el
   acceso desde Dashboard. `/payments` redirige a Pedidos y no carga esa pantalla.
-- Para vendedores, el menú muestra Pedidos, Ventas y Clientes. El listado de
-  Clientes contiene únicamente los clientes asignados al vendedor autenticado,
-  como consulta sin alta, edición, cambios de estado ni acceso a ficha. Oculta
-  los grupos Catálogo y Administración, en escritorio y móvil.
+- Para vendedores, el menú muestra Pedidos, Ventas y Clientes. Las acciones de
+  Clientes aparecen según sus permisos y el alcance asignado (ver Ficha del cliente).
+  Catálogo y Administración quedan reservados a administradores en escritorio y móvil.
+  La acción «Ajustar stock» requiere además `STOCK_ADJUST`. El catálogo de roles
+  identifica el ajuste global como permiso reservado a ADMIN.
   El formulario de pedidos conserva los productos, la lista asignada y los
   precios necesarios para operar; esto no habilita las pantallas de catálogo.
 - Al ingresar y salir se cancelan las consultas pendientes y se limpia la caché
@@ -636,11 +637,10 @@ el wrap móvil compartido; cancelar o guardar elimina ese parámetro de la URL.
 
 El campo «Producto» reutiliza `SearchableSelect` con ancho completo: escribir
 filtra las opciones por nombre, sin distinguir mayúsculas ni acentos.
-Las opciones muestran solo el nombre; excluye productos inactivos o
-ya agregados al pedido. Se cargan todas las páginas del catálogo en bloques de
-100 con `includeStock=false` para incluir coincidencias de páginas posteriores
-sin consultar ni enviar saldos de inventario. La búsqueda es local,
-sin consultas adicionales al escribir, y conserva la navegación con teclado.
+Las opciones muestran el nombre y la disponibilidad. Excluyen productos
+inactivos o ya agregados al pedido. El formulario carga todas las páginas del
+catálogo en bloques de 100 con `includeStock=true`, autorizado para crear o editar
+pedidos. La búsqueda es local y conserva la navegación con teclado.
 Solo este selector activa `preserveSearch`: al elegir una opción conserva el
 texto de búsqueda y, después de agregarla, vuelve a mostrar ese texto. Al abrir
 la lista se mantiene el filtro para seleccionar otro producto. Elegir la opción

@@ -1,9 +1,8 @@
 # Administración de usuarios, roles y permisos
 
-Los recursos administrativos requieren `ADMIN_ALL`, salvo alta/invitación,
-bloqueo/desbloqueo y revocación de sesiones, que admiten `USER_MANAGE` o
-`ADMIN_ALL`. Los endpoints usan DTOs y nunca exponen hashes de contraseñas ni
-tokens persistidos.
+Los recursos administrativos requieren `ADMIN_ALL`, incluidas altas,
+invitaciones, bloqueo, revocación de sesiones y cambios de rol. Las respuestas
+usan DTOs con los datos públicos de la cuenta.
 
 ## Usuarios
 
@@ -81,7 +80,9 @@ y vuelve al login con el resultado.
 
 El catálogo se mantiene en migraciones Flyway; los cambios requieren una
 migración y no se crean permisos arbitrarios por HTTP. `ADMIN_ALL` debe
-permanecer en `ADMIN`; `ADMIN_ALL`, `USER_MANAGE` y `ORDER_REVIEW` no se asignan a otros roles.
+permanecer en `ADMIN`. `ADMIN_ALL`, `USER_MANAGE`, `ORDER_REVIEW` y
+`STOCK_ADJUST` están reservados a ese rol. V45 quita las asignaciones anteriores
+de `STOCK_ADJUST` y `USER_MANAGE` fuera de ADMIN e invalida las sesiones afectadas.
 Un cambio efectivo invalida sesiones de los usuarios asignados al rol y registra
 auditoría.
 
@@ -111,9 +112,11 @@ borrador y exige cerrar/recargar antes de otra edición.
 
 `ADMIN_ALL` mantiene acceso completo aunque se quiten permisos individuales.
 Asignar un permiso no cambia el rol ni abre pantallas reservadas a administradores.
-El desacoplamiento de `ADMIN_ALL` en 5.4 incluye [Pedidos y ventas](commerce-permissions.md)
-y [Clientes y cuentas corrientes](customer-permissions.md). Stock/catálogo,
-compras/proveedores y administración siguen pendientes.
+5.4 habilita permisos asignados en [Pedidos y ventas](commerce-permissions.md)
+y [Clientes y cuentas corrientes](customer-permissions.md). La gestión de
+catálogo, compras y recursos administrativos opera sobre datos globales y
+requiere `ADMIN_ALL`. El [ajuste manual de inventario](inventory.md) requiere
+además `STOCK_ADJUST`.
 
 ### Alta de roles personalizados (Fase 5.3)
 
@@ -126,8 +129,8 @@ compras/proveedores y administración siguen pendientes.
 Devuelve `201` con el rol y los mismos metadatos de la lectura. `description`
 es obligatorio (máximo 255 caracteres); `code` debe ser único y cumplir el formato
 anterior. `ADMIN` y `SELLER` son códigos reservados. `permissionCodes` es obligatorio
-y puede estar vacío; solo acepta permisos del catálogo, excluyendo `ADMIN_ALL`,
-`USER_MANAGE` y `ORDER_REVIEW`. Un duplicado devuelve `409`; datos inválidos, `400`.
+y puede estar vacío. Solo acepta permisos del catálogo que estén disponibles
+para roles asignados. Un duplicado devuelve `409`. Los datos inválidos devuelven `400`.
 La creación es transaccional y audita `ROLE_CREATE` con alcance `ASSIGNED`.
 
 «Crear rol» reutiliza las casillas de permisos de la edición, explica el alcance

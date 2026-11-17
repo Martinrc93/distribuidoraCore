@@ -67,14 +67,17 @@ Los cambios efectivos invalidan las sesiones del rol y quedan auditados; si
 afectan al administrador actual, vuelve al login con confirmación del guardado.
 Una edición desactualizada no sobrescribe cambios de otro administrador.
 Los administradores pueden crear roles personalizados con permisos del catálogo,
-sin heredar SELLER ni recibir ADMIN_ALL, USER_MANAGE u ORDER_REVIEW. Su alcance
+sin heredar SELLER ni recibir ADMIN_ALL, USER_MANAGE, ORDER_REVIEW o STOCK_ADJUST. Su alcance
 se limita a datos asignados mediante un perfil de vendedor. El alta y la invitación
 crean ese perfil automáticamente para todo rol distinto de ADMIN. Usuarios permite
 cambiar de rol conservando perfil, asignaciones e historial e invalidando sesiones;
 requiere perfil activo para roles asignados y desactivarlo antes de pasar a ADMIN.
 El acceso completo de `ADMIN_ALL` y las pantallas exclusivas de administradores
 conservan sus reglas. 5.4 incorpora permisos independientes en Pedidos y ventas
-y en Clientes y cuentas corrientes; el resto de las áreas sigue pendiente.
+y en Clientes y cuentas corrientes. El catálogo operativo se comparte para
+crear y editar pedidos. La gestión de catálogo, inventario, compras y
+administración actúa sobre recursos globales y requiere `ADMIN_ALL`. El ajuste
+manual exige también `STOCK_ADJUST`.
 Ver [permisos comerciales](../api/commerce-permissions.md) y
 [permisos de clientes](../api/customer-permissions.md).
 

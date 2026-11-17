@@ -5,8 +5,8 @@
 - Mateo pidió «Commitea y avanza», siguiendo la propuesta de cerrar Pedidos y
   ventas y continuar por Clientes/cuentas. Se registró `45165f7`
   (`feat(permissions): separate order and sale actions from administrator access`)
-  en `support`, sin push. Incluye el cierre anterior; este bloque de clientes
-  queda implementado en el árbol de trabajo, pendiente de su propio commit.
+  en `support`. En el turno siguiente, Clientes y cuentas corrientes quedó
+  registrado en `b6973f9` (`feat(permissions): scope customer and account actions to assigned data`).
 - Sigue vigente la decisión de Mateo: roles personalizados limitados a datos
   asignados, sin permisos que otorguen acceso global implícitamente. Se usan
   permisos permanentes del catálogo y validaciones de alcance en backend.
@@ -112,9 +112,19 @@ API simulada; las reglas de autorización/contabilidad se verifican en PostgreSQ
 
 ## Continuidad
 
-Siguiente área propuesta: Stock/catálogo; luego compras/proveedores y
-administración. Definir operaciones y alcance antes de retirar restricciones
-globales. Administración de zonas permanece para esa etapa. La revisión de
-pedidos sigue reservada al administrador por decisión de Mateo. No presentar
-toda 5.4 ni toda la Fase 5 como completas. Comisiones, revendedores y reportes
-conservan sus propios pendientes. Commit de este bloque cuando Mateo lo solicite.
+La continuación revisó Stock/catálogo, Compras y Administración. V45 retira
+`STOCK_ADJUST` y `USER_MANAGE` de roles distintos de ADMIN y cierra las sesiones
+afectadas. Las pruebas de autorización cubren inventario global, compras,
+proveedores, usuarios, roles y auditoría. Los precios para pedidos validan el
+cliente asignado y el contexto de creación o edición. La consulta operativa
+conserva disponibilidad de productos para esos dos permisos.
+
+Verificación de V45 y del cierre de 5.4. Pasaron 558 pruebas de backend con las
+nueve clases anteriores excluidas, 372 de frontend, cuatro E2E de Stock, nueve
+de Roles y seis de Compras. La compilación de frontend pasó. PostgreSQL
+desechable se detuvo tras la prueba. Los cambios de este cierre quedaron
+pendientes de commit.
+
+El [plan general](2026-11-12-requerimientos-isma-leo.md) registra el cierre de
+5.4 y el pendiente de Mermas (6.1). La revisión de pedidos sigue a cargo del
+administrador. Comisiones, revendedores y reportes conservan sus pendientes.

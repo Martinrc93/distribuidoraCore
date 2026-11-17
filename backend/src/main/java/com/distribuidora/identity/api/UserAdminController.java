@@ -15,6 +15,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")
+@PreAuthorize("hasAuthority('ADMIN_ALL')")
 public class UserAdminController {
     private final UserAdminService service;
 
@@ -23,13 +24,11 @@ public class UserAdminController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('USER_MANAGE', 'ADMIN_ALL')")
     public ResponseEntity<IdResponse> create(@Valid @RequestBody UserAdminDtos.CreateUserRequest request) {
         return ResponseEntity.status(201).body(new IdResponse(service.create(request)));
     }
 
     @PostMapping("/invite")
-    @PreAuthorize("hasAnyAuthority('USER_MANAGE', 'ADMIN_ALL')")
     public ResponseEntity<UserAdminDtos.InviteUserResponse> invite(@Valid @RequestBody UserAdminDtos.InviteUserRequest request) {
         UserAdminService.InviteUserResult result = service.invite(request);
         return ResponseEntity.status(201).body(new UserAdminDtos.InviteUserResponse(
@@ -37,28 +36,24 @@ public class UserAdminController {
     }
 
     @PostMapping("/{id}/revoke-sessions")
-    @PreAuthorize("hasAnyAuthority('USER_MANAGE', 'ADMIN_ALL')")
     public ResponseEntity<Void> revokeSessions(@PathVariable UUID id) {
         service.revokeSessions(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/block")
-    @PreAuthorize("hasAnyAuthority('USER_MANAGE', 'ADMIN_ALL')")
     public ResponseEntity<Void> block(@PathVariable UUID id) {
         service.blockUser(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/unblock")
-    @PreAuthorize("hasAnyAuthority('USER_MANAGE', 'ADMIN_ALL')")
     public ResponseEntity<Void> unblock(@PathVariable UUID id) {
         service.unblockUser(id);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/{id}/role")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<Void> changeRole(@PathVariable UUID id,
                                            @Valid @RequestBody UserAdminDtos.ChangeRoleRequest request) {
         service.changeRole(id, request.role());

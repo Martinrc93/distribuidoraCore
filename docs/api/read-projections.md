@@ -240,18 +240,19 @@ antiguos sin marca conservan su nombre y deben completar la marca al editarse.
 Renombrar una marca recalcula el nombre de sus productos sin modificar los
 snapshots históricos de pedidos o ventas, los precios ni el stock.
 
-`GET /api/products` admite `includeStock` (por defecto `true`). Con `false`,
-omite el campo `stock` y, cuando no hay filtro de stock, la consulta a `inventory.inventory_balances`. La creación
-de pedidos usa esta variante en todas las páginas; la gestión de inventario
-conserva la lectura de stock.
+`GET /api/products` sirve como catálogo compartido. Incluye `stock` con
+`includeStock=true` (valor por defecto) para `ADMIN_ALL`, `ORDER_CREATE` u
+`ORDER_EDIT`. El formulario de pedidos usa esa disponibilidad para seleccionar
+productos. Los demás roles reciben el catálogo sin consultar saldos de inventario.
+Solo `ADMIN_ALL` recibe costos y asociaciones de proveedores.
 
 El listado combina `search` (nombre del producto), `brandId` y `categoryId`
 (UUID exactos), y `stock`: `ALL` por defecto, `POSITIVE` para cantidades mayores
 a cero y `NEGATIVE` para cantidades menores a cero. `ALL` incluye stock cero y
 productos sin saldo de inventario. El conteo y la paginación aplican los mismos
-filtros. Los valores de stock o UUID inválidos devuelven HTTP 400. Filtrar por
-stock con `includeStock=false` consulta el saldo sin incluirlo en la respuesta;
-los vendedores continúan sin recibir el costo.
+filtros. Los valores de stock o UUID inválidos devuelven HTTP 400. Los filtros
+`POSITIVE` y `NEGATIVE` requieren `ADMIN_ALL` incluso con `includeStock=false`,
+porque también revelan disponibilidad en los resultados y en el conteo.
 
 ## Deudas abiertas de un cliente
 

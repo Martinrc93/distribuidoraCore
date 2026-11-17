@@ -219,7 +219,17 @@ class SecurityChainAuthorizationTest {
                 .header("Authorization", bearer(inventoryUser, "STOCK_ADJUST"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"quantity\":1,\"reason\":\"Conteo\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/inventory/{productId}/adjustments", productId)
+                .header("Authorization", "Bearer " + jwtService.issue(administrator, List.of("ADMIN_ALL", "STOCK_ADJUST")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"quantity\":1,\"reason\":\"Conteo\"}"))
             .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/inventory/{productId}/adjustments", productId)
+                .header("Authorization", bearer(administrator, "ADMIN_ALL"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"quantity\":1,\"reason\":\"Conteo\"}"))
+            .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/inventory/transfers")
                 .header("Authorization", bearer(inventoryUser, "STOCK_ADJUST"))
@@ -233,7 +243,7 @@ class SecurityChainAuthorizationTest {
 
         mockMvc.perform(post("/api/users/{id}/block", managedUserId)
                 .header("Authorization", bearer(userManager, "USER_MANAGE")))
-            .andExpect(status().isNoContent());
+            .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/users/{id}/block", adminTargetId)
                 .header("Authorization", bearer(administrator, "ADMIN_ALL")))
@@ -248,7 +258,6 @@ class SecurityChainAuthorizationTest {
         verify(accountPaymentService).apply(any(), any());
         verify(deliveryLifecycleService).recordAttempt(any(), any());
         verify(inventoryCommandService).adjust(eq(productId), any(), eq("Conteo"));
-        verify(userAdminService).blockUser(managedUserId);
         verify(userAdminService).blockUser(adminTargetId);
         verify(userAdminService).changeRole(adminTargetId, "ADMIN");
     }

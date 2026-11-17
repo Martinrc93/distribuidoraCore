@@ -100,7 +100,7 @@ export default function App() {
         <Route path="/catalog" element={<RequireAdmin><CatalogAdminPage /></RequireAdmin>} />
         <Route path="/price-lists" element={<RequireAdmin><PriceListsPage /></RequireAdmin>} />
         <Route path="/payments" element={<Navigate to="/orders" replace />} />
-        <Route path="/admin/users" element={<UsersPage />} />
+        <Route path="/admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         <Route path="/admin/roles" element={<RequireAdmin><RolesPage /></RequireAdmin>} />
         <Route path="/admin/sellers" element={<SellersPage />} />
         <Route path="/admin/zones" element={<RequireAdmin><ZonesPage /></RequireAdmin>} />

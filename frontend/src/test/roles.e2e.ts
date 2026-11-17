@@ -8,7 +8,7 @@ const permissions = [
   { code: 'ORDER_REVIEW', description: 'Confirmar la revisión administrativa de pedidos de vendedores', adminOnly: true },
   { code: 'SALE_DELIVER', description: 'Entregar ventas', adminOnly: false },
   { code: 'SALE_PAYMENT', description: 'Registrar cobros', adminOnly: false },
-  { code: 'STOCK_ADJUST', description: 'Ajustar stock', adminOnly: false },
+  { code: 'STOCK_ADJUST', description: 'Ajustar el stock global (solo Administración)', adminOnly: true },
   { code: 'USER_MANAGE', description: 'Administrar usuarios', adminOnly: true },
 ]
 async function setup(page: Page, isAdmin = true) {

@@ -1,8 +1,8 @@
 # Precios y vigencias
 
 Todos los endpoints están bajo `/api/pricing`. Las consultas requieren un
-usuario autenticado. Las modificaciones requieren la autoridad `ADMIN_ALL` y
-se registran en auditoría.
+usuario autenticado y el permiso indicado para cada operación. Las modificaciones
+requieren `ADMIN_ALL` y se registran en auditoría.
 
 ## Regla de vigencia
 
@@ -19,11 +19,13 @@ escrituras inmediatas antiguas; las lecturas de negocio usan el historial.
 
 ## Consultar listas y precios actuales
 
-- `GET /api/pricing/lists?page=0&size=20`
+- `GET /api/pricing/lists?page=0&size=20` devuelve las opciones compartidas.
+  Solo `ADMIN_ALL` recibe `pendingReviewCount`.
 - `GET /api/pricing/lists/{listId}/prices?page=0&size=20`: filtros opcionales
   `categoryId` (rubro), `brandId`, `search` (nombre, sin distinguir mayúsculas) y
   `followStatus`, combinados antes de paginar. Cada fila incluye `categoryId` y `brandId`;
-  para administradores también `cost` (los vendedores no reciben el costo).
+  para administradores también `cost`. Requiere `ORDER_CREATE` o `ADMIN_ALL`,
+  igual que el PDF de precios vigentes.
 
 La lista de precios devuelve, por producto, el precio efectivo hoy y el campo
 `effectiveOn` que lo estableció.
@@ -49,7 +51,8 @@ por debajo del costo vigente del producto.
 
 `GET /api/pricing/lists/{listId}/products/{productId}/history?page=0&size=20`
 
-Devuelve las versiones con `effectiveOn`, `recordedAt`, `updatedAt` y `scheduled`.
+Requiere `ADMIN_ALL`. Devuelve las versiones con `effectiveOn`, `recordedAt`,
+`updatedAt` y `scheduled`.
 La paginación limita el tamaño a 100 filas.
 
 ## Cancelar un precio programado
@@ -65,8 +68,13 @@ queda auditada como `PRODUCT_PRICE_SCHEDULE_CANCEL`.
   o `GENERAL`.
 - `GET /api/pricing/resolve?customerId={id}&productId={id}&priceListId={id}`:
   lista explícita.
-- Se puede agregar `asOf=2026-10-01` para consultar una fecha histórica o
-  futura sin cambiar datos.
+- Se puede agregar `asOf=2026-10-01` con `ADMIN_ALL` para consultar una fecha
+  histórica o futura.
+
+La resolución individual y la consulta por lotes usan el mismo alcance.
+Sin `orderId` requieren `ORDER_CREATE` y acceso al cliente asignado. Con
+`orderId` requieren `ORDER_EDIT`, acceso al pedido y coincidencia de cliente.
+`ADMIN_ALL` conserva alcance global.
 
 La respuesta incluye `priceListId`, `priceListCode`, `productId`, `unitPrice` y
 `effectiveOn`. Si la lista seleccionada no tiene versión aplicable, se busca

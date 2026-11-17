@@ -42,14 +42,20 @@ public class PricingQueryService {
     }
 
     public PageResponse<Map<String, Object>> lists(int page, int size) {
+        return lists(page, size, true);
+    }
+
+    public PageResponse<Map<String, Object>> lists(int page, int size, boolean includeReviewCount) {
+        String reviewCount = includeReviewCount ? """
+            , (select count(*) from catalog.price_list_follows f
+               where f.price_list_id = catalog.price_lists.id and f.review_status = 'PENDING') as "pendingReviewCount"
+            """ : "";
         return page("""
             select id, code, name, status, is_default as "isDefault",
-                   created_at as "createdAt", updated_at as "updatedAt",
-                   (select count(*) from catalog.price_list_follows f
-                    where f.price_list_id = catalog.price_lists.id and f.review_status = 'PENDING') as "pendingReviewCount"
+                   created_at as "createdAt", updated_at as "updatedAt"%s
             from catalog.price_lists
             order by code
-            """, "select count(*) from catalog.price_lists", page, size);
+            """.formatted(reviewCount), "select count(*) from catalog.price_lists", page, size);
     }
 
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size) {

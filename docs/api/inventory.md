@@ -12,7 +12,7 @@ GET /api/inventory?page=0&size=20&search=
 GET /api/inventory/{productId}/movements?page=0&size=20
 ```
 
-Ambas lecturas requieren autenticación. El listado es paginado y permite buscar
+Ambas lecturas requieren `ADMIN_ALL`. El listado es paginado y permite buscar
 por nombre; devuelve un único saldo por producto. Cada movimiento contiene
 `id`, `movementType`, `quantity`, `reason`, `referenceType`, `referenceId` y
 `date`, sin campos de ubicación.
@@ -20,7 +20,9 @@ por nombre; devuelve un único saldo por producto. Cada movimiento contiene
 ## Ajustes manuales
 
 `POST /api/inventory/{productId}/adjustments` requiere la autoridad
-`STOCK_ADJUST` y responde `204 No Content`.
+`ADMIN_ALL` y `STOCK_ADJUST`, y responde `204 No Content`. El saldo es
+compartido por toda la operación. V45 reserva este permiso al rol ADMIN y retira
+las asignaciones previas a otros roles.
 
 Se envía **uno** de estos dos campos (ambos o ninguno devuelve `400`):
 
@@ -44,7 +46,7 @@ final), porque los movimientos conservan siempre un motivo. Se actualiza el sald
 auditoría.
 
 El saldo negativo está permitido. Un ajuste inválido responde `400 Bad Request`;
-un usuario sin `STOCK_ADJUST`, `403 Forbidden`; y una solicitud sin autenticación,
+un usuario sin alguna de las dos autoridades recibe `403 Forbidden`. Una solicitud sin autenticación recibe
 `401 Unauthorized`.
 
 ## Pedidos, devoluciones y cancelaciones

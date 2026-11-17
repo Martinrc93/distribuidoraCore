@@ -5,6 +5,7 @@ import com.distribuidora.shared.security.PermissionAccess;
 import com.distribuidora.pricing.application.PricingQueryService;
 import com.distribuidora.shared.web.PageResponse;
 import com.distribuidora.shared.security.CurrentUserAccess;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,10 +34,11 @@ public class PricingQueryController {
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size
     ) {
-        return queries.lists(page, size);
+        return queries.lists(page, size, access.isAdmin());
     }
 
     @GetMapping("/lists/{listId}/prices")
+    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
     public PageResponse<Map<String, Object>> prices(
         @PathVariable UUID listId,
         @RequestParam(defaultValue = "0") int page,
@@ -51,6 +53,7 @@ public class PricingQueryController {
     }
 
     @GetMapping("/lists/{listId}/products/{productId}/history")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public PageResponse<Map<String, Object>> history(
         @PathVariable UUID listId,
         @PathVariable UUID productId,
@@ -61,12 +64,18 @@ public class PricingQueryController {
     }
 
     @GetMapping("/resolve")
+    @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ORDER_EDIT', 'ADMIN_ALL')")
     public Map<String, Object> resolve(
         @RequestParam UUID customerId,
         @RequestParam UUID productId,
         @RequestParam(required = false) UUID priceListId,
-        @RequestParam(required = false) LocalDate asOf
+        @RequestParam(required = false) LocalDate asOf,
+        @RequestParam(required = false) UUID orderId
     ) {
+        if (asOf != null && !access.isAdmin()) {
+            throw new AccessDeniedException("Consultar precios de otra fecha requiere acceso administrativo");
+        }
+        requireOrderPricingAccess(customerId, orderId);
         return queries.resolveAsOf(customerId, productId, priceListId, asOf);
     }
 
@@ -78,6 +87,11 @@ public class PricingQueryController {
         @RequestParam(required = false) UUID priceListId,
         @RequestParam(required = false) UUID orderId
     ) {
+        requireOrderPricingAccess(customerId, orderId);
+        return queries.resolveBatch(customerId, productIds, priceListId);
+    }
+
+    private void requireOrderPricingAccess(UUID customerId, UUID orderId) {
         if (orderId == null) {
             PermissionAccess.require("ORDER_CREATE");
             access.requireCustomerAccess(customerId);
@@ -85,6 +99,5 @@ public class PricingQueryController {
             PermissionAccess.require("ORDER_EDIT");
             access.requireOrderCustomerAccess(orderId, customerId);
         }
-        return queries.resolveBatch(customerId, productIds, priceListId);
     }
 }

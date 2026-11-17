@@ -146,7 +146,6 @@ class UserAdminControllerTest {
 
         verify(service).changeRole(userId, "SELLER");
         assertEquals("hasAuthority('ADMIN_ALL')", UserAdminController.class
-            .getMethod("changeRole", UUID.class, UserAdminDtos.ChangeRoleRequest.class)
             .getAnnotation(PreAuthorize.class).value());
     }
 }

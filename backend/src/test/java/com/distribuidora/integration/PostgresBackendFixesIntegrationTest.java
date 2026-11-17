@@ -2146,6 +2146,74 @@ class PostgresBackendFixesIntegrationTest {
             .andExpect(permission.equals("CUSTOMER_STATEMENT_EXPORT") ? status().isNotFound() : status().isForbidden());
     }
 
+    @Test
+    void catalogAvailabilityAndPricesRespectOrderPermissionsAndAssignedCustomers() throws Exception {
+        UUID profile = createSeller("catalog-scope");
+        UUID otherProfile = createSeller("catalog-scope-other");
+        UUID actor = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        UUID own = createCustomer(profile);
+        UUID foreign = createCustomer(otherProfile);
+        UUID product = createProduct("Catalog scope " + UUID.randomUUID());
+        UUID listId = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL'", UUID.class);
+        authenticateOrderActor(createUser("catalog-scope-admin"), "ADMIN_ALL");
+        pricingCommandService.setProductPrice(listId, product, BigDecimal.TEN);
+        assignRole(actor, createRoleWithPermission("CUSTOMER_VIEW"));
+        String reader = "Bearer " + loginHttp(email(actor));
+        String productName = jdbc.queryForObject("select name from catalog.products where id = ?", String.class, product);
+        mockMvc.perform(get("/api/products").param("search", productName).header("Authorization", reader))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(product.toString()))
+            .andExpect(jsonPath("$.content[0].stock").doesNotExist())
+            .andExpect(jsonPath("$.content[0].cost").doesNotExist());
+        mockMvc.perform(get("/api/pricing/resolve").param("customerId", own.toString())
+                .param("productId", product.toString()).header("Authorization", reader))
+            .andExpect(status().isForbidden());
+
+        assignRole(actor, createRoleWithPermission("ORDER_CREATE"));
+        String seller = "Bearer " + loginHttp(email(actor));
+        mockMvc.perform(get("/api/products").param("search", productName).header("Authorization", seller))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].stock").isNumber())
+            .andExpect(jsonPath("$.content[0].cost").doesNotExist())
+            .andExpect(jsonPath("$.content[0].suppliers").doesNotExist());
+        mockMvc.perform(get("/api/products").param("includeStock", "false").param("stock", "NEGATIVE").header("Authorization", seller))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/pricing/lists").header("Authorization", seller))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].pendingReviewCount").doesNotExist());
+        mockMvc.perform(get("/api/pricing/lists/{id}/prices", listId).param("search", productName).header("Authorization", seller))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].price").value(10))
+            .andExpect(jsonPath("$.content[0].cost").doesNotExist());
+        mockMvc.perform(get("/api/pricing/lists/{id}/products/{product}/history", listId, product).header("Authorization", seller))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/pricing/resolve").param("customerId", own.toString())
+                .param("productId", product.toString()).header("Authorization", seller))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.unitPrice").value(10));
+        mockMvc.perform(get("/api/pricing/resolve").param("customerId", foreign.toString())
+                .param("productId", product.toString()).param("priceListId", listId.toString()).header("Authorization", seller))
+            .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/pricing/resolve").param("customerId", own.toString()).param("asOf", "2026-11-17")
+                .param("productId", product.toString()).header("Authorization", seller))
+            .andExpect(status().isForbidden());
+
+        for (String path : List.of("/api/suppliers", "/api/supplier-orders",
+                "/api/supplier-orders/" + foreign, "/api/supplier-orders/supplier/" + foreign + "/last-order",
+                "/api/inventory", "/api/inventory/" + product + "/movements",
+                "/api/users", "/api/audit", "/api/roles")) {
+            mockMvc.perform(get(path).header("Authorization", seller)).andExpect(status().isForbidden());
+        }
+        mockMvc.perform(post("/api/suppliers").header("Authorization", seller).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Proveedor de prueba\"}"))
+            .andExpect(status().isForbidden());
+        for (String path : List.of("/api/supplier-orders",
+                "/api/supplier-orders/" + foreign + "/confirm", "/api/supplier-orders/" + foreign + "/cancel")) {
+            mockMvc.perform(post(path).header("Authorization", seller).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+        }
+        for (String path : List.of("/api/suppliers/" + foreign, "/api/supplier-orders/" + foreign)) {
+            mockMvc.perform(put(path).header("Authorization", seller).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Proveedor de prueba\"}"))
+                .andExpect(status().isForbidden());
+        }
+    }
+
     private UUID createSeller(String suffix) {
         UUID userId = createUser("seller-" + suffix);
         UUID sellerId = UUID.randomUUID();

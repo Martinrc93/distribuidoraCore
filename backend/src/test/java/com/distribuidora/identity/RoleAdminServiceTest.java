@@ -71,7 +71,7 @@ class RoleAdminServiceTest {
         for (String code : List.of("ADMIN", "SELLER", "A", "BAD-CODE")) {
             assertThrows(IllegalArgumentException.class, () -> service.create(code, "Nombre", Set.of()));
         }
-        for (String code : List.of("ADMIN_ALL", "USER_MANAGE", "ORDER_REVIEW", "UNKNOWN")) {
+        for (String code : List.of("ADMIN_ALL", "USER_MANAGE", "ORDER_REVIEW", "STOCK_ADJUST", "UNKNOWN")) {
             assertThrows(IllegalArgumentException.class, () -> service.create("CUSTOM", "Nombre", Set.of(code)));
         }
         verify(jdbc, never()).update(anyString(), any(Object[].class));

@@ -167,25 +167,26 @@ Pedidos y ventas: permisos independientes para editar, cancelar, reactivar,
 devolver, modificar precios/descuentos y exportar/enviar comprobantes, manteniendo
 el alcance asignado. Continúa con Clientes y cuentas corrientes: siete permisos
 V44, altas asignadas al perfil propio, ficha/historial, saldo restringido y pagos
-combinados independientes. Stock/catálogo, compras/proveedores y administración
-siguen pendientes. Ninguna función nueva debe reutilizar un permiso ajeno como
-solución temporal.
+combinados independientes. V45 cierra la revisión de Stock/catálogo, Compras y
+Administración con la regla de alcance asignado. Sus operaciones globales exigen
+ADMIN_ALL y el ajuste manual exige además STOCK_ADJUST. Las consultas operativas
+para pedidos conservan el catálogo compartido y el alcance del cliente.
 
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
 | 5.1 | Permisos nuevos | M | Cada función nueva nace con su permiso (`ORDER_PRICE_LIST_CHANGE`, `STOCK_SHRINKAGE`, `COMMISSION_VIEW`, `REPORTS_VIEW`, `PURCHASE_EDIT`, …) en lugar de `ADMIN_ALL`. |
 | 5.2 | UI de roles | M | Implementada: `/admin/roles`, solo administradores, catálogo completo, modal con permisos obligatorios/reservados, confirmación de altas/bajas, descarte y cierre de sesiones. `expectedPermissionCodes` evita sobrescribir cambios concurrentes; la API informa si se revocó la sesión propia. |
 | 5.3 | Roles nuevos | M | Implementada: alta con catálogo de permisos y alcance asignado, selección en altas/invitaciones y cambio de rol conservando perfil e historial. Sin permisos administrativos ni acceso global. |
-| 5.4 | Desacoplar `ADMIN_ALL` | XL | En curso por área. Pedidos y ventas: ocho permisos V43, controles de alcance, UI y conservación de snapshots. Clientes/cuentas: siete permisos V44, asignación propia, saldo/historial restringidos y pagos combinados. Revisión administrativa conserva ADMIN_ALL por decisión de Mateo. Stock/catálogo, compras/proveedores y administración siguen pendientes; no migrar todas las áreas de una vez. |
+| 5.4 | Desacoplar `ADMIN_ALL` | XL | Cerrada con alcance asignado. Pedidos/ventas (V43) y Clientes/cuentas (V44) tienen permisos por acción. Stock/catálogo, Compras y Administración mantienen alcance administrativo para sus recursos globales. V45 retira permisos globales de roles asignados y alinea las consultas operativas y la entrada a Usuarios con la API. La revisión de pedidos sigue a cargo del administrador. |
 
 ### Fase 6 — Stock y compras
 
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
 | 6.1 | Mermas | M | Movimiento `SHRINKAGE` con motivo obligatorio, permiso `STOCK_SHRINKAGE` (solo admins por defecto), reporte de mermas por período. Comparte `InventoryMovementService` con los ajustes, con operaciones diferenciadas. |
-| 6.2 | Editar compras | M | `PUT /api/supplier-orders/{id}` con auditoría y nuevos snapshots. Hoy no impactan stock, así que no hay deltas. |
-| 6.3 | Pedir productos para reponer | S–M | **Ya existe** (Compras). Agregar «Generar compra» desde productos con stock bajo o desde la cobertura del dashboard. |
-| 6.4 | Recepción de compras con ingreso de stock | L | No fue pedido explícitamente, pero completa reposición y «Stock». Pendiente de confirmar. |
+| 6.2 | Editar compras | M | Implementada con V40. La edición de una compra confirmada aplica la diferencia de cantidades y registra auditoría. |
+| 6.3 | Pedir productos para reponer | S–M | Implementado «Agregar productos sin stock» en Compras. Queda como ampliación iniciar la compra desde Stock o el dashboard. |
+| 6.4 | Ingreso de stock por confirmación de compra | L | Implementado con V40. Confirmar ingresa stock. Anular una confirmada registra movimientos compensatorios. |
 
 ### Fase 7 — Reportes
 
@@ -272,8 +273,9 @@ Respuestas del usuario (2026-11-12):
 6. **Permisos:** inicialmente postergados para revisarlos en detalle. El 2026-11-16
    Mateo autorizó retomar 5.2 y 5.3, implementadas. Confirmó que los roles
    personalizados quedan limitados a datos asignados. Desacoplamiento por área
-   de `ADMIN_ALL` (5.4) incluye Pedidos y ventas y Clientes/cuentas; Stock/catálogo,
-   compras/proveedores y administración siguen pendientes.
+   de `ADMIN_ALL` (5.4) completado según ese alcance. Las operaciones globales de
+   Stock/catálogo, Compras y Administración requieren administrador. La tarea
+   siguiente de Stock es 6.1, Mermas.
 7. **Compras:** sí. Una compra **confirmada** ingresa el stock de lo comprado. Hace
    falta un estado (borrador / confirmada) y que editar o anular una compra
    confirmada genere movimientos compensatorios.

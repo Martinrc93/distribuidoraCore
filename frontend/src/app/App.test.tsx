@@ -156,7 +156,7 @@ describe('App shell', () => {
     expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith('/api/customers?'))).toBe(true)
   })
 
-  it.each(['/dashboard', '/admin/zones', '/admin/audit', '/admin/roles', '/customers/customer-1', '/products', '/catalog', '/price-lists', '/suppliers', '/supplier-orders', '/supplier-orders/order-1'])('keeps %s restricted to administrators', async (route) => {
+  it.each(['/dashboard', '/admin/users', '/admin/zones', '/admin/audit', '/admin/roles', '/customers/customer-1', '/products', '/catalog', '/price-lists', '/suppliers', '/supplier-orders', '/supplier-orders/order-1'])('keeps %s restricted to administrators', async (route) => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`)
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
     renderApp(route)
@@ -168,7 +168,7 @@ describe('App shell', () => {
     for (const name of ['Stock', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
-    expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/zones', '/api/audit', '/api/customers', '/api/products', '/api/brands', '/api/categories', '/api/pricing'].some((path) => String(input).split('?')[0].startsWith(path)))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/users', '/api/zones', '/api/audit', '/api/customers', '/api/products', '/api/brands', '/api/categories', '/api/pricing'].some((path) => String(input).split('?')[0].startsWith(path)))).toBe(false)
   })
 
   it('hides administrative navigation when the session has no readable admin authority', () => {

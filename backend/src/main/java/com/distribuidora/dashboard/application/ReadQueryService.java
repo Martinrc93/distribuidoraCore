@@ -3,7 +3,9 @@ package com.distribuidora.dashboard.application;
 import com.distribuidora.shared.web.PageResponse;
 import com.distribuidora.customer.application.DeliveryDebtQuery;
 import com.distribuidora.shared.security.CurrentUserAccess;
+import com.distribuidora.shared.security.PermissionAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -190,10 +192,16 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search, boolean includeStock,
             UUID brandId, UUID categoryId, StockFilter stock) {
+        boolean assigned = sellerScoped();
+        if (assigned && stock != StockFilter.ALL) {
+            throw new AccessDeniedException("El filtro de inventario requiere acceso administrativo");
+        }
+        boolean showStock = includeStock && (!assigned
+            || PermissionAccess.allows("ORDER_CREATE") || PermissionAccess.allows("ORDER_EDIT"));
         String term = like(search);
-        String costColumn = sellerScoped() ? "" : ", p.cost";
-        String stockColumn = includeStock ? ", coalesce(ib.quantity, 0) as stock" : "";
-        String stockJoin = includeStock || stock != StockFilter.ALL
+        String costColumn = assigned ? "" : ", p.cost";
+        String stockColumn = showStock ? ", coalesce(ib.quantity, 0) as stock" : "";
+        String stockJoin = showStock || stock != StockFilter.ALL
             ? " left join inventory.inventory_balances ib on ib.product_id = p.id" : "";
         String source = """
              from catalog.products p
@@ -218,7 +226,7 @@ public class ReadQueryService {
                    p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.status
             """ + costColumn + stockColumn + source + " order by p.name, p.id",
             "select count(*) " + source, page, size, parameters.toArray());
-        if (sellerScoped() || result.content().isEmpty()) return result;
+        if (assigned || result.content().isEmpty()) return result;
         String ids = String.join(",", java.util.Collections.nCopies(result.content().size(), "?"));
         var associations = jdbc.queryForList("select ps.product_id, s.id, s.name from catalog.product_suppliers ps "
             + "join supplier.suppliers s on s.id = ps.supplier_id where ps.product_id in (" + ids + ") order by s.name, s.id",

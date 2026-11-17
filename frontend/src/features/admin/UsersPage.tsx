@@ -32,7 +32,7 @@ function errorMessage(cause: unknown) {
 
 export function UsersPage() {
   const navigate = useNavigate()
-  const isAdmin = hasAuthority('ADMIN_ALL') || hasAuthority('USER_MANAGE')
+  const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
   const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState()
   const search = getFilter('search')
@@ -129,7 +129,7 @@ export function UsersPage() {
       return <div className="page-actions">
         <Button variant="link" onClick={() => setAction({ user: item, action: item.status === 'BLOCKED' ? 'unblock' : 'block' })}>{item.status === 'BLOCKED' ? 'Desbloquear usuario' : 'Bloquear usuario'}</Button>
         <Button variant="link" onClick={() => setAction({ user: item, action: 'revoke-sessions' })}>Revocar sesiones</Button>
-        {hasAuthority('ADMIN_ALL') && item.status === 'ACTIVE' && <Button type="button" variant="link" aria-label={`Cambiar rol de ${item.email}`} onClick={() => { setError(''); setRoleUser(item) }}>Cambiar rol</Button>}
+        {item.status === 'ACTIVE' && <Button type="button" variant="link" aria-label={`Cambiar rol de ${item.email}`} onClick={() => { setError(''); setRoleUser(item) }}>Cambiar rol</Button>}
       </div>
     } }] : []),
   ]

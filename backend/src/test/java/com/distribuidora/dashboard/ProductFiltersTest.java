@@ -89,13 +89,16 @@ class ProductFiltersTest {
     }
 
     @Test
-    void filtersStockWithoutProjectingItAndPreservesSellerCostRestrictions() {
+    void hidesStockAndCostWithoutOrderPermissionAndRestrictsStockFilters() {
         CurrentUserAccess access = mock(CurrentUserAccess.class);
         when(access.isAdmin()).thenReturn(false);
         var sellerService = new ReadQueryService(jdbc, access);
-        var result = sellerService.products(0, 20, "flour", false, brand, category, StockFilter.NEGATIVE);
-        assertThat(result.content()).hasSize(1);
+        var result = sellerService.products(0, 20, "flour", true, brand, category, StockFilter.ALL);
+        assertThat(result.content()).hasSize(5);
         assertThat(result.content().getFirst()).doesNotContainKeys("stock", "cost");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> sellerService.products(0, 20, "flour", false, brand, category, StockFilter.NEGATIVE))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
     @Test

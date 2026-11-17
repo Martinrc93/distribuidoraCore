@@ -86,6 +86,10 @@ el anterior requiere confirmación si reemplazará productos del borrador.
 
 ## Alcance
 
+Proveedores y compras son recursos globales. Listado, detalle, historial,
+alta, edición, confirmación y anulación requieren `ADMIN_ALL`. Los permisos
+de pedidos de clientes no dan acceso a compras ni a sus movimientos de stock.
+
 V35 crea `catalog.product_suppliers` y el schema `purchasing`. No envía mensajes
 al proveedor ni registra pagos o facturas de compra; el envío por mail/WhatsApp
 requiere un flujo separado.
