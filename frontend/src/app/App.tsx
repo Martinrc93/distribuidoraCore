@@ -15,6 +15,7 @@ import SupplierOrdersPage from '../features/purchasing/SupplierOrdersPage'
 import SupplierOrderDetailPage from '../features/purchasing/SupplierOrderDetailPage'
 import SupplierOrderRestockPage from '../features/purchasing/SupplierOrderRestockPage'
 import CustomerDetailPage from '../features/customers/CustomerDetailPage'
+import CustomerPurchasesPage from '../features/customers/CustomerPurchasesPage'
 import ProductsPage from '../features/products/ProductsPage'
 import ShrinkagesPage from '../features/inventory/ShrinkagesPage'
 import PriceListsPage from '../features/pricing/PriceListsPage'
@@ -44,8 +45,8 @@ function RequireCustomerView() {
   return hasPermission('CUSTOMER_VIEW') ? <CustomerDetailPage /> : <Navigate to="/orders" replace />
 }
 
-function RequireReportsView() {
-  return hasPermission('REPORTS_VIEW') ? <SoldProductsPage /> : <Navigate to="/sales" replace />
+function RequireReportsView({ children, back }: { children: ReactNode; back: string }) {
+  return hasPermission('REPORTS_VIEW') ? children : <Navigate to={back} replace />
 }
 
 function RequireOrderCreate() {
@@ -98,14 +99,15 @@ export default function App() {
         <Route path="/orders/new" element={<RequireOrderCreate />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/sales" element={<SalesPage />} />
-        <Route path="/sales/products" element={<RequireReportsView />} />
-        <Route path="/sales/products/:productId" element={<RequireReportsView />} />
+        <Route path="/sales/products" element={<RequireReportsView back="/sales"><SoldProductsPage /></RequireReportsView>} />
+        <Route path="/sales/products/:productId" element={<RequireReportsView back="/sales"><SoldProductsPage /></RequireReportsView>} />
         <Route path="/supplier-orders" element={<RequireAdmin><SupplierOrdersPage /></RequireAdmin>} />
         <Route path="/supplier-orders/restock" element={<RequireAdmin><SupplierOrderRestockPage /></RequireAdmin>} />
         <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/suppliers" element={<RequireAdmin><SuppliersPage /></RequireAdmin>} />
         <Route path="/customers/:customerId" element={<RequireCustomerView />} />
+        <Route path="/customers/:customerId/purchases" element={<RequireReportsView back="/customers"><CustomerPurchasesPage /></RequireReportsView>} />
         <Route path="/products" element={<RequireAdmin><ProductsPage /></RequireAdmin>} />
         <Route path="/products/shrinkages" element={<RequireAdmin><ShrinkagesPage /></RequireAdmin>} />
         <Route path="/catalog" element={<RequireAdmin><CatalogAdminPage /></RequireAdmin>} />

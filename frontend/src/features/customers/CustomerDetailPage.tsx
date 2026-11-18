@@ -65,8 +65,12 @@ export default function CustomerDetailPage() {
   ]
   const rows = (ordersQuery.data?.content ?? []).map((order) => ({ id: order.id, number: order.number, date: date(order.date), seller: order.seller, total: money(order.total), balance: order.balance === undefined ? '—' : order.balance > 0 ? money(order.balance) : 'Sin deuda', pendingBalance: String(order.balance ?? ''), status: order.status }))
   const balance = Number(customer.balance ?? 0)
+  const purchasePath = `/customers/${encodeURIComponent(customerId)}/purchases${params.size ? `?${new URLSearchParams({ customerFilters: params.toString() })}` : ''}`
   return <>
-    <PageHeader eyebrow="Operación" title={customer.name} description="Datos del cliente e historial de pedidos." actions={backAction} />
+    <PageHeader eyebrow="Operación" title={customer.name} description="Datos del cliente e historial de pedidos." actions={<>
+      {hasPermission('REPORTS_VIEW') && <Button variant="secondary" href={purchasePath}>Ver compras del cliente</Button>}
+      {backAction}
+    </>} />
     <div className="content-grid">
       <div className="content-grid two-thirds">
         <Panel title="Datos del cliente" action={<Badge tone={customer.status === 'ACTIVE' ? 'strong' : 'muted'}>{customer.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}</Badge>}>

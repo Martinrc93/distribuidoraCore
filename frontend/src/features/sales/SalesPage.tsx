@@ -94,6 +94,7 @@ export default function SalesPage() {
         queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/sales?') }),
         queryClient.invalidateQueries({ queryKey: ['sale-detail', selectedSaleId] }),
         queryClient.invalidateQueries({ queryKey: ['sold-products'] }),
+        queryClient.invalidateQueries({ queryKey: ['customer-purchases'] }),
         queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/inventory') }),
       ])
       setReturnReason('')

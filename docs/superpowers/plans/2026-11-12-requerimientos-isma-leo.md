@@ -193,7 +193,7 @@ para pedidos conservan el catálogo compartido y el alcance del cliente.
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
 | 7.1 | Artículos vendidos con historial | M | Implementada con V47. Reporte paginado por artículo y fechas con unidades vendidas, devueltas, netas e importe con descuentos. Detalle por venta. `REPORTS_VIEW` respeta el alcance del rol. |
-| 7.2 | Total comprado por cliente entre fechas | M | Total y desglose por pedido/producto; enlazado desde la ficha del cliente. Imprimible con la Fase 3. |
+| 7.2 | Total comprado por cliente entre fechas | M | Implementada con V48. Desde la ficha muestra el total del período y el detalle por pedido y producto. Impresión y descarga del período completo con `REPORTS_VIEW` y alcance asignado. |
 
 ### Fase 8 — Comisiones
 

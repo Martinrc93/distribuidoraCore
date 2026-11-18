@@ -2446,6 +2446,93 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(amount).isEqualByComparingTo("0.0002");
     }
 
+    @Test
+    void customerPurchasesKeepPeriodTotalsAndExportEveryAuthorizedOrder() throws Exception {
+        UUID admin = createUser("customer-purchases-admin");
+        assignRole(admin, "ADMIN");
+        String adminToken = "Bearer " + loginHttp(email(admin));
+        UUID seller = createSeller("customer-purchases-owner");
+        UUID other = createSeller("customer-purchases-other");
+        UUID viewer = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, seller);
+        assignRole(viewer, createRoleWithPermission("CUSTOMER_VIEW"));
+        String customerOnly = "Bearer " + loginHttp(email(viewer));
+        assignRole(viewer, createRoleWithPermission("REPORTS_VIEW"));
+        String assigned = "Bearer " + loginHttp(email(viewer));
+        UUID customer = createCustomer(seller);
+        UUID foreignCustomer = createCustomer(other);
+        jdbc.update("update customer.customers set business_name = 'Almacén del Centro' where id = ?", customer);
+        String report = "/api/reports/customers/{id}/purchases";
+        String document = "/api/documents/customers/{id}/purchases";
+        mockMvc.perform(get(report, customer)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get(report, customer).header("Authorization", customerOnly)).andExpect(status().isForbidden());
+        mockMvc.perform(get(document, customer).header("Authorization", customerOnly)).andExpect(status().isForbidden());
+
+        UUID flour = createProduct("purchases-harina-actual");
+        UUID rice = createProduct("purchases-arroz");
+        UUID first = reportSale(customer, seller, "DELIVERED", "2026-10-02T03:00:00Z", "90");
+        UUID flourItem = createSaleItem(first, flour, new BigDecimal("6"));
+        jdbc.update("update sale.sale_items set product_name = 'Harina histórica' where id = ?", flourItem);
+        createSaleItem(first, rice, new BigDecimal("4"));
+        UUID returned = UUID.randomUUID();
+        jdbc.update("insert into sale.returns(id, sale_id, returned_by, reason, created_at) values (?, ?, ?, 'Merchandise return', ?)",
+            returned, first, admin, Timestamp.from(Instant.parse("2026-10-06T15:00:00Z")));
+        jdbc.update("insert into sale.return_items(id, return_id, sale_id, sale_item_id, product_id, quantity) values (?, ?, ?, ?, ?, 1.5)",
+            UUID.randomUUID(), returned, first, flourItem, flour);
+        UUID last = reportSale(customer, null, "DELIVERED", "2026-10-03T02:59:59Z", "30");
+        UUID lastItem = createSaleItem(last, rice, new BigDecimal("3"));
+        jdbc.update("update sale.sale_items set product_name = 'Arroz último pedido' where id = ?", lastItem);
+        UUID foreignOrder = reportSale(customer, other, "DELIVERED", "2026-10-02T14:00:00Z", "70");
+        UUID pending = reportSale(customer, seller, "CONFIRMED", "2026-10-02T16:00:00Z", "40");
+        reportSale(customer, seller, "CANCELLED", "2026-10-02T18:00:00Z", "80");
+        reportSale(customer, seller, "DELIVERED", "2026-10-03T03:00:00Z", "600");
+        reportSale(foreignCustomer, seller, "DELIVERED", "2026-10-02T19:00:00Z", "500");
+
+        mockMvc.perform(get(report, customer).header("Authorization", assigned)
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02").param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.summary.customer").value("Almacén del Centro"))
+            .andExpect(jsonPath("$.summary.totalAmount").value(120))
+            .andExpect(jsonPath("$.summary.salesCount").value(2)).andExpect(jsonPath("$.purchases.totalPages").value(2))
+            .andExpect(jsonPath("$.purchases.content[0].id").value(last.toString()));
+        mockMvc.perform(get(report, customer).header("Authorization", assigned)
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02").param("page", "1").param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.summary.totalAmount").value(120))
+            .andExpect(jsonPath("$.purchases.content[0].id").value(first.toString()))
+            .andExpect(jsonPath("$.purchases.content[0].items[0].product").value("Harina histórica"))
+            .andExpect(jsonPath("$.purchases.content[0].items[0].amount").value(54))
+            .andExpect(jsonPath("$.purchases.content[0].items[0].returnedUnits").value(1.5))
+            .andExpect(jsonPath("$.purchases.content[0].items[0].netUnits").value(4.5))
+            .andExpect(jsonPath("$.purchases.content[0].items[1].amount").value(36));
+        mockMvc.perform(get(report, customer).header("Authorization", adminToken)
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.summary.totalAmount").value(230))
+            .andExpect(jsonPath("$.summary.salesCount").value(4));
+
+        byte[] pdf = mockMvc.perform(get(document, customer).header("Authorization", assigned)
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02"))
+            .andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                .contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse().getContentAsByteArray();
+        try (var reader = new org.openpdf.text.pdf.PdfReader(pdf)) {
+            var text = new org.openpdf.text.pdf.parser.PdfTextExtractor(reader);
+            var allPages = new StringBuilder();
+            for (int page = 1; page <= reader.getNumberOfPages(); page++) allPages.append(text.getTextFromPage(page));
+            assertThat(allPages.toString()).contains("Almacén del Centro", "Total comprado: $ 120,00", "02/10/2026",
+                "Harina histórica", "Arroz último pedido", reportSaleNumber(first), reportSaleNumber(last))
+                .doesNotContain(reportSaleNumber(foreignOrder), reportSaleNumber(pending));
+        }
+        mockMvc.perform(get(report, foreignCustomer).header("Authorization", assigned)).andExpect(status().isNotFound());
+        mockMvc.perform(get(document, foreignCustomer).header("Authorization", assigned)).andExpect(status().isNotFound());
+        mockMvc.perform(get(document, customer).header("Authorization", assigned)
+                .param("dateMin", "2026-10-03").param("dateMax", "2026-10-02")).andExpect(status().isBadRequest());
+        mockMvc.perform(get(report, customer).header("Authorization", assigned)
+                .param("dateMin", "2026-10-01").param("dateMax", "2026-10-01"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.summary.totalAmount").value(0))
+            .andExpect(jsonPath("$.purchases.totalElements").value(0));
+    }
+
+    private String reportSaleNumber(UUID saleId) {
+        return "PG-" + saleId.toString().substring(0, 24);
+    }
+
     private UUID reportSale(UUID customer, UUID seller, String status, String soldAt, String amount) {
         UUID order = createOrder(customer, seller, status);
         UUID sale = UUID.randomUUID();
@@ -2454,7 +2541,7 @@ class PostgresBackendFixesIntegrationTest {
         jdbc.update("""
             insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, delivered_at)
             values (?, ?, ?, ?, ?, ?, 0, ?, ?)
-            """, sale, "PG-" + sale.toString().substring(0, 24), order, customer, status, new BigDecimal(amount), date,
+            """, sale, reportSaleNumber(sale), order, customer, status, new BigDecimal(amount), date,
             "DELIVERED".equals(status) ? date : null);
         return sale;
     }

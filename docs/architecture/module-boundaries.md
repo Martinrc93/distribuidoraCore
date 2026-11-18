@@ -39,6 +39,7 @@ flowchart TD
     customer --> audit
     customer --> shared
     dashboard --> shared
+    document --> dashboard
     document --> shared
     inventory --> audit
     notification --> audit
@@ -66,6 +67,9 @@ Cada flecha significa que el paquete de origen depende de tipos del paquete de
 destino. `config` es cableado de la aplicación fuera de los módulos de negocio.
 `demo` no tiene dependencias Java entre módulos; el paquete `payment` todavía
 solo contiene `package-info.java`.
+
+`document` usa el caso de uso público de compras del cliente en `dashboard`
+para generar el PDF con el alcance y los importes del reporte.
 
 ## Confirmación de pedido
 

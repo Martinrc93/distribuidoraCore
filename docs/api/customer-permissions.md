@@ -16,6 +16,7 @@ no convierte a un rol personalizado en administrador.
 | CUSTOMER_PRICE_LIST_CHANGE | PATCH /api/customers/{id}/price-list | Asignar o quitar la lista predeterminada, sin exigir CUSTOMER_EDIT. |
 | ACCOUNT_SETTLE | POST /api/customers/{id}/account-payments/settlement | Pagos combinados parciales o liquidación FIFO de la deuda visible. |
 | CUSTOMER_STATEMENT_EXPORT | GET /api/documents/customers/{id}/statement | Imprimir o descargar el estado de deuda autorizado, sin exigir CUSTOMER_VIEW. |
+| REPORTS_VIEW | GET /api/reports/customers/{id}/purchases y GET /api/documents/customers/{id}/purchases | Consultar, imprimir o descargar las [compras por período](customer-purchases.md). Los roles asignados ven las ventas entregadas de sus pedidos de clientes asignados. |
 
 La consulta básica paginada de clientes conserva acceso autenticado y alcance
 asignado. `SALE_PAYMENT` sigue autorizando el pago individual/FIFO anterior y

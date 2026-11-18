@@ -118,7 +118,8 @@ catálogo, compras y recursos administrativos opera sobre datos globales y
 requiere `ADMIN_ALL`. El [ajuste manual de inventario](inventory.md) requiere
 además `STOCK_ADJUST`. V46 añade `STOCK_SHRINKAGE` para registrar pérdidas desde
 Stock y renueva las sesiones de los administradores que reciben ese permiso.
-V47 añade `REPORTS_VIEW` para el [historial de artículos vendidos](sold-products.md).
+V47 añade `REPORTS_VIEW` para el [historial de artículos vendidos](sold-products.md)
+y el [reporte de compras del cliente](customer-purchases.md).
 Se concede inicialmente a ADMIN y se puede asignar a otros roles. La lectura
 respeta el alcance de las ventas entregadas de su perfil.
 

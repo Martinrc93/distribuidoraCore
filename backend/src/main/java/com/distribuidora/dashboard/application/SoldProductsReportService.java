@@ -10,19 +10,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Service
 public class SoldProductsReportService {
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
-
     public record ProductTotals(UUID productId, String product, long salesCount, BigDecimal soldUnits,
                                 BigDecimal returnedUnits, BigDecimal netUnits, BigDecimal amount) { }
     public record SaleEntry(UUID id, UUID orderId, String number, String customer, String status, Instant date,
@@ -96,29 +91,11 @@ public class SoldProductsReportService {
     }
 
     private Filter filter(LocalDate dateMin, LocalDate dateMax, UUID productId, String search) {
-        LocalDate today = LocalDate.now(BUSINESS_ZONE);
-        LocalDate from = dateMin == null ? today.withDayOfMonth(1) : dateMin;
-        LocalDate to = dateMax == null ? today : dateMax;
-        long days = ChronoUnit.DAYS.between(from, to) + 1;
-        if (from.getYear() < 1900 || to.isAfter(today) || days < 1 || days > 366) {
-            throw new IllegalArgumentException("Elegí un período válido de hasta 366 días, sin fechas futuras");
-        }
+        var period = CommercialReportSales.period(dateMin, dateMax);
         if (search.length() > 200) throw new IllegalArgumentException("La búsqueda admite hasta 200 caracteres");
-        String eligible = """
-            select s.id, s.order_id, s.sale_number, s.status, s.created_at, s.total, c.business_name as customer
-            from sale.sales s join orders.orders o on o.id = s.order_id
-            join customer.customers c on c.id = s.customer_id
-            where s.status in ('CONFIRMED', 'DELIVERED') and s.created_at >= ? and s.created_at < ?
-            """;
-        List<Object> args = new ArrayList<>(List.of(
-            Timestamp.from(from.atStartOfDay(BUSINESS_ZONE).toInstant()),
-            Timestamp.from(to.plusDays(1).atStartOfDay(BUSINESS_ZONE).toInstant())));
-        if (!currentUser.isAdmin()) {
-            UUID seller = currentUser.requireSellerProfile();
-            eligible += " and s.status = 'DELIVERED' and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
-            args.add(seller);
-            args.add(seller);
-        }
+        var selection = CommercialReportSales.select(period, currentUser, null);
+        String eligible = selection.sql();
+        List<Object> args = new ArrayList<>(selection.args());
         String productWhere = " where true";
         if (productId != null) {
             eligible += " and exists (select 1 from sale.sale_items x where x.sale_id = s.id and x.product_id = ?)";
@@ -134,22 +111,9 @@ public class SoldProductsReportService {
     }
 
     private String lines(Filter filter) {
-        // Allocate the persisted sale total across all items before filtering products. Cumulative rounding
-        // makes the four-decimal amounts sum to the sale total, including historical discounts and remainders.
-        return "with eligible_sales as (" + filter.eligibleSales + "), weighted as (" + """
-            select s.*, item.id as item_id, item.product_id, item.quantity, item.line_total,
-                   sum(item.line_total) over (partition by s.id) as subtotal,
-                   sum(item.line_total) over (partition by s.id order by item.id rows unbounded preceding) as cumulative
-            from eligible_sales s join sale.sale_items item on item.sale_id = s.id
-            ), report_lines as (
-            select w.id as sale_id, w.order_id, w.sale_number, w.customer, w.status, w.created_at,
-                   p.id as product_id, p.name as product, w.quantity as sold_units,
-                   coalesce((select sum(r.quantity) from sale.return_items r where r.sale_item_id = w.item_id), 0) as returned_units,
-                   case when w.subtotal > 0
-                       then round(w.total * w.cumulative / w.subtotal, 4)
-                          - round(w.total * (w.cumulative - w.line_total) / w.subtotal, 4)
-                       else 0 end as amount
-            from weighted w join catalog.products p on p.id = w.product_id
+        return CommercialReportSales.allocatedLines(filter.eligibleSales) + """
+            , report_lines as (
+            select a.*, p.name as product from allocated_lines a join catalog.products p on p.id = a.product_id
             """ + filter.productWhere + ") ";
     }
 

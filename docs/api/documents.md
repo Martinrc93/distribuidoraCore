@@ -37,3 +37,11 @@ descarga, con el componente compartido `DocumentActions`.
   a `total - paid`), y el saldo total pendiente.
 - `format=a4` (por defecto) o `ticket` (80 mm). Otro valor devuelve `400`; un cliente
   inexistente, `404`.
+
+## Compras del cliente por período
+
+`GET /api/documents/customers/{customerId}/purchases?dateMin=&dateMax=`
+
+Requiere `REPORTS_VIEW` o `ADMIN_ALL`. El PDF A4 incluye el total y todo el
+detalle por pedido y producto del período autorizado. Usa el mismo alcance,
+fechas e importes que el [reporte de compras del cliente](customer-purchases.md).

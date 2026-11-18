@@ -1132,6 +1132,18 @@ La tabla comparte `DataTable`, sus tarjetas a 640px y la paginación habitual.
 ventas individuales y totales del período. Volver conserva filtros y página del
 listado. Los estados usan `Badge` y cada «Ver pedido» abre el detalle existente.
 
+### Compras del cliente
+
+«Ver compras del cliente» aparece en la ficha con `REPORTS_VIEW` o
+`ADMIN_ALL`. El reporte reutiliza `OrderDateFilter` y guarda el período y la
+página en la URL. «Volver a la ficha» recupera la página del historial y los
+filtros de origen. Un rango inválido muestra un aviso y oculta el reporte.
+
+El panel del total conserva el importe del período al paginar. Imprimir y
+descargar usan `DocumentActions` con el período completo. Cada pedido usa
+`details` y `summary` con foco visible para abrir el desglose con teclado.
+Las líneas usan `DataTable` y sus tarjetas compartidas hasta `640px`.
+
 ### Variantes específicas por pantalla
 
 | Variante | Alcance y diferencia |
