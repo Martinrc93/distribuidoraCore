@@ -197,12 +197,15 @@ para pedidos conservan el catálogo compartido y el alcance del cliente.
 
 ### Fase 8 — Comisiones
 
-Tamaño **L**. Configuración por producto (`FIXED` por unidad o `PERCENT`), con
-valor por defecto opcional por categoría. **Snapshot en la línea de venta** al
-confirmar o editar, para que los cambios de configuración no alteren el
-historial. Motor de cálculo aislado (`CommissionCalculator`) para poder sumar
-reglas después. Reporte por vendedor y período. Bloqueado por las decisiones de
-base de cálculo.
+Tamaño **L**. La configuración de V49 permite guardar planes reutilizables
+con reglas fijas y porcentuales y asignarlos solo a los vendedores que elija
+un administrador. Admite una regla general y valores por categoría, marca o
+artículo. El sueldo fijo queda fuera de la configuración comercial.
+Ver [planes de comisión](../../api/commission-plans.md).
+
+V50 devenga la comisión al entregar y registra las devoluciones como ajustes
+del saldo pendiente. Administración consulta los movimientos por vendedor y
+período y registra la liquidación al pagarle al vendedor.
 
 ### Fase 9 — Revendedores
 
@@ -250,12 +253,11 @@ Tamaño **XL**, el de mayor riesgo. Propuesta a validar con Leo:
 Respuestas del usuario (2026-11-12):
 
 1. **Lista nueva:** resuelto e implementado (siguen a la General, ver Fase 2).
-2. **Comisiones:** la porcentual se calcula **sobre la ganancia** (precio de venta
-   menos costo); el usuario lo indicó con duda («creo»), confirmar con Leo antes de
-   implementar. Implicancia: hoy las ventas **no guardan el costo** al momento de la
-   venta (`dashboard-analytics.md` lo señala), así que hay que agregar un snapshot de
-   costo por línea; las ventas anteriores no tendrán ganancia calculable. Pendiente:
-   si la comisión fija es por unidad y si se liquida al confirmar o al cobrar.
+2. **Comisiones:** el 2026-11-18 el usuario indicó que se devengan al entregar
+   el pedido y quedan pendientes hasta que un administrador registre el pago
+   al vendedor. El cálculo implementado usa como supuesto la ganancia positiva
+   después de descuentos, con el costo congelado al entregar, y un fijo por
+   unidad neta de devoluciones.
 3. **Revendedor:** la deuda es **siempre** del revendedor. El revendedor tiene
    clientes asociados; cómo les cobra él no le importa al sistema. Los pedidos de
    esos clientes debitan la cuenta corriente del revendedor.

@@ -29,7 +29,9 @@ class SaleReturnServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
-    private final SaleReturnService service = new SaleReturnService(jdbc, inventory, audit, mock(com.distribuidora.shared.security.CurrentUserAccess.class));
+    private final SaleReturnService service = new SaleReturnService(jdbc, inventory, audit,
+        mock(com.distribuidora.shared.security.CurrentUserAccess.class),
+        mock(com.distribuidora.sale.application.CommissionAccrualService.class));
 
     @AfterEach
     void clearAuthentication() {

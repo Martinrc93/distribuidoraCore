@@ -20,9 +20,10 @@
 | `catalog` | productos, marcas, categorías y listas | modificar saldo de inventario |
 | `inventory` | saldo único por producto y movimientos de stock | conocer entidades internas de pedidos |
 | `order` | pedido, líneas y confirmación | escribir tablas internas de stock |
-| `sale` | venta derivada, snapshots y estado comercial | crear pedidos independientes |
+| `sale` | venta derivada, devoluciones, movimientos de comisión y liquidaciones | crear pedidos independientes |
 | `payment` | pagos, ledger y aplicaciones de deuda | modificar ventas sin un caso de uso |
 | `document` | modelos y renderers de documentos | decidir reglas comerciales |
+| `settings` | parámetros de negocio, planes de comisión y sus asignaciones | liquidar comisiones o registrar ventas |
 | `notification` | email, WhatsApp y estados de entrega externa | confirmar ventas o modificar deuda |
 | `audit` | trazabilidad de operaciones | reemplazar logs técnicos |
 
@@ -50,6 +51,7 @@ flowchart TD
     order --> inventory
     order --> notification
     order --> pricing
+    order --> sale
     order --> shared
     pricing --> audit
     pricing --> shared
@@ -58,6 +60,7 @@ flowchart TD
     seller --> audit
     seller --> shared
     settings --> audit
+    settings --> shared
     audit --> shared
     demo
     payment

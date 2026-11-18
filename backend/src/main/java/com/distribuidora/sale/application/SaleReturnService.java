@@ -45,13 +45,15 @@ public class SaleReturnService {
     private final InventoryMovementService inventory;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
+    private final CommissionAccrualService commissions;
 
     public SaleReturnService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit,
-                             CurrentUserAccess currentUser) {
+                             CurrentUserAccess currentUser, CommissionAccrualService commissions) {
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.audit = audit;
         this.currentUser = currentUser;
+        this.commissions = commissions;
     }
 
     @Transactional
@@ -115,6 +117,7 @@ public class SaleReturnService {
                 UUID.randomUUID(), returnId, saleId, item.saleItemId(), item.productId(), item.quantity());
             inventory.apply(item.productId(), item.quantity(), "RETURN", returnId, reason);
         }
+        commissions.returned(returnId, now);
 
         audit.recordWithinTransaction(actorId, "SALE_RETURN", "SALE", saleId.toString(), "SUCCESS",
             Map.of("returnId", returnId.toString(), "itemCount", resolved.size(), "reason", reason));

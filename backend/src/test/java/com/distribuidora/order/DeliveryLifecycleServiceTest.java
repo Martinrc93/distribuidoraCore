@@ -24,7 +24,9 @@ class DeliveryLifecycleServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
-    private final DeliveryLifecycleService service = new DeliveryLifecycleService(jdbc, inventory, audit, null, new com.distribuidora.order.application.OrderFulfillmentService(jdbc, inventory, audit, null));
+    private final DeliveryLifecycleService service = new DeliveryLifecycleService(jdbc, inventory, audit, null,
+        new com.distribuidora.order.application.OrderFulfillmentService(jdbc, inventory, audit, null),
+        mock(com.distribuidora.sale.application.CommissionAccrualService.class));
 
     @AfterEach
     void clearAuthentication() {

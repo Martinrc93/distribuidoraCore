@@ -143,6 +143,7 @@ class PostgresBackendFixesIntegrationTest {
     private final Set<UUID> products = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> brands = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> categories = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> commissionPlans = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> notificationRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<String> auditResources = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -152,6 +153,8 @@ class PostgresBackendFixesIntegrationTest {
         jdbc.update("update app.business_settings set credit_limit = null, updated_by = null, updated_at = null where id = 1");
         deleteIds("delete from customer.account_ledger where sale_id in (%s)", sales);
         deleteIds("delete from payment.payments where sale_id in (%s)", sales);
+        deleteIds("delete from sale.commission_entries where sale_item_id in (select id from sale.sale_items where sale_id in (%s))", sales);
+        deleteIds("delete from sale.commission_settlements where seller_id in (%s)", sellers);
         deleteIds("delete from sale.return_items where sale_id in (%s)", sales);
         deleteIds("delete from sale.returns where sale_id in (%s)", sales);
         deleteIds("delete from sale.sale_items where sale_id in (%s)", sales);
@@ -162,6 +165,8 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from notification.outbox_events where aggregate_id in (%s)", orders);
         deleteIds("delete from orders.orders where id in (%s)", orders);
         deleteIds("delete from customer.customers where id in (%s)", customers);
+        deleteIds("delete from app.seller_commission_plans where seller_id in (%s)", sellers);
+        deleteIds("delete from app.commission_plans where id in (%s)", commissionPlans);
         deleteIds("delete from inventory.stock_movements where product_id in (%s)", products);
         deleteIds("delete from inventory.inventory_balances where product_id in (%s)", products);
         deleteIds("delete from catalog.product_price_history where product_id in (%s)", products);
@@ -2527,6 +2532,181 @@ class PostgresBackendFixesIntegrationTest {
                 .param("dateMin", "2026-10-01").param("dateMax", "2026-10-01"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.summary.totalAmount").value(0))
             .andExpect(jsonPath("$.purchases.totalElements").value(0));
+    }
+
+    @Test
+    void commissionPlansAreReusableAndSellersAreOptedInByAnAdministrator() throws Exception {
+        UUID admin = createUser("commission-admin");
+        assignRole(admin, "ADMIN");
+        String token = "Bearer " + loginHttp(email(admin));
+        UUID first = createSeller("commission-first");
+        UUID second = createSeller("commission-second");
+        auditResources.add(first.toString());
+        auditResources.add(second.toString());
+        UUID sellerUser = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, first);
+        String sellerToken = "Bearer " + loginHttp(email(sellerUser));
+        String path = "/api/settings/commission-plans";
+        UUID brand = UUID.randomUUID();
+        brands.add(brand);
+        jdbc.update("insert into catalog.brands(id, name, code, created_at) values (?, ?, ?, now())",
+            brand, "Marca comisión " + brand, "COMM_" + brand);
+        String name = "Plan comercial " + UUID.randomUUID();
+        String rule = """
+            {"scope":"DEFAULT","kind":"PERCENT","value":"2.1250"}
+            """;
+        String differentiated = """
+            {"scope":"BRAND","targetId":"%s","kind":"FIXED","value":"150.0050"}
+            """.formatted(brand);
+        String payload = """
+            {"name":"%s","rules":[%s,%s]}
+            """.formatted(name, rule, differentiated);
+        mockMvc.perform(get(path).header("Authorization", sellerToken)).andExpect(status().isForbidden());
+        mockMvc.perform(post(path).header("Authorization", sellerToken)
+            .contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isForbidden());
+        String created = mockMvc.perform(post(path).header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(payload))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.version").value(1))
+            .andExpect(jsonPath("$.rules[?(@.scope=='BRAND')].value").value(org.hamcrest.Matchers.contains("150.0050")))
+            .andExpect(jsonPath("$.rules[?(@.scope=='DEFAULT')].value").value(org.hamcrest.Matchers.contains("2.1250")))
+            .andReturn().getResponse().getContentAsString();
+        UUID plan = UUID.fromString(objectMapper.readTree(created).get("id").asText());
+        commissionPlans.add(plan);
+        auditResources.add(plan.toString());
+        String assignment = path + "/assignments/{sellerId}";
+        String assign = """
+            {"planId":"%s","expectedPlanId":null}
+            """.formatted(plan);
+        mockMvc.perform(get(assignment, first).header("Authorization", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.planId").isEmpty());
+        mockMvc.perform(put(assignment, first).header("Authorization", sellerToken)
+            .contentType(MediaType.APPLICATION_JSON).content(assign)).andExpect(status().isForbidden());
+        for (UUID seller : List.of(first, second)) {
+            mockMvc.perform(put(assignment, seller).header("Authorization", token)
+                    .contentType(MediaType.APPLICATION_JSON).content(assign))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.planId").value(plan.toString()));
+        }
+        mockMvc.perform(get(path).header("Authorization", token)).andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.id=='" + plan + "')].sellerCount").value(org.hamcrest.Matchers.contains(2)));
+
+        String edit = """
+            {"version":1,"name":"%s ajustado","rules":[%s]}
+            """.formatted(name, differentiated);
+        mockMvc.perform(put(path + "/{id}", plan).header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(edit))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(2)).andExpect(jsonPath("$.rules.length()").value(1));
+        mockMvc.perform(put(path + "/{id}", plan).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(edit)).andExpect(status().isConflict());
+        mockMvc.perform(put(assignment, second).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(assign)).andExpect(status().isConflict());
+
+        String clear = """
+            {"planId":null,"expectedPlanId":"%s"}
+            """.formatted(plan);
+        mockMvc.perform(put(assignment, first).header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(clear))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.planId").isEmpty());
+        mockMvc.perform(get(assignment, second).header("Authorization", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.planId").value(plan.toString()));
+        assertThat(jdbc.queryForObject("""
+            select count(*) from audit.audit_events where resource_id = ? and operation like 'COMMISSION_PLAN_%'
+            """, Long.class, plan.toString())).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("""
+            select count(*) from audit.audit_events where resource_id = ? and operation = 'SELLER_COMMISSION_ASSIGNMENT'
+            """, Long.class, first.toString())).isEqualTo(2L);
+
+        String badRule = differentiated.replace(brand.toString(), UUID.randomUUID().toString());
+        String invalid = """
+            {"version":2,"name":"%s inválido","rules":[%s]}
+            """.formatted(name, badRule);
+        mockMvc.perform(put(path + "/{id}", plan).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(invalid)).andExpect(status().isBadRequest());
+        mockMvc.perform(get(path + "/{id}", plan).header("Authorization", token)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value(name + " ajustado")).andExpect(jsonPath("$.version").value(2))
+            .andExpect(jsonPath("$.rules[0].targetId").value(brand.toString()));
+    }
+
+    @Test
+    void commissionsAccrueOnUnpaidDeliveryAndOnlyAdminRecordsTheReviewedPayout() throws Exception {
+        UUID admin = createUser("commission-settlement-admin");
+        assignRole(admin, "ADMIN");
+        String token = "Bearer " + loginHttp(email(admin));
+        UUID seller = createSeller("commission-settlement-seller");
+        auditResources.add(seller.toString());
+        UUID sellerUser = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, seller);
+        String sellerToken = "Bearer " + loginHttp(email(sellerUser));
+        var percentSale = createEditableSale(new BigDecimal("2"), new BigDecimal("100"), BigDecimal.ZERO);
+        var fixedSale = createEditableSale(new BigDecimal("2"), new BigDecimal("100"), BigDecimal.ZERO);
+        UUID plan = UUID.randomUUID();
+        commissionPlans.add(plan);
+        jdbc.update("insert into app.commission_plans(id, name) values (?, ?)", plan, "Liquidación " + plan);
+        jdbc.update("insert into app.seller_commission_plans(seller_id, plan_id) values (?, ?)", seller, plan);
+        jdbc.update("insert into app.commission_rules(plan_id, kind, value) values (?, 'PERCENT', 10)", plan);
+        jdbc.update("insert into app.commission_rules(plan_id, product_id, kind, value) values (?, ?, 'FIXED', 4)",
+            plan, fixedSale.productId());
+        jdbc.update("update orders.orders set seller_id = ? where id in (?, ?)", seller, percentSale.orderId(), fixedSale.orderId());
+        jdbc.update("update catalog.products set cost = 30 where id = ?", percentSale.productId());
+        jdbc.update("update sale.sales set total = 180 where id = ?", percentSale.saleId());
+
+        String statement = "/api/commissions/sellers/{sellerId}";
+        String settle = statement + "/settlements";
+        String attempt = "/api/orders/{orderId}/delivery-attempts";
+        mockMvc.perform(get(statement, seller).header("Authorization", sellerToken)).andExpect(status().isForbidden());
+        mockMvc.perform(post(attempt, percentSale.orderId()).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content("{\"result\":\"FAILED\",\"observation\":\"Ausente\"}"))
+            .andExpect(status().isNoContent());
+        mockMvc.perform(get(statement, seller).header("Authorization", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pending.entryCount").value(0));
+
+        String delivered = "{\"result\":\"DELIVERED\"}";
+        mockMvc.perform(post(attempt, percentSale.orderId()).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(delivered)).andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("select paid from sale.sales where id = ?", BigDecimal.class, percentSale.saleId()))
+            .isEqualByComparingTo(BigDecimal.ZERO);
+        String preview = mockMvc.perform(get(statement, seller).header("Authorization", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pending.amount").value("12.0000"))
+            .andExpect(jsonPath("$.movements.content[0].paidAt").isEmpty()).andReturn().getResponse().getContentAsString();
+        String stale = objectMapper.writeValueAsString(Map.of("token", objectMapper.readTree(preview).at("/pending/token").asText()));
+
+        jdbc.update("update catalog.products set cost = 90 where id = ?", percentSale.productId());
+        jdbc.update("update app.commission_rules set value = 35 where plan_id = ? and kind = 'PERCENT'", plan);
+        mockMvc.perform(post(attempt, fixedSale.orderId()).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(delivered)).andExpect(status().isNoContent());
+        mockMvc.perform(post(attempt, fixedSale.orderId()).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(delivered)).andExpect(status().isConflict());
+        mockMvc.perform(post(settle, seller).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(stale)).andExpect(status().isConflict());
+        String ready = mockMvc.perform(get(statement, seller).header("Authorization", token).param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pending.amount").value("20.0000"))
+            .andExpect(jsonPath("$.pending.entryCount").value(2)).andExpect(jsonPath("$.movements.totalPages").value(2))
+            .andReturn().getResponse().getContentAsString();
+        String payload = objectMapper.writeValueAsString(Map.of("token", objectMapper.readTree(ready).at("/pending/token").asText()));
+        mockMvc.perform(post(settle, seller).header("Authorization", sellerToken)
+            .contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isForbidden());
+        mockMvc.perform(post(settle, seller).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated())
+            .andExpect(jsonPath("$.amount").value("20.0000")).andExpect(jsonPath("$.entryCount").value(2));
+        mockMvc.perform(post(settle, seller).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isConflict());
+        mockMvc.perform(get(statement, seller).header("Authorization", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pending.entryCount").value(0))
+            .andExpect(jsonPath("$.movements.content[0].paidAt").isNotEmpty());
+
+        UUID saleItem = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, percentSale.saleId());
+        String returned = """
+            {"reason":"Devuelto al vendedor","items":[{"saleItemId":"%s","quantity":0.5}]}
+            """.formatted(saleItem);
+        mockMvc.perform(post("/api/sales/{saleId}/returns", percentSale.saleId()).header("Authorization", token)
+            .contentType(MediaType.APPLICATION_JSON).content(returned)).andExpect(status().isCreated());
+        mockMvc.perform(get(statement, seller).header("Authorization", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pending.amount").value("-3.0000"))
+            .andExpect(jsonPath("$.movements.content[0].returned").value(true))
+            .andExpect(jsonPath("$.periodAmount").value("17.0000"));
+        assertThat(jdbc.queryForObject("select amount from sale.commission_settlements where seller_id = ?", BigDecimal.class, seller))
+            .isEqualByComparingTo("20");
+        assertThat(jdbc.queryForObject("""
+            select count(*) from audit.audit_events where resource_id = ? and operation = 'COMMISSION_SETTLEMENT'
+            """, Long.class, seller.toString())).isEqualTo(1L);
     }
 
     private String reportSaleNumber(UUID saleId) {

@@ -47,7 +47,8 @@ export default function CreditLimitPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Administración" title="Límite de crédito" description="El límite advierte al confirmar pedidos; no bloquea la operación." />
+    <PageHeader eyebrow="Administración" title="Límite de crédito" description="El límite advierte al confirmar pedidos; no bloquea la operación."
+      actions={<Button variant="secondary" href="/admin/settings/commissions">Comisiones</Button>} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
     <Panel title="Configuración comercial">

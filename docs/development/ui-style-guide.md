@@ -1144,6 +1144,21 @@ descargar usan `DocumentActions` con el período completo. Cada pedido usa
 `details` y `summary` con foco visible para abrir el desglose con teclado.
 Las líneas usan `DataTable` y sus tarjetas compartidas hasta `640px`.
 
+### Configuración de comisiones
+
+«Comisiones» se abre desde Configuración con `ADMIN_ALL`. La pantalla reutiliza
+`DataTable` para los planes, `FormModal` y `useDiscardChanges` para editarlos
+y `SellerSelect` en modo selección para asignarlos. El selector carga todas
+las páginas de vendedores. Las reglas se agrupan con `fieldset` y usan la
+grilla habitual de campos, con una columna a `760px` o menos. La selección de
+marca, categoría y artículo reutiliza `SearchableSelect`.
+
+«Liquidación de comisiones» reutiliza el selector de vendedores, los campos
+Desde y Hasta y `DataTable` para el historial por período. El saldo pendiente
+incluye todos los movimientos del vendedor. «Registrar pago al vendedor»
+abre `ConfirmationDialog` con el importe y el vendedor elegidos. Si el saldo
+cambió, la pantalla actualiza el importe y pide revisar la nueva liquidación.
+
 ### Variantes específicas por pantalla
 
 | Variante | Alcance y diferencia |

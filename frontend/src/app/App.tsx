@@ -27,6 +27,8 @@ import SalesPage from '../features/sales/SalesPage'
 import SoldProductsPage from '../features/sales/SoldProductsPage'
 import SellersPage from '../features/admin/SellersPage'
 import CreditLimitPage from '../features/admin/CreditLimitPage'
+import CommissionPlansPage from '../features/admin/CommissionPlansPage'
+import CommissionSettlementsPage from '../features/admin/CommissionSettlementsPage'
 import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
 import AuditPage from '../features/admin/AuditPage'
 import ZonesPage from '../features/admin/ZonesPage'
@@ -117,7 +119,9 @@ export default function App() {
         <Route path="/admin/roles" element={<RequireAdmin><RolesPage /></RequireAdmin>} />
         <Route path="/admin/sellers" element={<SellersPage />} />
         <Route path="/admin/zones" element={<RequireAdmin><ZonesPage /></RequireAdmin>} />
-        <Route path="/admin/settings" element={<CreditLimitPage />} />
+        <Route path="/admin/settings" element={<RequireAdmin><CreditLimitPage /></RequireAdmin>} />
+        <Route path="/admin/settings/commissions" element={<RequireAdmin><CommissionPlansPage /></RequireAdmin>} />
+        <Route path="/admin/settings/commissions/settlements" element={<RequireAdmin><CommissionSettlementsPage /></RequireAdmin>} />
         <Route path="/admin/audit" element={<RequireAdmin><AuditPage /></RequireAdmin>} />
         <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." />} />
       </Route>

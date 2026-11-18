@@ -5,6 +5,7 @@ import com.distribuidora.shared.security.PermissionAccess;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.customer.application.DeliveryDebtQuery;
 import com.distribuidora.inventory.application.InventoryMovementService;
+import com.distribuidora.sale.application.CommissionAccrualService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -42,15 +43,18 @@ public class DeliveryLifecycleService {
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
     private final OrderFulfillmentService fulfillment;
+    private final CommissionAccrualService commissions;
 
     @Autowired
     public DeliveryLifecycleService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit,
-                                    CurrentUserAccess currentUser, OrderFulfillmentService fulfillment) {
+                                    CurrentUserAccess currentUser, OrderFulfillmentService fulfillment,
+                                    CommissionAccrualService commissions) {
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.audit = audit;
         this.currentUser = currentUser;
         this.fulfillment = fulfillment;
+        this.commissions = commissions;
     }
 
     @Transactional
@@ -84,6 +88,7 @@ public class DeliveryLifecycleService {
                 now, orderId);
             jdbc.update("update sale.sales set status = 'DELIVERED', paid = ?, delivered_at = ? where id = ? and status = 'CONFIRMED'",
                 paymentResult.paid(), now, saleId);
+            commissions.delivered(saleId, now);
         }
         Map<String, Object> auditDetails = new java.util.HashMap<>();
         auditDetails.put("attemptId", attemptId.toString());
