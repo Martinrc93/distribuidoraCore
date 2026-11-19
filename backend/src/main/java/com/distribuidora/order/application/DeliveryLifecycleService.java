@@ -3,7 +3,8 @@ package com.distribuidora.order.application;
 import com.distribuidora.shared.security.PermissionAccess;
 
 import com.distribuidora.audit.application.AuditService;
-import com.distribuidora.customer.application.DeliveryDebtQuery;
+import com.distribuidora.payment.application.AccountLedger;
+import com.distribuidora.payment.application.DeliveryDebtQuery;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.sale.application.CommissionAccrualService;
 import com.distribuidora.shared.security.CurrentUserAccess;
@@ -115,11 +116,10 @@ public class DeliveryLifecycleService {
         BigDecimal paidBefore = decimal(lifecycle.get("paid")).setScale(4);
         BigDecimal total = decimal(lifecycle.get("total")).setScale(4);
         UUID saleId = uuid(lifecycle, "sale_id");
-        UUID customerId = uuid(lifecycle, "customer_id");
-        jdbc.queryForMap("select id, balance from customer.customers where id = ? for update", customerId);
-        BigDecimal debtBefore = jdbc.queryForObject(
-            "select coalesce(sum(case when entry_type = 'DEBIT' then amount else -amount end), 0) "
-                + "from customer.account_ledger where sale_id = ?", BigDecimal.class, saleId).setScale(4);
+        UUID accountId = uuid(lifecycle, "account_customer_id");
+        AccountLedger ledger = new AccountLedger(jdbc);
+        ledger.lockAccount(accountId);
+        BigDecimal debtBefore = ledger.saleBalance(saleId).setScale(4);
         if (received.signum() > 0) {
             BigDecimal remainingBySaleTotal = total.subtract(paidBefore).max(ZERO);
             BigDecimal availableDebt = debtBefore.max(ZERO).min(remainingBySaleTotal);
@@ -129,13 +129,11 @@ public class DeliveryLifecycleService {
 
             String transferReference = normalize(request.transferReference());
             for (DeliveryPaymentCommand payment : payments) {
-                jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, transfer_reference, created_at) values (?, ?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), saleId, customerId, payment.amount().setScale(4), payment.method(),
+                ledger.recordPayment(accountId, saleId, payment.amount().setScale(4), payment.method(),
                     "BANK_TRANSFER".equals(payment.method()) ? transferReference : null, now);
             }
-            jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'CREDIT', ?, ?)",
-                UUID.randomUUID(), customerId, saleId, received, now);
-            jdbc.update("update customer.customers set balance = balance - ? where id = ?", received, customerId);
+            ledger.credit(accountId, saleId, received, now);
+            ledger.decreaseBalance(accountId, received);
         }
         BigDecimal paid = paidBefore.add(received).setScale(4);
         return new DeliveryPaymentResult(received, paid, debtBefore.subtract(received).setScale(4));
@@ -144,22 +142,21 @@ public class DeliveryLifecycleService {
     private DeliveryPaymentResult collectWithPreviousDebt(Map<String, Object> lifecycle,
                                                            DeliveryAttemptCommand request, Timestamp now) {
         UUID saleId = uuid(lifecycle, "sale_id");
-        UUID customerId = uuid(lifecycle, "customer_id");
+        UUID accountId = uuid(lifecycle, "account_customer_id");
         BigDecimal selected = previousDebtAmount(request);
-        Map<String, Object> customer = jdbc.queryForMap(
-            "select id, balance from customer.customers where id = ? for update", customerId);
+        AccountLedger ledger = new AccountLedger(jdbc);
+        Map<String, Object> account = ledger.lockAccount(accountId);
+        // Earlier debts are the account's: the same account owes every sale paid here.
         List<DeliveryDebtQuery.Debt> previous = new DeliveryDebtQuery(jdbc, currentUser).previousSales(saleId);
         BigDecimal availablePrevious = previous.stream().map(DeliveryDebtQuery.Debt::amount).reduce(ZERO, BigDecimal::add);
         if (selected.compareTo(availablePrevious) > 0) {
             throw new IllegalStateException("El importe supera la deuda anterior disponible. Actualiza el pedido e intenta nuevamente");
         }
-        BigDecimal ledgerDue = jdbc.queryForObject(
-            "select coalesce(sum(case when entry_type = 'DEBIT' then amount else -amount end), 0) "
-                + "from customer.account_ledger where sale_id = ?", BigDecimal.class, saleId).setScale(4);
+        BigDecimal ledgerDue = ledger.saleBalance(saleId).setScale(4);
         BigDecimal currentDue = ledgerDue.max(ZERO).min(decimal(lifecycle.get("total")).subtract(decimal(lifecycle.get("paid"))).max(ZERO));
         List<? extends DeliveryPaymentCommand> payments = request.payments() == null ? List.of() : request.payments();
         BigDecimal received = payments.stream().map(DeliveryPaymentCommand::amount).reduce(ZERO, BigDecimal::add).setScale(4);
-        if (received.compareTo(currentDue.add(selected)) > 0 || received.compareTo(decimal(customer.get("balance")).max(ZERO)) > 0) {
+        if (received.compareTo(currentDue.add(selected)) > 0 || received.compareTo(decimal(account.get("balance")).max(ZERO)) > 0) {
             throw new IllegalStateException("El pago supera el saldo pendiente seleccionado");
         }
         List<DeliveryDebtQuery.Debt> debts = new java.util.ArrayList<>();
@@ -180,18 +177,16 @@ public class DeliveryLifecycleService {
                 if (debtIndex >= debts.size()) throw new IllegalStateException("No hay deuda suficiente para registrar el pago");
                 UUID targetSale = debts.get(debtIndex).saleId();
                 BigDecimal applied = remainingPayment.min(remainingDue);
-                jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, transfer_reference, created_at) values (?, ?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), targetSale, customerId, applied, payment.method(),
+                ledger.recordPayment(accountId, targetSale, applied, payment.method(),
                     "BANK_TRANSFER".equals(payment.method()) ? normalize(request.transferReference()) : null, now);
-                jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'CREDIT', ?, ?)",
-                    UUID.randomUUID(), customerId, targetSale, applied, now);
+                ledger.credit(accountId, targetSale, applied, now);
                 if (targetSale.equals(saleId)) currentApplied = currentApplied.add(applied);
                 else jdbc.update("update sale.sales set paid = paid + ? where id = ?", applied, targetSale);
                 remainingDue = remainingDue.subtract(applied);
                 remainingPayment = remainingPayment.subtract(applied);
             }
         }
-        if (received.signum() > 0) jdbc.update("update customer.customers set balance = balance - ? where id = ?", received, customerId);
+        if (received.signum() > 0) ledger.decreaseBalance(accountId, received);
         return new DeliveryPaymentResult(received, decimal(lifecycle.get("paid")).add(currentApplied).setScale(4), ledgerDue.subtract(currentApplied).setScale(4));
     }
 
@@ -211,17 +206,16 @@ public class DeliveryLifecycleService {
         }
 
         UUID saleId = uuid(lifecycle, "sale_id");
-        UUID customerId = uuid(lifecycle, "customer_id");
-        Map<String, Object> customer = jdbc.queryForMap(
-            "select id, balance from customer.customers where id = ? for update", customerId);
+        UUID accountId = uuid(lifecycle, "account_customer_id");
+        AccountLedger ledger = new AccountLedger(jdbc);
+        ledger.lockAccount(accountId);
         reversePersistedSaleMovements(orderId, saleId);
 
         BigDecimal credit = decimal(lifecycle.get("total")).subtract(paid).setScale(4);
         Timestamp now = Timestamp.from(Instant.now());
         if (credit.signum() > 0) {
-            jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'CREDIT', ?, ?)",
-                UUID.randomUUID(), customerId, saleId, credit, now);
-            jdbc.update("update customer.customers set balance = balance - ? where id = ?", credit, customerId);
+            ledger.credit(accountId, saleId, credit, now);
+            ledger.decreaseBalance(accountId, credit);
         }
         jdbc.update("update orders.orders set status = 'CANCELLED', cancelled_at = ?, fulfillment_status = 'PENDING', prepared_at = null, prepared_by_user_id = null, legacy_fulfillment = false where id = ? and status = 'CONFIRMED'",
             now, orderId);
@@ -244,20 +238,21 @@ public class DeliveryLifecycleService {
         }
 
         UUID saleId = uuid(lifecycle, "sale_id");
-        UUID customerId = uuid(lifecycle, "customer_id");
+        UUID accountId = uuid(lifecycle, "account_customer_id");
         Integer paymentCount = jdbc.queryForObject(
             "select count(*) from payment.payments where sale_id = ?", Integer.class, saleId);
         if (paymentCount != null && paymentCount > 0) {
             throw new IllegalStateException("No se puede reactivar una venta que tiene pagos registrados");
         }
-        jdbc.queryForMap("select id, balance from customer.customers where id = ? for update", customerId);
+        AccountLedger ledger = new AccountLedger(jdbc);
+        ledger.lockAccount(accountId);
 
         BigDecimal total = decimal(lifecycle.get("total")).setScale(4);
         Timestamp now = Timestamp.from(Instant.now());
         if (total.signum() > 0) {
-            jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'DEBIT', ?, ?)",
-                UUID.randomUUID(), customerId, saleId, total, now);
-            jdbc.update("update customer.customers set balance = balance + ? where id = ?", total, customerId);
+            // The debt returns to the account that owed the sale when it was confirmed.
+            ledger.debit(accountId, saleId, total, now);
+            ledger.increaseBalance(accountId, total);
         }
         jdbc.update("update orders.orders set status = 'CONFIRMED', cancelled_at = null where id = ? and status = 'CANCELLED'", orderId);
         jdbc.update("update sale.sales set status = 'CONFIRMED', cancelled_at = null where id = ? and status = 'CANCELLED'", saleId);
@@ -281,7 +276,7 @@ public class DeliveryLifecycleService {
 
     private Map<String, Object> lockOrderAndSale(UUID orderId) {
         try {
-            return jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.fulfillment_status, s.id as sale_id, s.status as sale_status, s.customer_id, s.total, s.paid "
+            return jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.fulfillment_status, s.id as sale_id, s.status as sale_status, s.customer_id, s.account_customer_id, s.total, s.paid "
                 + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update", orderId);
         } catch (EmptyResultDataAccessException exception) {
             throw exception;

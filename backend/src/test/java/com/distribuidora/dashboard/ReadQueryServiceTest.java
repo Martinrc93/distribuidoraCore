@@ -170,7 +170,7 @@ class ReadQueryServiceTest {
         when(jdbc.queryForList(contains("from orders.order_items"), eq(orderId))).thenReturn(List.of(item));
         when(jdbc.queryForMap(contains("from sale.sales"), eq(orderId))).thenReturn(sale);
         when(jdbc.queryForList(contains("from payment.payments"), eq(saleId))).thenReturn(List.of(payment));
-        when(jdbc.queryForMap(contains("from customer.account_ledger"), eq(customerId), eq(saleId)))
+        when(jdbc.queryForMap(contains("from customer.account_ledger where sale_id = ?"), eq(saleId)))
             .thenReturn(account);
 
         Map<String, Object> response = service.orderDetail(orderId);

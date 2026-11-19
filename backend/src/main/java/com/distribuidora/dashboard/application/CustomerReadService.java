@@ -1,7 +1,7 @@
 package com.distribuidora.dashboard.application;
 
 import com.distribuidora.shared.security.CurrentUserAccess;
-import com.distribuidora.customer.application.CustomerAccountBalanceQuery;
+import com.distribuidora.payment.application.CustomerAccountBalanceQuery;
 import com.distribuidora.shared.web.PageResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;

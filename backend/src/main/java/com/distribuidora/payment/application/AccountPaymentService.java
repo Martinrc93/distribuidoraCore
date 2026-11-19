@@ -1,4 +1,4 @@
-package com.distribuidora.customer.application;
+package com.distribuidora.payment.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
@@ -94,15 +94,16 @@ public class AccountPaymentService {
         return new PaymentResult(customerId, total, balance, balance.subtract(total).setScale(4), "FIFO", allocations);
     }
 
+    /** Applies a payment to the account of {@code customerId}: the sales it owes, whoever received them. */
     @Transactional
     public PaymentResult apply(UUID customerId, PaymentCommand request) {
         validate(customerId, request);
         currentUser.requireCustomerAccess(customerId);
+        AccountLedger ledger = new AccountLedger(jdbc);
 
-        // Lock sale rows before the customer so delivery, editing and payment allocation use one lock order.
+        // Lock sale rows before the account so delivery, editing and payment allocation use one lock order.
         List<Map<String, Object>> candidates = lockCandidateSales(customerId, request.saleId());
-        Map<String, Object> customer = jdbc.queryForMap(
-            "select id, balance from customer.customers where id = ? for update", customerId);
+        Map<String, Object> customer = ledger.lockAccount(customerId);
         currentUser.requireCustomerAccess(customerId);
         BigDecimal balanceBefore = decimal(customer.get("balance")).setScale(4);
         BigDecimal ledgerBalance = jdbc.queryForObject(
@@ -118,9 +119,7 @@ public class AccountPaymentService {
         List<SaleDue> dues = new ArrayList<>();
         for (Map<String, Object> candidate : candidates) {
             UUID saleId = uuid(candidate.get("id"));
-            BigDecimal ledgerDue = jdbc.queryForObject(
-                "select coalesce(sum(case when entry_type = 'DEBIT' then amount else -amount end), 0) "
-                    + "from customer.account_ledger where sale_id = ?", BigDecimal.class, saleId).setScale(4);
+            BigDecimal ledgerDue = ledger.saleBalance(saleId).setScale(4);
             BigDecimal unpaidBySale = decimal(candidate.get("total"))
                 .subtract(decimal(candidate.get("paid"))).max(ZERO).setScale(4);
             BigDecimal due = ledgerDue.max(ZERO).min(unpaidBySale);
@@ -137,12 +136,9 @@ public class AccountPaymentService {
         for (SaleDue saleDue : dues) {
             if (remaining.signum() == 0) break;
             BigDecimal applied = remaining.min(saleDue.due()).setScale(4);
-            UUID paymentId = UUID.randomUUID();
-            jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, transfer_reference, created_at) values (?, ?, ?, ?, ?, ?, ?)",
-                paymentId, saleDue.saleId(), customerId, applied, request.method(),
+            UUID paymentId = ledger.recordPayment(customerId, saleDue.saleId(), applied, request.method(),
                 "BANK_TRANSFER".equals(request.method()) ? transferReference : null, now);
-            jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'CREDIT', ?, ?)",
-                UUID.randomUUID(), customerId, saleDue.saleId(), applied, now);
+            ledger.credit(customerId, saleDue.saleId(), applied, now);
             jdbc.update("update sale.sales set paid = paid + ? where id = ?", applied, saleDue.saleId());
             allocations.add(new AllocationResult(saleDue.saleId(), saleDue.saleNumber(), paymentId, applied));
             remaining = remaining.subtract(applied).setScale(4);
@@ -152,7 +148,7 @@ public class AccountPaymentService {
         }
 
         BigDecimal balanceAfter = balanceBefore.subtract(amount).setScale(4);
-        jdbc.update("update customer.customers set balance = balance - ? where id = ?", amount, customerId);
+        ledger.decreaseBalance(customerId, amount);
         String allocationMode = request.saleId() == null ? "FIFO" : "SPECIFIC";
         List<Map<String, Object>> auditedAllocations = allocations.stream()
             .map(allocation -> Map.<String, Object>of("saleId", allocation.saleId().toString(), "amount", allocation.amount()))
@@ -169,10 +165,11 @@ public class AccountPaymentService {
             currentUser.isAdmin() ? balanceAfter : visibleBalanceBefore.subtract(amount).setScale(4), allocationMode, allocations);
     }
 
+    /** Open sales owed by the account; the scope fallback uses the seller assigned to each order's recipient. */
     private List<Map<String, Object>> lockCandidateSales(UUID customerId, UUID saleId) {
         if (saleId != null) {
             List<Map<String, Object>> rows = jdbc.queryForList("select s.id, s.sale_number, s.status, s.total, s.paid "
-                + "from sale.sales s join orders.orders o on o.id = s.order_id where s.id = ? and s.customer_id = ? for update of o, s", saleId, customerId);
+                + "from sale.sales s join orders.orders o on o.id = s.order_id where s.id = ? and s.account_customer_id = ? for update of o, s", saleId, customerId);
             if (rows.isEmpty()) throw new EmptyResultDataAccessException(1);
             UUID orderId = jdbc.queryForObject("select order_id from sale.sales where id = ?", UUID.class, saleId);
             currentUser.requireOrderAccess(orderId);
@@ -182,7 +179,7 @@ public class AccountPaymentService {
             return rows;
         }
         String source = "from sale.sales s join orders.orders o on o.id = s.order_id "
-            + "join customer.customers c on c.id = s.customer_id where s.customer_id = ? "
+            + "join customer.customers c on c.id = s.customer_id where s.account_customer_id = ? "
             + "and s.status in ('CONFIRMED', 'DELIVERED') ";
         List<Object> parameters = new ArrayList<>(List.of(customerId));
         if (!currentUser.isAdmin()) {

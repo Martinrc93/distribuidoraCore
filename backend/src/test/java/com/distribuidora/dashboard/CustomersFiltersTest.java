@@ -31,7 +31,7 @@ class CustomersFiltersTest {
         jdbc.execute("CREATE SCHEMA orders");
         jdbc.execute("CREATE SCHEMA sale");
         jdbc.execute("CREATE TABLE orders.orders(id uuid primary key, customer_id uuid, seller_id uuid)");
-        jdbc.execute("CREATE TABLE sale.sales(id uuid primary key, order_id uuid, customer_id uuid, status varchar, total numeric(19,4), paid numeric(19,4))");
+        jdbc.execute("CREATE TABLE sale.sales(id uuid primary key, order_id uuid, customer_id uuid, status varchar, total numeric(19,4), paid numeric(19,4), account_customer_id uuid)");
         jdbc.execute("CREATE TABLE customer.account_ledger(sale_id uuid, entry_type varchar, amount numeric(19,4))");
         jdbc.execute("CREATE TABLE seller.seller_profiles (id UUID PRIMARY KEY, display_name VARCHAR(120))");
         jdbc.execute("CREATE TABLE customer.customers (id UUID PRIMARY KEY, business_name VARCHAR(120), tax_id VARCHAR(30), email VARCHAR, phone VARCHAR, address VARCHAR, zone VARCHAR, seller_id UUID, price_list_id UUID, balance NUMERIC(19,4), status VARCHAR(20))");
@@ -109,7 +109,7 @@ class CustomersFiltersTest {
         if (balance > 0) {
             UUID order = UUID.randomUUID(); UUID sale = UUID.randomUUID();
             jdbc.update("insert into orders.orders values (?, ?, ?)", order, id, sellerId);
-            jdbc.update("insert into sale.sales values (?, ?, ?, 'CONFIRMED', ?, 0)", sale, order, id, balance);
+            jdbc.update("insert into sale.sales values (?, ?, ?, 'CONFIRMED', ?, 0, ?)", sale, order, id, balance, id);
             jdbc.update("insert into customer.account_ledger values (?, 'DEBIT', ?)", sale, balance);
         }
     }

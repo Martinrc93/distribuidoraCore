@@ -16,9 +16,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Builds a customer's debt statement: CONFIRMED/DELIVERED sales with a positive balance, oldest first.
- * Each balance is capped like the debts API (ledger balance limited to total - paid). Sellers only see
- * sales of their own orders, or of orders without seller for customers assigned to them.
+ * Builds a customer's debt statement: CONFIRMED/DELIVERED sales owed by the customer's account with a
+ * positive balance, oldest first. Each balance is capped like the debts API (ledger balance limited to
+ * total - paid). Sellers only see sales of their own orders, or of orders without seller whose recipient
+ * is assigned to them.
  */
 @Service
 public class AccountStatementDocumentService {
@@ -58,7 +59,7 @@ public class AccountStatementDocumentService {
                 select sum(case when entry_type = 'DEBIT' then amount else -amount end) as balance
                 from customer.account_ledger where sale_id = s.id
             ) l on true
-            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
+            where s.account_customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
             """ + scope + """
               and least(greatest(coalesce(l.balance, 0), 0), greatest(s.total - s.paid, 0)) > 0
             order by s.created_at, s.id

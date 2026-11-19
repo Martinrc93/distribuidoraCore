@@ -68,8 +68,8 @@ class OrderListFiltersPostgresTest {
         UUID order = UUID.randomUUID();
         jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at, created_by_admin) values (?, ?, ?, ?, ?, 0, ?, now(), ?)",
             order, number, customer, status, new BigDecimal(total), new BigDecimal(total), admin);
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, ?, ?, ?, now())",
-            UUID.randomUUID(), "S-" + number, order, customer, status, new BigDecimal(total), new BigDecimal(paid));
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id) values (?, ?, ?, ?, ?, ?, ?, now(), ?)",
+            UUID.randomUUID(), "S-" + number, order, customer, status, new BigDecimal(total), new BigDecimal(paid), customer);
         return order;
     }
 }

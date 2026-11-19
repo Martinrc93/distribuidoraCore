@@ -385,7 +385,10 @@ Reglas:
 - No se permiten saldos a favor.
 - Los pagos no se eliminan físicamente.
 - Una corrección se realiza mediante una operación compensatoria auditada.
-- La cuenta corriente pertenece al cliente.
+- La cuenta corriente pertenece al cliente que debe cada venta
+  (`sale.sales.account_customer_id`, V51). Hoy siempre es el cliente del pedido;
+  la Fase 9 prevé que los pedidos de clientes de un revendedor se carguen a la
+  cuenta del revendedor.
 - No existe portal de cliente.
 
 En transferencias se pueden registrar opcionalmente:

@@ -120,8 +120,8 @@ class DocumentExportPostgresTest {
         Timestamp createdAt = Timestamp.from(Instant.now().minusSeconds(secondsOlder));
         jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, discount, total, created_at) values (?, ?, ?, 'CONFIRMED', ?, 0, ?, ?)",
             order, "ST-" + order.toString().substring(0, 24), customer, new BigDecimal(total), new BigDecimal(total), createdAt);
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?)",
-            sale, "SALE-" + sale.toString().substring(0, 20), order, customer, new BigDecimal(total), new BigDecimal(paid), createdAt);
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)",
+            sale, "SALE-" + sale.toString().substring(0, 20), order, customer, new BigDecimal(total), new BigDecimal(paid), createdAt, customer);
         jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'DEBIT', ?, ?)",
             UUID.randomUUID(), customer, sale, new BigDecimal(total), createdAt);
         if (new BigDecimal(paid).signum() > 0) {

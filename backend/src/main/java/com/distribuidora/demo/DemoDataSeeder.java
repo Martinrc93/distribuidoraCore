@@ -419,8 +419,8 @@ public class DemoDataSeeder implements ApplicationRunner {
             String orderNumber = jdbc.queryForObject("select orders.next_customer_order_number(?)", String.class, customerId);
             jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, legacy_order_number, fulfillment_status, legacy_fulfillment) values (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'PREPARED', true)",
                 orderId, orderNumber, customerId, sellerProfiles.get(index % sellerProfiles.size()), status, total, total, timestamp(createdAt), "PED-%05d".formatted(index));
-            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
-                saleId, "V-%06d".formatted(index), orderId, customerId, status, total, total.multiply(BigDecimal.valueOf(index % 3 == 0 ? 0.5 : 1)), timestamp(createdAt));
+            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                saleId, "V-%06d".formatted(index), orderId, customerId, status, total, total.multiply(BigDecimal.valueOf(index % 3 == 0 ? 0.5 : 1)), timestamp(createdAt), customerId);
             for (Line line : lines) {
                 jdbc.update("insert into orders.order_items(id, order_id, product_id, product_name, quantity, unit_price, line_total, price_list_id, price_list_code, line_discount_percent) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     UUID.randomUUID(), orderId, line.productId(), line.name(), line.quantity(), line.price(), line.total(), generalPriceListId, "GENERAL", BigDecimal.ZERO.setScale(4));
@@ -479,7 +479,7 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     private void repairSeedLedger() {
         List<RepairLedgerEntry> missing = jdbc.query("""
-            SELECT s.id, s.customer_id, s.total - s.paid AS amount, s.created_at
+            SELECT s.id, s.account_customer_id, s.total - s.paid AS amount, s.created_at
             FROM sale.sales s
             WHERE s.sale_number LIKE 'V-%'
               AND s.total > s.paid
@@ -488,7 +488,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                   WHERE l.sale_id = s.id AND l.entry_type = 'DEBIT'
               )
             """, (rs, rowNum) -> new RepairLedgerEntry(
-                rs.getObject("id", UUID.class), rs.getObject("customer_id", UUID.class),
+                rs.getObject("id", UUID.class), rs.getObject("account_customer_id", UUID.class),
                 rs.getBigDecimal("amount"), rs.getTimestamp("created_at")));
         for (RepairLedgerEntry entry : missing) {
             jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'DEBIT', ?, ?)",
@@ -504,7 +504,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             ), 0)
             WHERE EXISTS (
                 SELECT 1 FROM sale.sales s
-                WHERE s.customer_id = c.id AND s.sale_number LIKE 'V-%'
+                WHERE s.account_customer_id = c.id AND s.sale_number LIKE 'V-%'
             )
             """);
     }

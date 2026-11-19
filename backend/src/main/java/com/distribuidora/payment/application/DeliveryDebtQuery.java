@@ -1,4 +1,4 @@
-package com.distribuidora.customer.application;
+package com.distribuidora.payment.application;
 
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -8,7 +8,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/** Outstanding earlier sales available to the current delivery operator. */
+/**
+ * Outstanding earlier sales of the account that owes the delivered sale, available to the current
+ * delivery operator. For assigned scopes, orders without seller use the recipient's assignment.
+ */
 public final class DeliveryDebtQuery {
     public record Debt(UUID saleId, BigDecimal amount) { }
 
@@ -24,7 +27,7 @@ public final class DeliveryDebtQuery {
         parameters.add(saleId);
         String sql = """
             from sale.sales s
-            join sale.sales anchor on anchor.id = ? and anchor.customer_id = s.customer_id
+            join sale.sales anchor on anchor.id = ? and anchor.account_customer_id = s.account_customer_id
             join orders.orders o on o.id = s.order_id
             join customer.customers c on c.id = s.customer_id
             where s.status in ('CONFIRMED', 'DELIVERED')
@@ -39,7 +42,7 @@ public final class DeliveryDebtQuery {
         return sql;
     }
 
-    // Match account payments' chronological sale-lock order before locking the customer.
+    // Match account payments' chronological sale-lock order before locking the account.
     public void lockSales(UUID saleId) {
         List<Object> parameters = new ArrayList<>();
         String sql = source(parameters, saleId);

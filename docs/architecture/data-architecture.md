@@ -81,6 +81,14 @@ Se utilizarán constraints para reglas estructurales:
   y ventas. Los registros de negocio y movimientos se conservan sin esa
   atribución histórica.
 
+- V51 separa en cada venta la cuenta que la debe (`sale.sales.account_customer_id`)
+  del cliente que recibe el pedido (`customer_id`). Los asientos de
+  `customer.account_ledger` y los pagos de `payment.payments` referencian
+  `(sale_id, customer_id)` contra `(id, account_customer_id)` de su venta: siempre
+  pertenecen a esa cuenta y la cuenta de una venta con historial no puede
+  cambiarse. Sin revendedores, la cuenta es el cliente del pedido. Ver
+  [ADR-010](../adr/ADR-010-reseller-debt-holder.md).
+
 Las reglas que dependen de varios módulos se validan en casos de uso y no se
 resuelven únicamente con foreign keys.
 

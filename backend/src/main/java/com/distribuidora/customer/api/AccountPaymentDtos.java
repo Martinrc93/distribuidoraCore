@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
-import com.distribuidora.customer.application.AccountPaymentService;
+import com.distribuidora.payment.application.AccountPaymentService;
 
 import java.math.BigDecimal;
 import java.util.List;

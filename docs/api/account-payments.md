@@ -7,7 +7,7 @@
 Requiere `SALE_PAYMENT` o `ADMIN_ALL`. Un vendedor solo puede registrar pagos de clientes asignados a su perfil. V17 incorpora `SALE_PAYMENT` y lo concede al rol `SELLER`.
 
 Además, solo puede imputar cobros a ventas de sus pedidos. Los pedidos sin
-vendedor usan la asignación actual del cliente. FIFO aplica el mismo filtro y
+vendedor usan la asignación actual del cliente que recibió el pedido. FIFO aplica el mismo filtro y
 una venta de otro vendedor se rechaza con `404`, aunque el cliente esté asignado
 al usuario. El administrador mantiene acceso a todas las ventas.
 
@@ -24,6 +24,10 @@ Si `saleId` se informa, el pago se asigna a esa venta. Si se omite, se distribuy
 
 ## Reglas de imputación
 
+- Desde V51 la cuenta corriente es la de cada venta (`sale.sales.account_customer_id`),
+  separada del cliente que recibe el pedido. Este endpoint cobra las ventas que
+  debe la cuenta del cliente indicado y registra pagos y asientos sobre ella. Sin
+  revendedores, esas ventas son los pedidos del propio cliente.
 - El importe debe ser positivo, con hasta cuatro decimales, y no puede superar la deuda vigente positiva del cliente.
 - Una asignación específica tampoco puede exceder la deuda abierta de la venta indicada.
 - La deuda de cada venta se limita al menor valor entre su saldo neto de ledger y `total - paid`.

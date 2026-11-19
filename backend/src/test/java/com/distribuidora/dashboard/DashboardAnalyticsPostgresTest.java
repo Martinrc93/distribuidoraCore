@@ -134,7 +134,7 @@ class DashboardAnalyticsPostgresTest {
         UUID order = UUID.randomUUID();
         UUID sale = UUID.randomUUID();
         jdbc.update("insert into orders.orders(id, order_number, customer_id, status, subtotal, total, created_at) values (?, ?, ?, ?, ?, ?, ?)", order, order.toString().substring(0, 20), customer, status, total, total, Timestamp.from(Instant.parse(date)));
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, order_discount_percent, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)", sale, sale.toString().substring(0, 20), order, customer, status, total, paid, discount, Timestamp.from(Instant.parse(date)));
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, order_discount_percent, created_at, account_customer_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sale, sale.toString().substring(0, 20), order, customer, status, total, paid, discount, Timestamp.from(Instant.parse(date)), customer);
         return sale;
     }
     private static UUID item(UUID sale, UUID product, int quantity, int lineTotal) {

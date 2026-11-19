@@ -1,6 +1,6 @@
 package com.distribuidora.customer.api;
 
-import com.distribuidora.customer.application.AccountPaymentService;
+import com.distribuidora.payment.application.AccountPaymentService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;

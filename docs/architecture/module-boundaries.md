@@ -38,7 +38,9 @@ flowchart TD
     catalog --> pricing
     catalog --> shared
     customer --> audit
+    customer --> payment
     customer --> shared
+    dashboard --> payment
     dashboard --> shared
     document --> dashboard
     document --> shared
@@ -50,9 +52,12 @@ flowchart TD
     order --> customer
     order --> inventory
     order --> notification
+    order --> payment
     order --> pricing
     order --> sale
     order --> shared
+    payment --> audit
+    payment --> shared
     pricing --> audit
     pricing --> shared
     sale --> audit
@@ -63,13 +68,21 @@ flowchart TD
     settings --> shared
     audit --> shared
     demo
-    payment
 ```
 
 Cada flecha significa que el paquete de origen depende de tipos del paquete de
 destino. `config` es cableado de la aplicación fuera de los módulos de negocio.
-`demo` no tiene dependencias Java entre módulos; el paquete `payment` todavía
-solo contiene `package-info.java`.
+`demo` no tiene dependencias Java entre módulos.
+
+`payment` concentra la cuenta corriente desde la Fase 9.1. En el código de
+negocio, `AccountLedger` es la única vía de escritura de asientos, saldos y
+pagos, siempre sobre la cuenta que debe cada venta
+(`sale.sales.account_customer_id`); solo la carga de demostración escribe esas
+tablas por su cuenta. El módulo también contiene
+los cobros por FIFO o por venta (`AccountPaymentService`), el saldo visible
+(`CustomerAccountBalanceQuery`) y la deuda anterior de una entrega
+(`DeliveryDebtQuery`). `customer` expone la API de cobros; `order` y `dashboard`
+usan estos casos de uso.
 
 `document` usa el caso de uso público de compras del cliente en `dashboard`
 para generar el PDF con el alcance y los importes del reporte.

@@ -49,8 +49,11 @@ crear, editar o eliminar zonas sigue requiriendo administrador.
 
 Listado, ficha y pagos usan una única definición de saldo. El administrador ve
 `customer.balance`, incluidos créditos. Otros roles ven la suma de deudas de
-ventas CONFIRMED/DELIVERED de sus pedidos (o pedidos sin vendedor del cliente
-asignado), limitada al saldo global positivo. Cada deuda se limita al menor valor
+ventas CONFIRMED/DELIVERED que debe la cuenta del cliente
+(`sale.sales.account_customer_id`, V51) y que corresponden a sus pedidos (o a
+pedidos sin vendedor cuyo cliente destinatario está asignado), limitada al saldo
+global positivo. Sin revendedores, la cuenta y el destinatario coinciden. Cada
+deuda se limita al menor valor
 entre ledger neto positivo y `total - paid` positivo. El filtro `hasBalance`
 usa este saldo antes de contar y paginar. El historial aplica el alcance también
 antes de sus conteos.

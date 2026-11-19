@@ -91,9 +91,9 @@ class DemoDataSeederPostgresTest {
             from orders.orders where legacy_order_number = 'PED-00003'
             """, realOrderId, realDate);
         jdbc.update("""
-            insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at)
-            values (?, 'SAL-REAL', ?, ?, 'CONFIRMED', 10, 10, ?)
-            """, realSaleId, realOrderId, customerId, realDate);
+            insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id)
+            values (?, 'SAL-REAL', ?, ?, 'CONFIRMED', 10, 10, ?, ?)
+            """, realSaleId, realOrderId, customerId, realDate, customerId);
         jdbc.update("""
             insert into payment.payments(id, sale_id, customer_id, amount, method, created_at)
             values (?, ?, ?, 1, 'CASH', ?)

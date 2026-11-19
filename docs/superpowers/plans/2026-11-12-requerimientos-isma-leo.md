@@ -209,15 +209,22 @@ período y registra la liquidación al pagarle al vendedor.
 
 ### Fase 9 — Revendedores
 
-Tamaño **XL**, el de mayor riesgo. Propuesta a validar con Leo:
+Tamaño **XL**, el de mayor riesgo. **Estado (2026-11-18): reglas respondidas;
+etapa 9.1 implementada con V51; 9.2 y 9.3 pendientes.** Ver el
+[diseño](../specs/2026-11-18-fase-9-revendedores-design.md) y el
+[ADR-010](../../adr/ADR-010-reseller-debt-holder.md) (aceptado).
 
-- Rol `RESELLER` con perfil comercial (reutiliza `SellerProfile` con tipo).
-- El revendedor tiene **su propia cuenta corriente** (una cuenta cliente vinculada).
-- Clientes del revendedor: sus pedidos se atribuyen al revendedor y, si «asume la
-  deuda», el débito va a la cuenta del revendedor en lugar de a la del cliente
-  final, como asiento explícito del ledger (nunca editando saldos).
-- Toca invariantes del ledger, imputación FIFO, alcance de datos por vendedor y
-  dashboard. Requiere su propio spec y ADR antes de codificar.
+- El revendedor es un cliente marcado como tal, sin usuario propio y con **su
+  propia cuenta corriente**. Lo opera la administración.
+- Sus clientes asociados siguen siendo los destinatarios del pedido. La venta
+  guarda además al titular de la deuda (el revendedor), fijado al confirmar.
+  Débitos, pagos y FIFO usan el titular; entrega, documentos, numeración, lista
+  de precios y reportes de compras usan el destinatario.
+- La deuda es siempre del revendedor (Decisiones, punto 3). Esa regla reemplaza
+  el «si asume la deuda» de la propuesta inicial.
+- Etapas: 9.1 separa el titular sin cambio visible; 9.2 incorpora revendedores;
+  9.3 suma sus comisiones. Los supuestos S1–S7 del diseño se confirman antes de
+  9.2 y 9.3.
 
 ## Orden recomendado
 
@@ -261,6 +268,15 @@ Respuestas del usuario (2026-11-12):
 3. **Revendedor:** la deuda es **siempre** del revendedor. El revendedor tiene
    clientes asociados; cómo les cobra él no le importa al sistema. Los pedidos de
    esos clientes debitan la cuenta corriente del revendedor.
+   **Respuestas del 2026-11-18:** cada cliente tiene un solo revendedor, asignado
+   por el administrador. El revendedor no tiene acceso al sistema: lo opera la
+   administración. Se usa la lista predeterminada y se puede elegir una por
+   cliente. Los cobros los registra el administrador y cada importe queda
+   vinculado a su pedido. Un pedido entregado no se puede devolver. Lo generado
+   bajo un revendedor queda en su cuenta; cambiarlo exige cancelar los pedidos.
+   Puede tener un plan de comisiones configurado de antemano. No hay datos
+   iniciales para cargar. Detalle y supuestos en el
+   [diseño de la Fase 9](../specs/2026-11-18-fase-9-revendedores-design.md).
 4. **Preparación:** el stock se descuenta **al preparar**, no al confirmar; si el
    pedido se cancela después de preparado, se revierte el movimiento. Implementado
    con V42 y ADR-006/007 actualizados. Decisiones confirmadas el 2026-11-16:

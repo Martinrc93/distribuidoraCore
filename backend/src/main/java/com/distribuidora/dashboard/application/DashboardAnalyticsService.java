@@ -95,7 +95,7 @@ public class DashboardAnalyticsService {
                     cast(? as date) - (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as age
                 from sale.sales s left join lateral (
                     select sum(case when entry_type = 'DEBIT' then amount else -amount end) as balance
-                    from customer.account_ledger where sale_id = s.id and customer_id = s.customer_id
+                    from customer.account_ledger where sale_id = s.id and customer_id = s.account_customer_id
                 ) l on true where s.status in ('CONFIRMED', 'DELIVERED')
             )
             select coalesce(sum(balance) filter (where age <= 30), 0) as "days0to30",

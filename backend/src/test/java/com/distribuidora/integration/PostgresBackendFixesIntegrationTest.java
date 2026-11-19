@@ -5,7 +5,7 @@ import com.distribuidora.pricing.application.PricingCommandService;
 import com.distribuidora.pricing.application.PricingQueryService;
 import com.distribuidora.dashboard.application.ReadQueryService;
 import com.distribuidora.customer.api.AccountPaymentDtos;
-import com.distribuidora.customer.application.AccountPaymentService;
+import com.distribuidora.payment.application.AccountPaymentService;
 import com.distribuidora.identity.api.AuthDtos;
 import com.distribuidora.identity.application.AuthService;
 import com.distribuidora.identity.application.InvalidRefreshTokenException;
@@ -2719,10 +2719,10 @@ class PostgresBackendFixesIntegrationTest {
         sales.add(sale);
         Timestamp date = Timestamp.from(Instant.parse(soldAt));
         jdbc.update("""
-            insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, delivered_at)
-            values (?, ?, ?, ?, ?, ?, 0, ?, ?)
+            insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, delivered_at, account_customer_id)
+            values (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
             """, sale, reportSaleNumber(sale), order, customer, status, new BigDecimal(amount), date,
-            "DELIVERED".equals(status) ? date : null);
+            "DELIVERED".equals(status) ? date : null, customer);
         return sale;
     }
 
@@ -2791,8 +2791,8 @@ class PostgresBackendFixesIntegrationTest {
         sales.add(saleId);
         Timestamp now = Timestamp.from(Instant.now());
         String saleNumber = "PG-" + saleId.toString().substring(0, 24);
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, delivered_at) values (?, ?, ?, ?, 'DELIVERED', 10, 0, ?, ?)",
-            saleId, saleNumber, orderId, customerId, now, now);
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, delivered_at, account_customer_id) values (?, ?, ?, ?, 'DELIVERED', 10, 0, ?, ?, ?)",
+            saleId, saleNumber, orderId, customerId, now, now, customerId);
         UUID saleItemId = createSaleItem(saleId, productId, quantity);
         return new SaleFixture(saleId, orderId, productId, saleItemId);
     }
@@ -2809,8 +2809,8 @@ class PostgresBackendFixesIntegrationTest {
         UUID saleId = UUID.randomUUID();
         sales.add(saleId);
         Timestamp now = Timestamp.from(Instant.now());
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?)",
-            saleId, "PG-" + saleId.toString().substring(0, 24), orderId, customerId, total, paid, now);
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)",
+            saleId, "PG-" + saleId.toString().substring(0, 24), orderId, customerId, total, paid, now, customerId);
         UUID saleItemId = createSaleItem(saleId, productId, quantity);
         jdbc.update("update sale.sale_items set unit_price = ?, line_total = ? where id = ?", unitPrice, total, saleItemId);
         UUID orderItemId = UUID.randomUUID();
@@ -2836,8 +2836,8 @@ class PostgresBackendFixesIntegrationTest {
         jdbc.update("update orders.orders set subtotal = ?, total = ?, created_at = ?, fulfillment_status = 'PREPARED', legacy_fulfillment = true where id = ?", debt, debt, createdAt, orderId);
         UUID saleId = UUID.randomUUID();
         sales.add(saleId);
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at) values (?, ?, ?, ?, 'CONFIRMED', ?, 0, ?)",
-            saleId, "PG-" + saleId.toString().substring(0, 24), orderId, customerId, debt, createdAt);
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id) values (?, ?, ?, ?, 'CONFIRMED', ?, 0, ?, ?)",
+            saleId, "PG-" + saleId.toString().substring(0, 24), orderId, customerId, debt, createdAt, customerId);
         jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'DEBIT', ?, ?)",
             UUID.randomUUID(), customerId, saleId, debt, createdAt);
         jdbc.update("update customer.customers set balance = balance + ? where id = ?", debt, customerId);

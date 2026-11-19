@@ -48,7 +48,7 @@ class CustomerReadServiceTest {
         jdbc.execute("create table catalog.price_lists(id uuid primary key, code varchar, name varchar)");
         jdbc.execute("create table customer.customers(id uuid primary key, business_name varchar, tax_id varchar, email varchar, phone varchar, address varchar, zone varchar, seller_id uuid, price_list_id uuid, balance decimal(19,4), status varchar, created_at timestamp with time zone)");
         jdbc.execute("create table orders.orders(id uuid primary key, customer_id uuid, seller_id uuid, order_number varchar, total decimal(19,4), status varchar, created_at timestamp with time zone)");
-        jdbc.execute("create table sale.sales(id uuid primary key, order_id uuid unique, total decimal(19,4), paid decimal(19,4), status varchar, customer_id uuid)");
+        jdbc.execute("create table sale.sales(id uuid primary key, order_id uuid unique, total decimal(19,4), paid decimal(19,4), status varchar, customer_id uuid, account_customer_id uuid)");
         jdbc.execute("create table customer.account_ledger(id uuid primary key, sale_id uuid, entry_type varchar, amount decimal(19,4))");
         jdbc.update("insert into seller.seller_profiles values (?, ?, 'Lucía', 'ACTIVE'), (?, ?, 'Martín', 'ACTIVE')", sellerId, userId, otherSeller, UUID.randomUUID());
         jdbc.update("insert into catalog.price_lists values (?, 'GENERAL', 'General')", priceList);
@@ -177,7 +177,7 @@ class CustomerReadServiceTest {
     private UUID debtOrder(String number, String orderStatus, String saleStatus, String total, String paid, String debit, String credit) {
         UUID orderId = order(customerId, sellerId, number, orderStatus, "2025-01-01T12:00:00Z");
         UUID saleId = UUID.randomUUID();
-        jdbc.update("insert into sale.sales values (?, ?, ?, ?, ?, ?)", saleId, orderId, new BigDecimal(total), new BigDecimal(paid), saleStatus, customerId);
+        jdbc.update("insert into sale.sales values (?, ?, ?, ?, ?, ?, ?)", saleId, orderId, new BigDecimal(total), new BigDecimal(paid), saleStatus, customerId, customerId);
         jdbc.update("insert into customer.account_ledger values (?, ?, 'DEBIT', ?), (?, ?, 'CREDIT', ?)",
             UUID.randomUUID(), saleId, new BigDecimal(debit), UUID.randomUUID(), saleId, new BigDecimal(credit));
         return saleId;

@@ -83,6 +83,10 @@ class OrderConfirmationServiceTest {
         Timestamp registeredAt = (Timestamp) orderInsert.getValue()[7];
         Timestamp ledgerAt = (Timestamp) ledgerInsert.getValue()[4];
         assertThat(saleInsert.getValue()[6]).isEqualTo(registeredAt);
+        // Without a reseller, the recipient is the account that owes the sale and receives its debit.
+        assertThat(saleInsert.getValue()[3]).isEqualTo(customerId);
+        assertThat(saleInsert.getValue()[8]).isEqualTo(customerId);
+        assertThat(ledgerInsert.getValue()[1]).isEqualTo(customerId);
         assertThat(ledgerAt.toInstant()).isBetween(before, after);
         if (chosenDate == null) assertThat(registeredAt).isEqualTo(ledgerAt);
         else assertThat(registeredAt.toInstant().atZone(ZoneId.of("America/Argentina/Buenos_Aires")).toLocalDate())
@@ -582,8 +586,8 @@ class OrderConfirmationServiceTest {
         UUID listId = UUID.randomUUID();
         when(jdbc.queryForMap(contains("from orders.orders"), eq(orderId))).thenReturn(Map.of(
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "sale_id", saleId,
-            "customer_id", customerId, "sale_total", BigDecimal.TEN, "paid", new BigDecimal("2"),
-            "previous_balance_amount", new BigDecimal("30")));
+            "customer_id", customerId, "account_customer_id", customerId, "sale_total", BigDecimal.TEN,
+            "paid", new BigDecimal("2"), "previous_balance_amount", new BigDecimal("30")));
         when(jdbc.queryForMap(contains("customer.customers"), eq(customerId)))
             .thenReturn(Map.of("id", customerId, "balance", new BigDecimal("100")));
         when(jdbc.queryForList(contains("from orders.order_items"), eq(orderId)))
@@ -619,7 +623,7 @@ class OrderConfirmationServiceTest {
         UUID customerId = UUID.randomUUID();
         when(jdbc.queryForMap(contains("from orders.orders"), eq(orderId))).thenReturn(Map.of(
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "customer_id", customerId,
-            "previous_balance_amount", new BigDecimal("30")));
+            "account_customer_id", customerId, "previous_balance_amount", new BigDecimal("30")));
         when(jdbc.queryForMap(contains("customer.customers"), eq(customerId)))
             .thenReturn(Map.of("id", customerId, "balance", new BigDecimal("100")));
 

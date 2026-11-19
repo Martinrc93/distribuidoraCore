@@ -1,7 +1,7 @@
 package com.distribuidora.dashboard.application;
 
 import com.distribuidora.shared.web.PageResponse;
-import com.distribuidora.customer.application.DeliveryDebtQuery;
+import com.distribuidora.payment.application.DeliveryDebtQuery;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import com.distribuidora.shared.security.PermissionAccess;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -141,7 +141,7 @@ public class ReadQueryService {
             throw new IllegalArgumentException("El estado del cliente debe ser ACTIVE o INACTIVE");
         }
         String term = like(search);
-        var balance = new com.distribuidora.customer.application.CustomerAccountBalanceQuery(jdbc, currentUser).projection();
+        var balance = new com.distribuidora.payment.application.CustomerAccountBalanceQuery(jdbc, currentUser).projection();
         String source = " from (select c.*, " + balance.sql() + " as scoped_balance from customer.customers c) c "
             + "left join seller.seller_profiles sp on sp.id = c.seller_id ";
         String where = " where (lower(c.business_name) like ? or lower(c.tax_id) like ?)";
@@ -373,6 +373,7 @@ public class ReadQueryService {
             "orderNumber", order.get("number"), "orderDiscountPercent", order.get("orderDiscountPercent"), "items", items);
     }
 
+    /** Open debts owed by the customer's account; the scope fallback uses each order's recipient. */
     public PageResponse<Map<String, Object>> customerDebts(UUID customerId, int page, int size) {
         if (currentUser != null) currentUser.requireCustomerAccess(customerId);
         jdbc.queryForObject("select id from customer.customers where id = ?", UUID.class, customerId);
@@ -385,7 +386,7 @@ public class ReadQueryService {
                        sum(amount) filter (where entry_type = 'CREDIT') as credit
                 from customer.account_ledger where sale_id = s.id
             ) l on true
-            where s.customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
+            where s.account_customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
               and least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) > 0
             """;
         List<Object> parameters = new ArrayList<>(List.of(customerId));
@@ -419,10 +420,12 @@ public class ReadQueryService {
                    o.order_discount_percent as "orderDiscountPercent",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
-                   c.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
+                   account_customer.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
                    (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
+            join sale.sales account_sale on account_sale.order_id = o.id
+            join customer.customers account_customer on account_customer.id = account_sale.account_customer_id
             left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id
             left join seller.seller_profiles customer_seller on customer_seller.id = c.seller_id
             where o.id = ?
@@ -456,10 +459,12 @@ public class ReadQueryService {
                    o.order_discount_percent as "orderDiscountPercent",
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
-                   c.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
+                   account_customer.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
                    (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
+            join sale.sales account_sale on account_sale.order_id = o.id
+            join customer.customers account_customer on account_customer.id = account_sale.account_customer_id
             left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id
             left join seller.seller_profiles customer_seller on customer_seller.id = c.seller_id
              where o.order_number = ? or o.legacy_order_number = ?
@@ -470,7 +475,6 @@ public class ReadQueryService {
     }
 
     private Map<String, Object> detail(Map<String, Object> order, UUID orderId) {
-        UUID customerId = (UUID) order.get("customerId");
         Map<String, Object> sale = jdbc.queryForMap("""
             select s.id, s.sale_number as number, s.status, s.total, s.paid,
                    s.order_discount_percent as "orderDiscountPercent",
@@ -480,13 +484,14 @@ public class ReadQueryService {
         UUID saleId = (UUID) sale.get("id");
         sale = new HashMap<>(sale);
         sale.put("previousDebtAvailable", new DeliveryDebtQuery(jdbc, currentUser).previousBalance(saleId));
+        // Every entry of a sale belongs to the account that owes it (enforced by a composite foreign key).
         Map<String, Object> account = jdbc.queryForMap("""
             select coalesce(sum(amount) filter (where entry_type = 'DEBIT'), 0) as debit,
                    coalesce(sum(amount) filter (where entry_type = 'CREDIT'), 0) as credit,
                    coalesce(sum(amount) filter (where entry_type = 'DEBIT'), 0)
                      - coalesce(sum(amount) filter (where entry_type = 'CREDIT'), 0) as net
-            from customer.account_ledger where customer_id = ? and sale_id = ?
-            """, customerId, saleId);
+            from customer.account_ledger where sale_id = ?
+            """, saleId);
         return Map.of(
             "order", order,
             "items", jdbc.queryForList("""

@@ -137,7 +137,7 @@ class DeliveryLifecycleServiceTest {
         UUID secondProductId = UUID.randomUUID();
         authenticate("ADMIN_ALL");
         when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
-            "order_id", orderId, "sale_id", saleId, "customer_id", customerId,
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", new BigDecimal("15.0000")));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
@@ -168,7 +168,7 @@ class DeliveryLifecycleServiceTest {
         UUID productId = UUID.randomUUID();
         authenticate("ADMIN_ALL");
         when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
-            "order_id", orderId, "sale_id", saleId, "customer_id", customerId,
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", new BigDecimal("2.0000")));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
@@ -189,7 +189,7 @@ class DeliveryLifecycleServiceTest {
         UUID productId = UUID.randomUUID();
         authenticate("ADMIN_ALL");
         when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
-            "order_id", orderId, "sale_id", saleId, "customer_id", customerId,
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", new BigDecimal("2.0000")));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
@@ -208,7 +208,7 @@ class DeliveryLifecycleServiceTest {
         UUID customerId = UUID.randomUUID();
         authenticate("ADMIN_ALL");
         when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
-            "order_id", orderId, "sale_id", saleId, "customer_id", customerId,
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", BigDecimal.ZERO));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
@@ -228,7 +228,7 @@ class DeliveryLifecycleServiceTest {
         UUID customerId = UUID.randomUUID();
         authenticate("ADMIN_ALL");
         when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
-            "order_id", orderId, "sale_id", saleId, "customer_id", customerId,
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", new BigDecimal("10.0000")));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
@@ -257,8 +257,9 @@ class DeliveryLifecycleServiceTest {
     }
 
     private Map<String, Object> confirmed(UUID orderId) {
-        return Map.of("order_id", orderId, "sale_id", UUID.randomUUID(), "customer_id", UUID.randomUUID(),
-            "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
+        UUID customerId = UUID.randomUUID();
+        return Map.of("order_id", orderId, "sale_id", UUID.randomUUID(), "customer_id", customerId,
+            "account_customer_id", customerId, "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", new BigDecimal("10.0000"), "fulfillment_status", "PREPARED");
     }
 

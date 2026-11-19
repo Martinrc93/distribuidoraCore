@@ -91,6 +91,12 @@ Se permiten pagos parciales y combinados. Los pagos se aplican manualmente a
 una deuda específica o automáticamente al saldo más antiguo si no se selecciona
 una deuda. No se permiten pagos superiores al saldo ni saldos a favor.
 
+Actualización (2026-11-18, V51, [ADR-010](ADR-010-reseller-debt-holder.md)): la
+cuenta corriente pertenece a la cuenta que debe cada venta
+(`sale.sales.account_customer_id`), separada del cliente que recibe el pedido.
+Débitos, pagos, saldo, FIFO y límite de crédito usan esa cuenta. Mientras no
+haya revendedores, la cuenta es el cliente del pedido.
+
 El límite de crédito es global y configurable. No bloquea el pedido: muestra
 una advertencia con el saldo actual y el saldo proyectado. El administrador
 puede continuar y la advertencia queda auditada.

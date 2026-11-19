@@ -3,7 +3,8 @@ package com.distribuidora.order.application;
 import com.distribuidora.shared.security.PermissionAccess;
 
 import com.distribuidora.audit.application.AuditService;
-import com.distribuidora.customer.application.AccountPaymentService;
+import com.distribuidora.payment.application.AccountLedger;
+import com.distribuidora.payment.application.AccountPaymentService;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.notification.application.OutboxService;
 
@@ -150,15 +151,18 @@ public class OrderConfirmationService {
             throw new IllegalStateException("El cliente no está activo");
         }
         validatePriceList(request, customer);
-        BigDecimal previousDebtPaid = payPreviousDebts(customerId, request.previousDebtPayments());
+        // The account that owes the sale. The recipient owes its own orders until resellers are introduced.
+        UUID accountId = customerId;
+        Map<String, Object> account = customer;
+        BigDecimal previousDebtPaid = payPreviousDebts(accountId, request.previousDebtPayments());
         // Paying older debts lowers the balance this order starts from (credit limit and previous balance checks).
         BigDecimal balanceBeforeOrder = previousDebtPaid.signum() > 0
-            ? decimalOrZero(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId))
-            : decimalOrZero(customer.get("balance"));
+            ? decimalOrZero(jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, accountId))
+            : decimalOrZero(account.get("balance"));
         BigDecimal previousBalanceAmount = previousBalanceAmount(request);
         if (previousBalanceAmount.signum() > 0) {
             BigDecimal currentBalance = jdbc.queryForObject(
-                "select balance from customer.customers where id = ? for update", BigDecimal.class, customerId);
+                "select balance from customer.customers where id = ? for update", BigDecimal.class, accountId);
             // The remito may include debt paid in this same confirmation: compare with the balance before paying it.
             if (currentBalance == null || previousBalanceAmount.compareTo(currentBalance.add(previousDebtPaid)) > 0) {
                 throw new IllegalArgumentException("El importe del saldo anterior supera el saldo actual del cliente");
@@ -205,18 +209,18 @@ public class OrderConfirmationService {
             calculated.orderDiscountPercent(), previousBalanceAmount, actorId(), hasAuthority("ADMIN_ALL"));
         insertItems("orders.order_items", orderId, resolved, calculated.lines());
 
-        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)",
+        jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, order_discount_percent, account_customer_id) values (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?)",
             saleId, saleNumber, orderId, customerId, calculated.total(), monetaryPaid, registeredAt,
-            calculated.orderDiscountPercent());
+            calculated.orderDiscountPercent(), accountId);
         insertItems("sale.sale_items", saleId, resolved, calculated.lines());
 
-        insertPayments(saleId, customerId, request.payments());
+        AccountLedger ledger = new AccountLedger(jdbc);
+        insertPayments(ledger, saleId, accountId, request.payments());
         for (BigDecimal accountDebit : accountDebits) {
-            jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, 'DEBIT', ?, ?)",
-                UUID.randomUUID(), customerId, saleId, accountDebit, now);
+            ledger.debit(accountId, saleId, accountDebit, now);
         }
         if (totalAccountDebit.signum() > 0) {
-            jdbc.update("update customer.customers set balance = balance + ? where id = ?", totalAccountDebit, customerId);
+            ledger.increaseBalance(accountId, totalAccountDebit);
         }
 
         BigDecimal responsePaid = monetaryPaid(request.payments());
@@ -236,7 +240,7 @@ public class OrderConfirmationService {
         auditDetails.put("creditLimitExceeded", creditLimitExceeded);
         audit.recordWithinTransaction(actorId(), "ORDER_CONFIRM", "ORDER", orderId.toString(), "SUCCESS", auditDetails);
         if (creditWarning != null) {
-            audit.recordWithinTransaction(actorId(), "CREDIT_LIMIT_WARNING", "CUSTOMER", customerId.toString(), "SUCCESS",
+            audit.recordWithinTransaction(actorId(), "CREDIT_LIMIT_WARNING", "CUSTOMER", accountId.toString(), "SUCCESS",
                 Map.of("orderId", orderId.toString(), "saleId", saleId.toString(), "creditLimit", creditLimit,
                     "projectedBalance", projectedBalance, "exceededBy", creditWarning.exceededBy()));
         }
@@ -259,16 +263,18 @@ public class OrderConfirmationService {
         }
 
         Map<String, Object> lifecycle = jdbc.queryForMap("select o.id as order_id, o.status as order_status, o.total as order_total, "
-            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.total as sale_total, s.paid, o.previous_balance_amount, o.fulfillment_status, o.order_discount_percent "
+            + "s.id as sale_id, s.status as sale_status, s.customer_id, s.account_customer_id, s.total as sale_total, s.paid, o.previous_balance_amount, o.fulfillment_status, o.order_discount_percent "
             + "from orders.orders o join sale.sales s on s.order_id = o.id where o.id = ? for update of o, s", orderId);
         if (currentUser != null) currentUser.requireOrderAccess(orderId);
         if (!"CONFIRMED".equals(lifecycle.get("order_status")) || !"CONFIRMED".equals(lifecycle.get("sale_status"))) {
             throw new IllegalStateException("Solo se pueden editar pedidos y ventas confirmados");
         }
 
+        // The recipient keeps the order's prices; the account that owes the sale absorbs the debt change.
         UUID customerId = uuidOrNull(lifecycle.get("customer_id"));
-        Map<String, Object> customer = jdbc.queryForMap(
-            "select id, balance, price_list_id from customer.customers where id = ? for update", customerId);
+        UUID accountId = uuidOrNull(lifecycle.get("account_customer_id"));
+        AccountLedger ledger = new AccountLedger(jdbc);
+        Map<String, Object> account = ledger.lockAccount(accountId);
         BigDecimal previousBalance = request.previousBalanceAmount() == null
             ? decimal(lifecycle.get("previous_balance_amount")) : request.previousBalanceAmount();
         validateScale(previousBalance, "previousBalanceAmount");
@@ -276,14 +282,14 @@ public class OrderConfirmationService {
             throw new IllegalArgumentException("El importe del saldo anterior no puede ser negativo");
         }
         if (previousBalance.compareTo(decimal(lifecycle.get("previous_balance_amount"))) != 0
-            && previousBalance.compareTo(decimal(customer.get("balance")).max(ZERO)) > 0) {
+            && previousBalance.compareTo(decimal(account.get("balance")).max(ZERO)) > 0) {
             throw new IllegalStateException("El importe del saldo anterior supera el saldo actual del cliente");
         }
         ConfirmationCommand pricingRequest = new ConfirmationData(
             "confirmed-order-edit", customerId, request.priceListId(), request.lines(), request.orderDiscountPercent(), List.of());
         validateRequest(pricingRequest);
         List<ResolvedLine> resolved = resolveLines(pricingRequest);
-        validateEditOverrides(orderId, pricingRequest, resolved, lifecycle, customer);
+        validateEditOverrides(orderId, pricingRequest, resolved, lifecycle, customerId);
         OrderCalculationService.OrderCalculation calculated = calculation.calculate(
             resolved.stream().map(line -> new OrderCalculationService.CalculatedLine(
                 line.productId(), line.quantity(), line.unitPrice(), line.discount())).toList(),
@@ -315,21 +321,17 @@ public class OrderConfirmationService {
             }
         }
 
-        BigDecimal currentAccountDebt = jdbc.queryForObject(
-            "select coalesce(sum(case when entry_type = 'DEBIT' then amount else -amount end), 0) "
-                + "from customer.account_ledger where sale_id = ?", BigDecimal.class, saleId);
+        BigDecimal currentAccountDebt = ledger.saleBalance(saleId);
         BigDecimal previousTotal = decimal(lifecycle.get("sale_total")).setScale(4);
         BigDecimal targetAccountDebt = currentAccountDebt.add(calculated.total().subtract(previousTotal)).setScale(4);
         BigDecimal ledgerAdjustment = targetAccountDebt.subtract(currentAccountDebt).setScale(4);
         Timestamp now = Timestamp.from(Instant.now());
-        if (ledgerAdjustment.signum() != 0) {
-            String entryType = ledgerAdjustment.signum() > 0 ? "DEBIT" : "CREDIT";
-            BigDecimal amount = ledgerAdjustment.abs();
-            jdbc.update("insert into customer.account_ledger(id, customer_id, sale_id, entry_type, amount, created_at) values (?, ?, ?, ?, ?, ?)",
-                UUID.randomUUID(), customerId, saleId, entryType, amount, now);
-            jdbc.update("update customer.customers set balance = balance "
-                    + (ledgerAdjustment.signum() > 0 ? "+" : "-") + " ? where id = ?",
-                amount, customerId);
+        if (ledgerAdjustment.signum() > 0) {
+            ledger.debit(accountId, saleId, ledgerAdjustment, now);
+            ledger.increaseBalance(accountId, ledgerAdjustment);
+        } else if (ledgerAdjustment.signum() < 0) {
+            ledger.credit(accountId, saleId, ledgerAdjustment.negate(), now);
+            ledger.decreaseBalance(accountId, ledgerAdjustment.negate());
         }
 
         jdbc.update("delete from orders.order_items where order_id = ?", orderId);
@@ -404,13 +406,12 @@ public class OrderConfirmationService {
         }
     }
 
-    private void insertPayments(UUID saleId, UUID customerId, List<? extends PaymentCommand> payments) {
+    private void insertPayments(AccountLedger ledger, UUID saleId, UUID accountId, List<? extends PaymentCommand> payments) {
         if (payments == null) return;
         Timestamp now = Timestamp.from(Instant.now());
         for (var payment : payments) {
             if (!"CUSTOMER_ACCOUNT".equals(payment.method())) {
-                jdbc.update("insert into payment.payments(id, sale_id, customer_id, amount, method, transfer_reference, created_at) values (?, ?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), saleId, customerId, payment.amount(), payment.method(),
+                ledger.recordPayment(accountId, saleId, payment.amount(), payment.method(),
                     "BANK_TRANSFER".equals(payment.method()) ? normalizeReference(payment.transferReference()) : null, now);
             }
         }
@@ -460,7 +461,7 @@ public class OrderConfirmationService {
     }
 
     private void validateEditOverrides(UUID orderId, ConfirmationCommand request, List<ResolvedLine> resolved,
-                                       Map<String, Object> lifecycle, Map<String, Object> customer) {
+                                       Map<String, Object> lifecycle, UUID customerId) {
         boolean prices = PermissionAccess.allows("ORDER_PRICE_OVERRIDE");
         boolean discounts = PermissionAccess.allows("ORDER_DISCOUNT");
         boolean lists = PermissionAccess.allows("ORDER_PRICE_LIST_CHANGE");
@@ -469,7 +470,9 @@ public class OrderConfirmationService {
             "select oi.product_id, coalesce(oi.price_list_id, pl.id) as price_list_id, oi.unit_price, oi.line_discount_percent "
                 + "from orders.order_items oi left join catalog.price_lists pl on pl.code = oi.price_list_code where oi.order_id = ?", orderId);
         if (!lists) {
-            UUID selectedList = request.priceListId() != null ? request.priceListId() : uuidOrNull(customer.get("price_list_id"));
+            // The recipient's assigned list, as in the original order.
+            UUID selectedList = request.priceListId() != null ? request.priceListId() : jdbc.queryForObject(
+                "select price_list_id from customer.customers where id = ?", UUID.class, customerId);
             if (selectedList == null) selectedList = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL' and status = 'ACTIVE'", UUID.class);
             UUID targetList = selectedList;
             if (snapshots.stream().anyMatch(row -> !targetList.equals(uuidOrNull(row.get("price_list_id")))))

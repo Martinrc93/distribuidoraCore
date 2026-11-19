@@ -2,7 +2,7 @@ package com.distribuidora.customer;
 
 import com.distribuidora.customer.api.AccountPaymentController;
 import com.distribuidora.customer.api.AccountPaymentDtos;
-import com.distribuidora.customer.application.AccountPaymentService;
+import com.distribuidora.payment.application.AccountPaymentService;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.prepost.PreAuthorize;

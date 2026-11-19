@@ -4,7 +4,7 @@ import com.distribuidora.catalog.application.BrandService;
 import com.distribuidora.config.SecurityConfig;
 import com.distribuidora.customer.api.AccountPaymentController;
 import com.distribuidora.customer.api.AccountPaymentDtos;
-import com.distribuidora.customer.application.AccountPaymentService;
+import com.distribuidora.payment.application.AccountPaymentService;
 import com.distribuidora.document.api.DocumentController;
 import com.distribuidora.document.application.SaleDocumentService;
 import com.distribuidora.document.rendering.OpenPdfA4Renderer;
