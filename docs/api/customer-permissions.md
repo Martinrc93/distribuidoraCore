@@ -79,3 +79,33 @@ La interfaz consulta el catálogo existente en Roles y permisos. Cada acción de
 Clientes se muestra por su propio permiso; ficha, edición, lista, cobro y
 documentos no dependen entre sí. El filtro global de vendedores y su catálogo
 siguen reservados a ADMIN_ALL.
+
+## Revendedores (Fase 9.2)
+
+V52 agrega `kind` (`REGULAR` o `RESELLER`) y `reseller_id` a los clientes y el
+permiso `RESELLER_MANAGE`, otorgado a ADMIN y reservado a ese rol. Los endpoints
+exigen `ADMIN_ALL` y `RESELLER_MANAGE`; sin ellos devuelven `403`.
+
+| Operación | Contrato | Comportamiento |
+|---|---|---|
+| Marcar o quitar la marca | `PATCH /api/customers/{id}/kind` con `{ "kind": "RESELLER" \| "REGULAR" }` | `204`. Repetir el valor actual no cambia nada. |
+| Asociar o desasociar | `PATCH /api/customers/{id}/reseller` con `{ "resellerId": "uuid" \| null }` | Devuelve `customerId`, `resellerId` y `pendingOrdersKept`. |
+| Preparar la asignación | `GET /api/customers/{id}/reseller-assignment` | `kind`, revendedor actual, `associatedCustomersCount` y hasta 20 pedidos sin entregar con su cuenta, más `pendingOrdersCount`. |
+
+Reglas, también impuestas por restricciones de base de datos:
+
+- Un cliente tiene como máximo un revendedor, que debe ser un cliente `RESELLER`
+  activo. Un revendedor no tiene revendedor y un cliente no es su propio revendedor.
+- Un cliente asociado no puede marcarse como revendedor, y un revendedor con
+  clientes asociados conserva la marca.
+- Los conflictos devuelven `409` con `code: RESELLER_CONFLICT` y un `detail`
+  legible; un ID inexistente devuelve `404` y un ID inválido, `400`.
+- Asociar o quitar un revendedor solo afecta pedidos nuevos: los confirmados y
+  la deuda existente conservan la cuenta que los debe (`sale.sales.account_customer_id`).
+  La auditoría registra `CUSTOMER_RESELLER_MARK` y `CUSTOMER_RESELLER_ASSIGN`.
+
+El listado de clientes devuelve `kind`, `resellerId` y `reseller` (nombre) y
+acepta los filtros `kind` y `resellerId`, aplicados antes de contar y paginar.
+La ficha agrega esos campos y `associatedCustomersCount`. Los cobros de cuentas
+de revendedor quedan reservados a `ADMIN_ALL`; ver
+[pagos de cuenta corriente](account-payments.md).

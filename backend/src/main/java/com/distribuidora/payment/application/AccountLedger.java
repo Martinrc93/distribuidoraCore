@@ -1,6 +1,7 @@
 package com.distribuidora.payment.application;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -29,6 +30,15 @@ public final class AccountLedger {
     /** Locks the account row that owes the debt and returns its id and persisted balance. */
     public Map<String, Object> lockAccount(UUID accountId) {
         return jdbc.queryForMap("select id, balance from customer.customers where id = ? for update", accountId);
+    }
+
+    /** Collections on a reseller account are registered by an administrator only. */
+    public void requireCollectionAllowed(UUID accountId, boolean administrator) {
+        if (administrator) return;
+        String kind = jdbc.queryForObject("select kind from customer.customers where id = ?", String.class, accountId);
+        if ("RESELLER".equals(kind)) {
+            throw new AccessDeniedException("Los cobros de cuentas de revendedor los registra un administrador");
+        }
     }
 
     /** Net ledger balance of one sale: debits minus credits. */

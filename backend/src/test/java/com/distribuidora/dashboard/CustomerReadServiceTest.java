@@ -56,6 +56,8 @@ class CustomerReadServiceTest {
         jdbc.update("insert into customer.customers (id, business_name, seller_id, balance, status) values (?, 'Almacén Norte', ?, 0, 'ACTIVE')", otherCustomer, otherSeller);
         service = new CustomerReadService(jdbc, new CurrentUserAccess(jdbc));
         jdbc.execute("alter table customer.customers add customer_number integer default 1");
+        jdbc.execute("alter table customer.customers add kind varchar default 'REGULAR'");
+        jdbc.execute("alter table customer.customers add reseller_id uuid");
         authenticate(userId, "ADMIN_ALL");
     }
 

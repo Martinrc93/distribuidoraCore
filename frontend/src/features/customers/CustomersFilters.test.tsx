@@ -28,7 +28,7 @@ describe('customer list filters', () => {
       const url = new URL(String(input), 'http://localhost')
       if (url.pathname === '/api/customers/filter-options') return response({ sellers: [{ id: 'seller-1', name: 'Lucía' }, { id: 'seller-2', name: 'Ana' }] })
       if (url.pathname === '/api/customers') {
-        requests.push(url)
+        if (!url.searchParams.has('kind')) requests.push(url)
         return response({ content: [{ id: 'customer-1', name: 'Almacén Norte', seller: 'Lucía', status: 'ACTIVE', balance: 100 }], page: Number(url.searchParams.get('page')), size: 20, totalElements: 21, totalPages: 2 })
       }
       if (url.pathname === '/api/zones') return response([])

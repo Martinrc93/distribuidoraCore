@@ -108,6 +108,88 @@ public class CustomerCommandService {
         audit.recordWithinTransaction(actorId(), "CUSTOMER_PRICE_LIST_ASSIGNMENT", "CUSTOMER", customerId.toString(), "SUCCESS", details);
     }
 
+    /** Result of a reseller assignment: confirmed orders not yet delivered keep the account that owes them. */
+    public record ResellerAssignment(UUID customerId, UUID resellerId, long pendingOrdersKept) { }
+
+    /**
+     * Marks or unmarks a customer as reseller. A customer associated with a reseller cannot become one,
+     * and a reseller keeps the mark while customers are associated with it.
+     */
+    @Transactional
+    public void changeKind(UUID id, String kind) {
+        requireResellerManagement();
+        if (!"RESELLER".equals(kind) && !"REGULAR".equals(kind)) {
+            throw new IllegalArgumentException("kind debe ser RESELLER o REGULAR");
+        }
+        Map<String, Object> customer = jdbc.queryForMap(
+            "select kind, reseller_id from customer.customers where id = ? for update", id);
+        if (kind.equals(customer.get("kind"))) return;
+        if ("RESELLER".equals(kind) && customer.get("reseller_id") != null) {
+            throw new ResellerConflictException("Un cliente asociado a un revendedor no puede ser revendedor.");
+        }
+        if ("REGULAR".equals(kind) && exists("select exists(select 1 from customer.customers where reseller_id = ?)", id)) {
+            throw new ResellerConflictException("El revendedor tiene clientes asociados. Reasignalos antes de quitar la marca.");
+        }
+        jdbc.update("update customer.customers set kind = ? where id = ?", kind, id);
+        audit.recordWithinTransaction(actorId(), "CUSTOMER_RESELLER_MARK", "CUSTOMER", id.toString(), "SUCCESS",
+            Map.of("kind", kind));
+    }
+
+    /**
+     * Associates a customer with a reseller, or removes the association with {@code null}. Only new orders
+     * change their account: confirmed orders, their debt and the customer's own debt keep their account.
+     */
+    @Transactional
+    public ResellerAssignment assignReseller(UUID id, UUID resellerId) {
+        requireResellerManagement();
+        if (id != null && id.equals(resellerId)) {
+            throw new IllegalArgumentException("Un cliente no puede ser su propio revendedor");
+        }
+        // Lock order: the customer, then the reseller (the same order confirmations follow).
+        Map<String, Object> customer = jdbc.queryForMap(
+            "select kind, reseller_id from customer.customers where id = ? for update", id);
+        if ("RESELLER".equals(customer.get("kind"))) {
+            throw new ResellerConflictException("Un revendedor no puede tener revendedor.");
+        }
+        UUID previous = (UUID) customer.get("reseller_id");
+        if (java.util.Objects.equals(previous, resellerId)) {
+            return new ResellerAssignment(id, resellerId, pendingOrders(id));
+        }
+        if (resellerId != null) {
+            Map<String, Object> reseller = jdbc.queryForMap(
+                "select kind, status from customer.customers where id = ? for share", resellerId);
+            if (!"RESELLER".equals(reseller.get("kind"))) {
+                throw new ResellerConflictException("El cliente elegido no es revendedor.");
+            }
+            if (!"ACTIVE".equals(reseller.get("status"))) {
+                throw new ResellerConflictException("El revendedor elegido no está activo.");
+            }
+        }
+        jdbc.update("update customer.customers set reseller_id = ?, reseller_kind = ? where id = ?",
+            resellerId, resellerId == null ? null : "RESELLER", id);
+        long kept = pendingOrders(id);
+        Map<String, Object> details = new HashMap<>();
+        details.put("previousResellerId", previous == null ? null : previous.toString());
+        details.put("resellerId", resellerId == null ? null : resellerId.toString());
+        details.put("pendingOrdersKept", kept);
+        audit.recordWithinTransaction(actorId(), "CUSTOMER_RESELLER_ASSIGN", "CUSTOMER", id.toString(), "SUCCESS", details);
+        return new ResellerAssignment(id, resellerId, kept);
+    }
+
+    private long pendingOrders(UUID customerId) {
+        Long count = jdbc.queryForObject(
+            "select count(*) from orders.orders where customer_id = ? and status = 'CONFIRMED'", Long.class, customerId);
+        return count == null ? 0 : count;
+    }
+
+    // Reserved to administrators, like other global operations: both ADMIN_ALL and the explicit permission.
+    private void requireResellerManagement() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean granted = access.isAdmin() && authentication != null && authentication.getAuthorities().stream()
+            .anyMatch(authority -> "RESELLER_MANAGE".equals(authority.getAuthority()));
+        if (!granted) throw new org.springframework.security.access.AccessDeniedException("Se requiere el permiso RESELLER_MANAGE");
+    }
+
     private Map<String, Object> lock(UUID customerId) {
         Map<String, Object> row = jdbc.queryForMap("select seller_id, price_list_id from customer.customers where id = ? for update", customerId);
         access.requireCustomerAccess(customerId);

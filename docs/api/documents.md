@@ -45,3 +45,7 @@ descarga, con el componente compartido `DocumentActions`.
 Requiere `REPORTS_VIEW` o `ADMIN_ALL`. El PDF A4 incluye el total y todo el
 detalle por pedido y producto del período autorizado. Usa el mismo alcance,
 fechas e importes que el [reporte de compras del cliente](customer-purchases.md).
+
+Desde la Fase 9.2, el estado de deuda de un revendedor incluye todas las ventas a
+cargo de su cuenta y agrega la columna «Cliente» (cliente que recibió cada pedido);
+el ticket la muestra como línea «Cliente …».

@@ -412,6 +412,49 @@ La ruta de ficha exige CUSTOMER_VIEW o ADMIN_ALL; sin permiso redirige a Pedidos
 sin consultarla. El historial también filtra pedidos ajenos. Los selectores de cliente para pedidos y
 pagos mantienen sus opciones autorizadas y el acceso al último pedido.
 
+### Revendedores
+
+Fase 9.2. Un revendedor es un cliente cuya cuenta corriente debe los pedidos de
+sus clientes asociados; el pedido sigue a nombre del cliente que lo recibe. Lo
+gestiona la administración: las acciones requieren `ADMIN_ALL` y
+`RESELLER_MANAGE`.
+
+- **Listado de Clientes.** El nombre del revendedor lleva un `Badge` «Revendedor»
+  (tono `soft`). Un cliente asociado agrega debajo del nombre el texto secundario
+  «Cuenta: {revendedor}» (`11px`, `text-muted`), como el número de cliente. El
+  filtro «Buscar por revendedor» es un `CustomerSelect` en modo `filter` con
+  `emptyLabel` «Todos los revendedores», visible para administradores y con
+  opciones cargadas por todas las páginas (`kind=RESELLER`). «Registrar pago» no
+  aparece en filas de revendedor sin `ADMIN_ALL`.
+- **Acción «Revendedor».** Una sola acción de fila (`Button variant="link"`, nombre
+  accesible «Revendedor de {cliente}») abre `CustomerResellerDialog`: un `FormModal`
+  compacto con un `fieldset` «Tipo de cliente» (radios Cliente/Revendedor de `44px`
+  de alto) y, para clientes, `CustomerSelect` en modo `selection` con `emptyLabel`
+  «Sin revendedor (cuenta propia)». Guarda un cambio por vez. Los radios se
+  deshabilitan con su explicación asociada cuando la regla no lo permite (un
+  cliente con revendedor no puede ser revendedor; un revendedor con clientes
+  asociados conserva la marca). Al cambiar el revendedor, un `.warning-text` lista
+  los pedidos sin entregar que conservan su cuenta. Escape y Cancelar usan
+  `useDiscardChanges`; un `409` muestra el detalle de la API dentro del diálogo.
+  Se usa una única acción para no ensanchar la fila: la tabla de administradores
+  ya desplaza dentro de `.table-wrap` en escritorio.
+- **Ficha.** El revendedor muestra el `Badge` junto al estado, «Tipo de cliente»
+  con la cantidad de clientes asociados, el panel «Clientes asociados» (`DataTable`
+  con paginación propia `clientsPage`) y la acción «Ver deuda de la cuenta», que
+  abre Ventas filtradas por cuenta. El cliente asociado muestra «Revendedor» en
+  `dl.customer-detail-fields` y la `StatCard` aclara que su saldo es la deuda propia.
+- **Pedidos.** Al elegir un cliente asociado, un `.helper-text` indica «Cuenta:
+  {revendedor}». Para administradores, `.order-account` muestra el saldo de la
+  cuenta del revendedor y explica que el remito no incluye saldo anterior; sin
+  `ADMIN_ALL` se reemplaza el cobro al confirmar por el aviso «Los cobros de cuentas
+  de revendedor los registra un administrador.». El detalle del pedido agrega
+  «Titular de la deuda» al panel de cuenta corriente.
+- **Ventas y Pagos.** Las filas de Ventas muestran «Cuenta: {revendedor}» bajo el
+  cliente cuando difieren; con `accountCustomerId` en la URL, un `.helper-text`
+  con `role="status"` identifica la cuenta y ofrece «Quitar filtro de cuenta». El
+  detalle de una venta de revendedor reemplaza el formulario de devolución por
+  un texto. En Pagos, cada deuda de la cuenta nombra al cliente final.
+
 ### Compras (pedidos a proveedores)
 
 «Compras» (antes «Pedidos a proveedores») aparece entre Ventas y Clientes, solo para `ADMIN_ALL`; la ruta `/supplier-orders` no cambió.
@@ -933,7 +976,9 @@ vendedores siguen usando un input: buscan texto, no seleccionan una entidad.
   reintentar sin ofrecer un conjunto incompleto como si estuviera completo.
 
 Aplicado a ventas, filtro y formulario de clientes, creación de pedidos, pagos
-y reasignación de clientes/pedidos. Las reglas de negocio (vendedores activos de
+y reasignación de clientes/pedidos. Los revendedores son clientes: su filtro
+(«Buscar por revendedor») y su selección en «Revendedor» usan `CustomerSelect`
+con esos `label`/`emptyLabel` ([Revendedores](#revendedores)). Las reglas de negocio (vendedores activos de
 destino, vendedor heredado del cliente y selección obligatoria en pedidos/pagos) pertenecen a cada
 pantalla; la interacción de búsqueda y selección es siempre la misma.
 
@@ -1202,6 +1247,9 @@ transferencia. Al elegir «No entregado», limpia los pagos y la deuda seleccion
 y exige una observación; «Entregado» no muestra observación. Contiene el foco, bloquea
 el fondo y su scroll, enfoca el resultado al abrir y restaura el foco al cerrar.
 Escape y todas las acciones/campos quedan bloqueados durante el guardado.
+La prop opcional `collectionsNotice` reemplaza la sección de pago de una entrega
+por ese texto (`.delivery-attempt-empty`) cuando el usuario no puede cobrar; hoy
+la usa `resellerCollectionsNotice` para pedidos de revendedor sin `ADMIN_ALL`.
 Tab y Shift+Tab recorren circularmente los controles habilitados del diálogo.
 Los errores permanecen dentro del cuerpo sin perder los datos. Hasta `760px`,
 usa márgenes de `14px` y padding reducido. Su cuerpo desplaza sin ocultar el pie.

@@ -68,3 +68,7 @@ empty states and document widths from 320px are covered by frontend tests.
 
 Historical margin and overdue debt require cost-at-sale snapshots and payment
 due dates respectively; neither is calculated from missing data.
+
+Los revendedores aparecen como deudores con el saldo de su cuenta, que incluye los
+pedidos de sus clientes. «Ver deuda» abre Ventas con `accountCustomerId`, que filtra
+por la cuenta que debe cada venta (Fase 9.2).

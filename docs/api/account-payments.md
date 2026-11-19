@@ -126,3 +126,12 @@ verifica 320, 640 y 1280 px, teclado, restauración del foco, estado pendiente y
 actualización del listado filtrado.
 
 Los tests PostgreSQL cubren imputación FIFO, asignación específica, límites por deuda, referencia de transferencia y concurrencia sin doble cobro. También verifican aislamiento entre vendedores con ventas del mismo cliente, saldos restringidos, pagos combinados con ACCOUNT_SETTLE sin CUSTOMER_VIEW ni SALE_PAYMENT y autorización por API. La matriz de permisos se documenta en [Clientes y cuentas](customer-permissions.md).
+
+## Cuentas de revendedor (Fase 9.2)
+
+Los pagos individuales, FIFO, por venta y las liquidaciones sobre la cuenta de un
+cliente `RESELLER` requieren `ADMIN_ALL`; otros usuarios reciben `403` aunque
+tengan `SALE_PAYMENT` o `ACCOUNT_SETTLE` y el cliente esté asignado. FIFO recorre
+todas las ventas abiertas de la cuenta, de cualquiera de sus clientes, por fecha
+de venta y UUID. `GET /api/customers/{customerId}/debts` agrega `customerId` y
+`customer` (cliente que recibió cada pedido).

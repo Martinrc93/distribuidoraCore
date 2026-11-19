@@ -38,6 +38,12 @@ public class CustomerDetailController {
     @PreAuthorize("hasAnyAuthority('CUSTOMER_CREATE', 'CUSTOMER_EDIT', 'ADMIN_ALL')")
     public Map<String, Object> assignmentContext() { return queries.assignmentContext(); }
 
+    @GetMapping("/{customerId}/reseller-assignment")
+    @PreAuthorize("hasAuthority('ADMIN_ALL') and hasAuthority('RESELLER_MANAGE')")
+    public Map<String, Object> resellerAssignment(@PathVariable UUID customerId) {
+        return queries.resellerAssignment(customerId);
+    }
+
     @GetMapping("/{customerId}/account-balance")
     @PreAuthorize("hasAnyAuthority('ACCOUNT_SETTLE', 'SALE_PAYMENT', 'ADMIN_ALL')")
     public Map<String, Object> accountBalance(@PathVariable UUID customerId) { return queries.accountBalance(customerId); }

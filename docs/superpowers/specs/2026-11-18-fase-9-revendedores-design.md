@@ -2,9 +2,9 @@
 
 Fecha: 2026-11-18. Rama: `support` (HEAD `7a413eb`).
 
-Estado: **reglas de negocio respondidas el 2026-11-18. Etapa 9.1 implementada
-(V51); 9.2 y 9.3 pendientes, con los supuestos S1–S7 por confirmar.** ADR
-asociado: [ADR-010](../../adr/ADR-010-reseller-debt-holder.md) (aceptado).
+Estado: **reglas de negocio respondidas el 2026-11-18 y supuestos S1–S6
+confirmados. Etapas 9.1 (V51) y 9.2 (V52) implementadas; 9.3 pendiente de S7.**
+ADR asociado: [ADR-010](../../adr/ADR-010-reseller-debt-holder.md) (aceptado).
 
 ## Objetivo
 
@@ -132,9 +132,10 @@ Clientes imputa solo por FIFO.
 | P8 | Comisiones | Sí, si se configura antes. | Un plan puede asignarse a un revendedor. Devenga al entregar solo si estaba asignado en ese momento, sin efecto retroactivo (S7). |
 | P9 | Arranque | No hay datos para cargar. | Sin carga inicial ni migración de saldos. |
 
-### Supuestos a confirmar
+### Supuestos
 
-Completan respuestas parciales. Ninguno afecta a la etapa 9.1.
+Completan respuestas parciales. S1–S6 se confirmaron el 2026-11-18 y están
+implementados en 9.2; S7 sigue pendiente para 9.3.
 
 - **S1. Operación administrativa (P2).** Marcar, asociar y cobrar en cuentas de
   revendedor exigen `ADMIN_ALL`, incluidos los pagos al confirmar y al entregar.
@@ -190,24 +191,18 @@ funcional:
 - Índice parcial `(account_customer_id, created_at, id)` de ventas abiertas para
   FIFO, saldos y estados de cuenta.
 
-Etapa 9.2 (`V52`):
+Etapa 9.2, implementada en `V52__add_resellers.sql`:
 
-```sql
-ALTER TABLE customer.customers
-    ADD COLUMN kind VARCHAR(20) NOT NULL DEFAULT 'REGULAR',
-    ADD COLUMN reseller_id UUID,
-    ADD COLUMN reseller_kind VARCHAR(20),
-    ADD CONSTRAINT ck_customer_kind CHECK (kind IN ('REGULAR', 'RESELLER')),
-    ADD CONSTRAINT ux_customers_id_kind UNIQUE (id, kind),
-    ADD CONSTRAINT ck_customer_reseller_kind CHECK (
-        (reseller_id IS NULL AND reseller_kind IS NULL)
-        OR (reseller_id IS NOT NULL AND reseller_kind = 'RESELLER')),
-    ADD CONSTRAINT fk_customer_reseller FOREIGN KEY (reseller_id, reseller_kind)
-        REFERENCES customer.customers (id, kind),
-    ADD CONSTRAINT ck_customer_reseller_not_self CHECK (reseller_id <> id),
-    ADD CONSTRAINT ck_reseller_without_reseller CHECK (kind <> 'RESELLER' OR reseller_id IS NULL);
--- Permiso RESELLER_MANAGE en el catálogo, otorgado a ADMIN y reservado.
-```
+- `customers.kind` (`REGULAR` o `RESELLER`), `reseller_id` y `reseller_kind`.
+- FK compuesta `(reseller_id, reseller_kind) → customers (id, kind)`: solo se
+  referencia a revendedores y la marca no puede quitarse mientras tengan clientes.
+- `ck_customer_reseller_kind` exige `reseller_kind = 'RESELLER'` exactamente cuando
+  hay `reseller_id`. Se escribe sin resultados NULL: con la forma
+  `(... AND ...) OR (... AND kind = 'RESELLER')`, un `reseller_kind` nulo daba
+  NULL, el CHECK lo aceptaba y la FK compuesta no se verificaba. La prueba de
+  migración detectó ese hueco antes de publicar.
+- Un cliente no es su propio revendedor y un revendedor no tiene revendedor.
+- Permiso `RESELLER_MANAGE`, otorgado a ADMIN y reservado a ese rol.
 
 Etapa 9.3 (`V53`), comisiones de revendedores:
 
@@ -297,21 +292,26 @@ Comisiones (etapa 9.3):
 
 `pricing` no cambia.
 
-### API (borrador)
+### API
+
+Contrato vigente de 9.2 en [Clientes y cuentas](../../api/customer-permissions.md#revendedores-fase-92),
+[pagos](../../api/account-payments.md), [confirmación](../../api/order-confirmation.md)
+y [proyecciones](../../api/read-projections.md). Resumen:
 
 - `PATCH /api/customers/{id}/kind` con `{ "kind": "RESELLER" | "REGULAR" }`.
-  `409` si el cliente tiene revendedor o, al quitar la marca, clientes asociados
-  o plan de comisión.
+  `409 RESELLER_CONFLICT` si el cliente tiene revendedor o, al quitar la marca,
+  clientes asociados (en 9.3, también plan de comisión).
 - `PATCH /api/customers/{id}/reseller` con `{ "resellerId": "uuid" | null }`.
-  `409` si el destino no es un revendedor activo, es el mismo cliente o el
-  cliente es revendedor. La respuesta informa los pedidos pendientes que siguen
-  en la cuenta anterior.
-- Lecturas de clientes: `kind`, `resellerId` y `resellerName`; filtros `kind` y
+  `409` si el destino no es un revendedor activo o el cliente es revendedor; `400`
+  si es el mismo cliente. Devuelve `pendingOrdersKept`.
+- `GET /api/customers/{id}/reseller-assignment`: tipo, revendedor actual, clientes
+  asociados y pedidos sin entregar que conservan su cuenta.
+- Lecturas de clientes: `kind`, `resellerId` y `reseller`; filtros `kind` y
   `resellerId` aplicados antes de contar y paginar.
-- Deudas, estado de cuenta y ventas: `accountCustomerId` y destinatario por
-  línea. `GET /api/sales?accountCustomerId=` para «Ver deuda».
-- Detalle del pedido: `accountCustomerId`, `accountCustomer` y `accountBalance`
-  reemplazan a `customerBalance` en la cuenta corriente.
+- Deudas, estado de cuenta y ventas: destinatario por línea; `GET /api/sales`
+  acepta `accountCustomerId` para «Ver deuda».
+- Detalle del pedido: `accountCustomerId`, `accountCustomer` y `accountKind`;
+  `customerBalance` es el saldo de esa cuenta.
 - Pagos y cobros sobre cuentas de revendedor sin `ADMIN_ALL`: `403`.
 - `POST /api/sales/{saleId}/returns` sobre una venta de revendedor: `409`.
 - Comisiones (9.3): asignación `GET`/`PUT /api/settings/commission-plans/reseller-assignments/{customerId}`
@@ -321,27 +321,29 @@ Comisiones (etapa 9.3):
 ### Interfaz
 
 Aplica la [guía de UI](../../development/ui-style-guide.md): ficha del cliente,
-`FormModal`, `ConfirmationDialog`, `DataTable` y el patrón obligatorio de
-`CustomerSelect`. Los revendedores son clientes, así que su selector es
-`CustomerSelect`.
+`FormModal`, `DataTable` y el patrón obligatorio de `CustomerSelect`. Los
+revendedores son clientes, así que su selector es `CustomerSelect`. Lo
+implementado se documenta en la sección «Revendedores» de la guía.
 
 - Clientes: `Badge` «Revendedor» junto al nombre y, en clientes asociados, texto
   secundario «Cuenta: {revendedor}». Filtro «Buscar por revendedor» con
   `CustomerSelect` en modo `filter`, con opciones de revendedores cargadas con
   `apiGetAllPages`.
-- Acciones de administración: «Marcar como revendedor» y «Quitar marca» con
-  `ConfirmationDialog` (`primary` y `danger`). «Asignar revendedor» abre un
-  `FormModal` compacto, como «Cambiar lista», con `CustomerSelect` en modo
-  `selection` y `emptyLabel` «Sin revendedor (cuenta propia)». Antes de guardar
-  informa que la deuda existente no cambia de cuenta y lista los pedidos
-  pendientes que siguen en la cuenta anterior.
+- Acción de administración: una sola acción «Revendedor» por fila abre un
+  `FormModal` compacto con el tipo de cliente (radios) y, para clientes,
+  `CustomerSelect` en modo `selection` con `emptyLabel` «Sin revendedor (cuenta
+  propia)». Informa que la deuda existente no cambia de cuenta y lista los
+  pedidos pendientes que siguen en la cuenta anterior. Se descartaron dos
+  acciones con `ConfirmationDialog`: ensanchaban 306 px una tabla que ya
+  desplazaba 235 px a 1280 px; la acción única agrega 96 px.
 - Ficha del revendedor: `StatCard` «Saldo de cuenta corriente», panel «Clientes
-  asociados» (`DataTable` con paginación compartida) y deudas con columnas
-  «Pedido» y «Cliente».
+  asociados» (`DataTable` con paginación propia) y acción «Ver deuda de la cuenta»,
+  que abre Ventas filtradas por cuenta con el cliente de cada venta.
 - Ficha del cliente asociado: campo «Revendedor» en `dl.customer-detail-fields`
   y aviso de que sus pedidos nuevos se cargan a esa cuenta. Su saldo es solo la
   deuda propia.
-- Nuevo pedido: `output.read-only-field` «Cuenta: {revendedor}». El recuadro
+- Nuevo pedido: texto de ayuda «Cuenta: {revendedor}» bajo la fila de cliente,
+  vendedor y lista, sin alterar su grilla. El recuadro
   «Cuenta corriente» muestra el saldo de esa cuenta y no ofrece «Importe para el
   remito». Los pagos aparecen solo para administradores.
 - Detalle del pedido y entrega: «Titular de la deuda» y saldo de la cuenta. Sin
@@ -353,9 +355,8 @@ Aplica la [guía de UI](../../development/ui-style-guide.md): ficha del cliente,
 - Comisiones (9.3): asignación y liquidación de revendedores con `CustomerSelect`,
   junto a las de vendedores.
 
-El badge, el filtro por revendedor y el diálogo de asignación se documentan en la
-guía en el mismo cambio. Verificación en 320, 640, 760 y 1050 px, con teclado,
-foco, estados de carga y error, y ambos temas.
+Verificación en 320, 640, 760, 1050 y 1280 px, con teclado, foco, Escape con
+descarte, estados de carga y error, y ambos temas.
 
 ### Documentos
 
@@ -375,7 +376,7 @@ foco, estados de carga y error, y ambos temas.
 | Etapa | Contenido | Tamaño | Depende de |
 |---|---|---|---|
 | 9.1 | **Implementada.** Titular en la venta, FK compuestas, cuenta corriente en `payment` y lecturas por titular. Sin cambio visible. | L | — |
-| 9.2 | Revendedores: marca y asociación, confirmación con titular, cobros solo de administración, sin devoluciones, reasignación, interfaz, estado de cuenta y Dashboard. | L | 9.1, S1–S6 |
+| 9.2 | **Implementada.** Revendedores: marca y asociación, confirmación con titular, cobros solo de administración, sin devoluciones, reasignación, interfaz, estado de cuenta y Dashboard. | L | 9.1, S1–S6 |
 | 9.3 | Comisiones de revendedores: asignación de plan, devengo al entregar y liquidación. | M | 9.2, S7 |
 
 ### Implementación de 9.1 (2026-11-18)
@@ -395,6 +396,25 @@ foco, estados de carga y error, y ambos temas.
 - Verificación: 568 pruebas de backend sin fallos ni omisiones, con PostgreSQL
   16.4 desechable y Flyway hasta V51. Se excluyeron las mismas nueve clases que
   en fases previas (Docker y bases históricas).
+
+### Implementación de 9.2 (2026-11-19)
+
+- `V52__add_resellers.sql` y `ResellerMigrationPostgresTest`: tipo de cliente,
+  asociación exclusiva sin cadenas, FK compuesta y permiso reservado.
+- `customer`: `changeKind` y `assignReseller` con bloqueo, auditoría y
+  `ResellerConflictException` (`409 RESELLER_CONFLICT` con detalle legible).
+- Confirmación: resuelve la cuenta del revendedor y la vuelve a verificar después
+  de numerar; rechaza saldo anterior en el remito y cobros sin `ADMIN_ALL`.
+  `AccountLedger.requireCollectionAllowed` aplica la misma regla en pagos y
+  entregas; las devoluciones de ventas de revendedor responden `409`.
+- Lecturas: clientes con tipo y revendedor, deudas y estado de cuenta con el
+  cliente final, Ventas por cuenta y detalle del pedido con la cuenta.
+- Interfaz: acción y diálogo «Revendedor», filtro por revendedor, ficha con
+  clientes asociados, pedido, entrega, ventas, pagos y Dashboard según la guía.
+- Verificación: 576 pruebas de backend con PostgreSQL 16.4 (dos de integración
+  de revendedores, migraciones V51 y V52); 385 pruebas de frontend, `tsc -b` y
+  build; E2E de revendedores (320, 640, 760, 1050 y 1280 px, ambos temas, Escape)
+  y de Dashboard con Brave.
 
 ### Verificación
 

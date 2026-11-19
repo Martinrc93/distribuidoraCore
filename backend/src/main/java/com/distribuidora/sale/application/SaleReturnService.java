@@ -73,6 +73,13 @@ public class SaleReturnService {
         if (!"DELIVERED".equals(sale.get("sale_status")) || !"DELIVERED".equals(sale.get("order_status"))) {
             throw new IllegalStateException("Solo se pueden devolver ventas entregadas");
         }
+        // Delivered sales charged to a reseller's account cannot be returned (phase 9 rule).
+        String accountKind = jdbc.queryForObject("""
+            select c.kind from sale.sales s join customer.customers c on c.id = s.account_customer_id where s.id = ?
+            """, String.class, saleId);
+        if ("RESELLER".equals(accountKind)) {
+            throw new IllegalStateException("Las ventas a cargo de un revendedor no admiten devoluciones");
+        }
 
         Set<UUID> requestedIds = new HashSet<>();
         for (ReturnItemCommand item : request.items()) {

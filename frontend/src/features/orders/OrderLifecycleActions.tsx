@@ -6,10 +6,10 @@ import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Panel } from '../../shared/components/Panel'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
-import { DeliveryAttemptDialog } from './DeliveryAttemptDialog'
+import { DeliveryAttemptDialog, resellerCollectionsNotice } from './DeliveryAttemptDialog'
 import { useOrderDelivery } from './useOrderDelivery'
 type NotificationStatus = { requestId: string; status: string; attemptCount: number; requestedAt: string; sentAt?: string | null; lastError?: string | null }
-type Props = { orderId: string; orderNumber: string; orderStatus: string; saleBalance: number; previousDebtAvailable?: number; onChanged: () => void }
+type Props = { orderId: string; orderNumber: string; orderStatus: string; saleBalance: number; previousDebtAvailable?: number; accountKind?: string | null; onChanged: () => void }
 
 const statusName: Record<string, string> = { QUEUED: 'En cola', SENDING: 'Enviando', SENT: 'Enviado', FAILED: 'Falló', RETRY_EXHAUSTED: 'Reintentos agotados' }
 const createKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -21,7 +21,7 @@ function apiMessage(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : fallback
 }
 
-export default function OrderLifecycleActions({ orderId, orderNumber, orderStatus, saleBalance, previousDebtAvailable = 0, onChanged }: Props) {
+export default function OrderLifecycleActions({ orderId, orderNumber, orderStatus, saleBalance, previousDebtAvailable = 0, accountKind, onChanged }: Props) {
   const queryClient = useQueryClient()
   const canDeliver = hasAuthority('SALE_DELIVER') || hasAuthority('ADMIN_ALL')
   const canCancel = hasPermission('ORDER_CANCEL')
@@ -137,7 +137,7 @@ export default function OrderLifecycleActions({ orderId, orderNumber, orderStatu
         {canExport && <><DocumentActions path={`/api/orders/${orderId}/documents/a4`} filename={`${orderNumber}-a4.pdf`} printLabel="Imprimir remito A4" downloadLabel="Descargar remito A4" onDone={(message) => { setError(''); setFeedback(message) }} /><DocumentActions path={`/api/orders/${orderId}/documents/ticket`} filename={`${orderNumber}-ticket.pdf`} printLabel="Imprimir ticket 80 mm" downloadLabel="Descargar ticket 80 mm" onDone={(message) => { setError(''); setFeedback(message) }} /></>}{canNotify && <Button variant="secondary" aria-expanded={showNotification} onClick={() => { setShowNotification((value) => !value); setError('') }}>Enviar por email o WhatsApp</Button>}
       </div>
     </Panel>
-    {showDelivery && <DeliveryAttemptDialog orderNumber={orderNumber} saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setShowDelivery(false)} />}
+    {showDelivery && <DeliveryAttemptDialog orderNumber={orderNumber} saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setShowDelivery(false)} collectionsNotice={resellerCollectionsNotice(accountKind)} />}
     {showCancel && <ConfirmationDialog title={`¿Cancelar el pedido ${orderNumber}?`} description="Se cancelará el pedido. Si estaba preparado, se devolverán sus productos al stock." confirmLabel="Confirmar cancelación" pendingLabel="Cancelando..." pending={busy} error={error} onCancel={() => setShowCancel(false)} onConfirm={() => void cancelOrder()} />}
     {showReactivate && <ConfirmationDialog title={`¿Reactivar el pedido ${orderNumber} como confirmado?`} description="Se restaurará el saldo de la venta y quedará pendiente de preparación. El stock se descontará al preparar o entregar." confirmLabel="Confirmar reactivación" pendingLabel="Reactivando..." confirmVariant="primary" pending={busy} error={error} onCancel={() => setShowReactivate(false)} onConfirm={() => void reactivateOrder()} />}
     {showNotification && <Panel title="Enviar comprobante por email o WhatsApp"><form className="form-grid" onSubmit={requestNotification}>

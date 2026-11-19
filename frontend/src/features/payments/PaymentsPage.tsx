@@ -13,8 +13,8 @@ import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 
 type Payment = { id: string; customer: string; sale: string; amount: number; method: string; transferReference?: string | null; date: string }
-type Customer = { id: string; name: string; balance?: number }
-type CustomerDebt = { saleId: string; saleNumber: string; orderNumber: string; status: string; balance: number; createdAt: string }
+type Customer = { id: string; name: string; balance?: number; kind?: string | null }
+type CustomerDebt = { saleId: string; saleNumber: string; orderNumber: string; status: string; balance: number; createdAt: string; customerId?: string; customer?: string }
 type Allocation = { saleId: string; saleNumber: string; paymentId: string; amount: number }
 type PaymentResult = { customerId: string; received: number; balanceBefore: number; balanceAfter: number; allocationMode: 'FIFO' | 'SPECIFIC'; allocations: Allocation[] }
 type Row = Record<string, string>
@@ -50,7 +50,8 @@ export default function PaymentsPage() {
     queryFn: () => apiGetAllPages<CustomerDebt>(`/api/customers/${customerId}/debts?page=0&size=100`),
     enabled: showForm && canPay && Boolean(customerId),
   })
-  const customers = customersQuery.data?.content ?? []
+  // Collections on a reseller account are registered by an administrator only.
+  const customers = (customersQuery.data?.content ?? []).filter(customer => isAdmin || customer.kind !== 'RESELLER')
   const debts = debtsQuery.data?.content ?? []
 
   async function submit(event: FormEvent) {
@@ -112,7 +113,7 @@ export default function PaymentsPage() {
     {showForm && canPay && <Panel title="Registrar pago" description="Elegí una deuda específica o aplicá el importe a las deudas más antiguas (FIFO).">
       {customersQuery.isLoading ? <EmptyState title="Cargando clientes" description="Consultando saldos de cuenta corriente." /> : customersQuery.isError ? <EmptyState title="No se pudieron cargar clientes" description={customersQuery.error.message} /> : <form className="form-grid" onSubmit={submit}>
         <CustomerSelect mode="selection" label="Cliente del pago" options={customers.map((customer) => ({ id: customer.id, name: isAdmin ? `${customer.name} · saldo ${money(customer.balance)}` : customer.name }))} value={customerId} onChange={(value) => { setCustomerId(value); setSaleId('') }} required disabled={saving} />
-        <label className="field"><span>Imputación</span><select className={saleId ? 'select currency-input' : 'select'} value={saleId} onChange={(event) => setSaleId(event.target.value)} disabled={!customerId || debtsQuery.isLoading || debtsQuery.isError}><option value="">FIFO · deuda más antigua</option>{debts.map((debt) => <option className="currency-value" value={debt.saleId} key={debt.saleId}>{debt.saleNumber} · saldo {money(debt.balance)}</option>)}</select></label>
+        <label className="field"><span>Imputación</span><select className={saleId ? 'select currency-input' : 'select'} value={saleId} onChange={(event) => setSaleId(event.target.value)} disabled={!customerId || debtsQuery.isLoading || debtsQuery.isError}><option value="">FIFO · deuda más antigua</option>{debts.map((debt) => <option className="currency-value" value={debt.saleId} key={debt.saleId}>{debt.saleNumber}{debt.customer && debt.customerId !== customerId ? ` · ${debt.customer}` : ''} · saldo {money(debt.balance)}</option>)}</select></label>
         {debtsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar las deudas: {debtsQuery.error.message}</p>}
         {debtsQuery.isLoading && customerId && <p className="helper-text" role="status">Cargando deudas abiertas del cliente…</p>}
         <label className="field"><span>Medio del pago</span><select className="select" value={method} onChange={(event) => setMethod(event.target.value as 'CASH' | 'BANK_TRANSFER')}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>

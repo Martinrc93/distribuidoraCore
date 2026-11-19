@@ -15,10 +15,10 @@ import { OrderDateFilter } from '../orders/OrderDateFilter'
 
 type FilterOption = { id: string; name: string }
 type SaleFilterOptions = { customers: FilterOption[]; sellers: FilterOption[] }
-type Sale = { id: string; number: string; customer: string; total: number; paid: number; balance: number; status: string; date: string }
+type Sale = { id: string; number: string; customer: string; customerId?: string; accountCustomerId?: string; account?: string; total: number; paid: number; balance: number; status: string; date: string }
 type SaleItem = { saleItemId: string; productId: string; productName: string; quantity: number; returnedQuantity: number; returnableQuantity: number }
 type SaleDetail = {
-  order?: { id: string; number: string; customer: string; seller?: string; status: string; total: number; date: string }
+  order?: { id: string; number: string; customer: string; customerId?: string; seller?: string; status: string; total: number; date: string; accountCustomerId?: string; accountCustomer?: string; accountKind?: string | null }
   sale: { id: string; number: string; status: string; total?: number; paid?: number; balance?: number; date?: string }
   payments?: Array<{ id: string; amount: number; method: string; transferReference?: string | null; date: string }>
   saleItems: SaleItem[]
@@ -44,10 +44,12 @@ export default function SalesPage() {
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
   const canReturn = hasPermission('SALE_RETURN')
-  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'customerId', 'sellerId', 'pendingBalance', 'dateMin', 'dateMax'])
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'customerId', 'sellerId', 'pendingBalance', 'dateMin', 'dateMax', 'accountCustomerId'])
   const search = getFilter('search')
   const customerId = getFilter('customerId')
   const sellerId = getFilter('sellerId')
+  // The account that owes the sales: a reseller owes the orders of its customers.
+  const accountCustomerId = getFilter('accountCustomerId')
   const pendingBalance = getFilter('pendingBalance') === 'true'
   const dateMin = getFilter('dateMin')
   const dateMax = getFilter('dateMax')
@@ -61,7 +63,7 @@ export default function SalesPage() {
   const [returnError, setReturnError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [savingReturn, setSavingReturn] = useState(false)
-  const path = `/api/sales?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&customerId=${encodeURIComponent(customerId)}&sellerId=${encodeURIComponent(sellerId)}&pendingBalance=${pendingBalance}&dateMin=${min ?? ''}&dateMax=${max ?? ''}`
+  const path = `/api/sales?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&customerId=${encodeURIComponent(customerId)}&sellerId=${encodeURIComponent(sellerId)}&pendingBalance=${pendingBalance}&dateMin=${min ?? ''}&dateMax=${max ?? ''}${accountCustomerId ? `&accountCustomerId=${encodeURIComponent(accountCustomerId)}` : ''}`
   const query = useQuery({ queryKey: [path], queryFn: () => apiGet<ApiPage<Sale>>(path), enabled: !dateError })
   const optionsQuery = useQuery({ queryKey: ['/api/sales/filter-options'], queryFn: () => apiGet<SaleFilterOptions>('/api/sales/filter-options') })
   const customers = optionsQuery.data?.customers ?? []
@@ -111,6 +113,7 @@ export default function SalesPage() {
     id: sale.id,
     number: sale.number,
     customer: sale.customer,
+    account: sale.accountCustomerId && sale.customerId && sale.accountCustomerId !== sale.customerId ? sale.account ?? '' : '',
     date: formatDate(sale.date),
     total: money(sale.total),
     paid: money(sale.paid),
@@ -119,7 +122,7 @@ export default function SalesPage() {
   }))
   const columns: TableColumn[] = [
     { key: 'number', label: 'Venta', emphasis: true },
-    { key: 'customer', label: 'Cliente' },
+    { key: 'customer', label: 'Cliente', render: (value, row) => <div className="min-w-0"><span>{value}</span>{row.account && <span className="block text-[11px] font-normal text-muted">Cuenta: {row.account}</span>}</div> },
     { key: 'date', label: 'Fecha' },
     { key: 'total', label: 'Total', align: 'right' },
     { key: 'paid', label: 'Cobrado', align: 'right' },
@@ -142,6 +145,7 @@ export default function SalesPage() {
           <OrderDateFilter id="sales-date-max" label="Fecha máx." value={dateMax} isoValue={max ?? ''} onChange={(value) => setFilter('dateMax', value)} invalid={max === null || invalidRange} describedBy={dateError ? 'sales-date-error' : undefined} />
         </div>
       </form>
+      {accountCustomerId && <p className="helper-text" role="status">Ventas a cargo de la cuenta de {query.data?.content[0]?.account ?? 'la cuenta seleccionada'}, de todos sus clientes. <Button variant="link" type="button" onClick={() => setFilter('accountCustomerId', '')}>Quitar filtro de cuenta</Button></p>}
       {optionsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los clientes y vendedores. <Button variant="link" type="button" onClick={() => optionsQuery.refetch()}>Reintentar filtros</Button></p>}
       {dateError ? <p id="sales-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando ventas" description="Consultando ventas registradas." /> : query.isError ? <EmptyState title="No se pudieron cargar las ventas" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay ventas para mostrar" description="No se encontraron ventas con los filtros seleccionados." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} ventas</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
@@ -153,6 +157,7 @@ export default function SalesPage() {
         <dl className="confirmation-result">
           <dt>Pedido</dt><dd>{detailQuery.data.order?.number ?? '—'}</dd>
           <dt>Cliente</dt><dd>{detailQuery.data.order?.customer ?? '—'}</dd>
+          {detailQuery.data.order?.accountCustomerId && detailQuery.data.order.accountCustomerId !== detailQuery.data.order.customerId && <><dt>Cuenta</dt><dd>{detailQuery.data.order.accountCustomer} (revendedor)</dd></>}
           <dt>Vendedor</dt><dd>{detailQuery.data.order?.seller ?? 'Sin asignar'}</dd>
           <dt>Fecha</dt><dd>{detailQuery.data.sale.date ? formatDateTime(detailQuery.data.sale.date) : detailQuery.data.order?.date ? formatDateTime(detailQuery.data.order.date) : '—'}</dd>
           <dt>Total</dt><dd><CurrencyText>{money(detailQuery.data.sale.total ?? detailQuery.data.order?.total)}</CurrencyText></dd>
@@ -179,7 +184,8 @@ export default function SalesPage() {
           { key: 'returned', label: 'Devuelta', align: 'right' },
           { key: 'available', label: 'Disponible', align: 'right' },
         ]} rows={detailQuery.data.saleItems.map((item) => ({ id: item.saleItemId, product: item.productName, sold: String(item.quantity), returned: String(item.returnedQuantity), available: String(item.returnableQuantity) }))} />
-        {canReturn && detailQuery.data.sale.status === 'DELIVERED' && <form className="form-grid" onSubmit={submitReturn}>
+        {canReturn && detailQuery.data.sale.status === 'DELIVERED' && detailQuery.data.order?.accountKind === 'RESELLER' && <p className="helper-text">Las ventas a cargo de un revendedor no admiten devoluciones.</p>}
+        {canReturn && detailQuery.data.sale.status === 'DELIVERED' && detailQuery.data.order?.accountKind !== 'RESELLER' && <form className="form-grid" onSubmit={submitReturn}>
           <label className="field"><span>Motivo de la devolución</span><input className="input" value={returnReason} onChange={(event) => setReturnReason(event.target.value)} maxLength={500} required disabled={savingReturn} /></label>
           {detailQuery.data.saleItems.filter((item) => item.returnableQuantity > 0).map((item) => <label className="field" key={item.saleItemId}><span>Cantidad a devolver · {item.productName} (máx. {item.returnableQuantity})</span><input className="input" type="text" inputMode="decimal" min="0" max={item.returnableQuantity} step="0.5" aria-label={`Cantidad a devolver · ${item.productName}`} value={returnQuantities[item.saleItemId] ?? ''} onChange={(event) => setReturnQuantities((current) => ({ ...current, [item.saleItemId]: event.target.value }))} disabled={savingReturn} /></label>)}
           <p className="helper-text">La devolución reincorpora unidades al stock del depósito original. El comando actual no realiza reintegros ni acredita la cuenta corriente.</p>

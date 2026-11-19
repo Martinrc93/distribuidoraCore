@@ -23,7 +23,7 @@ import java.util.UUID;
 @Service
 public class RoleAdminService {
     private static final Set<String> ADMIN_ONLY_PERMISSIONS = Set.of(
-        "ADMIN_ALL", "USER_MANAGE", "ORDER_REVIEW", "STOCK_ADJUST", "STOCK_SHRINKAGE");
+        "ADMIN_ALL", "USER_MANAGE", "ORDER_REVIEW", "STOCK_ADJUST", "STOCK_SHRINKAGE", "RESELLER_MANAGE");
 
     public record RoleView(UUID id, String code, String description, List<String> permissions,
                            List<String> requiredPermissions, boolean assignedToCurrentUser) {
@@ -143,7 +143,7 @@ public class RoleAdminService {
         }
         if (!"ADMIN".equals(normalizedRole)
             && requested.stream().anyMatch(ADMIN_ONLY_PERMISSIONS::contains)) {
-            throw new IllegalArgumentException("ADMIN_ALL, USER_MANAGE y ORDER_REVIEW solo se pueden asignar al rol ADMIN");
+            throw new IllegalArgumentException("Los permisos reservados a administradores solo se pueden asignar al rol ADMIN");
         }
 
         List<String> current = jdbc.queryForList("""

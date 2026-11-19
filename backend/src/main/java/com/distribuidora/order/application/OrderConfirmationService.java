@@ -146,14 +146,28 @@ public class OrderConfirmationService {
         UUID customerId = request.customerId();
         if (currentUser != null) currentUser.requireCustomerAccess(customerId);
         Map<String, Object> customer = jdbc.queryForMap(
-            "select id, status, seller_id, balance, price_list_id from customer.customers where id = ?", customerId);
+            "select id, status, seller_id, balance, price_list_id, kind, reseller_id from customer.customers where id = ?", customerId);
         if (!"ACTIVE".equals(customer.get("status"))) {
             throw new IllegalStateException("El cliente no está activo");
         }
         validatePriceList(request, customer);
-        // The account that owes the sale. The recipient owes its own orders until resellers are introduced.
-        UUID accountId = customerId;
-        Map<String, Object> account = customer;
+        // The account that owes the sale: the customer's reseller, or the customer itself.
+        UUID resellerId = uuidOrNull(customer.get("reseller_id"));
+        UUID accountId = resellerId == null ? customerId : resellerId;
+        Map<String, Object> account = resellerId == null ? customer
+            : jdbc.queryForMap("select id, status, balance, kind from customer.customers where id = ?", resellerId);
+        if (!"ACTIVE".equals(account.get("status"))) {
+            throw new IllegalStateException("La cuenta del revendedor no está activa");
+        }
+        boolean collects = monetaryPaid(request.payments()).signum() > 0
+            || (request.previousDebtPayments() != null && !request.previousDebtPayments().isEmpty());
+        if (collects && "RESELLER".equals(account.get("kind")) && !hasAuthority("ADMIN_ALL")) {
+            throw new AccessDeniedException("Los cobros de cuentas de revendedor los registra un administrador");
+        }
+        // The delivery note goes to the customer, who owes nothing to the distributor for a reseller's order.
+        if (resellerId != null && previousBalanceAmount(request).signum() > 0) {
+            throw new IllegalArgumentException("El saldo anterior del remito no está disponible para pedidos a cuenta de un revendedor");
+        }
         BigDecimal previousDebtPaid = payPreviousDebts(accountId, request.previousDebtPayments());
         // Paying older debts lowers the balance this order starts from (credit limit and previous balance checks).
         BigDecimal balanceBeforeOrder = previousDebtPaid.signum() > 0
@@ -197,6 +211,11 @@ public class OrderConfirmationService {
         UUID orderId = UUID.randomUUID();
         UUID saleId = UUID.randomUUID();
         String orderNumber = jdbc.queryForObject("select orders.next_customer_order_number(?)", String.class, customerId);
+        // Numbering locks the customer row, so a reseller change cannot slip in between this check and the sale.
+        if (!Objects.equals(resellerId, jdbc.queryForObject(
+                "select reseller_id from customer.customers where id = ?", UUID.class, customerId))) {
+            throw new IllegalStateException("El revendedor del cliente cambió. Volvé a confirmar el pedido");
+        }
         Timestamp now = Timestamp.from(Instant.now());
         var businessNow = now.toInstant().atZone(ZoneId.of("America/Argentina/Buenos_Aires"));
         Timestamp registeredAt = request.orderDate() == null ? now : Timestamp.from(
@@ -234,6 +253,7 @@ public class OrderConfirmationService {
         auditDetails.put("balance", response.balance());
         auditDetails.put("previousBalanceAmount", previousBalanceAmount);
         if (previousDebtPaid.signum() > 0) auditDetails.put("previousDebtPaid", previousDebtPaid);
+        if (resellerId != null) auditDetails.put("accountCustomerId", accountId.toString());
         auditDetails.put("orderDate", registeredAt.toInstant().atZone(businessNow.getZone()).toLocalDate().toString());
         auditDetails.put("creditLimit", creditLimit);
         auditDetails.put("projectedBalance", projectedBalance);
@@ -280,6 +300,9 @@ public class OrderConfirmationService {
         validateScale(previousBalance, "previousBalanceAmount");
         if (previousBalance.signum() < 0) {
             throw new IllegalArgumentException("El importe del saldo anterior no puede ser negativo");
+        }
+        if (!accountId.equals(customerId) && previousBalance.signum() > 0) {
+            throw new IllegalArgumentException("El saldo anterior del remito no está disponible para pedidos a cuenta de un revendedor");
         }
         if (previousBalance.compareTo(decimal(lifecycle.get("previous_balance_amount"))) != 0
             && previousBalance.compareTo(decimal(account.get("balance")).max(ZERO)) > 0) {

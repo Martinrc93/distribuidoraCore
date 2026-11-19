@@ -29,19 +29,23 @@ class SalesFiltersControllerTest {
         UUID sellerId = UUID.randomUUID();
         LocalDate min = LocalDate.of(2026, 9, 1);
         LocalDate max = LocalDate.of(2026, 9, 30);
-        when(service.sales(1, 10, "SAL", customerId, sellerId, true, min, max)).thenReturn(PageResponse.of(List.of(), 1, 10, 0));
+        when(service.sales(1, 10, "SAL", customerId, null, sellerId, true, min, max)).thenReturn(PageResponse.of(List.of(), 1, 10, 0));
         mvc.perform(get("/api/sales").param("page", "1").param("size", "10")
             .param("search", "SAL").param("customerId", customerId.toString()).param("sellerId", sellerId.toString())
             .param("dateMin", "2026-09-01").param("dateMax", "2026-09-30")
             .param("pendingBalance", "true")).andExpect(status().isOk());
-        verify(service).sales(1, 10, "SAL", customerId, sellerId, true, min, max);
+        verify(service).sales(1, 10, "SAL", customerId, null, sellerId, true, min, max);
+        UUID accountId = UUID.randomUUID();
+        mvc.perform(get("/api/sales").param("accountCustomerId", accountId.toString()).param("pendingBalance", "true"))
+            .andExpect(status().isOk());
+        verify(service).sales(0, 20, "", null, accountId, null, true, null, null);
     }
 
     @Test
     void defaultsToAllSalesWithoutFilters() throws Exception {
-        when(service.sales(0, 20, "", null, null, false, null, null)).thenReturn(PageResponse.of(List.of(), 0, 20, 0));
+        when(service.sales(0, 20, "", null, null, null, false, null, null)).thenReturn(PageResponse.of(List.of(), 0, 20, 0));
         mvc.perform(get("/api/sales")).andExpect(status().isOk());
-        verify(service).sales(0, 20, "", null, null, false, null, null);
+        verify(service).sales(0, 20, "", null, null, null, false, null, null);
     }
 
     @Test
@@ -57,7 +61,8 @@ class SalesFiltersControllerTest {
         mvc.perform(get("/api/sales").param("dateMin", "2026-09-31")).andExpect(status().isBadRequest());
         LocalDate min = LocalDate.of(2026, 10, 1);
         LocalDate max = LocalDate.of(2026, 9, 30);
-        when(service.sales(0, 20, "", null, null, false, min, max)).thenThrow(new IllegalArgumentException("Rango inválido"));
+        mvc.perform(get("/api/sales").param("accountCustomerId", "Norte")).andExpect(status().isBadRequest());
+        when(service.sales(0, 20, "", null, null, null, false, min, max)).thenThrow(new IllegalArgumentException("Rango inválido"));
         mvc.perform(get("/api/sales").param("dateMin", "2026-10-01").param("dateMax", "2026-09-30"))
             .andExpect(status().isBadRequest());
     }

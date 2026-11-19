@@ -10,13 +10,14 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import { SellerSelect } from '../../shared/components/EntitySelect'
+import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySelect'
 import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import type { Customer } from './customerTypes'
 import { AccountSettlementDialog } from './AccountSettlementDialog'
 import { CustomerPriceListDialog } from './CustomerPriceListDialog'
+import { CustomerResellerDialog } from './CustomerResellerDialog'
 import { FormModal } from '../../shared/components/FormModal'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 import { DocumentActions } from '../../shared/components/DocumentActions'
@@ -170,15 +171,20 @@ export default function CustomersPage() {
   const canList = hasPermission('CUSTOMER_PRICE_LIST_CHANGE')
   const canSettle = hasPermission('ACCOUNT_SETTLE')
   const canExport = hasPermission('CUSTOMER_STATEMENT_EXPORT')
+  // Reserved to administrators: marking resellers and associating customers changes who owes new orders.
+  const canManageResellers = isAdmin && hasAuthority('RESELLER_MANAGE')
   const queryClient = useQueryClient()
-  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'sellerId', 'hasBalance', 'status'])
+  const { page, pageSize, getFilter, setFilter, setPage } = useUrlListState(['search', 'sellerId', 'hasBalance', 'status', 'resellerId'])
   const search = getFilter('search')
   const sellerId = getFilter('sellerId')
   const hasBalance = getFilter('hasBalance') === 'true'
   const status = getFilter('status') || 'ACTIVE'
-  const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&sellerId=${encodeURIComponent(sellerId)}&hasBalance=${hasBalance}&status=${encodeURIComponent(status === 'ALL' ? '' : status)}`
+  const resellerFilter = isAdmin ? getFilter('resellerId') : ''
+  const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&sellerId=${encodeURIComponent(sellerId)}&hasBalance=${hasBalance}&status=${encodeURIComponent(status === 'ALL' ? '' : status)}${resellerFilter ? `&resellerId=${encodeURIComponent(resellerFilter)}` : ''}`
   const query = useQuery({ queryKey: [customerPath], queryFn: () => apiGet<ApiPage<Customer>>(customerPath) })
   const optionsQuery = useQuery({ queryKey: ['/api/customers/filter-options'], queryFn: () => apiGet<{ sellers: Array<{ id: string; name: string }> }>('/api/customers/filter-options'), enabled: isAdmin })
+  const resellersPath = '/api/customers?page=0&size=100&kind=RESELLER&status='
+  const resellersQuery = useQuery({ queryKey: [resellersPath], queryFn: () => apiGetAllPages<Customer>(resellersPath), enabled: isAdmin })
   const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const assignmentQuery = useQuery({ queryKey: ['/api/customers/assignment-context'], queryFn: () => apiGet<Seller>('/api/customers/assignment-context'), enabled: !isAdmin && (canCreate || canEdit), retry: false })
   const zonesQuery = useQuery({ queryKey: ['/api/zones'], queryFn: () => apiGet<Zone[]>('/api/zones'), enabled: canCreate || canEdit })
@@ -197,6 +203,7 @@ export default function CustomersPage() {
     }
   }, [statusCustomer, statusFocusId])
   const [listCustomer, setListCustomer] = useState<Customer>()
+  const [resellerCustomer, setResellerCustomer] = useState<Customer>()
   const [settlementCustomer, setSettlementCustomer] = useState<Customer>()
   const [loadingSettlement, setLoadingSettlement] = useState('')
 
@@ -217,6 +224,7 @@ export default function CustomersPage() {
   async function invalidate() {
     await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') || queryKey[0] === '/api/customers/filter-options' })
   }
+
 
   async function changeStatus() {
     if (!statusCustomer || actionSaving) return
@@ -248,15 +256,18 @@ export default function CustomersPage() {
     hasDebt: Number(customer.balance ?? 0) > 0 ? 'true' : '',
     status: customer.status,
     priceListId: customer.priceListId ?? '',
+    kind: customer.kind ?? 'REGULAR',
+    reseller: customer.reseller ?? '',
   }))
   const columns: TableColumn[] = [
-    { key: 'name', label: 'Cliente', emphasis: true, render: (value, row) => <div className="min-w-0"><span>{value}</span>{row.number && <span className="block text-[11px] font-normal text-muted">Cliente {row.number}</span>}</div> },
+    { key: 'name', label: 'Cliente', emphasis: true, render: (value, row) => <div className="min-w-0"><span>{value}</span>{row.kind === 'RESELLER' && <> <Badge>Revendedor</Badge></>}{row.number && <span className="block text-[11px] font-normal text-muted">Cliente {row.number}</span>}{row.reseller && <span className="block text-[11px] font-normal text-muted">Cuenta: {row.reseller}</span>}</div> },
     { key: 'cuitId', label: 'CUIT' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'balance', label: 'Saldo', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
   ]
-  if (canView || canEdit || canStatus || canSettle || canList || canExport) columns.push({ key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions">{canView && <Button variant="secondary" href={`/customers/${row.id}?returnTo=${encodeURIComponent(location.pathname + location.search)}`} aria-label={`Ver cliente ${row.name}`}>Ver cliente</Button>}{canSettle && row.hasDebt && <Button id={`settle-account-${row.id}`} variant="secondary" aria-label={`Registrar pago de ${row.name}`} disabled={Boolean(loadingSettlement)} onClick={() => openSettlement(row.id)}>{loadingSettlement === row.id ? 'Consultando saldo...' : 'Registrar pago'}</Button>}{canEdit && <Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button>}{canList && <Button variant="link" onClick={() => setListCustomer(query.data?.content.find(customer => customer.id === row.id))}>Cambiar lista</Button>}{canStatus && <Button id={`customer-status-${row.id}`} variant="link" onClick={() => { setActionError(''); setStatusCustomer(query.data?.content.find(customer => customer.id === row.id)) }}>{row.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}{canExport && <DocumentActions path={`/api/documents/customers/${row.id}/statement?format=a4`} filename={`estado-deuda-${row.name}.pdf`} printLabel={`Imprimir estado de ${row.name}`} downloadLabel={`Descargar estado de ${row.name}`} />}</div> })
+  const findCustomer = (id: string) => query.data?.content.find(customer => customer.id === id)
+  if (canView || canEdit || canStatus || canSettle || canList || canExport || canManageResellers) columns.push({ key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions">{canView && <Button variant="secondary" href={`/customers/${row.id}?returnTo=${encodeURIComponent(location.pathname + location.search)}`} aria-label={`Ver cliente ${row.name}`}>Ver cliente</Button>}{canSettle && row.hasDebt && (row.kind !== 'RESELLER' || isAdmin) && <Button id={`settle-account-${row.id}`} variant="secondary" aria-label={`Registrar pago de ${row.name}`} disabled={Boolean(loadingSettlement)} onClick={() => openSettlement(row.id)}>{loadingSettlement === row.id ? 'Consultando saldo...' : 'Registrar pago'}</Button>}{canEdit && <Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button>}{canList && <Button variant="link" onClick={() => setListCustomer(query.data?.content.find(customer => customer.id === row.id))}>Cambiar lista</Button>}{canManageResellers && <Button variant="link" aria-label={`Revendedor de ${row.name}`} onClick={() => { setFeedback(''); setResellerCustomer(findCustomer(row.id)) }}>Revendedor</Button>}{canStatus && <Button id={`customer-status-${row.id}`} variant="link" onClick={() => { setActionError(''); setStatusCustomer(query.data?.content.find(customer => customer.id === row.id)) }}>{row.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}{canExport && <DocumentActions path={`/api/documents/customers/${row.id}/statement?format=a4`} filename={`estado-deuda-${row.name}.pdf`} printLabel={`Imprimir estado de ${row.name}`} downloadLabel={`Descargar estado de ${row.name}`} />}</div> })
 
   return <>
     <PageHeader eyebrow="Operación" title="Clientes" description={isAdmin ? 'Gestioná clientes, vendedor, lista de precios y cuenta corriente.' : 'Consultá únicamente los clientes asignados a tu vendedor.'} actions={canCreate ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
@@ -265,14 +276,17 @@ export default function CustomersPage() {
     {loadingSettlement && <p className="helper-text" role="status">Consultando el saldo actual del cliente…</p>}
     {canSettle && settlementCustomer && <AccountSettlementDialog customer={settlementCustomer} onClose={() => setSettlementCustomer(undefined)} onSaved={(remaining) => { setSettlementCustomer(undefined); setFeedback(remaining > 0 ? `Pago registrado. Saldo pendiente: ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(remaining)}.` : isAdmin ? 'Cuenta corriente saldada correctamente.' : 'Deuda asignada saldada correctamente.') }} />}
     {((showForm && canCreate) || (formCustomer && canEdit)) && <CustomerForm initial={formCustomer} sellers={isAdmin ? sellersQuery.data?.content ?? [] : assignmentQuery.data ? [assignmentQuery.data] : []} sellersLoading={isAdmin ? sellersQuery.isLoading : assignmentQuery.isPending} sellersError={isAdmin ? sellersQuery.isError : assignmentQuery.isError} onRetrySellers={() => { void (isAdmin ? sellersQuery.refetch() : assignmentQuery.refetch()) }} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} />}
+    {resellerCustomer && canManageResellers && <CustomerResellerDialog customer={resellerCustomer} onClose={() => setResellerCustomer(undefined)} onSaved={async (message) => { await invalidate(); setResellerCustomer(undefined); setFeedback(message) }} />}
     {listCustomer && canList && <CustomerPriceListDialog customer={listCustomer} lists={listsQuery.data?.content ?? []} loading={listsQuery.isPending} failed={listsQuery.isError} retry={() => void listsQuery.refetch()} onClose={() => setListCustomer(undefined)} onSaved={async () => { await invalidate(); setListCustomer(undefined); setFeedback('Lista de precios actualizada.') }} />}
     <Panel><div className="toolbar">
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar clientes</span><input id="customers-search" className="input search-input [@media(max-width:640px)]:max-w-none" placeholder="Nombre o identificación" aria-label="Buscar clientes" value={search} onChange={(event) => setFilter('search', event.target.value)} /></label>
       {isAdmin && <SellerSelect options={optionsQuery.data?.sellers ?? []} value={sellerId} onChange={(value) => setFilter('sellerId', value)} loading={optionsQuery.isLoading} disabled={optionsQuery.isError} />}
+      {isAdmin && <CustomerSelect label="Buscar por revendedor" emptyLabel="Todos los revendedores" options={(resellersQuery.data?.content ?? []).map(reseller => ({ id: reseller.id, name: reseller.name }))} value={resellerFilter} onChange={(value) => setFilter('resellerId', value)} loading={resellersQuery.isLoading} disabled={resellersQuery.isError} />}
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Cuenta corriente</span><select aria-label="Cuenta corriente" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={hasBalance ? 'true' : ''} onChange={(event) => setFilter('hasBalance', event.target.value)}><option value="">Todos los saldos</option><option value="true">Solo con saldo</option></select></label>
       <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Estado</span><select aria-label="Estado" className="select [@media(max-width:640px)]:w-full [@media(max-width:640px)]:min-w-0" value={status} onChange={(event) => setFilter('status', event.target.value)}><option value="ACTIVE">Activo</option><option value="INACTIVE">Inactivo</option><option value="ALL">Todos</option></select></label>
     </div>
       {isAdmin && optionsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los vendedores del filtro. <Button variant="link" type="button" onClick={() => optionsQuery.refetch()}>Reintentar filtro</Button></p>}
+      {isAdmin && resellersQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los revendedores del filtro. <Button variant="link" type="button" onClick={() => resellersQuery.refetch()}>Reintentar revendedores</Button></p>}
       {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay clientes para mostrar" description="No se encontraron clientes con los filtros seleccionados." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
     {isAdmin && sellersQuery.isError && (showForm || formCustomer) && <p className="error-text" role="alert">No se pudieron cargar los vendedores. <Button variant="link" type="button" onClick={() => sellersQuery.refetch()}>Reintentar</Button></p>}

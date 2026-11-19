@@ -136,14 +136,25 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> customers(int page, int size, String search,
             UUID sellerId, boolean hasBalance, String status) {
+        return customers(page, size, search, sellerId, hasBalance, status, null, null);
+    }
+
+    /** {@code kind} filters regular customers or resellers; {@code resellerId}, the customers of a reseller. */
+    public PageResponse<Map<String, Object>> customers(int page, int size, String search,
+            UUID sellerId, boolean hasBalance, String status, String kind, UUID resellerId) {
         String state = status == null ? "" : status.trim();
         if (!state.isEmpty() && !state.equals("ACTIVE") && !state.equals("INACTIVE")) {
             throw new IllegalArgumentException("El estado del cliente debe ser ACTIVE o INACTIVE");
         }
+        String customerKind = kind == null ? "" : kind.trim();
+        if (!customerKind.isEmpty() && !customerKind.equals("REGULAR") && !customerKind.equals("RESELLER")) {
+            throw new IllegalArgumentException("El tipo de cliente debe ser REGULAR o RESELLER");
+        }
         String term = like(search);
         var balance = new com.distribuidora.payment.application.CustomerAccountBalanceQuery(jdbc, currentUser).projection();
         String source = " from (select c.*, " + balance.sql() + " as scoped_balance from customer.customers c) c "
-            + "left join seller.seller_profiles sp on sp.id = c.seller_id ";
+            + "left join seller.seller_profiles sp on sp.id = c.seller_id "
+            + "left join customer.customers reseller on reseller.id = c.reseller_id ";
         String where = " where (lower(c.business_name) like ? or lower(c.tax_id) like ?)";
         List<Object> parameters = new ArrayList<>(balance.parameters()); parameters.add(term); parameters.add(term);
         if (sellerScoped()) {
@@ -159,10 +170,19 @@ public class ReadQueryService {
             where += " and c.status = ?";
             parameters.add(state);
         }
+        if (!customerKind.isEmpty()) {
+            where += " and c.kind = ?";
+            parameters.add(customerKind);
+        }
+        if (resellerId != null) {
+            where += " and c.reseller_id = ?";
+            parameters.add(resellerId);
+        }
         return page("""
             select c.id, lpad(cast(c.customer_number as varchar), greatest(4, length(cast(c.customer_number as varchar))), '0') as "number", c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                    c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller,
-                   c.scoped_balance as balance, c.status
+                   c.scoped_balance as balance, c.status,
+                   c.kind, c.reseller_id as "resellerId", reseller.business_name as reseller
             """ + source + where + " order by c.business_name, c.id", "select count(*)" + source + where,
             page, size, parameters.toArray());
     }
@@ -399,7 +419,7 @@ public class ReadQueryService {
         String rows = """
             select s.id as "saleId", s.sale_number as "saleNumber", s.status,
                    s.total, s.paid, o.id as "orderId", o.order_number as "orderNumber",
-                   s.created_at as "createdAt",
+                   s.created_at as "createdAt", c.id as "customerId", c.business_name as customer,
                    least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) as balance
             """ + source + " order by s.created_at, s.id";
         return page(rows, "select count(*) " + source, page, size, parameters.toArray());
@@ -421,6 +441,8 @@ public class ReadQueryService {
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    account_customer.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
+                   account_sale.account_customer_id as "accountCustomerId", account_customer.business_name as "accountCustomer",
+                   account_customer.kind as "accountKind",
                    (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
@@ -460,6 +482,8 @@ public class ReadQueryService {
                    o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
                    o.projected_balance_snapshot as "projectedBalanceSnapshot",
                    account_customer.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
+                   account_sale.account_customer_id as "accountCustomerId", account_customer.business_name as "accountCustomer",
+                   account_customer.kind as "accountKind",
                    (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
             from orders.orders o
             join customer.customers c on c.id = o.customer_id
@@ -526,6 +550,15 @@ public class ReadQueryService {
 
     public PageResponse<Map<String, Object>> sales(int page, int size, String search,
             UUID customerId, UUID sellerId, boolean pendingBalance, LocalDate dateMin, LocalDate dateMax) {
+        return sales(page, size, search, customerId, null, sellerId, pendingBalance, dateMin, dateMax);
+    }
+
+    /**
+     * {@code customerId} filters the customer that received the order; {@code accountCustomerId}, the account
+     * that owes the sale (a reseller owes the orders of its customers).
+     */
+    public PageResponse<Map<String, Object>> sales(int page, int size, String search, UUID customerId,
+            UUID accountCustomerId, UUID sellerId, boolean pendingBalance, LocalDate dateMin, LocalDate dateMax) {
         if (dateMin != null && dateMax != null && dateMin.isAfter(dateMax)) {
             throw new IllegalArgumentException("La fecha mínima no puede ser posterior a la fecha máxima");
         }
@@ -533,12 +566,17 @@ public class ReadQueryService {
             from sale.sales s
             join orders.orders o on o.id = s.order_id
             join customer.customers c on c.id = s.customer_id
+            join customer.customers account_customer on account_customer.id = s.account_customer_id
             where lower(s.sale_number) like ?
             """;
         List<Object> parameters = new ArrayList<>(List.of(like(search)));
         if (customerId != null) {
             from += " and s.customer_id = ?";
             parameters.add(customerId);
+        }
+        if (accountCustomerId != null) {
+            from += " and s.account_customer_id = ?";
+            parameters.add(accountCustomerId);
         }
         if (sellerId != null) {
             from += " and coalesce(o.seller_id, c.seller_id) = ?";
@@ -563,7 +601,8 @@ public class ReadQueryService {
             parameters.add(Timestamp.from(dateMax.plusDays(1).atStartOfDay(zone).toInstant()));
         }
         return page("""
-            select s.id, s.sale_number as number, c.business_name as customer,
+            select s.id, s.sale_number as number, c.business_name as customer, s.customer_id as "customerId",
+                   s.account_customer_id as "accountCustomerId", account_customer.business_name as account,
                    s.total, s.paid, (s.total - s.paid) as balance,
                    s.status, s.created_at as date
             """ + from + " order by s.created_at desc, s.id desc", "select count(*) " + from,

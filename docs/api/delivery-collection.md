@@ -71,3 +71,7 @@ La respuesta continúa siendo `204 No Content`. El detalle de venta y el listado
 ## Persistencia
 
 La migración `V16__add_payment_transfer_reference.sql` agrega `payment.payments.transfer_reference` nullable. Las filas de pago previas conservan `NULL`.
+
+En pedidos cargados a la cuenta de un revendedor, registrar cobros o deuda anterior
+al entregar requiere `ADMIN_ALL` (`403` para otros usuarios). La entrega sin
+cobros sigue disponible con `SALE_DELIVER` (Fase 9.2).

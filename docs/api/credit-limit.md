@@ -56,3 +56,7 @@ El detalle de pedido expone `creditLimitExceeded`, `creditLimitSnapshot` y `proj
 ## Persistencia
 
 V18 crea `app.business_settings` con límite inicialmente desactivado y guarda en `orders.orders` el resultado/snapshot de advertencia calculado al confirmar.
+
+Desde la Fase 9 el saldo actual es el de la cuenta que debe el pedido: para un
+cliente asociado a un revendedor, el saldo del revendedor. La advertencia y su
+auditoría identifican esa cuenta.

@@ -26,9 +26,13 @@ class CustomersFiltersControllerTest {
         mvc.perform(get("/api/customers").param("page", "1").param("size", "10").param("search", "North")
             .param("sellerId", sellerId.toString()).param("hasBalance", "true").param("status", "ACTIVE"))
             .andExpect(status().isOk());
-        verify(service).customers(1, 10, "North", sellerId, true, "ACTIVE");
+        verify(service).customers(1, 10, "North", sellerId, true, "ACTIVE", "", null);
         mvc.perform(get("/api/customers")).andExpect(status().isOk());
-        verify(service).customers(0, 20, "", null, false, "");
+        verify(service).customers(0, 20, "", null, false, "", "", null);
+        UUID resellerId = UUID.randomUUID();
+        mvc.perform(get("/api/customers").param("kind", "RESELLER").param("resellerId", resellerId.toString()))
+            .andExpect(status().isOk());
+        verify(service).customers(0, 20, "", null, false, "", "RESELLER", resellerId);
     }
 
     @Test
@@ -42,7 +46,8 @@ class CustomersFiltersControllerTest {
     void rejectsMalformedFilters() throws Exception {
         mvc.perform(get("/api/customers").param("sellerId", "Ana")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/customers").param("hasBalance", "invalid")).andExpect(status().isBadRequest());
-        when(service.customers(0, 20, "", null, false, "unknown")).thenThrow(new IllegalArgumentException("Estado inválido"));
+        mvc.perform(get("/api/customers").param("resellerId", "Ana")).andExpect(status().isBadRequest());
+        when(service.customers(0, 20, "", null, false, "unknown", "", null)).thenThrow(new IllegalArgumentException("Estado inválido"));
         mvc.perform(get("/api/customers").param("status", "unknown")).andExpect(status().isBadRequest());
     }
 }

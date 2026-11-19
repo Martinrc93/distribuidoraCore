@@ -32,12 +32,41 @@ public class CustomerReadService {
                    c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
                    coalesce(sp.display_name, 'Sin asignar') as seller,
                    c.price_list_id as "priceListId", pl.code as "priceListCode", pl.name as "priceList",
-                   %s as balance, c.status, c.created_at as "createdAt"
+                   %s as balance, c.status, c.created_at as "createdAt",
+                   c.kind, c.reseller_id as "resellerId", reseller.business_name as reseller,
+                   (select count(*) from customer.customers associated where associated.reseller_id = c.id) as "associatedCustomersCount"
             from customer.customers c
             left join seller.seller_profiles sp on sp.id = c.seller_id
             left join catalog.price_lists pl on pl.id = c.price_list_id
+            left join customer.customers reseller on reseller.id = c.reseller_id
             where c.id = ?
             """.formatted(balance.sql()) + scope, parameters.toArray());
+    }
+
+    /**
+     * Current reseller of a customer and its confirmed orders not yet delivered, which keep the account that
+     * owes them when the reseller changes. For the administrative reseller assignment.
+     */
+    public Map<String, Object> resellerAssignment(UUID customerId) {
+        Map<String, Object> customer = new java.util.HashMap<>(jdbc.queryForMap("""
+            select c.id, c.business_name as name, c.kind, c.reseller_id as "resellerId", reseller.business_name as reseller,
+                   (select count(*) from customer.customers associated where associated.reseller_id = c.id) as "associatedCustomersCount"
+            from customer.customers c left join customer.customers reseller on reseller.id = c.reseller_id
+            where c.id = ?
+            """, customerId));
+        customer.put("pendingOrders", jdbc.queryForList("""
+            select o.id, o.order_number as number, o.total, o.created_at as date,
+                   s.account_customer_id as "accountCustomerId", account.business_name as account
+            from orders.orders o
+            join sale.sales s on s.order_id = o.id
+            join customer.customers account on account.id = s.account_customer_id
+            where o.customer_id = ? and o.status = 'CONFIRMED'
+            order by o.created_at desc, o.id desc
+            limit 20
+            """, customerId));
+        customer.put("pendingOrdersCount", jdbc.queryForObject(
+            "select count(*) from orders.orders where customer_id = ? and status = 'CONFIRMED'", Long.class, customerId));
+        return customer;
     }
 
     public Map<String, Object> accountBalance(UUID customerId) {

@@ -121,6 +121,7 @@ public class DeliveryLifecycleService {
         ledger.lockAccount(accountId);
         BigDecimal debtBefore = ledger.saleBalance(saleId).setScale(4);
         if (received.signum() > 0) {
+            ledger.requireCollectionAllowed(accountId, administrator());
             BigDecimal remainingBySaleTotal = total.subtract(paidBefore).max(ZERO);
             BigDecimal availableDebt = debtBefore.max(ZERO).min(remainingBySaleTotal);
             if (received.compareTo(availableDebt) > 0) {
@@ -145,6 +146,7 @@ public class DeliveryLifecycleService {
         UUID accountId = uuid(lifecycle, "account_customer_id");
         BigDecimal selected = previousDebtAmount(request);
         AccountLedger ledger = new AccountLedger(jdbc);
+        ledger.requireCollectionAllowed(accountId, administrator());
         Map<String, Object> account = ledger.lockAccount(accountId);
         // Earlier debts are the account's: the same account owes every sale paid here.
         List<DeliveryDebtQuery.Debt> previous = new DeliveryDebtQuery(jdbc, currentUser).previousSales(saleId);
@@ -334,6 +336,12 @@ public class DeliveryLifecycleService {
         } catch (Exception exception) {
             throw new IllegalStateException("No se pudo identificar al usuario actual");
         }
+    }
+
+    private boolean administrator() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+            .anyMatch(authority -> "ADMIN_ALL".equals(authority.getAuthority()));
     }
 
     private UUID uuid(Map<String, Object> row, String key) {

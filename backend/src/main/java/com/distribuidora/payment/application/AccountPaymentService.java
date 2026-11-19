@@ -60,6 +60,7 @@ public class AccountPaymentService {
     public PaymentResult settle(UUID customerId, List<? extends PaymentCommand> payments, boolean allowPartial) {
         PermissionAccess.require("ACCOUNT_SETTLE");
         currentUser.requireCustomerAccess(customerId);
+        new AccountLedger(jdbc).requireCollectionAllowed(customerId, currentUser.isAdmin());
         if (payments == null || payments.isEmpty() || payments.size() > 100) {
             throw new IllegalArgumentException("Se requiere al menos un pago y se admiten hasta 100");
         }
@@ -100,6 +101,7 @@ public class AccountPaymentService {
         validate(customerId, request);
         currentUser.requireCustomerAccess(customerId);
         AccountLedger ledger = new AccountLedger(jdbc);
+        ledger.requireCollectionAllowed(customerId, currentUser.isAdmin());
 
         // Lock sale rows before the account so delivery, editing and payment allocation use one lock order.
         List<Map<String, Object>> candidates = lockCandidateSales(customerId, request.saleId());

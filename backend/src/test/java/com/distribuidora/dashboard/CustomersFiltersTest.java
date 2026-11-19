@@ -34,7 +34,7 @@ class CustomersFiltersTest {
         jdbc.execute("CREATE TABLE sale.sales(id uuid primary key, order_id uuid, customer_id uuid, status varchar, total numeric(19,4), paid numeric(19,4), account_customer_id uuid)");
         jdbc.execute("CREATE TABLE customer.account_ledger(sale_id uuid, entry_type varchar, amount numeric(19,4))");
         jdbc.execute("CREATE TABLE seller.seller_profiles (id UUID PRIMARY KEY, display_name VARCHAR(120))");
-        jdbc.execute("CREATE TABLE customer.customers (id UUID PRIMARY KEY, business_name VARCHAR(120), tax_id VARCHAR(30), email VARCHAR, phone VARCHAR, address VARCHAR, zone VARCHAR, seller_id UUID, price_list_id UUID, balance NUMERIC(19,4), status VARCHAR(20))");
+        jdbc.execute("CREATE TABLE customer.customers (id UUID PRIMARY KEY, business_name VARCHAR(120), tax_id VARCHAR(30), email VARCHAR, phone VARCHAR, address VARCHAR, zone VARCHAR, seller_id UUID, price_list_id UUID, balance NUMERIC(19,4), status VARCHAR(20), kind VARCHAR(20) DEFAULT 'REGULAR', reseller_id UUID)");
         jdbc.update("INSERT INTO seller.seller_profiles VALUES (?, 'Ana'), (?, 'Lucía')", ana, lucia);
         customer("North debt", "30-111", ana, 100, "ACTIVE");
         customer("North credit", null, ana, -25, "ACTIVE");

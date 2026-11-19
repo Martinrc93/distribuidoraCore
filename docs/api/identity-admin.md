@@ -80,9 +80,12 @@ y vuelve al login con el resultado.
 
 El catálogo se mantiene en migraciones Flyway; los cambios requieren una
 migración y no se crean permisos arbitrarios por HTTP. `ADMIN_ALL` debe
-permanecer en `ADMIN`. `ADMIN_ALL`, `USER_MANAGE`, `ORDER_REVIEW` y
-`STOCK_ADJUST` y `STOCK_SHRINKAGE` están reservados a ese rol. V45 quita las asignaciones anteriores
+permanecer en `ADMIN`. `ADMIN_ALL`, `USER_MANAGE`, `ORDER_REVIEW`,
+`STOCK_ADJUST`, `STOCK_SHRINKAGE` y `RESELLER_MANAGE` están reservados a ese rol. V45 quita las asignaciones anteriores
 de `STOCK_ADJUST` y `USER_MANAGE` fuera de ADMIN e invalida las sesiones afectadas.
+V52 añade `RESELLER_MANAGE` (marcar revendedores y asignarles clientes; ver
+[Clientes y cuentas](customer-permissions.md#revendedores-fase-92)) y renueva las
+sesiones de los administradores.
 Un cambio efectivo invalida sesiones de los usuarios asignados al rol y registra
 auditoría.
 

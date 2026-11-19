@@ -8,8 +8,8 @@ se respondieron el 2026-11-18. Modifica la regla de cuenta corriente de
 [ADR-007](ADR-007-order-sale-and-payment-domain.md).
 
 Implementación: la etapa 9.1 (V51) aplica los puntos 1 a 5 y 7, con la cuenta
-igual al cliente del pedido. Los puntos 6, 8 y 9 corresponden a las etapas 9.2
-y 9.3.
+igual al cliente del pedido. La etapa 9.2 (V52) aplica los puntos 6 y 8. El
+punto 9 corresponde a la etapa 9.3.
 
 ## Context
 

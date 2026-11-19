@@ -2,6 +2,7 @@ import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../../shared/components/Button'
+import { hasAuthority } from '../../shared/auth/permissions'
 
 export type DeliveryAttemptDraft = {
   result: 'DELIVERED' | 'FAILED'
@@ -26,9 +27,16 @@ type Props = {
   customerName?: string
   returnFocusId?: string
   fallbackFocusId?: string
+  /** Replaces the payments of a delivery with this explanation when the user cannot collect. */
+  collectionsNotice?: string
 }
 
 const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
+/** Collections on a reseller account are registered by an administrator only. */
+export function resellerCollectionsNotice(accountKind?: string | null) {
+  return accountKind === 'RESELLER' && !hasAuthority('ADMIN_ALL') ? 'Los cobros de cuentas de revendedor los registra un administrador.' : undefined
+}
+
 export const deliveryAmount = (value: string) => /^\d+(?:[.,]\d{1,4})?$/.test(value.trim()) ? Number(value.trim().replace(',', '.')) : NaN
 
 function PaymentAmountField({ amount, disabled, describedBy, onChange }: { amount: string; disabled: boolean; describedBy: string; onChange: (amount: string) => void }) {
@@ -38,7 +46,7 @@ function PaymentAmountField({ amount, disabled, describedBy, onChange }: { amoun
   return <label className="field delivery-attempt-amount"><span>Importe del pago</span><input className="input currency-input" type="text" inputMode="decimal" size={14} value={editing ? amount : display} aria-describedby={describedBy} disabled={disabled} onFocus={() => setEditing(true)} onBlur={() => setEditing(false)} onChange={event => onChange(event.target.value)} /></label>
 }
 
-export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAvailable = 0, value, pending, error, onChange, onSubmit, onClose, mode = 'attempt', customerName, returnFocusId, fallbackFocusId }: Props) {
+export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAvailable = 0, value, pending, error, onChange, onSubmit, onClose, mode = 'attempt', customerName, returnFocusId, fallbackFocusId, collectionsNotice }: Props) {
   const id = useId()
   const dialog = useRef<HTMLDialogElement>(null)
   const result = useRef<HTMLSelectElement>(null)
@@ -96,7 +104,7 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
             {value.result === 'FAILED' && <label className="field"><span>Observación</span><textarea className="input textarea" aria-label="Observación" value={value.observation} onChange={event => onChange({ ...value, observation: event.target.value })} aria-describedby={`${id}-observation-help`} aria-required="true" aria-invalid={Boolean(error) && !value.observation.trim()} maxLength={2000} disabled={pending} /></label>}
           </div>
           {value.result === 'FAILED' && <p className="helper-text" id={`${id}-observation-help`}>Indica el motivo por el que no se pudo entregar el pedido.</p>}
-          {value.result === 'DELIVERED' ? <section className="delivery-attempt-collections" aria-labelledby={`${id}-collections-title`}>
+          {value.result === 'DELIVERED' && collectionsNotice ? <p className="delivery-attempt-empty">{collectionsNotice}</p> : value.result === 'DELIVERED' ? <section className="delivery-attempt-collections" aria-labelledby={`${id}-collections-title`}>
             <div className="delivery-attempt-collections-header"><h3 id={`${id}-collections-title`}>Pago</h3><div className="delivery-attempt-balance"><span>{mode === 'account' ? 'Saldo de cuenta corriente' : 'Saldo pendiente de esta venta'}</span><strong><CurrencyText>{money(saleBalance)}</CurrencyText></strong></div></div>
             {(previousDebtAvailable > 0 || value.includePreviousDebt) && <div className="delivery-attempt-previous">
               <label className="radio-row"><input type="checkbox" checked={value.includePreviousDebt} disabled={pending} onChange={event => onChange({ ...value, includePreviousDebt: event.target.checked, previousDebtAmount: event.target.checked ? value.previousDebtAmount || String(previousDebtAvailable).replace('.', ',') : '' })} />Agregar deuda anterior</label>

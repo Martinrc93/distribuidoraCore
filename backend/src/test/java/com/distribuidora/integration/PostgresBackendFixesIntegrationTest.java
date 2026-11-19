@@ -28,6 +28,9 @@ import com.distribuidora.notification.application.NotificationRequestService;
 import com.distribuidora.notification.application.NotificationRequestStateService;
 import com.distribuidora.sale.api.SaleReturnDtos;
 import com.distribuidora.sale.application.SaleReturnService;
+import com.distribuidora.customer.application.CustomerCommandService;
+import com.distribuidora.customer.application.ResellerConflictException;
+import com.distribuidora.document.application.AccountStatementDocumentService;
 import com.distribuidora.seller.api.SellerDtos;
 import com.distribuidora.seller.application.SellerCommandService;
 import com.distribuidora.settings.api.BusinessSettingsDtos;
@@ -117,6 +120,8 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired PricingQueryService pricingQueryService;
     @Autowired InventoryMovementService inventoryMovementService;
     @Autowired SaleReturnService saleReturnService;
+    @Autowired CustomerCommandService customerCommandService;
+    @Autowired AccountStatementDocumentService accountStatementDocumentService;
     @Autowired OrderConfirmationService orderConfirmationService;
     @Autowired DeliveryLifecycleService deliveryLifecycleService;
     @Autowired com.distribuidora.order.application.OrderFulfillmentService orderFulfillmentService;
@@ -2103,6 +2108,136 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(purgedEvents).isGreaterThanOrEqualTo(2);
         assertThat(jdbc.queryForObject("select count(*) from notification.outbox_events where aggregate_id in (?, ?)", Long.class,
             created.requestId(), confirmation.orderId())).isZero();
+    }
+
+    @Test
+    void resellerAccountOwesItsCustomersOrdersWhileTheyKeepTheirOrders() {
+        UUID admin = createUser("reseller-admin"); assignRole(admin, "ADMIN");
+        authenticateOrderActor(admin, "ADMIN_ALL", "RESELLER_MANAGE");
+        UUID reseller = createCustomer(null);
+        UUID first = createCustomer(null);
+        UUID second = createCustomer(null);
+        customerCommandService.changeKind(reseller, "RESELLER");
+        customerCommandService.assignReseller(first, reseller);
+        customerCommandService.assignReseller(second, reseller);
+        UUID product = createProduct("reseller-" + UUID.randomUUID());
+        putGeneralPrice(product, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", product);
+
+        var older = confirmFor(first, product, "2");
+        var newer = confirmFor(second, product, "1");
+        jdbc.update("update sale.sales set created_at = created_at - interval '1 minute' where id = ?", older.saleId());
+
+        for (var result : List.of(older, newer)) {
+            assertThat(jdbc.queryForObject("select account_customer_id from sale.sales where id = ?", UUID.class, result.saleId())).isEqualTo(reseller);
+            assertThat(jdbc.queryForObject("select count(*) from customer.account_ledger where sale_id = ? and customer_id = ?",
+                Integer.class, result.saleId(), reseller)).isEqualTo(1);
+        }
+        assertThat(jdbc.queryForObject("select customer_id from sale.sales where id = ?", UUID.class, older.saleId())).isEqualTo(first);
+        assertThat(older.orderNumber()).startsWith(jdbc.queryForObject(
+            "select lpad(customer_number::text, 4, '0') from customer.customers where id = ?", String.class, first));
+        assertThat(customerBalance(reseller)).isEqualByComparingTo("30");
+        assertThat(customerBalance(first)).isEqualByComparingTo("0");
+        assertThat(customerBalance(second)).isEqualByComparingTo("0");
+
+        // FIFO starts with the reseller's oldest sale, whichever customer received it.
+        var payment = accountPaymentService.apply(reseller, new AccountPaymentDtos.PaymentRequest(new BigDecimal("25"), "CASH", null, null));
+        assertThat(payment.allocations()).extracting(AccountPaymentService.AllocationResult::saleId).containsExactly(older.saleId(), newer.saleId());
+        assertThat(payment.allocations()).extracting(AccountPaymentService.AllocationResult::amount)
+            .usingElementComparator(BigDecimal::compareTo).containsExactly(new BigDecimal("20"), new BigDecimal("5"));
+        assertThat(customerBalance(reseller)).isEqualByComparingTo("5");
+        assertThat(jdbc.queryForObject("select count(*) from payment.payments where sale_id in (?, ?) and customer_id <> ?",
+            Integer.class, older.saleId(), newer.saleId(), reseller)).isZero();
+
+        var debts = readQueryService.customerDebts(reseller, 0, 20).content();
+        assertThat(debts).hasSize(1);
+        assertThat(debts.getFirst()).containsEntry("saleId", newer.saleId()).containsEntry("customerId", second);
+        var statement = accountStatementDocumentService.load(reseller);
+        assertThat(statement.showCustomers()).isTrue();
+        assertThat(statement.lines()).extracting(com.distribuidora.document.rendering.AccountStatementModel.Line::customer)
+            .containsExactly("PG customer");
+        assertThat(readQueryService.sales(0, 20, "", null, reseller, null, true, null, null).content())
+            .extracting(row -> row.get("id")).containsExactly(newer.saleId());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> detail = (Map<String, Object>) readQueryService.orderDetail(older.orderId()).get("order");
+        assertThat(detail).containsEntry("accountCustomerId", reseller).containsEntry("accountKind", "RESELLER");
+        assertThat(readQueryService.customers(0, 20, "", null, false, "", "", reseller).content())
+            .extracting(row -> row.get("id")).containsExactlyInAnyOrder(first, second);
+    }
+
+    @Test
+    void resellerCollectionsStayWithAdministratorsAndReassignmentKeepsHistory() {
+        UUID admin = createUser("reseller-rules-admin"); assignRole(admin, "ADMIN");
+        authenticateOrderActor(admin, "ADMIN_ALL", "RESELLER_MANAGE");
+        UUID profile = createSeller("reseller-rules");
+        UUID sellerUser = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, profile);
+        UUID reseller = createCustomer(profile);
+        UUID client = createCustomer(profile);
+        UUID regular = createCustomer(null);
+        customerCommandService.changeKind(reseller, "RESELLER");
+        customerCommandService.assignReseller(client, reseller);
+        UUID product = createProduct("reseller-rules-" + UUID.randomUUID());
+        putGeneralPrice(product, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", product);
+
+        assertThatThrownBy(() -> customerCommandService.changeKind(reseller, "REGULAR")).isInstanceOf(ResellerConflictException.class);
+        assertThatThrownBy(() -> customerCommandService.changeKind(client, "RESELLER")).isInstanceOf(ResellerConflictException.class);
+        assertThatThrownBy(() -> customerCommandService.assignReseller(client, client)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> customerCommandService.assignReseller(regular, client)).isInstanceOf(ResellerConflictException.class);
+        assertThatThrownBy(() -> customerCommandService.assignReseller(reseller, reseller)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> confirmFor(client, product, "1", List.of(), new BigDecimal("5")))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("revendedor");
+
+        // A seller assigned to the customer takes and delivers its orders but cannot collect on the reseller account.
+        authenticateOrderActor(sellerUser, "ORDER_CREATE", "ORDER_PREPARE", "SALE_DELIVER", "ACCOUNT_SETTLE", "SALE_PAYMENT", "SALE_RETURN");
+        assertThatThrownBy(() -> confirmFor(client, product, "1", List.of(new OrderConfirmationDtos.PaymentRequest("CASH", BigDecimal.TEN)), null))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        var delivered = confirmFor(client, product, "1");
+        assertThat(jdbc.queryForObject("select account_customer_id from sale.sales where id = ?", UUID.class, delivered.saleId())).isEqualTo(reseller);
+        assertThatThrownBy(() -> deliveryLifecycleService.recordAttempt(delivered.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+            "DELIVERED", null, List.of(new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", BigDecimal.TEN)), null)))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(() -> accountPaymentService.apply(reseller, new AccountPaymentDtos.PaymentRequest(BigDecimal.ONE, "CASH", null, null)))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        deliveryLifecycleService.recordAttempt(delivered.orderId(), new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null));
+        UUID saleItem = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, delivered.saleId());
+        assertThatThrownBy(() -> saleReturnService.create(delivered.saleId(), new SaleReturnDtos.ReturnRequest("Dañado",
+            List.of(new SaleReturnDtos.ReturnItemRequest(saleItem, BigDecimal.ONE)))))
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("revendedor");
+
+        // Administrators collect, and a reassignment only changes the account of new orders.
+        authenticateOrderActor(admin, "ADMIN_ALL", "RESELLER_MANAGE");
+        accountPaymentService.apply(reseller, new AccountPaymentDtos.PaymentRequest(new BigDecimal("4"), "CASH", null, null));
+        var pending = confirmFor(client, product, "1");
+        assertThat(customerCommandService.assignReseller(client, null).pendingOrdersKept()).isEqualTo(1);
+        var own = confirmFor(client, product, "1");
+        assertThat(jdbc.queryForObject("select account_customer_id from sale.sales where id = ?", UUID.class, pending.saleId())).isEqualTo(reseller);
+        assertThat(jdbc.queryForObject("select account_customer_id from sale.sales where id = ?", UUID.class, own.saleId())).isEqualTo(client);
+        assertThat(customerBalance(reseller)).isEqualByComparingTo("16");
+        assertThat(customerBalance(client)).isEqualByComparingTo("10");
+
+        customerCommandService.changeKind(reseller, "REGULAR");
+        customerCommandService.changeKind(reseller, "RESELLER");
+        customerCommandService.assignReseller(client, reseller);
+        jdbc.update("update customer.customers set status = 'INACTIVE' where id = ?", reseller);
+        assertThatThrownBy(() -> confirmFor(client, product, "1")).isInstanceOf(IllegalStateException.class);
+    }
+
+    private OrderConfirmationService.ConfirmationResult confirmFor(UUID customer, UUID product, String quantity) {
+        return confirmFor(customer, product, quantity, List.of(), null);
+    }
+
+    private OrderConfirmationService.ConfirmationResult confirmFor(UUID customer, UUID product, String quantity,
+            List<OrderConfirmationDtos.PaymentRequest> payments, BigDecimal previousBalance) {
+        var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest("reseller-" + UUID.randomUUID(),
+            customer, null, List.of(new OrderConfirmationDtos.LineRequest(product, new BigDecimal(quantity), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, payments, null, previousBalance));
+        orders.add(result.orderId()); sales.add(result.saleId());
+        return result;
+    }
+
+    private BigDecimal customerBalance(UUID customerId) {
+        return jdbc.queryForObject("select balance from customer.customers where id = ?", BigDecimal.class, customerId);
     }
 
     private UUID createUser(String suffix) {

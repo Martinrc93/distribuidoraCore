@@ -48,9 +48,11 @@ public class AccountStatementDocumentService {
             parameters.add(sellerId);
             parameters.add(sellerId);
         }
+        boolean[] otherCustomers = {false};
         List<AccountStatementModel.Line> lines = jdbc.query("""
             select (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as sale_date,
-                   s.sale_number, o.order_number, s.total, s.paid,
+                   s.sale_number, o.order_number, c.business_name as customer_name,
+                   s.customer_id <> s.account_customer_id as other_customer, s.total, s.paid,
                    least(greatest(coalesce(l.balance, 0), 0), greatest(s.total - s.paid, 0)) as due
             from sale.sales s
             join orders.orders o on o.id = s.order_id
@@ -63,14 +65,17 @@ public class AccountStatementDocumentService {
             """ + scope + """
               and least(greatest(coalesce(l.balance, 0), 0), greatest(s.total - s.paid, 0)) > 0
             order by s.created_at, s.id
-            """, (rs, row) -> new AccountStatementModel.Line(
-                rs.getObject("sale_date", LocalDate.class), rs.getString("sale_number"), rs.getString("order_number"),
-                rs.getBigDecimal("total"), rs.getBigDecimal("paid"), rs.getBigDecimal("due")),
+            """, (rs, row) -> {
+                otherCustomers[0] |= rs.getBoolean("other_customer");
+                return new AccountStatementModel.Line(
+                    rs.getObject("sale_date", LocalDate.class), rs.getString("sale_number"), rs.getString("order_number"),
+                    rs.getString("customer_name"), rs.getBigDecimal("total"), rs.getBigDecimal("paid"), rs.getBigDecimal("due"));
+            },
             parameters.toArray());
         BigDecimal totalDue = lines.stream().map(AccountStatementModel.Line::due).reduce(BigDecimal.ZERO, BigDecimal::add);
         LocalDate today = jdbc.queryForObject(
             "select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date", LocalDate.class);
         return new AccountStatementModel((String) customer.get("business_name"), (String) customer.get("tax_id"),
-            (String) customer.get("address"), today, lines, totalDue);
+            (String) customer.get("address"), today, lines, totalDue, otherCustomers[0]);
     }
 }

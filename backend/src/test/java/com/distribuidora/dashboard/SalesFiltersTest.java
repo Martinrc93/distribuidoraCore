@@ -38,7 +38,7 @@ class SalesFiltersTest {
         jdbc.execute("CREATE TABLE seller.seller_profiles (id UUID PRIMARY KEY, display_name VARCHAR(120))");
         jdbc.execute("CREATE TABLE customer.customers (id UUID PRIMARY KEY, business_name VARCHAR(120), seller_id UUID)");
         jdbc.execute("CREATE TABLE orders.orders (id UUID PRIMARY KEY, seller_id UUID)");
-        jdbc.execute("CREATE TABLE sale.sales (id UUID PRIMARY KEY, sale_number VARCHAR(40), order_id UUID, customer_id UUID, total NUMERIC(19,4), paid NUMERIC(19,4), status VARCHAR(20), created_at TIMESTAMP WITH TIME ZONE)");
+        jdbc.execute("CREATE TABLE sale.sales (id UUID PRIMARY KEY, sale_number VARCHAR(40), order_id UUID, customer_id UUID, total NUMERIC(19,4), paid NUMERIC(19,4), status VARCHAR(20), created_at TIMESTAMP WITH TIME ZONE, account_customer_id UUID)");
         ana = UUID.randomUUID();
         lucia = UUID.randomUUID();
         north = UUID.randomUUID();
@@ -207,7 +207,7 @@ class SalesFiltersTest {
     private void sale(String number, UUID customer, UUID seller, int paid, String status) {
         UUID order = UUID.randomUUID();
         jdbc.update("INSERT INTO orders.orders VALUES (?, ?)", order, seller);
-        jdbc.update("INSERT INTO sale.sales VALUES (?, ?, ?, ?, 100, ?, ?, TIMESTAMP '2026-09-30 12:00:00')",
-            UUID.randomUUID(), number, order, customer, paid, status);
+        jdbc.update("INSERT INTO sale.sales VALUES (?, ?, ?, ?, 100, ?, ?, TIMESTAMP '2026-09-30 12:00:00', ?)",
+            UUID.randomUUID(), number, order, customer, paid, status, customer);
     }
 }

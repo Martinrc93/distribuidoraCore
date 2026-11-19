@@ -24,7 +24,7 @@ for (const width of [320, 640, 760, 1050, 1440]) {
     const debtors = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Clientes con mayor saldo por cobrar' }) })
     await expect(debtors.getByRole('status')).toContainText('100% del total por cobrar')
     await expect(debtors.locator('td[data-label="% del total"]')).toHaveText('100%')
-    await expect(debtors.getByRole('link', { name: 'Ver deuda de Cliente principal' })).toHaveAttribute('href', '/sales?customerId=customer-1&pendingBalance=true')
+    await expect(debtors.getByRole('link', { name: 'Ver deuda de Cliente principal' })).toHaveAttribute('href', '/sales?accountCustomerId=customer-1&pendingBalance=true')
     await page.getByText('Ver datos del gráfico', { exact: true }).click()
     if (width > 640) await expect(page.getByRole('columnheader', { name: 'Importe', exact: true }).first()).toBeVisible()
     else await expect(page.locator('details[open]')).toContainText('01/09/2026')

@@ -46,8 +46,9 @@ public class ReadQueryController {
     public PageResponse<Map<String, Object>> customers(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
             @RequestParam(required = false) UUID sellerId, @RequestParam(defaultValue = "false") boolean hasBalance,
-            @RequestParam(defaultValue = "") String status) {
-        return queries.customers(page, size, search, sellerId, hasBalance, status);
+            @RequestParam(defaultValue = "") String status, @RequestParam(defaultValue = "") String kind,
+            @RequestParam(required = false) UUID resellerId) {
+        return queries.customers(page, size, search, sellerId, hasBalance, status, kind, resellerId);
     }
 
     @GetMapping("/customers/filter-options")
@@ -108,11 +109,12 @@ public class ReadQueryController {
     @GetMapping("/sales")
     public PageResponse<Map<String, Object>> sales(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
-            @RequestParam(required = false) UUID customerId, @RequestParam(required = false) UUID sellerId,
+            @RequestParam(required = false) UUID customerId, @RequestParam(required = false) UUID accountCustomerId,
+            @RequestParam(required = false) UUID sellerId,
             @RequestParam(defaultValue = "false") boolean pendingBalance,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax) {
-        return queries.sales(page, size, search, customerId, sellerId, pendingBalance, dateMin, dateMax);
+        return queries.sales(page, size, search, customerId, accountCustomerId, sellerId, pendingBalance, dateMin, dateMax);
     }
 
     @GetMapping("/sales/filter-options")

@@ -29,23 +29,32 @@ public class AccountStatementPdfRenderer {
                 doc.add(new Paragraph("Estado de deuda", TITLE));
                 header(doc, model);
                 doc.add(new Paragraph(" ", SMALL));
-                PdfPTable table = new PdfPTable(new float[]{14f, 22f, 22f, 14f, 14f, 14f});
+                // A reseller's statement also identifies the customer that received each order.
+                boolean customers = model.showCustomers();
+                PdfPTable table = new PdfPTable(customers
+                    ? new float[]{12f, 18f, 15f, 19f, 12f, 12f, 12f}
+                    : new float[]{14f, 22f, 22f, 14f, 14f, 14f});
                 table.setWidthPercentage(100);
                 table.setHeaderRows(1);
-                for (String title : new String[]{"Fecha", "Venta", "Pedido", "Total", "Pagado", "Saldo"}) {
-                    table.addCell(cell(title, BOLD, title.equals("Fecha") || title.equals("Venta") || title.equals("Pedido") ? Element.ALIGN_LEFT : Element.ALIGN_RIGHT));
+                String[] titles = customers
+                    ? new String[]{"Fecha", "Venta", "Pedido", "Cliente", "Total", "Pagado", "Saldo"}
+                    : new String[]{"Fecha", "Venta", "Pedido", "Total", "Pagado", "Saldo"};
+                for (String title : titles) {
+                    boolean left = title.equals("Fecha") || title.equals("Venta") || title.equals("Pedido") || title.equals("Cliente");
+                    table.addCell(cell(title, BOLD, left ? Element.ALIGN_LEFT : Element.ALIGN_RIGHT));
                 }
                 for (AccountStatementModel.Line line : model.lines()) {
                     table.addCell(cell(PdfFormat.date(line.date()), NORMAL, Element.ALIGN_LEFT));
                     table.addCell(cell(line.saleNumber(), NORMAL, Element.ALIGN_LEFT));
                     table.addCell(cell(line.orderNumber(), NORMAL, Element.ALIGN_LEFT));
+                    if (customers) table.addCell(cell(line.customer(), NORMAL, Element.ALIGN_LEFT));
                     table.addCell(cell(PdfFormat.money(line.total()), NORMAL, Element.ALIGN_RIGHT));
                     table.addCell(cell(PdfFormat.money(line.paid()), NORMAL, Element.ALIGN_RIGHT));
                     table.addCell(cell(PdfFormat.money(line.due()), NORMAL, Element.ALIGN_RIGHT));
                 }
                 if (model.lines().isEmpty()) {
                     var empty = cell("El cliente no tiene saldo pendiente.", NORMAL, Element.ALIGN_LEFT);
-                    empty.setColspan(6);
+                    empty.setColspan(titles.length);
                     table.addCell(empty);
                 }
                 doc.add(table);
@@ -67,6 +76,7 @@ public class AccountStatementPdfRenderer {
                 header(doc, model);
                 for (AccountStatementModel.Line line : model.lines()) {
                     doc.add(new Paragraph(PdfFormat.date(line.date()) + "  " + line.saleNumber(), BOLD));
+                    if (model.showCustomers()) doc.add(new Paragraph("Cliente " + line.customer(), SMALL));
                     doc.add(new Paragraph("Total " + PdfFormat.money(line.total()) + " · Pagado " + PdfFormat.money(line.paid()), SMALL));
                     doc.add(new Paragraph("Saldo " + PdfFormat.money(line.due()), NORMAL));
                 }

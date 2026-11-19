@@ -19,7 +19,7 @@ type OrderItem = { productId: string; productName: string; quantity: number; uni
 type Payment = { id: string; amount: number; method: string; transferReference?: string | null; date: string }
 type DeliveryAttempt = { id: string; attemptNumber: number; result: 'DELIVERED' | 'FAILED'; observation?: string | null; attemptedAt: string; attemptedBy: string }
 type OrderDetail = {
-  order: { id: string; number: string; customerId: string; customer: string; seller?: string; status: string; subtotal: number; discount: number; orderDiscountPercent?: number; total: number; customerBalance: number; date: string; previousBalanceAmount?: number; collectionTotal?: number; fulfillmentStatus?: string; preparedAt?: string; legacyFulfillment?: boolean; reviewPending?: boolean; reviewedAt?: string }
+  order: { id: string; number: string; customerId: string; customer: string; seller?: string; status: string; subtotal: number; discount: number; orderDiscountPercent?: number; total: number; customerBalance: number; date: string; previousBalanceAmount?: number; collectionTotal?: number; fulfillmentStatus?: string; preparedAt?: string; legacyFulfillment?: boolean; reviewPending?: boolean; reviewedAt?: string; accountCustomerId?: string; accountCustomer?: string; accountKind?: string | null }
   items: OrderItem[]
   sale: { id: string; number: string; status: string; total: number; paid: number; balance: number; previousDebtAvailable?: number; date: string }
   payments: Payment[]
@@ -57,6 +57,8 @@ export default function OrderDetailPage() {
   const commonListId = items[0]?.priceListId
   const samePriceList = items.every((item) => item.priceListId === commonListId)
   const canEdit = hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && sale.status === 'CONFIRMED' && samePriceList
+  // A reseller owes the orders of its customers: the account differs from the customer that receives the order.
+  const resellerAccount = Boolean(order.accountCustomerId && order.accountCustomerId !== order.customerId)
 
   if (editing && canEdit) return <OrderForm editOrder={query.data} onCancel={() => setEditing(false)} onSaved={async () => {
     await queryClient.invalidateQueries({ queryKey })
@@ -128,11 +130,11 @@ export default function OrderDetailPage() {
         />
       </Panel>}
       <div className="content-grid two-thirds">
-        <Panel title="Pagos registrados">{paymentRows.length ? <DataTable columns={paymentColumns} rows={paymentRows} /> : <EmptyState title="Todavía no hay pagos" description="El saldo permanece en la cuenta corriente del cliente." />}</Panel>
-        <Panel title="Cuenta corriente"><dl className="account-ledger"><dt>Débitos de esta venta</dt><dd><CurrencyText>{money(account.debit)}</CurrencyText></dd><dt>Créditos aplicados</dt><dd><CurrencyText>{money(account.credit)}</CurrencyText></dd><dt>Saldo pendiente</dt><dd><CurrencyText>{money(account.net)}</CurrencyText></dd><dt>Saldo total del cliente</dt><dd><CurrencyText>{money(order.customerBalance)}</CurrencyText></dd></dl></Panel>
+        <Panel title="Pagos registrados">{paymentRows.length ? <DataTable columns={paymentColumns} rows={paymentRows} /> : <EmptyState title="Todavía no hay pagos" description={resellerAccount ? `El saldo permanece en la cuenta corriente de ${order.accountCustomer}.` : 'El saldo permanece en la cuenta corriente del cliente.'} />}</Panel>
+        <Panel title="Cuenta corriente"><dl className="account-ledger">{resellerAccount && <><dt>Titular de la deuda</dt><dd className="[overflow-wrap:anywhere]">{order.accountCustomer} (revendedor)</dd></>}<dt>Débitos de esta venta</dt><dd><CurrencyText>{money(account.debit)}</CurrencyText></dd><dt>Créditos aplicados</dt><dd><CurrencyText>{money(account.credit)}</CurrencyText></dd><dt>Saldo pendiente</dt><dd><CurrencyText>{money(account.net)}</CurrencyText></dd><dt>{resellerAccount ? 'Saldo total de la cuenta' : 'Saldo total del cliente'}</dt><dd><CurrencyText>{money(order.customerBalance)}</CurrencyText></dd></dl></Panel>
       </div>
       <Panel title="Resumen"><dl className="order-totals"><dt>Subtotal</dt><dd><CurrencyText>{money(order.subtotal)}</CurrencyText></dd><dt>Descuentos</dt><dd><CurrencyText>{money(order.discount)}</CurrencyText></dd><dt className="total-label">Total</dt><dd className="total-value"><CurrencyText>{money(order.total)}</CurrencyText></dd></dl><p className="helper-text">Lista(s) usada(s): {Array.from(new Set(items.map((item) => item.priceListCode))).join(', ') || '—'}</p></Panel>
-      <OrderLifecycleActions orderId={order.id} orderNumber={order.number} orderStatus={order.status} saleBalance={sale.balance} previousDebtAvailable={sale.previousDebtAvailable} onChanged={() => { void query.refetch() }} />
+      <OrderLifecycleActions orderId={order.id} orderNumber={order.number} orderStatus={order.status} saleBalance={sale.balance} previousDebtAvailable={sale.previousDebtAvailable} accountKind={order.accountKind} onChanged={() => { void query.refetch() }} />
     </>
   </>
 }

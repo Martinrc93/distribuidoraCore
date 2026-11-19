@@ -12,13 +12,13 @@ import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { useUrlListState } from '../../shared/useUrlListState'
 import { OrderDateFilter } from './OrderDateFilter'
-import { DeliveryAttemptDialog } from './DeliveryAttemptDialog'
+import { DeliveryAttemptDialog, resellerCollectionsNotice } from './DeliveryAttemptDialog'
 import { useOrderDelivery } from './useOrderDelivery'
 import { OrderOperationalActions, OrderReviewBadge } from './OrderOperationalActions'
 
 type Order = { id: string; number: string; customer: string; seller: string; total: number; status: string; date: string; createdByAdmin?: boolean | null; paid?: number; fulfillmentStatus?: string; reviewPending?: boolean }
 type Row = Record<string, string>
-type DeliveryOrder = { id: string; number: string; saleBalance: number; previousDebtAvailable: number }
+type DeliveryOrder = { id: string; number: string; saleBalance: number; previousDebtAvailable: number; accountKind?: string | null }
 
 function money(value: unknown) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(Number(value ?? 0))
@@ -84,7 +84,7 @@ export default function OrdersPage() {
     setDeliveryLoadError('')
     setDeliveryFeedback('')
     try {
-      const detail = await apiGet<{ order: { status: string }; sale: { balance: number; previousDebtAvailable?: number } }>(`/api/orders/${row.id}`)
+      const detail = await apiGet<{ order: { status: string; accountKind?: string | null }; sale: { balance: number; previousDebtAvailable?: number } }>(`/api/orders/${row.id}`)
       if (detail.order.status !== 'CONFIRMED') {
         await query.refetch()
         throw new Error('El pedido ya no está confirmado. Se actualizó el listado.')
@@ -93,7 +93,7 @@ export default function OrdersPage() {
       delivery.reset()
       const previousDebtAvailable = Number(detail.sale.previousDebtAvailable ?? 0)
       if (!Number.isFinite(previousDebtAvailable) || previousDebtAvailable < 0) throw new Error('No se pudo obtener la deuda anterior disponible.')
-      setDeliveryOrder({ id: row.id, number: row.number, saleBalance: detail.sale.balance, previousDebtAvailable })
+      setDeliveryOrder({ id: row.id, number: row.number, saleBalance: detail.sale.balance, previousDebtAvailable, accountKind: detail.order.accountKind })
     } catch (cause) {
       setDeliveryLoadError(cause instanceof Error ? cause.message : 'No se pudo cargar el pedido para registrar la entrega.')
     } finally { setLoadingDeliveryId('') }
@@ -182,6 +182,6 @@ export default function OrdersPage() {
       {deliveryFeedback && <p className="success-text" role="status">{deliveryFeedback}</p>}
       {dateError ? <p id="orders-date-error" className="error-text" role="alert">{dateError}</p> : query.isLoading ? <EmptyState title="Cargando pedidos" description="Consultando pedidos y ventas." /> : query.isError ? <EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} /> : rows.length === 0 ? <EmptyState title={hasFilters ? 'No hay pedidos para estos filtros' : 'No hay pedidos para mostrar'} description={hasFilters ? 'No se encontraron pedidos para la búsqueda y el rango de fechas seleccionados. Podés quitar los filtros para consultar todos los pedidos.' : 'Todavía no hay pedidos registrados para tu usuario.'} action={hasFilters ? <Button variant="secondary" type="button" onClick={clearFilters}>Ver todos los pedidos</Button> : canCreate ? <Button href="/orders/new">+ Nuevo pedido</Button> : undefined} /> : <><div onKeyDown={moveBetweenRows}><DataTable columns={columns} rows={rows} /></div><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} pedidos</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
     </Panel>
-    {deliveryOrder && <DeliveryAttemptDialog mode="delivery" returnFocusId={`order-delivery-${deliveryOrder.id}`} orderNumber={deliveryOrder.number} saleBalance={deliveryOrder.saleBalance} previousDebtAvailable={deliveryOrder.previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setDeliveryOrder(undefined)} />}
+    {deliveryOrder && <DeliveryAttemptDialog mode="delivery" returnFocusId={`order-delivery-${deliveryOrder.id}`} orderNumber={deliveryOrder.number} saleBalance={deliveryOrder.saleBalance} previousDebtAvailable={deliveryOrder.previousDebtAvailable} value={delivery.draft} pending={delivery.pending} error={delivery.error} onChange={delivery.changeDraft} onSubmit={delivery.submit} onClose={() => setDeliveryOrder(undefined)} collectionsNotice={resellerCollectionsNotice(deliveryOrder.accountKind)} />}
   </>
 }

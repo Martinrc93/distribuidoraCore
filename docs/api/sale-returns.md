@@ -50,3 +50,7 @@ Respuestas de error:
 - `409 CONFLICT`: venta todavía no entregada o cantidad superior al saldo disponible para devolución.
 
 Las devoluciones requieren las tablas creadas en `V15__add_sale_returns.sql`. El movimiento `RETURN` aumenta directamente el saldo único del producto.
+
+Las ventas cargadas a la cuenta de un revendedor (`kind = RESELLER`), incluidas
+sus compras propias, no admiten devoluciones: la API responde `409` sin registrar
+movimientos (Fase 9.2).

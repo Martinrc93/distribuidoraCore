@@ -139,4 +139,86 @@ class CustomerCommandServiceTest {
         assertThatThrownBy(() -> controller.assignPriceList(UUID.randomUUID(), null))
             .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void resellerChangesRequireAdministratorWithResellerPermissionBeforeReadingData() {
+        assertThatThrownBy(() -> service.changeKind(UUID.randomUUID(), "RESELLER"))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(() -> service.assignReseller(UUID.randomUUID(), UUID.randomUUID()))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        org.mockito.Mockito.verifyNoInteractions(jdbc, audit);
+    }
+
+    @Test
+    void marksResellerAndAuditsOnlyEffectiveChanges() {
+        authenticateResellerManager();
+        UUID customerId = UUID.randomUUID();
+        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("for update"), eq(customerId)))
+            .thenReturn(new java.util.HashMap<>(Map.of("kind", "REGULAR")));
+
+        service.changeKind(customerId, "RESELLER");
+
+        verify(jdbc).update("update customer.customers set kind = ? where id = ?", "RESELLER", customerId);
+        verify(audit).recordWithinTransaction(any(), eq("CUSTOMER_RESELLER_MARK"), eq("CUSTOMER"), eq(customerId.toString()),
+            eq("SUCCESS"), eq(Map.of("kind", "RESELLER")));
+        assertThatThrownBy(() -> service.changeKind(customerId, "OTHER")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void assignsOnlyActiveResellersAndReportsPendingOrdersKept() {
+        authenticateResellerManager();
+        UUID customerId = UUID.randomUUID();
+        UUID resellerId = UUID.randomUUID();
+        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("for update"), eq(customerId)))
+            .thenReturn(new java.util.HashMap<>(Map.of("kind", "REGULAR")));
+        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("for share"), eq(resellerId)))
+            .thenReturn(Map.of("kind", "RESELLER", "status", "ACTIVE"));
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("from orders.orders"), eq(Long.class), eq(customerId)))
+            .thenReturn(2L);
+
+        var result = service.assignReseller(customerId, resellerId);
+
+        assertThat(result.pendingOrdersKept()).isEqualTo(2);
+        verify(jdbc).update("update customer.customers set reseller_id = ?, reseller_kind = ? where id = ?",
+            resellerId, "RESELLER", customerId);
+        verify(audit).recordWithinTransaction(any(), eq("CUSTOMER_RESELLER_ASSIGN"), eq("CUSTOMER"), eq(customerId.toString()),
+            eq("SUCCESS"), org.mockito.ArgumentMatchers.anyMap());
+        assertThatThrownBy(() -> service.assignReseller(customerId, customerId)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsInactiveOrRegularResellersWithReadableConflicts() {
+        authenticateResellerManager();
+        UUID customerId = UUID.randomUUID();
+        UUID inactive = UUID.randomUUID();
+        UUID regular = UUID.randomUUID();
+        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("for update"), eq(customerId)))
+            .thenReturn(new java.util.HashMap<>(Map.of("kind", "REGULAR")));
+        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("for share"), eq(inactive)))
+            .thenReturn(Map.of("kind", "RESELLER", "status", "INACTIVE"));
+        when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("for share"), eq(regular)))
+            .thenReturn(Map.of("kind", "REGULAR", "status", "ACTIVE"));
+
+        assertThatThrownBy(() -> service.assignReseller(customerId, inactive))
+            .isInstanceOf(com.distribuidora.customer.application.ResellerConflictException.class).hasMessageContaining("no está activo");
+        assertThatThrownBy(() -> service.assignReseller(customerId, regular))
+            .isInstanceOf(com.distribuidora.customer.application.ResellerConflictException.class).hasMessageContaining("no es revendedor");
+        verify(jdbc, org.mockito.Mockito.never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void resellerEndpointsAreReservedToAdministratorsWithTheirPermission() throws Exception {
+        for (String method : new String[]{"changeKind", "assignReseller"}) {
+            var endpoint = java.util.Arrays.stream(CustomerCommandController.class.getMethods())
+                .filter(candidate -> candidate.getName().equals(method)).findFirst().orElseThrow();
+            assertThat(endpoint.getAnnotation(PreAuthorize.class).value())
+                .isEqualTo("hasAuthority('ADMIN_ALL') and hasAuthority('RESELLER_MANAGE')");
+        }
+    }
+
+    private void authenticateResellerManager() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+            new org.springframework.security.authentication.TestingAuthenticationToken(UUID.randomUUID().toString(), "fixture",
+                "ADMIN_ALL", "RESELLER_MANAGE"));
+    }
 }

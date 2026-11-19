@@ -386,9 +386,14 @@ Reglas:
 - Los pagos no se eliminan físicamente.
 - Una corrección se realiza mediante una operación compensatoria auditada.
 - La cuenta corriente pertenece al cliente que debe cada venta
-  (`sale.sales.account_customer_id`, V51). Hoy siempre es el cliente del pedido;
-  la Fase 9 prevé que los pedidos de clientes de un revendedor se carguen a la
-  cuenta del revendedor.
+  (`sale.sales.account_customer_id`, V51): el revendedor del cliente, si lo tiene,
+  o el propio cliente. La cuenta se fija al confirmar y no cambia después.
+- Revendedores (V52): un administrador con `RESELLER_MANAGE` marca clientes como
+  revendedores y les asocia clientes, uno por cliente. Los pedidos nuevos de un
+  cliente asociado quedan a su nombre y se cargan a la cuenta del revendedor; el
+  remito no incluye saldo anterior. Los cobros de cuentas de revendedor los
+  registra un administrador y sus ventas no admiten devoluciones. Cambiar el
+  revendedor solo afecta pedidos nuevos. El revendedor no tiene acceso al sistema.
 - No existe portal de cliente.
 
 En transferencias se pueden registrar opcionalmente:

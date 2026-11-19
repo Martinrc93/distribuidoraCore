@@ -17,7 +17,7 @@ import { PreviousOrderDiscountDialog } from './PreviousOrderDiscountDialog'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import { OrderDateFilter } from './OrderDateFilter'
 
-type Customer = { id: string; name: string; sellerId?: string | null; seller?: string | null; priceListId?: string | null; balance?: number }
+type Customer = { id: string; name: string; sellerId?: string | null; seller?: string | null; priceListId?: string | null; balance?: number; kind?: string | null; resellerId?: string | null; reseller?: string | null }
 type Product = { id: string; name: string; status?: string; stock?: number }
 type PreviousOrderItem = { productId: string; productName: string; status: string; quantity: number; lineDiscountPercent: number }
 type PreviousOrder = { available: boolean; orderId?: string; orderNumber?: string; orderDiscountPercent?: number; items?: PreviousOrderItem[] }
@@ -25,7 +25,7 @@ type PriceList = { id: string; code: string; name: string; status: string }
 type Seller = { id: string; displayName: string; email: string }
 type DraftLine = { productId: string; quantity: string; lineDiscountPercent: string; unitPriceOverride: string }
 export type EditableOrder = {
-  order: { id: string; number: string; customerId: string; customer: string; seller?: string; customerBalance: number; orderDiscountPercent?: number; previousBalanceAmount?: number }
+  order: { id: string; number: string; customerId: string; customer: string; seller?: string; customerBalance: number; orderDiscountPercent?: number; previousBalanceAmount?: number; accountCustomerId?: string; accountCustomer?: string }
   items: Array<{ productId: string; productName: string; quantity: number; unitPrice: number; lineDiscountPercent: number; priceListId: string }>
 }
 type Props = { editOrder?: EditableOrder; onSaved?: () => Promise<void>; onCancel?: () => void }
@@ -133,7 +133,8 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGetAllPages<Product>('/api/products?page=0&size=100&includeStock=true') })
   const listsQuery = useQuery({ queryKey: ['order-create-price-lists', ...PRICE_LIST_KEY], queryFn: loadPriceLists })
   const sellersQuery = useQuery({ queryKey: SELLER_KEY, queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin && !editOrder })
-  const customers: Customer[] = editOrder ? [{ id: editOrder.order.customerId, name: editOrder.order.customer, seller: editOrder.order.seller, balance: editOrder.order.customerBalance }] : customersQuery.data?.content ?? []
+  const customers: Customer[] = editOrder ? [{ id: editOrder.order.customerId, name: editOrder.order.customer, seller: editOrder.order.seller, balance: editOrder.order.customerBalance,
+    ...(editOrder.order.accountCustomerId && editOrder.order.accountCustomerId !== editOrder.order.customerId ? { resellerId: editOrder.order.accountCustomerId, reseller: editOrder.order.accountCustomer } : {}) }] : customersQuery.data?.content ?? []
   const [importedProducts, setImportedProducts] = useState<Product[]>(() => editOrder?.items.map((item) => ({ id: item.productId, name: item.productName })) ?? [])
   const products = [...new Map([...importedProducts, ...(productsQuery.data?.content ?? [])].map((product) => [product.id, product])).values()]
   const activeLists = (listsQuery.data?.content ?? []).filter((list) => list.status === 'ACTIVE')
@@ -157,6 +158,16 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const [discountPrompt, setDiscountPrompt] = useState<{ order: PreviousOrder; anchor: HTMLElement }>()
   const customer = customers.find((item) => item.id === customerId)
   const customerBalance = Number(customer?.balance ?? 0)
+  // A reseller owes its customers' orders: the debt, the balance and any collection belong to its account.
+  const resellerId = customer?.resellerId ?? ''
+  const resellerName = customer?.reseller ?? ''
+  const canCollect = isAdmin || (!resellerId && customer?.kind !== 'RESELLER')
+  const resellerBalanceQuery = useQuery({
+    queryKey: [`/api/customers/${resellerId}/account-balance`],
+    queryFn: () => apiGet<{ balance: number }>(`/api/customers/${resellerId}/account-balance`),
+    enabled: Boolean(resellerId) && isAdmin && !editOrder,
+  })
+  const accountBalance = resellerId ? Number((editOrder ? customer?.balance : resellerBalanceQuery.data?.balance) ?? 0) : customerBalance
   // Optional collection at confirmation: this order and older debts are paid separately.
   const [orderPayment, setOrderPayment] = useState<CollectionDraft>({ method: 'CASH', amount: '', reference: '' })
   const [debtPayment, setDebtPayment] = useState<CollectionDraft>({ method: 'CASH', amount: '', reference: '' })
@@ -387,10 +398,10 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
       if (!Number.isFinite(orderPaid) || orderPaid < 0) { setError('Ingresá un importe válido para el pago de este pedido.'); return undefined }
       if (orderPaid > previewTotal + 0.00005) { setError(`El pago de este pedido no puede superar su total (${money(previewTotal)}).`); return undefined }
       if (!Number.isFinite(debtPaid) || debtPaid < 0) { setError('Ingresá un importe válido para el pago de deuda anterior.'); return undefined }
-      if (debtPaid > Math.max(0, customerBalance) + 0.00005) { setError(`El pago de deuda anterior no puede superar la deuda actual (${money(Math.max(0, customerBalance))}).`); return undefined }
+      if (debtPaid > Math.max(0, accountBalance) + 0.00005) { setError(`El pago de deuda anterior no puede superar la deuda actual (${money(Math.max(0, accountBalance))}).`); return undefined }
     }
-    const payments = !editOrder && orderPaid > 0 ? [collectionPayment(orderPayment, orderPaid)] : []
-    const previousDebtPayments = !editOrder && debtPaid > 0 ? [collectionPayment(debtPayment, debtPaid)] : []
+    const payments = !editOrder && canCollect && orderPaid > 0 ? [collectionPayment(orderPayment, orderPaid)] : []
+    const previousDebtPayments = !editOrder && canCollect && debtPaid > 0 ? [collectionPayment(debtPayment, debtPaid)] : []
     return { idempotencyKey: newKey(), customerId, ...(!editOrder ? { orderDate: parsedOrderDate! } : {}), ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments, ...(previousDebtPayments.length ? { previousDebtPayments } : {}) }
   }
 
@@ -467,6 +478,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
               <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" aria-invalid={Boolean(customerId && resolvedListId && !selectedList)} aria-describedby={customerId && resolvedListId && !selectedList ? 'order-price-list-error' : undefined} value={resolvedListId} onChange={(event) => selectPriceList(event.target.value)} required disabled={submitting || !canChangeList}><option value="">Seleccionar lista...</option>{resolvedListId && !selectedList && <option value={resolvedListId} disabled>Lista asignada no disponible</option>}{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select>{customerId && resolvedListId && !selectedList && <span id="order-price-list-error" className="error-text">{canChangeList ? 'Seleccioná una lista activa para continuar.' : 'La lista asignada no está disponible. Solicitá su revisión a un administrador.'}</span>}</label>
               <div className="order-previous-action"><Button type="button" variant="secondary" onClick={loadPreviousOrder} disabled={!customerId || !selectedList || previousOrderQuery.isFetching || previousOrderQuery.isError || !previousOrderQuery.data?.available || submitting} title={!customerId ? 'Seleccioná un cliente para consultar su último pedido.' : previousOrderQuery.isFetching ? 'Consultando el último pedido del cliente.' : previousOrderQuery.isError ? 'No se pudo consultar el pedido anterior.' : !previousOrderQuery.data?.available ? 'Este cliente no tiene pedidos anteriores.' : 'Reemplazar los productos del borrador con los del último pedido del cliente.'}>Cargar pedido anterior</Button></div>
             </div>
+            {resellerId && <p className="helper-text">Cuenta: <strong>{resellerName}</strong> (revendedor). El pedido queda a nombre del cliente y la deuda se carga a esa cuenta corriente.</p>}
             {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
             <div className={`product-picker order-product-picker${canDiscount ? ' order-product-picker-discount' : ''}`}>
               <SearchableSelect key={customerId} label="Producto" className="order-product-choice" fullWidth preserveSearch allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" options={products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => ({ id: item.id, name: item.name, ...(item.stock !== undefined ? { detail: `Stock: ${stockUnits.format(Number(item.stock))}` } : {}) }))} value={selectedProductId} onChange={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError(''); focusQuantityAfterSelect.current = Boolean(value) }} disabled={!customerId || !selectedList || submitting} />
@@ -482,7 +494,11 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
             </div>
             <DataTable className="order-lines order-lines-table" columns={lineColumns} rows={lineRows} emptyContent={<p className="table-empty-message">Elegí un producto para consultar su precio en la lista seleccionada.</p>} />
             {invalidQuantityLines.map((line) => <p key={line.productId} id={`order-quantity-${line.productId}-error`} className="error-text" role="alert">La cantidad de {productsById.get(line.productId)?.name ?? 'el producto'} debe ser positiva y múltiplo de 0,5.</p>)}
-            {customer && <section className="order-account" aria-labelledby="order-account-title">
+            {customer && resellerId && isAdmin && <section className="order-account" aria-labelledby="order-account-title">
+              <div className="order-account-balance"><h3 id="order-account-title">Cuenta corriente de {resellerName}</h3><span>Saldo actual</span><strong>{resellerBalanceQuery.isError ? 'No disponible' : <CurrencyText>{money(accountBalance)}</CurrencyText>}</strong></div>
+              <p className="helper-text">El remito del cliente no incluye saldo anterior: la deuda es del revendedor.</p>
+            </section>}
+            {customer && !resellerId && <section className="order-account" aria-labelledby="order-account-title">
               <div className="order-account-balance"><h3 id="order-account-title">Cuenta corriente</h3><span>Saldo actual</span><strong><CurrencyText>{money(customerBalance)}</CurrencyText></strong></div>
               <div className="order-account-controls">
                 <label className="field"><span>Importe para el remito</span><input className="input currency-input" type="text" inputMode="decimal" value={previousBalanceInput} placeholder="0,00" aria-invalid={Boolean(previousBalanceError)} aria-describedby={previousBalanceError ? 'order-account-error' : undefined} onChange={(event) => { draftChanged(); setPreviousBalanceInput(event.target.value); setPreviousBalanceError('') }} disabled={customerBalance <= 0 || submitting} /></label>
@@ -491,12 +507,13 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
               </div>
               {previousBalanceError && <p className="error-text" id="order-account-error" role="alert"><CurrencyText>{previousBalanceError}</CurrencyText></p>}
             </section>}
-            {customer && !editOrder && <section className="order-collection" aria-labelledby="order-collection-title">
+            {customer && !editOrder && !canCollect && <p className="helper-text">Los cobros de cuentas de revendedor los registra un administrador.</p>}
+            {customer && !editOrder && canCollect && <section className="order-collection" aria-labelledby="order-collection-title">
               <h3 id="order-collection-title">Cobro al confirmar (opcional)</h3>
               <p className="helper-text">El pago de este pedido y el de la deuda anterior se registran por separado. Lo que no se cobre queda en la cuenta corriente.</p>
               {([
                 ['order', 'Pago de este pedido', orderPayment, setOrderPayment, previewTotal, 'Cobrar el total del pedido', 'Se aplica solo a este pedido.'],
-                ...(customerBalance > 0 ? [['debt', 'Pago de deuda anterior', debtPayment, setDebtPayment, customerBalance, 'Cobrar toda la deuda', `Deuda anterior: ${money(customerBalance)}. Se aplica a las deudas más antiguas, nunca a este pedido.`]] : []),
+                ...(accountBalance > 0 ? [['debt', 'Pago de deuda anterior', debtPayment, setDebtPayment, accountBalance, 'Cobrar toda la deuda', resellerId ? `Deuda anterior de ${resellerName}: ${money(accountBalance)}. Se aplica a las deudas más antiguas de su cuenta, nunca a este pedido.` : `Deuda anterior: ${money(accountBalance)}. Se aplica a las deudas más antiguas, nunca a este pedido.`]] : []),
               ] as Array<[string, string, CollectionDraft, (value: CollectionDraft) => void, number, string, string]>).map(([key, title, draft, setDraft, max, fillLabel, help]) => <fieldset className="order-collection-row" key={key} disabled={submitting}>
                 <legend>{title}</legend>
                 <label className="field"><span>Medio de pago</span><select className="select" aria-label={`Medio: ${title}`} value={draft.method} onChange={(event) => { draftChanged(); setDraft({ ...draft, method: event.target.value as CollectionDraft['method'] }) }}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>

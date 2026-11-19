@@ -46,6 +46,26 @@ public class CustomerCommandController {
         return ResponseEntity.noContent().build();
     }
 
+    @PatchMapping("/{customerId}/kind")
+    @PreAuthorize("hasAuthority('ADMIN_ALL') and hasAuthority('RESELLER_MANAGE')")
+    public ResponseEntity<Void> changeKind(@PathVariable UUID customerId, @RequestBody KindPayload body) {
+        if (body == null) throw new IllegalArgumentException("kind es obligatorio");
+        service.changeKind(customerId, body.kind());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{customerId}/reseller")
+    @PreAuthorize("hasAuthority('ADMIN_ALL') and hasAuthority('RESELLER_MANAGE')")
+    public ResellerResponse assignReseller(@PathVariable UUID customerId, @RequestBody ResellerPayload body) {
+        if (body == null) throw new IllegalArgumentException("resellerId es obligatorio o puede ser null");
+        var result = service.assignReseller(customerId, body.resellerId());
+        return new ResellerResponse(result.customerId(), result.resellerId(), result.pendingOrdersKept());
+    }
+
+    public record KindPayload(String kind) { }
+    public record ResellerPayload(UUID resellerId) { }
+    public record ResellerResponse(UUID customerId, UUID resellerId, long pendingOrdersKept) { }
+
     public record CustomerPayload(@NotBlank String businessName, String cuitId, String email, String phone, String address, String zone, UUID sellerId, UUID priceListId) {
         CustomerCommandService.CustomerInput input() { return new CustomerCommandService.CustomerInput(businessName, cuitId, email, phone, address, zone, sellerId, priceListId); }
     }

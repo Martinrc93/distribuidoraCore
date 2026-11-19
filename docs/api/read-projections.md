@@ -32,11 +32,13 @@ Los cobros acumulados incluyen pagos posteriores al rango de creación.
 ## Listado de clientes con filtros
 
 ```http
-GET /api/customers?page=0&size=20&search=&sellerId=<uuid>&hasBalance=true&status=ACTIVE
+GET /api/customers?page=0&size=20&search=&sellerId=<uuid>&hasBalance=true&status=ACTIVE&kind=RESELLER&resellerId=<uuid>
 ```
 
 `search` busca por nombre o identificación; `sellerId` filtra por vendedor
-asignado. `hasBalance=true` incluye saldos visibles distintos de cero: para
+asignado. `kind` (`REGULAR` o `RESELLER`) y `resellerId` filtran por tipo de
+cliente y por los clientes asociados a un revendedor; cada fila incluye `kind`,
+`resellerId` y `reseller`. `hasBalance=true` incluye saldos visibles distintos de cero: para
 administradores, deuda o saldo a favor global; para usuarios con alcance asignado,
 solo deuda de sus pedidos, limitada al saldo global positivo. Pedidos sin vendedor
 usan la asignación actual del cliente. `status` admite `ACTIVE`, `INACTIVE` o vacío para
@@ -265,9 +267,11 @@ clientes asignados y ventas de sus propios pedidos. Si el pedido no tiene
 vendedor, se usa el vendedor actual del cliente. El listado y su conteo aplican
 el mismo alcance; un cliente ajeno devuelve `404`. El administrador conserva
 la vista completa. Devuelve ventas `CONFIRMED` o `DELIVERED` con saldo positivo,
-ordenadas de más antigua a más nueva. Cada elemento contiene `saleId`,
-`saleNumber`, `status`, `total`, `paid`, `orderId`, `orderNumber`, `createdAt` y
-`balance`. El saldo considera débitos y créditos del ledger y se limita al saldo
+ordenadas de más antigua a más nueva. Son las ventas que debe la cuenta del
+cliente (`account_customer_id`): para un revendedor, también las de sus clientes.
+Cada elemento contiene `saleId`, `saleNumber`, `status`, `total`, `paid`,
+`orderId`, `orderNumber`, `createdAt`, `customerId`, `customer` (cliente que
+recibió el pedido) y `balance`. El saldo considera débitos y créditos del ledger y se limita al saldo
 pendiente de la venta.
 
 La UI usa `saleId` para imputar el cobro a esa venta; sin selección conserva la
@@ -276,12 +280,14 @@ imputación FIFO. Un usuario sin permiso recibe `403`.
 ## Listado de ventas con filtros independientes
 
 ```http
-GET /api/sales?page=0&size=20&search=SAL-001&customerId=<uuid>&sellerId=<uuid>&pendingBalance=true&dateMin=2026-09-01&dateMax=2026-09-30
+GET /api/sales?page=0&size=20&search=SAL-001&customerId=<uuid>&accountCustomerId=<uuid>&sellerId=<uuid>&pendingBalance=true&dateMin=2026-09-01&dateMax=2026-09-30
 ```
 
 `search` busca exclusivamente por número de venta, de forma parcial y sin
 distinguir mayúsculas. `customerId` y `sellerId` son UUID opcionales y filtran
-por identidad exacta. El vendedor es el del pedido; si no tiene uno asignado,
+por identidad exacta. `customerId` es el cliente que recibió el pedido;
+`accountCustomerId`, la cuenta que debe la venta (un revendedor debe los pedidos
+de sus clientes). Cada fila incluye `customerId`, `accountCustomerId` y `account`. El vendedor es el del pedido; si no tiene uno asignado,
 se usa el vendedor del cliente. Los filtros se combinan entre sí.
 
 Para vendedores, el listado incluye únicamente ventas con estado `DELIVERED`
@@ -361,7 +367,12 @@ operación, recurso, resultado y request ID. Las rutas y los comandos siguen
 autorizados por el backend.
 
 El detalle de pedido y venta incluye `sale.previousDebtAvailable` para la entrega:
-deuda vigente de ventas anteriores del mismo cliente, limitada al saldo contable
+deuda vigente de ventas anteriores de la misma cuenta, limitada al saldo contable
 y al importe sin pagar de cada venta. Para vendedores, solo considera pedidos
-propios o sin vendedor del cliente asignado. Ver
+propios o sin vendedor cuyo cliente esté asignado. Ver
 [pagos de entrega](delivery-collection.md).
+
+Desde la Fase 9, `order` agrega `accountCustomerId`, `accountCustomer` y
+`accountKind`: la cuenta que debe la venta y su tipo (`RESELLER` para un
+revendedor). `customerBalance` es el saldo de esa cuenta, y `account` resume los
+asientos de la venta.

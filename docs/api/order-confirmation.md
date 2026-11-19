@@ -36,3 +36,24 @@ con otra fecha produce `409 IDEMPOTENCY_CONFLICT`. Los movimientos de inventario
 cobros, cuenta corriente y auditoría mantienen su fecha real de ejecución. Los
 precios se calculan con las reglas vigentes al confirmar. La edición de un
 pedido conserva su fecha de registro.
+
+## Cuenta que debe el pedido (Fase 9)
+
+La venta guarda la cuenta que la debe en `account_customer_id` (V51). Es el
+revendedor del cliente si lo tiene (V52) o el propio cliente. Esa cuenta recibe
+el débito, los pagos y el cálculo del límite de crédito; el pedido, su numeración,
+la lista de precios y el vendedor siguen siendo los del cliente que lo recibe.
+
+Con un revendedor como cuenta:
+
+- `previousBalanceAmount` mayor a cero devuelve `400`: el remito es del cliente,
+  que no le debe a la distribuidora.
+- Los pagos (`payments` con efectivo o transferencia y `previousDebtPayments`)
+  requieren `ADMIN_ALL`; sin él, `403` antes de registrar nada. La deuda anterior
+  se imputa por FIFO en la cuenta del revendedor.
+- Un revendedor inactivo impide confirmar (`409`).
+- Si el revendedor del cliente cambia durante la confirmación, se responde `409`
+  y no se registra nada; el reintento usa la asignación vigente.
+
+La auditoría `ORDER_CONFIRM` agrega `accountCustomerId` cuando la cuenta no es el
+cliente. La edición de un pedido conserva su cuenta y rechaza agregar saldo anterior.
