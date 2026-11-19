@@ -130,6 +130,14 @@ public class CustomerCommandService {
         if ("REGULAR".equals(kind) && exists("select exists(select 1 from customer.customers where reseller_id = ?)", id)) {
             throw new ResellerConflictException("El revendedor tiene clientes asociados. Reasignalos antes de quitar la marca.");
         }
+        // Commission plans need the mark (V53 enforces it) and pending commissions are settled from the reseller list.
+        if ("REGULAR".equals(kind) && exists("""
+            select exists(select 1 from app.reseller_commission_plans where customer_id = ?)
+                or exists(select 1 from sale.commission_entries where reseller_id = ? and settlement_id is null)
+            """, id, id)) {
+            throw new ResellerConflictException(
+                "El revendedor tiene plan de comisión o comisiones sin liquidar. Quitá el plan y liquidalas antes de quitar la marca.");
+        }
         jdbc.update("update customer.customers set kind = ? where id = ?", kind, id);
         audit.recordWithinTransaction(actorId(), "CUSTOMER_RESELLER_MARK", "CUSTOMER", id.toString(), "SUCCESS",
             Map.of("kind", kind));

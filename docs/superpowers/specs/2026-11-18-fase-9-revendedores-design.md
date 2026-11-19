@@ -2,8 +2,8 @@
 
 Fecha: 2026-11-18. Rama: `support` (HEAD `7a413eb`).
 
-Estado: **reglas de negocio respondidas el 2026-11-18 y supuestos S1–S6
-confirmados. Etapas 9.1 (V51) y 9.2 (V52) implementadas; 9.3 pendiente de S7.**
+Estado: **reglas de negocio respondidas el 2026-11-18 y supuestos S1–S7
+confirmados. Etapas 9.1 (V51), 9.2 (V52) y 9.3 (V53) implementadas.**
 ADR asociado: [ADR-010](../../adr/ADR-010-reseller-debt-holder.md) (aceptado).
 
 ## Objetivo
@@ -135,7 +135,7 @@ Clientes imputa solo por FIFO.
 ### Supuestos
 
 Completan respuestas parciales. S1–S6 se confirmaron el 2026-11-18 y están
-implementados en 9.2; S7 sigue pendiente para 9.3.
+implementados en 9.2; S7 se confirmó el 2026-11-19 y está implementado en 9.3.
 
 - **S1. Operación administrativa (P2).** Marcar, asociar y cobrar en cuentas de
   revendedor exigen `ADMIN_ALL`, incluidos los pagos al confirmar y al entregar.
@@ -212,7 +212,8 @@ Etapa 9.3 (`V53`), comisiones de revendedores:
 - `sale.commission_entries` y `sale.commission_settlements` admiten como
   beneficiario un vendedor o un revendedor (exactamente uno), con la misma
   garantía de pertenencia entre movimiento y liquidación. La unicidad pasa de
-  `(sale_item_id, return_id)` a `(sale_item_id, return_id, tipo de beneficiario)`.
+  `(sale_item_id, return_id)` a `(sale_item_id, return_id, beneficiary)`, con
+  `beneficiary` como columna generada (`SELLER` o `RESELLER`).
 
 ### Invariantes
 
@@ -300,7 +301,7 @@ y [proyecciones](../../api/read-projections.md). Resumen:
 
 - `PATCH /api/customers/{id}/kind` con `{ "kind": "RESELLER" | "REGULAR" }`.
   `409 RESELLER_CONFLICT` si el cliente tiene revendedor o, al quitar la marca,
-  clientes asociados (en 9.3, también plan de comisión).
+  clientes asociados, plan de comisión o comisiones sin liquidar.
 - `PATCH /api/customers/{id}/reseller` con `{ "resellerId": "uuid" | null }`.
   `409` si el destino no es un revendedor activo o el cliente es revendedor; `400`
   si es el mismo cliente. Devuelve `pendingOrdersKept`.
@@ -316,7 +317,9 @@ y [proyecciones](../../api/read-projections.md). Resumen:
 - `POST /api/sales/{saleId}/returns` sobre una venta de revendedor: `409`.
 - Comisiones (9.3): asignación `GET`/`PUT /api/settings/commission-plans/reseller-assignments/{customerId}`
   con `expectedPlanId`; saldo y movimientos en `GET /api/commissions/resellers/{customerId}`;
-  liquidación en `POST /api/commissions/resellers/{customerId}/settlements`.
+  liquidación en `POST /api/commissions/resellers/{customerId}/settlements`. El
+  estado de cuenta de comisiones devuelve `name` (antes `seller`) y el cliente de
+  cada movimiento. Contrato en [comisiones](../../api/commission-plans.md#revendedores-fase-93).
 
 ### Interfaz
 
@@ -352,8 +355,10 @@ implementado se documenta en la sección «Revendedores» de la guía.
 - Ventas de revendedor: sin acción «Devolver», con un texto que explica por qué.
 - Pagos: cada deuda muestra pedido y cliente final.
 - Dashboard: «Ver deuda» filtra por `accountCustomerId`.
-- Comisiones (9.3): asignación y liquidación de revendedores con `CustomerSelect`,
-  junto a las de vendedores.
+- Comisiones (9.3): panel «Asignación a revendedores» con `CustomerSelect`, junto
+  al de vendedores, y selector «Comisiones de» (vendedores o revendedores) en la
+  liquidación, con el cliente de cada movimiento. El diálogo «Revendedor» explica
+  qué falta para quitar la marca.
 
 Verificación en 320, 640, 760, 1050 y 1280 px, con teclado, foco, Escape con
 descarte, estados de carga y error, y ambos temas.
@@ -377,7 +382,7 @@ descarte, estados de carga y error, y ambos temas.
 |---|---|---|---|
 | 9.1 | **Implementada.** Titular en la venta, FK compuestas, cuenta corriente en `payment` y lecturas por titular. Sin cambio visible. | L | — |
 | 9.2 | **Implementada.** Revendedores: marca y asociación, confirmación con titular, cobros solo de administración, sin devoluciones, reasignación, interfaz, estado de cuenta y Dashboard. | L | 9.1, S1–S6 |
-| 9.3 | Comisiones de revendedores: asignación de plan, devengo al entregar y liquidación. | M | 9.2, S7 |
+| 9.3 | **Implementada.** Comisiones de revendedores: asignación de plan, devengo al entregar y liquidación. | M | 9.2, S7 |
 
 ### Implementación de 9.1 (2026-11-18)
 
@@ -415,6 +420,25 @@ descarte, estados de carga y error, y ambos temas.
   de revendedores, migraciones V51 y V52); 385 pruebas de frontend, `tsc -b` y
   build; E2E de revendedores (320, 640, 760, 1050 y 1280 px, ambos temas, Escape)
   y de Dashboard con Brave.
+
+### Implementación de 9.3 (2026-11-19)
+
+- `V53__add_reseller_commissions.sql`: plan por revendedor con FK a
+  `customers (id, kind)`, beneficiario único en movimientos y liquidaciones, FK
+  compuesta por beneficiario y unicidad por línea, devolución y beneficiario.
+- `CommissionAccrualService`: al entregar devenga para el vendedor activo con plan
+  y para el revendedor activo titular de la venta con plan, en una sola sentencia
+  idempotente.
+- `CommissionSettlementService`: estado de cuenta y liquidación por beneficiario
+  (`Beneficiary.SELLER` o `RESELLER`), con el mismo token y bloqueo por
+  beneficiario. `CommissionPlansService`: asignación a revendedores con versión
+  esperada, bloqueo de la fila del cliente y auditoría.
+- `changeKind` rechaza quitar la marca con plan o comisiones sin liquidar.
+- Interfaz: asignación y liquidación de revendedores y diálogo «Revendedor».
+- Verificación: 577 pruebas de backend con PostgreSQL 16.4 (devengo doble,
+  idempotencia, plan no retroactivo, compra propia, liquidación separada, FK entre
+  beneficiarios y migración V53); 387 pruebas de frontend, `tsc -b` y build; E2E
+  de comisiones (320, 390 y 1440 px, ambos temas) con Brave.
 
 ### Verificación
 

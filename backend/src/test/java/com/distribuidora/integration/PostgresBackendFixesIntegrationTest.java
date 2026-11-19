@@ -122,6 +122,9 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired SaleReturnService saleReturnService;
     @Autowired CustomerCommandService customerCommandService;
     @Autowired AccountStatementDocumentService accountStatementDocumentService;
+    @Autowired com.distribuidora.settings.application.CommissionPlansService commissionPlansService;
+    @Autowired com.distribuidora.sale.application.CommissionSettlementService commissionSettlementService;
+    @Autowired com.distribuidora.sale.application.CommissionAccrualService commissionAccrualService;
     @Autowired OrderConfirmationService orderConfirmationService;
     @Autowired DeliveryLifecycleService deliveryLifecycleService;
     @Autowired com.distribuidora.order.application.OrderFulfillmentService orderFulfillmentService;
@@ -160,6 +163,7 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from payment.payments where sale_id in (%s)", sales);
         deleteIds("delete from sale.commission_entries where sale_item_id in (select id from sale.sale_items where sale_id in (%s))", sales);
         deleteIds("delete from sale.commission_settlements where seller_id in (%s)", sellers);
+        deleteIds("delete from sale.commission_settlements where reseller_id in (%s)", customers);
         deleteIds("delete from sale.return_items where sale_id in (%s)", sales);
         deleteIds("delete from sale.returns where sale_id in (%s)", sales);
         deleteIds("delete from sale.sale_items where sale_id in (%s)", sales);
@@ -169,6 +173,7 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from notification.outbox_events where aggregate_id in (%s)", notificationRequests);
         deleteIds("delete from notification.outbox_events where aggregate_id in (%s)", orders);
         deleteIds("delete from orders.orders where id in (%s)", orders);
+        deleteIds("delete from app.reseller_commission_plans where customer_id in (%s)", customers);
         deleteIds("delete from customer.customers where id in (%s)", customers);
         deleteIds("delete from app.seller_commission_plans where seller_id in (%s)", sellers);
         deleteIds("delete from app.commission_plans where id in (%s)", commissionPlans);
@@ -2221,6 +2226,96 @@ class PostgresBackendFixesIntegrationTest {
         customerCommandService.assignReseller(client, reseller);
         jdbc.update("update customer.customers set status = 'INACTIVE' where id = ?", reseller);
         assertThatThrownBy(() -> confirmFor(client, product, "1")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void resellerCommissionAccruesBesideTheSellerCommissionAndIsSettledApart() {
+        UUID admin = createUser("reseller-commission-admin"); assignRole(admin, "ADMIN");
+        authenticateOrderActor(admin, "ADMIN_ALL", "RESELLER_MANAGE");
+        UUID profile = createSeller("reseller-commission");
+        UUID reseller = createCustomer(null);
+        UUID client = createCustomer(profile);
+        UUID regular = createCustomer(null);
+        customerCommandService.changeKind(reseller, "RESELLER");
+        customerCommandService.assignReseller(client, reseller);
+        UUID product = createProduct("reseller-commission-" + UUID.randomUUID());
+        putGeneralPrice(product, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 20 where product_id = ?", product);
+        UUID sellerPlan = commissionPlan("1");
+        UUID resellerPlan = commissionPlan("3");
+        jdbc.update("insert into app.seller_commission_plans(seller_id, plan_id) values (?, ?)", profile, sellerPlan);
+
+        // Only resellers get a plan, and a reseller with a plan keeps its mark.
+        assertThatThrownBy(() -> commissionPlansService.assignReseller(regular, resellerPlan, null))
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> commissionPlansService.assignReseller(reseller, resellerPlan, sellerPlan))
+            .isInstanceOf(IllegalStateException.class);
+        commissionPlansService.assignReseller(reseller, resellerPlan, null);
+        assertThat(commissionPlansService.list()).filteredOn(plan -> plan.id().equals(resellerPlan))
+            .extracting(com.distribuidora.settings.application.CommissionPlansService.Overview::resellerCount).containsExactly(1L);
+        assertThatThrownBy(() -> customerCommandService.changeKind(reseller, "REGULAR")).isInstanceOf(ResellerConflictException.class);
+
+        // The customer's order pays the seller and the reseller that holds its account, once each.
+        var clientOrder = confirmFor(client, product, "2");
+        deliver(clientOrder.orderId());
+        UUID clientItem = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, clientOrder.saleId());
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+            commissionAccrualService.delivered(clientOrder.saleId(), Timestamp.from(Instant.now())));
+        assertThat(jdbc.queryForList("""
+            select beneficiary || ':' || amount::numeric(19,2) from sale.commission_entries where sale_item_id = ? order by beneficiary
+            """, String.class, clientItem)).containsExactly("RESELLER:6.00", "SELLER:2.00");
+        assertThat(jdbc.queryForObject("select reseller_id from sale.commission_entries where sale_item_id = ? and beneficiary = 'RESELLER'",
+            UUID.class, clientItem)).isEqualTo(reseller);
+
+        // The reseller's own purchases also earn, and the plan must be assigned when the order is delivered.
+        var ownOrder = confirmFor(reseller, product, "1");
+        deliver(ownOrder.orderId());
+        var lateOrder = confirmFor(client, product, "1");
+        commissionPlansService.assignReseller(reseller, null, resellerPlan);
+        deliver(lateOrder.orderId());
+        assertThat(jdbc.queryForObject("""
+            select count(*) from sale.commission_entries e join sale.sale_items i on i.id = e.sale_item_id
+            where i.sale_id = ? and e.reseller_id is not null
+            """, Long.class, lateOrder.saleId())).isZero();
+
+        var beneficiary = com.distribuidora.sale.application.CommissionSettlementService.Beneficiary.RESELLER;
+        var statement = commissionSettlementService.statement(beneficiary, reseller, null, null, 0, 20);
+        assertThat(statement.pending().entryCount()).isEqualTo(2);
+        assertThat(new BigDecimal(statement.pending().amount())).isEqualByComparingTo("9");
+        assertThat(statement.movements().content())
+            .extracting(com.distribuidora.sale.application.CommissionSettlementService.Movement::orderId)
+            .containsExactlyInAnyOrder(clientOrder.orderId(), ownOrder.orderId());
+        var sellerPending = commissionSettlementService.statement(
+            com.distribuidora.sale.application.CommissionSettlementService.Beneficiary.SELLER, profile, null, null, 0, 20).pending();
+        assertThat(new BigDecimal(sellerPending.amount())).isEqualByComparingTo("3");
+
+        var settlement = commissionSettlementService.settle(beneficiary, reseller, statement.pending().token());
+        assertThat(new BigDecimal(settlement.amount())).isEqualByComparingTo("9");
+        assertThat(settlement.entryCount()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select reseller_id from sale.commission_settlements where id = ?", UUID.class, settlement.id()))
+            .isEqualTo(reseller);
+        assertThat(commissionSettlementService.statement(
+            com.distribuidora.sale.application.CommissionSettlementService.Beneficiary.SELLER, profile, null, null, 0, 20).pending())
+            .isEqualTo(sellerPending);
+        // A seller entry cannot be tied to a reseller settlement.
+        assertThatThrownBy(() -> jdbc.update("""
+            update sale.commission_entries set settlement_id = ? where sale_item_id = ? and beneficiary = 'SELLER'
+            """, settlement.id(), clientItem)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(jdbc.queryForObject("""
+            select count(*) from audit.audit_events where resource_id = ? and operation in ('COMMISSION_SETTLEMENT', 'RESELLER_COMMISSION_ASSIGNMENT')
+            """, Long.class, reseller.toString())).isEqualTo(3L);
+    }
+
+    private UUID commissionPlan(String fixedPerUnit) {
+        UUID plan = UUID.randomUUID();
+        commissionPlans.add(plan);
+        jdbc.update("insert into app.commission_plans(id, name) values (?, ?)", plan, "Plan " + plan);
+        jdbc.update("insert into app.commission_rules(plan_id, kind, value) values (?, 'FIXED', ?)", plan, new BigDecimal(fixedPerUnit));
+        return plan;
+    }
+
+    private void deliver(UUID orderId) {
+        deliveryLifecycleService.recordAttempt(orderId, new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null));
     }
 
     private OrderConfirmationService.ConfirmationResult confirmFor(UUID customer, UUID product, String quantity) {

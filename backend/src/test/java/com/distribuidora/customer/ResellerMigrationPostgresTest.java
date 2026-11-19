@@ -48,6 +48,23 @@ class ResellerMigrationPostgresTest {
                     .isInstanceOf(DataIntegrityViolationException.class);
                 assertThatThrownBy(() -> jdbc.update("update customer.customers set reseller_id = null, reseller_kind = 'RESELLER' where id = ?", existing))
                     .isInstanceOf(DataIntegrityViolationException.class);
+                // V53: only resellers get a commission plan, and the plan keeps the mark.
+                UUID plan = UUID.randomUUID();
+                jdbc.update("insert into app.commission_plans(id, name) values (?, 'Revendedores')", plan);
+                assertThatThrownBy(() -> jdbc.update("insert into app.reseller_commission_plans(customer_id, plan_id) values (?, ?)", existing, plan))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+                assertThatThrownBy(() -> jdbc.update(
+                    "insert into app.reseller_commission_plans(customer_id, customer_kind, plan_id) values (?, 'REGULAR', ?)", existing, plan))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+                jdbc.update("insert into app.reseller_commission_plans(customer_id, plan_id) values (?, ?)", reseller, plan);
+                jdbc.update("update customer.customers set reseller_id = null, reseller_kind = null where id = ?", client);
+                assertThatThrownBy(() -> jdbc.update("update customer.customers set kind = 'REGULAR' where id = ?", reseller))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+                assertThat(jdbc.queryForObject("""
+                    select count(*) from pg_constraint where conname in ('ck_commission_entries_beneficiary',
+                        'ck_commission_settlements_beneficiary', 'fk_commission_entries_reseller_settlement',
+                        'ux_commission_entries_line_beneficiary')
+                    """, Long.class)).isEqualTo(4L);
                 assertThat(jdbc.queryForList("""
                     select r.code from identity.role_permissions rp
                     join identity.roles r on r.id = rp.role_id join identity.permissions p on p.id = rp.permission_id

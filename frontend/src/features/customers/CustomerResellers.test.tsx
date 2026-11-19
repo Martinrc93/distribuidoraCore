@@ -91,7 +91,8 @@ describe('Customer resellers', () => {
     const calls = mockApi(call => call.path === '/api/customers/regular-1/reseller-assignment'
       ? response({ kind: 'REGULAR', resellerId: null, associatedCustomersCount: 0, pendingOrders: [], pendingOrdersCount: 0 })
       : call.path === '/api/customers/reseller-1/reseller-assignment'
-        ? response({ kind: 'RESELLER', resellerId: null, associatedCustomersCount: associated, pendingOrders: [], pendingOrdersCount: 0 })
+        ? response({ kind: 'RESELLER', resellerId: null, associatedCustomersCount: associated, pendingOrders: [], pendingOrdersCount: 0,
+          commissionPlan: associated ? 'Revendedores' : null, pendingCommissionCount: associated ? 1 : 0 })
         : call.path === '/api/customers/client-1/reseller-assignment'
           ? response({ kind: 'REGULAR', resellerId: 'reseller-1', reseller: 'Distribuidora Sur', associatedCustomersCount: 0, pendingOrders: [], pendingOrdersCount: 0 })
           : call.method === 'PATCH' && call.path === '/api/customers/reseller-1/kind'
@@ -116,7 +117,7 @@ describe('Customer resellers', () => {
     await user.click(screen.getByRole('button', { name: 'Revendedor de Distribuidora Sur' }))
     dialog = await screen.findByRole('dialog', { name: 'Revendedor de Distribuidora Sur' })
     expect(await within(dialog).findByRole('radio', { name: 'Cliente' })).toBeDisabled()
-    expect(within(dialog).getByText('Tiene 2 clientes asociados. Reasignalos antes de quitar la marca.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Para quitar la marca, reasigná sus 2 clientes asociados, quitale el plan de comisión «Revendedores» y liquidá sus comisiones pendientes.')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
 
     // The association changed meanwhile: the API conflict stays readable in the dialog.

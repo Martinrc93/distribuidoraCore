@@ -394,6 +394,10 @@ Reglas:
   remito no incluye saldo anterior. Los cobros de cuentas de revendedor los
   registra un administrador y sus ventas no admiten devoluciones. Cambiar el
   revendedor solo afecta pedidos nuevos. El revendedor no tiene acceso al sistema.
+- Comisiones de revendedores (V53): un administrador puede asignarle un plan de
+  comisión. Al entregar una venta cargada a su cuenta, sea de un cliente asociado
+  o una compra propia, devenga con el plan asignado en ese momento, además de la
+  comisión del vendedor. Se liquida como la de un vendedor.
 - No existe portal de cliente.
 
 En transferencias se pueden registrar opcionalmente:

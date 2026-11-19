@@ -433,7 +433,8 @@ gestiona la administración: las acciones requieren `ADMIN_ALL` y
   «Sin revendedor (cuenta propia)». Guarda un cambio por vez. Los radios se
   deshabilitan con su explicación asociada cuando la regla no lo permite (un
   cliente con revendedor no puede ser revendedor; un revendedor con clientes
-  asociados conserva la marca). Al cambiar el revendedor, un `.warning-text` lista
+  asociados, plan de comisión o comisiones sin liquidar conserva la marca, y la
+  explicación enumera los pasos que faltan). Al cambiar el revendedor, un `.warning-text` lista
   los pedidos sin entregar que conservan su cuenta. Escape y Cancelar usan
   `useDiscardChanges`; un `409` muestra el detalle de la API dentro del diálogo.
   Se usa una única acción para no ensanchar la fila: la tabla de administradores
@@ -1193,15 +1194,20 @@ Las líneas usan `DataTable` y sus tarjetas compartidas hasta `640px`.
 
 «Comisiones» se abre desde Configuración con `ADMIN_ALL`. La pantalla reutiliza
 `DataTable` para los planes, `FormModal` y `useDiscardChanges` para editarlos
-y `SellerSelect` en modo selección para asignarlos. El selector carga todas
-las páginas de vendedores. Las reglas se agrupan con `fieldset` y usan la
+y dos paneles de asignación con el mismo formulario: «Asignación a vendedores»
+con `SellerSelect` y «Asignación a revendedores» con `CustomerSelect`, ambos en
+modo selección y con todas las páginas de opciones. Cada formulario tiene nombre
+accesible (el título del panel) y su propio selector de plan. Las reglas se agrupan con `fieldset` y usan la
 grilla habitual de campos, con una columna a `760px` o menos. La selección de
 marca, categoría y artículo reutiliza `SearchableSelect`.
 
-«Liquidación de comisiones» reutiliza el selector de vendedores, los campos
-Desde y Hasta y `DataTable` para el historial por período. El saldo pendiente
-incluye todos los movimientos del vendedor. «Registrar pago al vendedor»
-abre `ConfirmationDialog` con el importe y el vendedor elegidos. Si el saldo
+«Liquidación de comisiones» elige primero «Comisiones de» (vendedores o
+revendedores, guardado en la URL como `type`) y luego el beneficiario con
+`SellerSelect` o `CustomerSelect`. Reutiliza los campos Desde y Hasta y
+`DataTable` para el historial por período, con el cliente de cada pedido. El
+saldo pendiente incluye todos los movimientos del beneficiario. «Registrar pago
+al vendedor» o «al revendedor» abre `ConfirmationDialog` con el importe y el
+beneficiario elegidos. Si el saldo
 cambió, la pantalla actualiza el importe y pide revisar la nueva liquidación.
 
 ### Variantes específicas por pantalla

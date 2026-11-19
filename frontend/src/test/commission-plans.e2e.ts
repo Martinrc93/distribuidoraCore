@@ -4,6 +4,8 @@ const path = '/api/settings/commission-plans'
 const planId = 'plan-1'
 const sellerId = 'vendedor-2'
 const statementPath = `/api/commissions/sellers/${sellerId}`
+const resellerId = 'revendedor-1'
+const resellerStatementPath = `/api/commissions/resellers/${resellerId}`
 type Plan = { id: string; name: string; version: number; rules: Array<{ scope: string; targetId: string | null; kind: string; value: string }> }
 
 async function setup(page: Page, admin: boolean, dark = false) {
@@ -13,8 +15,8 @@ async function setup(page: Page, admin: boolean, dark = false) {
     if (dark) localStorage.setItem('distribuidora.theme', 'dark')
   }, { admin, dark })
   const state = {
-    plan: undefined as Plan | undefined, assignment: null as string | null, requests: [] as string[], errors: [] as string[],
-    paid: false, payoutTokens: [] as string[], currentToken: 'saldo-inicial',
+    plan: undefined as Plan | undefined, assignment: null as string | null, resellerAssignment: null as string | null, requests: [] as string[], errors: [] as string[],
+    paid: false, payoutTokens: [] as string[], currentToken: 'saldo-inicial', resellerPaid: false,
   }
   page.on('pageerror', (error) => state.errors.push(error.message))
   await page.route((url) => url.pathname.startsWith('/api/'), (route) => {
@@ -24,15 +26,42 @@ async function setup(page: Page, admin: boolean, dark = false) {
     if (pathname === '/api/settings/credit-limit') return route.fulfill({ json: { enabled: false, creditLimit: null } })
     if (pathname === '/api/brands') return route.fulfill({ json: [{ id: 'marca-1', name: 'Marlboro' }, { id: 'marca-2', name: 'Philip' }] })
     if (pathname === statementPath) return route.fulfill({ json: {
-      seller: 'Lucía Vendedora',
+      name: 'Lucía Vendedora',
       pending: { token: state.currentToken, entryCount: state.paid ? 0 : 1, amount: state.paid ? '0' : '750.1250' },
       periodAmount: '750.1250',
       movements: {
-        content: [{ id: 'commission-1', orderId: 'order-1', orderNumber: 'P-001', product: 'Artículo de prueba',
+        content: [{ id: 'commission-1', orderId: 'order-1', orderNumber: 'P-001', customer: 'Kiosco Centro', product: 'Artículo de prueba',
           amount: '750.1250', returned: false, occurredAt: '2026-11-02T12:00:00Z', paidAt: state.paid ? '2026-11-03T12:00:00Z' : null }],
         totalElements: 1, totalPages: 1, page: 0, size: 20,
       },
     } })
+    if (pathname === resellerStatementPath) return route.fulfill({ json: {
+      name: 'Distribuidora Sur',
+      pending: { token: 'saldo-revendedor', entryCount: state.resellerPaid ? 0 : 2, amount: state.resellerPaid ? '0' : '90.0000' },
+      periodAmount: '90.0000',
+      movements: {
+        content: [
+          { id: 'commission-2', orderId: 'order-2', orderNumber: 'P-002', customer: 'Kiosco Centro con un nombre comercial muy largo',
+            product: 'Yerba mate 1 kg', amount: '60.0000', returned: false, occurredAt: '2026-11-02T12:00:00Z', paidAt: null },
+          { id: 'commission-3', orderId: 'order-3', orderNumber: 'P-003', customer: 'Distribuidora Sur',
+            product: 'Azúcar 1 kg', amount: '30.0000', returned: false, occurredAt: '2026-11-03T12:00:00Z', paidAt: null },
+        ],
+        totalElements: 2, totalPages: 1, page: 0, size: 20,
+      },
+    } })
+    if (pathname === `${resellerStatementPath}/settlements`) {
+      state.payoutTokens.push(request.postDataJSON().token)
+      state.resellerPaid = true
+      return route.fulfill({ status: 201, json: { id: 'settlement-2', amount: '90.0000' } })
+    }
+    if (pathname === '/api/customers' && searchParams.get('kind') === 'RESELLER') return route.fulfill({ json: {
+      content: [{ id: resellerId, name: 'Distribuidora Sur', status: 'ACTIVE', kind: 'RESELLER' }],
+      totalPages: 1, totalElements: 1, page: 0, size: 100,
+    } })
+    if (pathname === `${path}/reseller-assignments/${resellerId}`) {
+      if (request.method() === 'PUT') state.resellerAssignment = request.postDataJSON().planId
+      return route.fulfill({ json: { customerId: resellerId, planId: state.resellerAssignment } })
+    }
     if (pathname === `${statementPath}/settlements`) {
       const { token } = request.postDataJSON()
       state.payoutTokens.push(token)
@@ -52,7 +81,8 @@ async function setup(page: Page, admin: boolean, dark = false) {
       return route.fulfill({ status: 201, json: state.plan })
     }
     if (pathname === path) return route.fulfill({ json: state.plan
-      ? [{ id: planId, name: state.plan.name, ruleCount: state.plan.rules.length, sellerCount: state.assignment ? 1 : 0 }] : [] })
+      ? [{ id: planId, name: state.plan.name, ruleCount: state.plan.rules.length, sellerCount: state.assignment ? 1 : 0,
+        resellerCount: state.resellerAssignment ? 1 : 0 }] : [] })
     if (pathname === `${path}/${planId}`) return route.fulfill({ json: state.plan })
     if (pathname === `${path}/assignments/${sellerId}`) {
       if (request.method() === 'PUT') {
@@ -96,13 +126,14 @@ for (const width of [320, 390, 1440]) {
       { scope: 'BRAND', targetId: 'marca-1', kind: 'FIXED', value: '150.005' },
     ])
 
-    const seller = page.getByRole('combobox', { name: 'Vendedor', exact: true })
+    const sellers = page.getByRole('form', { name: 'Asignación a vendedores' })
+    const seller = sellers.getByRole('combobox', { name: 'Vendedor', exact: true })
     await seller.fill('Lucia')
     await page.getByRole('option', { name: 'Lucía Vendedora' }).click()
-    const plan = page.getByRole('combobox', { name: 'Plan de comisión', exact: true })
+    const plan = sellers.getByRole('combobox', { name: 'Plan del vendedor', exact: true })
     await expect(plan).toHaveValue('')
     await plan.selectOption(planId)
-    const save = page.getByRole('button', { name: 'Guardar asignación' })
+    const save = sellers.getByRole('button', { name: 'Guardar asignación' })
     await save.click()
     await expect(page.getByText('Asignación guardada.', { exact: true })).toBeVisible()
     expect(state.assignment).toBe(planId)
@@ -110,6 +141,14 @@ for (const width of [320, 390, 1440]) {
     await save.click()
     await expect.poll(() => state.assignment).toBeNull()
     await expect(save).toBeDisabled()
+
+    // Resellers are customers: their plan is assigned with the customer picker, in its own form.
+    const resellers = page.getByRole('form', { name: 'Asignación a revendedores' })
+    await resellers.getByRole('combobox', { name: 'Revendedor', exact: true }).fill('Sur')
+    await page.getByRole('option', { name: 'Distribuidora Sur' }).click()
+    await resellers.getByRole('combobox', { name: 'Plan del revendedor', exact: true }).selectOption(planId)
+    await resellers.getByRole('button', { name: 'Guardar asignación' }).click()
+    await expect.poll(() => state.resellerAssignment).toBe(planId)
     await expect(page.getByRole('button', { name: 'Editar plan Comercial minorista' })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     expect(state.errors).toEqual([])
@@ -154,5 +193,26 @@ for (const width of [320, 1440]) {
     await expect(page.getByText(/^Liquidado el /)).toBeVisible()
     await expect(pay).toBeDisabled()
     expect(state.payoutTokens).toEqual(['saldo-inicial', 'saldo-actualizado'])
+  })
+
+  test(`el administrador liquida las comisiones de un revendedor a ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 900 })
+    const state = await setup(page, true, width === 320)
+    await page.goto('/admin/settings/commissions/settlements')
+    await page.getByRole('combobox', { name: 'Comisiones de' }).selectOption('reseller')
+    await expect(page).toHaveURL(/type=reseller/)
+    await page.getByRole('combobox', { name: 'Revendedor', exact: true }).fill('Sur')
+    await page.getByRole('option', { name: 'Distribuidora Sur' }).click()
+    await expect(page.getByText('Kiosco Centro con un nombre comercial muy largo')).toBeVisible()
+    expect(state.requests).toContain('/api/customers')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: info.outputPath(`liquidacion-revendedor-${width}.png`), fullPage: true })
+
+    await page.getByRole('button', { name: 'Registrar pago al revendedor' }).click()
+    const confirmation = page.getByRole('dialog', { name: 'Confirmar pago de comisión' })
+    await expect(confirmation.getByText(/90.*Distribuidora Sur/)).toBeVisible()
+    await confirmation.getByRole('button', { name: 'Registrar pago', exact: true }).click()
+    await expect(page.getByRole('status')).toContainText('registrado para Distribuidora Sur')
+    expect(state.payoutTokens).toEqual(['saldo-revendedor'])
   })
 }

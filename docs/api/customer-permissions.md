@@ -90,14 +90,15 @@ exigen `ADMIN_ALL` y `RESELLER_MANAGE`; sin ellos devuelven `403`.
 |---|---|---|
 | Marcar o quitar la marca | `PATCH /api/customers/{id}/kind` con `{ "kind": "RESELLER" \| "REGULAR" }` | `204`. Repetir el valor actual no cambia nada. |
 | Asociar o desasociar | `PATCH /api/customers/{id}/reseller` con `{ "resellerId": "uuid" \| null }` | Devuelve `customerId`, `resellerId` y `pendingOrdersKept`. |
-| Preparar la asignación | `GET /api/customers/{id}/reseller-assignment` | `kind`, revendedor actual, `associatedCustomersCount` y hasta 20 pedidos sin entregar con su cuenta, más `pendingOrdersCount`. |
+| Preparar la asignación | `GET /api/customers/{id}/reseller-assignment` | `kind`, revendedor actual, `associatedCustomersCount` y hasta 20 pedidos sin entregar con su cuenta, más `pendingOrdersCount`. Desde V53 también `commissionPlan` (nombre o `null`) y `pendingCommissionCount`. |
 
 Reglas, también impuestas por restricciones de base de datos:
 
 - Un cliente tiene como máximo un revendedor, que debe ser un cliente `RESELLER`
   activo. Un revendedor no tiene revendedor y un cliente no es su propio revendedor.
-- Un cliente asociado no puede marcarse como revendedor, y un revendedor con
-  clientes asociados conserva la marca.
+- Un cliente asociado no puede marcarse como revendedor. Un revendedor conserva la
+  marca mientras tenga clientes asociados, un plan de comisión o comisiones sin
+  liquidar (V53; ver [comisiones](commission-plans.md#revendedores-fase-93)).
 - Los conflictos devuelven `409` con `code: RESELLER_CONFLICT` y un `detail`
   legible; un ID inexistente devuelve `404` y un ID inválido, `400`.
 - Asociar o quitar un revendedor solo afecta pedidos nuevos: los confirmados y

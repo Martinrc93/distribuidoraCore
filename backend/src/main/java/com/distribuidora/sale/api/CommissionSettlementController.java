@@ -1,6 +1,7 @@
 package com.distribuidora.sale.api;
 
 import com.distribuidora.sale.application.CommissionSettlementService;
+import com.distribuidora.sale.application.CommissionSettlementService.Beneficiary;
 import com.distribuidora.sale.application.CommissionSettlementService.Settlement;
 import com.distribuidora.sale.application.CommissionSettlementService.Statement;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -19,7 +20,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/commissions/sellers/{sellerId}")
+@RequestMapping("/api/commissions")
 @PreAuthorize("hasAuthority('ADMIN_ALL')")
 public class CommissionSettlementController {
     public record SettleRequest(String token) { }
@@ -30,20 +31,37 @@ public class CommissionSettlementController {
         this.commissions = commissions;
     }
 
-    @GetMapping
-    public Statement statement(
+    @GetMapping("/sellers/{sellerId}")
+    public Statement sellerStatement(
         @PathVariable UUID sellerId,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size
     ) {
-        return commissions.statement(sellerId, dateMin, dateMax, page, size);
+        return commissions.statement(Beneficiary.SELLER, sellerId, dateMin, dateMax, page, size);
     }
 
-    @PostMapping("/settlements")
+    @PostMapping("/sellers/{sellerId}/settlements")
     @ResponseStatus(HttpStatus.CREATED)
-    public Settlement register(@PathVariable UUID sellerId, @RequestBody SettleRequest request) {
-        return commissions.settle(sellerId, request.token());
+    public Settlement settleSeller(@PathVariable UUID sellerId, @RequestBody SettleRequest request) {
+        return commissions.settle(Beneficiary.SELLER, sellerId, request.token());
+    }
+
+    @GetMapping("/resellers/{customerId}")
+    public Statement resellerStatement(
+        @PathVariable UUID customerId,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMin,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateMax,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size
+    ) {
+        return commissions.statement(Beneficiary.RESELLER, customerId, dateMin, dateMax, page, size);
+    }
+
+    @PostMapping("/resellers/{customerId}/settlements")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Settlement settleReseller(@PathVariable UUID customerId, @RequestBody SettleRequest request) {
+        return commissions.settle(Beneficiary.RESELLER, customerId, request.token());
     }
 }

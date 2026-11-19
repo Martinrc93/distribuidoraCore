@@ -25,9 +25,10 @@ public class CommissionPlansService {
     public enum Kind { FIXED, PERCENT }
     public record Rule(Scope scope, UUID targetId, Kind kind,
                        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal value) { }
-    public record Overview(UUID id, String name, long ruleCount, long sellerCount) { }
+    public record Overview(UUID id, String name, long ruleCount, long sellerCount, long resellerCount) { }
     public record Plan(UUID id, String name, long version, List<Rule> rules) { }
     public record Assignment(UUID sellerId, UUID planId) { }
+    public record ResellerAssignment(UUID customerId, UUID planId) { }
     private record RuleTarget(Scope scope, UUID id) { }
 
     private final JdbcTemplate jdbc;
@@ -44,9 +45,11 @@ public class CommissionPlansService {
         requireAdmin();
         return jdbc.query("""
             select p.id, p.name, (select count(*) from app.commission_rules r where r.plan_id = p.id),
-                   (select count(*) from app.seller_commission_plans s where s.plan_id = p.id)
+                   (select count(*) from app.seller_commission_plans s where s.plan_id = p.id),
+                   (select count(*) from app.reseller_commission_plans r where r.plan_id = p.id)
             from app.commission_plans p order by lower(p.name), p.id
-            """, (row, idx) -> new Overview(row.getObject(1, UUID.class), row.getString(2), row.getLong(3), row.getLong(4)));
+            """, (row, idx) -> new Overview(row.getObject(1, UUID.class), row.getString(2), row.getLong(3), row.getLong(4),
+                row.getLong(5)));
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -118,6 +121,46 @@ public class CommissionPlansService {
         audit.recordWithinTransaction(user.userId(), "SELLER_COMMISSION_ASSIGNMENT", "SELLER", sellerId.toString(),
             "SUCCESS", Map.of("previousPlanId", Objects.toString(before, ""), "planId", Objects.toString(planId, "")));
         return new Assignment(sellerId, planId);
+    }
+
+    public ResellerAssignment resellerAssignment(UUID customerId) {
+        requireAdmin();
+        return jdbc.queryForObject("""
+            select a.plan_id from customer.customers c
+            left join app.reseller_commission_plans a on a.customer_id = c.id where c.id = ?
+            """, (row, idx) -> new ResellerAssignment(customerId, row.getObject(1, UUID.class)), customerId);
+    }
+
+    /**
+     * Assigns a plan to a reseller, or removes it with {@code null}. Only later deliveries use it: accrued
+     * commissions keep the plan they were calculated with.
+     */
+    @Transactional
+    public ResellerAssignment assignReseller(UUID customerId, UUID planId, UUID expectedPlanId) {
+        requireAdmin();
+        // The same row CustomerCommandService locks to change the kind: a reseller cannot lose its mark meanwhile.
+        String kind = jdbc.queryForObject("select kind from customer.customers where id = ? for no key update",
+            String.class, customerId);
+        UUID before = resellerAssignment(customerId).planId();
+        if (!Objects.equals(before, expectedPlanId)) {
+            throw new IllegalStateException("La asignación del revendedor cambió");
+        }
+        if (Objects.equals(before, planId)) return new ResellerAssignment(customerId, planId);
+        if (planId == null) {
+            jdbc.update("delete from app.reseller_commission_plans where customer_id = ?", customerId);
+        } else {
+            if (!"RESELLER".equals(kind)) {
+                throw new IllegalStateException("Solo los revendedores pueden tener un plan de comisión");
+            }
+            jdbc.queryForObject("select id from app.commission_plans where id = ? for key share", UUID.class, planId);
+            jdbc.update("""
+                insert into app.reseller_commission_plans(customer_id, plan_id) values (?, ?)
+                on conflict (customer_id) do update set plan_id = excluded.plan_id
+                """, customerId, planId);
+        }
+        audit.recordWithinTransaction(user.userId(), "RESELLER_COMMISSION_ASSIGNMENT", "CUSTOMER", customerId.toString(),
+            "SUCCESS", Map.of("previousPlanId", Objects.toString(before, ""), "planId", Objects.toString(planId, "")));
+        return new ResellerAssignment(customerId, planId);
     }
 
     private Plan readPlan(UUID id) {

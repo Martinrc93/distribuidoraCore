@@ -4,6 +4,7 @@ import com.distribuidora.settings.application.CommissionPlansService;
 import com.distribuidora.settings.application.CommissionPlansService.Assignment;
 import com.distribuidora.settings.application.CommissionPlansService.Overview;
 import com.distribuidora.settings.application.CommissionPlansService.Plan;
+import com.distribuidora.settings.application.CommissionPlansService.ResellerAssignment;
 import com.distribuidora.settings.application.CommissionPlansService.Rule;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.http.HttpStatus;
@@ -63,5 +64,15 @@ public class CommissionPlansController {
     @PutMapping("/assignments/{sellerId}")
     public Assignment assign(@PathVariable UUID sellerId, @RequestBody SaveAssignment request) {
         return service.assign(sellerId, request.planId(), request.expectedPlanId());
+    }
+
+    @GetMapping("/reseller-assignments/{customerId}")
+    public ResellerAssignment resellerAssignment(@PathVariable UUID customerId) {
+        return service.resellerAssignment(customerId);
+    }
+
+    @PutMapping("/reseller-assignments/{customerId}")
+    public ResellerAssignment assignReseller(@PathVariable UUID customerId, @RequestBody SaveAssignment request) {
+        return service.assignReseller(customerId, request.planId(), request.expectedPlanId());
     }
 }

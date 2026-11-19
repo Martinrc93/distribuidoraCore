@@ -8,8 +8,8 @@ se respondieron el 2026-11-18. Modifica la regla de cuenta corriente de
 [ADR-007](ADR-007-order-sale-and-payment-domain.md).
 
 Implementación: la etapa 9.1 (V51) aplica los puntos 1 a 5 y 7, con la cuenta
-igual al cliente del pedido. La etapa 9.2 (V52) aplica los puntos 6 y 8. El
-punto 9 corresponde a la etapa 9.3.
+igual al cliente del pedido. La etapa 9.2 (V52) aplica los puntos 6 y 8, y la
+etapa 9.3 (V53), el punto 9.
 
 ## Context
 
@@ -47,8 +47,10 @@ instancias comparten código: sin revendedores, nada puede cambiar.
    Para pedidos sin vendedor, el respaldo usa la asignación del destinatario.
 8. Los cobros sobre cuentas de revendedor requieren `ADMIN_ALL`, y las ventas
    cargadas a un revendedor no admiten devoluciones.
-9. Un plan de comisión puede asignarse a un revendedor. Movimientos y
-   liquidaciones distinguen si el beneficiario es un vendedor o un revendedor.
+9. Un plan de comisión puede asignarse a un revendedor. Devenga al entregar las
+   ventas cargadas a su cuenta, con el plan asignado en ese momento y además de la
+   comisión del vendedor. Movimientos y liquidaciones pertenecen a un solo
+   beneficiario, vendedor o revendedor.
 
 ## Alternatives considered
 
@@ -107,4 +109,4 @@ titular de una venta con asientos o pagos.
 
 ## Pending decisions
 
-Supuestos S1–S7 del diseño de la Fase 9. Ninguno afecta a la etapa 9.1.
+Ninguna. Los supuestos S1–S6 se confirmaron el 2026-11-18 y S7, el 2026-11-19.

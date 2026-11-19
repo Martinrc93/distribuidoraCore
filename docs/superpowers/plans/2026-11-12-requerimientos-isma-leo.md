@@ -210,8 +210,8 @@ período y registra la liquidación al pagarle al vendedor.
 ### Fase 9 — Revendedores
 
 Tamaño **XL**, el de mayor riesgo. **Estado (2026-11-19): reglas respondidas y
-supuestos S1–S6 confirmados; etapas 9.1 (V51) y 9.2 (V52) implementadas; 9.3
-pendiente de S7.** Ver el
+supuestos S1–S7 confirmados; etapas 9.1 (V51), 9.2 (V52) y 9.3 (V53)
+implementadas.** Ver el
 [diseño](../specs/2026-11-18-fase-9-revendedores-design.md) y el
 [ADR-010](../../adr/ADR-010-reseller-debt-holder.md) (aceptado).
 
@@ -224,8 +224,8 @@ pendiente de S7.** Ver el
 - La deuda es siempre del revendedor (Decisiones, punto 3). Esa regla reemplaza
   el «si asume la deuda» de la propuesta inicial.
 - Etapas: 9.1 separa el titular sin cambio visible; 9.2 incorpora revendedores;
-  9.3 suma sus comisiones. S1–S6 se confirmaron el 2026-11-18; S7 (comisiones del
-  revendedor) se confirma antes de 9.3.
+  9.3 suma sus comisiones. S1–S6 se confirmaron el 2026-11-18 y S7 (comisiones del
+  revendedor) el 2026-11-19.
 
 ## Orden recomendado
 

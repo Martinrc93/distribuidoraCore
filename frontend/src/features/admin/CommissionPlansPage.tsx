@@ -5,29 +5,51 @@ import { apiGetAllPages } from '../../shared/api/pagination'
 import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
-import { SellerSelect } from '../../shared/components/EntitySelect'
+import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySelect'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { CommissionPlanForm, commissionPlansPath, type CommissionPlan } from './CommissionPlanForm'
 
-type Overview = { id: string; name: string; sellerCount: number; ruleCount: number }
+type Overview = { id: string; name: string; sellerCount: number; resellerCount: number; ruleCount: number }
 type Seller = { id: string; displayName: string; status: string }
-type Assignment = { sellerId: string; planId: string | null }
+type Reseller = { id: string; name: string; status: string }
+type Assignment = { planId: string | null }
 type AssignmentDraft = { planId: string | null; expectedPlanId: string | null }
 type Editor = { mode: 'create' } | { mode: 'edit'; id: string }
+type Option = { id: string; name: string; status: string }
 const plansKey = [commissionPlansPath]
 const sellersPath = '/api/sellers?page=0&size=100'
+const resellersPath = '/api/customers?page=0&size=100&kind=RESELLER&status='
 
-function SellerCommissionAssignment({ plans, onSaved }: { plans: Overview[]; onSaved: () => void }) {
+/** Sellers and resellers get plans the same way; resellers are customers, so their picker is CustomerSelect. */
+const beneficiaries = {
+  seller: {
+    title: 'Asignación a vendedores', description: 'Elegí quién tiene comisión. Podés usar el mismo plan con varios vendedores.',
+    label: 'Vendedor', planLabel: 'Plan del vendedor', list: 'la lista de vendedores', assignments: 'assignments', Select: SellerSelect,
+    load: async (): Promise<Option[]> => (await apiGetAllPages<Seller>(sellersPath)).content.map(seller => ({ id: seller.id, name: seller.displayName, status: seller.status })),
+    key: sellersPath,
+  },
+  reseller: {
+    title: 'Asignación a revendedores',
+    description: 'El revendedor cobra comisión por las ventas cargadas a su cuenta: pedidos de sus clientes y compras propias.',
+    label: 'Revendedor', planLabel: 'Plan del revendedor', list: 'la lista de revendedores', assignments: 'reseller-assignments', Select: CustomerSelect,
+    load: async (): Promise<Option[]> => (await apiGetAllPages<Reseller>(resellersPath)).content.map(reseller => ({ id: reseller.id, name: reseller.name, status: reseller.status })),
+    key: resellersPath,
+  },
+}
+
+function CommissionAssignment({ beneficiary, plans, onSaved }: { beneficiary: keyof typeof beneficiaries; plans: Overview[]; onSaved: () => void }) {
+  const config = beneficiaries[beneficiary]
   const client = useQueryClient()
-  const [seller, setSeller] = useState('')
+  const [selected, setSelected] = useState('')
   const [draft, setDraft] = useState<AssignmentDraft>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [conflict, setConflict] = useState(false)
-  const sellers = useQuery({ queryKey: [sellersPath], queryFn: () => apiGetAllPages<Seller>(sellersPath) })
-  const path = `${commissionPlansPath}/assignments/${seller}`
-  const assignment = useQuery({ queryKey: [path], queryFn: () => apiGet<Assignment>(path), enabled: Boolean(seller) })
+  const options = useQuery({ queryKey: [config.key, 'commission-options'], queryFn: config.load })
+  const path = `${commissionPlansPath}/${config.assignments}/${selected}`
+  const assignment = useQuery({ queryKey: [path], queryFn: () => apiGet<Assignment>(path), enabled: Boolean(selected) })
+  const Select = config.Select
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -48,20 +70,20 @@ function SellerCommissionAssignment({ plans, onSaved }: { plans: Overview[]; onS
     }
   }
 
-  function changeSeller(id: string) {
-    setSeller(id)
+  function choose(id: string) {
+    setSelected(id)
     setDraft(undefined)
     setError('')
     setConflict(false)
   }
 
-  return <Panel title="Asignación a vendedores" description="Elegí quién tiene comisión. Podés usar el mismo plan con varios vendedores.">
-    <form onSubmit={save}>
+  return <Panel title={config.title} description={config.description}>
+    <form onSubmit={save} aria-label={config.title}>
       <div className="form-grid mb-[14px]">
-        <SellerSelect mode="selection" label="Vendedor" options={(sellers.data?.content ?? []).map((item) => ({
-          id: item.id, name: item.status === 'INACTIVE' ? `${item.displayName} (inactivo)` : item.displayName,
-        }))} value={seller} onChange={changeSeller} loading={sellers.isPending} disabled={busy || sellers.isError} />
-        {assignment.isSuccess && <label className="field"><span>Plan de comisión</span>
+        <Select mode="selection" label={config.label} options={(options.data ?? []).map((item) => ({
+          id: item.id, name: item.status === 'INACTIVE' ? `${item.name} (inactivo)` : item.name,
+        }))} value={selected} onChange={choose} loading={options.isPending} disabled={busy || options.isError} />
+        {assignment.isSuccess && <label className="field"><span>{config.planLabel}</span>
           <select className="select min-w-0 w-full" value={(draft ? draft.planId : assignment.data.planId) ?? ''} disabled={busy || conflict}
             onChange={(event) => setDraft({ planId: event.target.value || null, expectedPlanId: draft ? draft.expectedPlanId : assignment.data.planId })}>
             <option value="">Sin comisión</option>
@@ -69,10 +91,10 @@ function SellerCommissionAssignment({ plans, onSaved }: { plans: Overview[]; onS
           </select>
         </label>}
       </div>
-      {seller && assignment.isPending && <p className="helper-text" role="status">Cargando asignación…</p>}
-      {(sellers.isError || seller && assignment.isError) && <div className="page-actions">
-        <p className="error-text" role="alert">No se pudo cargar {sellers.isError ? 'la lista de vendedores' : 'la asignación'}.</p>
-        <Button type="button" variant="secondary" onClick={() => void (sellers.isError ? sellers.refetch() : assignment.refetch())}>Reintentar</Button>
+      {selected && assignment.isPending && <p className="helper-text" role="status">Cargando asignación…</p>}
+      {(options.isError || selected && assignment.isError) && <div className="page-actions">
+        <p className="error-text" role="alert">No se pudo cargar {options.isError ? config.list : 'la asignación'}.</p>
+        <Button type="button" variant="secondary" onClick={() => void (options.isError ? options.refetch() : assignment.refetch())}>Reintentar</Button>
       </div>}
       {error && <p className="error-text" role="alert">{error}</p>}
       {conflict ? <Button type="button" variant="secondary" disabled={assignment.isFetching} onClick={async () => {
@@ -108,6 +130,7 @@ export default function CommissionPlansPage() {
     { key: 'name', label: 'Plan', emphasis: true, render: (name) => <span className="[overflow-wrap:anywhere]">{name}</span> },
     { key: 'ruleCount', label: 'Reglas', align: 'right' },
     { key: 'sellerCount', label: 'Vendedores asignados', align: 'right' },
+    { key: 'resellerCount', label: 'Revendedores asignados', align: 'right' },
     { key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions">
       <Button variant="link" aria-label={`Editar plan ${row.name}`} onClick={() => { setFeedback(''); setEditor({ mode: 'edit', id: row.id }) }}>Editar</Button>
     </div> },
@@ -120,7 +143,7 @@ export default function CommissionPlansPage() {
     </>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     <div className="content-grid">
-      <Panel title="Planes de comisión" description="Guardá reglas fijas o porcentuales y reutilizalas para distintos vendedores."
+      <Panel title="Planes de comisión" description="Guardá reglas fijas o porcentuales y reutilizalas para distintos vendedores y revendedores."
         action={<Button onClick={() => { setFeedback(''); setEditor({ mode: 'create' }) }}>+ Nuevo plan</Button>}>
         {plans.isPending ? <div role="status"><EmptyState title="Cargando planes" description="Consultando la configuración de comisiones." /></div>
           : plans.isError ? <div role="alert"><EmptyState title="No se pudieron cargar los planes"
@@ -128,6 +151,7 @@ export default function CommissionPlansPage() {
             action={<Button variant="secondary" onClick={() => void plans.refetch()}>Reintentar</Button>} /></div>
             : <DataTable columns={columns} rows={plans.data.map((plan) => ({
               id: plan.id, name: plan.name, ruleCount: String(plan.ruleCount), sellerCount: String(plan.sellerCount),
+              resellerCount: String(plan.resellerCount ?? 0),
             }))} emptyContent={<p className="table-empty-message">Todavía no hay planes de comisión.</p>} />}
         {editId && detail.isFetching && !detail.data && <p className="helper-text" role="status">Cargando plan…</p>}
         {editId && detail.isError && !detail.data && <div className="page-actions">
@@ -135,7 +159,8 @@ export default function CommissionPlansPage() {
           <Button variant="secondary" onClick={() => void detail.refetch()}>Reintentar</Button>
         </div>}
       </Panel>
-      {plans.isSuccess && <SellerCommissionAssignment plans={plans.data} onSaved={() => refresh('Asignación guardada.')} />}
+      {plans.isSuccess && <CommissionAssignment beneficiary="seller" plans={plans.data} onSaved={() => refresh('Asignación guardada.')} />}
+      {plans.isSuccess && <CommissionAssignment beneficiary="reseller" plans={plans.data} onSaved={() => refresh('Asignación guardada.')} />}
     </div>
     {editor && (editor.mode === 'create' || detail.data) && <CommissionPlanForm key={editId}
       plan={editor.mode === 'edit' ? detail.data : undefined} onClose={() => setEditor(undefined)}

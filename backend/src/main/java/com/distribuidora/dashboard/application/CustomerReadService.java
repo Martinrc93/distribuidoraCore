@@ -50,8 +50,13 @@ public class CustomerReadService {
     public Map<String, Object> resellerAssignment(UUID customerId) {
         Map<String, Object> customer = new java.util.HashMap<>(jdbc.queryForMap("""
             select c.id, c.business_name as name, c.kind, c.reseller_id as "resellerId", reseller.business_name as reseller,
-                   (select count(*) from customer.customers associated where associated.reseller_id = c.id) as "associatedCustomersCount"
+                   (select count(*) from customer.customers associated where associated.reseller_id = c.id) as "associatedCustomersCount",
+                   plan.name as "commissionPlan",
+                   (select count(*) from sale.commission_entries e
+                    where e.reseller_id = c.id and e.settlement_id is null) as "pendingCommissionCount"
             from customer.customers c left join customer.customers reseller on reseller.id = c.reseller_id
+            left join app.reseller_commission_plans assigned on assigned.customer_id = c.id
+            left join app.commission_plans plan on plan.id = assigned.plan_id
             where c.id = ?
             """, customerId));
         customer.put("pendingOrders", jdbc.queryForList("""

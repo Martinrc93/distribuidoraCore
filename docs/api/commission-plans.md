@@ -1,9 +1,9 @@
 # Configuración de comisiones
 
 En Administración → Configuración → Comisiones, un administrador puede guardar
-planes y asignar el mismo plan a varios vendedores. La opción «Sin comisión»
-quita la asignación del vendedor elegido. V49 crea las tablas de configuración
-sin asignaciones iniciales.
+planes y asignar el mismo plan a varios vendedores y revendedores. La opción
+«Sin comisión» quita la asignación elegida. V49 crea las tablas de configuración
+sin asignaciones iniciales; V53 agrega las de revendedores.
 
 Un plan contiene una o más reglas. Cada regla guarda un importe fijo en ARS
 (`FIXED`) o un porcentaje entre 0 y 100 (`PERCENT`). Admite una regla general
@@ -17,12 +17,14 @@ Todos los endpoints requieren `ADMIN_ALL`.
 
 | Operación | Endpoint | Resultado |
 | --- | --- | --- |
-| Listar planes | `GET /api/settings/commission-plans` | ID, nombre, cantidad de reglas y de vendedores asignados. |
+| Listar planes | `GET /api/settings/commission-plans` | ID, nombre, cantidad de reglas, de vendedores (`sellerCount`) y de revendedores (`resellerCount`) asignados. |
 | Leer plan | `GET /api/settings/commission-plans/{id}` | Plan con versión y reglas. |
 | Crear plan | `POST /api/settings/commission-plans` | Plan guardado con versión inicial 1. |
 | Editar plan | `PUT /api/settings/commission-plans/{id}` | Plan actualizado en una sola transacción. |
 | Consultar asignación | `GET /api/settings/commission-plans/assignments/{sellerId}` | `sellerId` y `planId`, que puede ser nulo. |
 | Cambiar asignación | `PUT /api/settings/commission-plans/assignments/{sellerId}` | Asignación actualizada. Enviar `planId: null` para quitar el plan. |
+| Consultar plan de un revendedor | `GET /api/settings/commission-plans/reseller-assignments/{customerId}` | `customerId` y `planId`, que puede ser nulo. |
+| Cambiar plan de un revendedor | `PUT /api/settings/commission-plans/reseller-assignments/{customerId}` | Igual que la de vendedores. Solo acepta planes para clientes `RESELLER`; si no, `409`. |
 
 Al crear o editar, enviar `name` y `rules`. Cada regla contiene `scope`
 (`DEFAULT`, `CATEGORY`, `BRAND` o `PRODUCT`), `kind` y `value`. Las reglas
@@ -33,7 +35,8 @@ cuatro decimales para conservar la precisión.
 Al editar, enviar la `version` leída. Para cambiar una asignación, enviar
 también `expectedPlanId` con el plan leído o `null` si no había plan. Las
 ediciones desactualizadas devuelven `409`. Los cambios de planes y de
-asignaciones quedan en auditoría.
+asignaciones quedan en auditoría (`SELLER_COMMISSION_ASSIGNMENT` y
+`RESELLER_COMMISSION_ASSIGNMENT`).
 
 ## Entrega y liquidación
 
@@ -52,13 +55,39 @@ ajuste queda en el saldo pendiente siguiente. Las entregas anteriores a V50
 conservan su historial comercial sin devengamiento retroactivo.
 
 `GET /api/commissions/sellers/{sellerId}?dateMin=&dateMax=&page=0&size=20`
-devuelve el saldo pendiente completo, el total del período y sus movimientos
-paginados. El período usa días inclusivos de Buenos Aires y por defecto va
-del inicio del mes a hoy. Cada movimiento identifica el pedido, el producto, el
-importe, la fecha del movimiento y la fecha de pago si corresponde.
+devuelve el nombre del beneficiario (`name`), el saldo pendiente completo, el
+total del período y sus movimientos paginados. El período usa días inclusivos de
+Buenos Aires y por defecto va del inicio del mes a hoy. Cada movimiento
+identifica el pedido, su cliente (`customer`), el producto, el importe, la fecha
+del movimiento y la fecha de pago si corresponde.
 
 `POST /api/commissions/sellers/{sellerId}/settlements` registra el pago
 realizado al vendedor. Requiere el `token` de `pending`, un saldo positivo
 y `ADMIN_ALL`. Si cambió el saldo se devuelve `409` y se consulta de nuevo.
 El pago y la vinculación de sus movimientos son atómicos y guardan importe,
 fecha, administrador y auditoría.
+
+## Revendedores (Fase 9.3)
+
+V53 permite asignar un plan a un cliente `RESELLER` (`app.reseller_commission_plans`).
+Una FK compuesta a `customers (id, kind)` acepta solo revendedores y les impide
+perder la marca mientras tengan plan. Quitar la marca también exige no tener
+comisiones sin liquidar, para que sigan accesibles desde la liquidación.
+
+Al entregar una venta cargada a la cuenta de un revendedor activo con plan, sea
+de un cliente asociado o una compra propia, se registra su comisión además de la
+del vendedor. Usa el plan asignado en ese momento, sin efecto retroactivo, y las
+mismas fórmulas, prioridades de reglas y costo congelado que la de vendedores.
+Las ventas de revendedor no admiten devoluciones, así que su comisión no tiene
+ajustes negativos.
+
+Cada movimiento y cada liquidación pertenecen a un solo beneficiario: vendedor
+(`seller_id`) o revendedor (`reseller_id`). Una FK compuesta impide vincular un
+movimiento con la liquidación de otro beneficiario. Cada línea de venta devenga
+como máximo una comisión por tipo de beneficiario y devolución
+(`UNIQUE (sale_item_id, return_id, beneficiary)`).
+
+`GET /api/commissions/resellers/{customerId}` y
+`POST /api/commissions/resellers/{customerId}/settlements` funcionan igual que
+los de vendedores, con `ADMIN_ALL`. La auditoría registra
+`COMMISSION_SETTLEMENT` sobre el cliente.

@@ -13,6 +13,7 @@ import type { Customer } from './customerTypes'
 type PendingOrder = { id: string; number: string; total: number; account: string }
 type Assignment = {
   kind?: string; resellerId?: string | null; reseller?: string | null; associatedCustomersCount?: number
+  commissionPlan?: string | null; pendingCommissionCount?: number
   pendingOrders: PendingOrder[]; pendingOrdersCount: number
 }
 type Kind = 'REGULAR' | 'RESELLER'
@@ -49,9 +50,17 @@ export function CustomerResellerDialog({ customer, onClose, onSaved }: {
   const changed = kindChanged || resellerChanged
   const { requestDiscard, discardDialog } = useDiscardChanges({ hasChanges: changed, disabled: saving, onDiscard: onClose, protectUnload: true })
   const associated = assignmentQuery.data?.associatedCustomersCount ?? 0
-  // A reseller cannot have a reseller, and keeps the mark while customers are associated with it.
+  const commissionPlan = assignmentQuery.data?.commissionPlan ?? null
+  const pendingCommissions = assignmentQuery.data?.pendingCommissionCount ?? 0
+  // A reseller cannot have a reseller. It keeps the mark while it has associated customers, a commission plan or unsettled commissions.
   const canBecomeReseller = !currentReseller
-  const canStopBeingReseller = currentKind !== 'RESELLER' || associated === 0
+  const canStopBeingReseller = currentKind !== 'RESELLER' || (associated === 0 && !commissionPlan && pendingCommissions === 0)
+  const steps = [
+    associated > 0 && `reasigná ${associated === 1 ? 'su cliente asociado' : `sus ${associated} clientes asociados`}`,
+    commissionPlan && `quitale el plan de comisión «${commissionPlan}»`,
+    pendingCommissions > 0 && 'liquidá sus comisiones pendientes',
+  ].filter((step): step is string => Boolean(step))
+  const keepsMark = steps.length > 1 ? `${steps.slice(0, -1).join(', ')} y ${steps[steps.length - 1]}` : steps[0]
   const options = (resellersQuery.data?.content ?? []).filter(reseller => reseller.id !== customer.id).map(reseller => ({ id: reseller.id, name: reseller.name }))
   const pending = assignmentQuery.data?.pendingOrders ?? []
   const pendingCount = assignmentQuery.data?.pendingOrdersCount ?? 0
@@ -84,7 +93,7 @@ export function CustomerResellerDialog({ customer, onClose, onSaved }: {
             aria-describedby={!canStopBeingReseller ? `${id}-regular-help` : undefined} onChange={() => setKind('REGULAR')} />Cliente</label>
           <label className="radio-row min-h-[44px] text-ink"><input type="radio" name={`${id}-kind`} value="RESELLER" checked={kind === 'RESELLER'} disabled={!canBecomeReseller}
             aria-describedby={!canBecomeReseller ? `${id}-reseller-help` : undefined} onChange={() => setKind('RESELLER')} />Revendedor</label>
-          {!canStopBeingReseller && <p className="helper-text" id={`${id}-regular-help`}>Tiene {associated === 1 ? '1 cliente asociado' : `${associated} clientes asociados`}. Reasignalos antes de quitar la marca.</p>}
+          {!canStopBeingReseller && <p className="helper-text" id={`${id}-regular-help`}>Para quitar la marca, {keepsMark}.</p>}
           {!canBecomeReseller && <p className="helper-text" id={`${id}-reseller-help`}>Para marcarlo como revendedor, primero quitale su revendedor y guardá.</p>}
         </fieldset>
         {kind === 'RESELLER'
