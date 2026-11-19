@@ -65,14 +65,13 @@ class CategoryServiceTest {
     void create_succeedsAndAudits() {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(name) = ?)"), eq(Boolean.class), eq("bebidas")))
             .thenReturn(false);
-        when(jdbc.update(anyString(), any(), any(), any())).thenReturn(1);
 
         UUID categoryId = service.create(new CatalogAdminDtos.CreateCategoryRequest("Bebidas"));
 
         assertThat(categoryId).isNotNull();
         verify(jdbc).update(
-            eq("insert into catalog.categories(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)"),
-            eq(categoryId), eq("Bebidas"), any(Timestamp.class)
+            eq("insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)"),
+            eq(categoryId), eq("Bebidas"), eq(categoryId.toString()), any(Timestamp.class)
         );
         verify(audit).record(eq(adminUserId), eq("CATEGORY_CREATE"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
     }

@@ -3,6 +3,7 @@ package com.distribuidora.catalog.api;
 import com.distribuidora.catalog.application.ProductCommandService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -52,6 +53,7 @@ public class ProductCommandController {
         @NotNull UUID categoryId,
         @NotNull UUID brandId,
         List<@NotNull UUID> supplierIds,
+        @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal initialStock,
         /** True when the user accepted the warning about lists following the default list price. */
         Boolean acknowledgeFollowers
     ) {
@@ -61,7 +63,7 @@ public class ProductCommandController {
             List<ProductCommandService.ProductPriceInput> priceInputs = prices != null
                 ? prices.stream().map(p -> new ProductCommandService.ProductPriceInput(p.priceListId(), p.price())).toList()
                 : List.of();
-            return new ProductCommandService.ProductInput(description, category, presentation, cost, priceInputs, categoryId, brandId, supplierIds);
+            return new ProductCommandService.ProductInput(description, category, presentation, cost, priceInputs, categoryId, brandId, supplierIds, initialStock);
         }
     }
 

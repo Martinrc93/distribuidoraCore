@@ -22,6 +22,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -52,6 +53,9 @@ class CategoryControllerTest {
 
         Method delete = CategoryController.class.getDeclaredMethod("delete", UUID.class);
         assertThat(delete.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+
+        Method permanentDelete = CategoryController.class.getDeclaredMethod("deletePermanently", UUID.class);
+        assertThat(permanentDelete.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
     }
 
     @Test
@@ -98,6 +102,13 @@ class CategoryControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         verify(service).deactivate(id);
+    }
+
+    @Test
+    void permanentDeleteReturnsNoContent() throws Exception {
+        UUID id = UUID.randomUUID();
+        mockMvc.perform(delete("/api/categories/{id}/permanent", id)).andExpect(status().isNoContent());
+        verify(service).deletePermanently(id);
     }
 
     @Test

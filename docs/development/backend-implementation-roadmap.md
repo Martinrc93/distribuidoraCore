@@ -68,10 +68,9 @@ Aplicado:
 - Productos, categorías, marcas y presentaciones en `catalog`.
 - Listas normalizadas en `catalog.price_lists` y precios por producto en
   `catalog.product_prices`.
-- Diez listas iniciales con identificadores deterministas; `GENERAL`, `LISTA_2`
-  y `LISTA_3` activas, y `LISTA_4` a `LISTA_10` inactivas.
-- Máximo de diez listas, sin eliminación física, con `GENERAL` como lista
-  default.
+- Única lista inicial activa y predeterminada, `GENERAL`. Las instalaciones
+  existentes conservan sus listas.
+- Alta sin máximo fijo, con código único y baja lógica.
 - Asignación opcional de una lista activa a cada cliente.
 - Resolución determinística por lista explícita, lista asignada o fallback a
   `GENERAL`; los cambios de precio tienen efecto inmediato.
@@ -129,7 +128,7 @@ La política de errores es explícita: `400 INVALID_REQUEST` para JSON/UUID
 malformados o validaciones fallidas; `403 FORBIDDEN` para mutaciones sin
 `ADMIN_ALL`; `404 NOT_FOUND` para lista, cliente o producto inexistente y
 para un precio ausente en la lista seleccionada y sus listas activas anteriores; y `409 CONFLICT` para código
-duplicado, límite total de diez listas, lista inactiva al asignar o cambiar
+duplicado, lista inactiva al asignar o cambiar
 precios, desactivación de la lista default `GENERAL` o resolución con una lista
 inactiva. Una lista inactiva nunca se reemplaza mediante fallback; el fallback
 por precio faltante solo usa listas activas con identificador menor.

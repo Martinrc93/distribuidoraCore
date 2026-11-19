@@ -1,6 +1,7 @@
 package com.distribuidora.pricing;
 
 import com.distribuidora.pricing.application.PricingQueryService;
+import com.distribuidora.pricing.infrastructure.InitialPriceListMigrationCallback;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,7 @@ class PricingBatchPostgresTest {
         var datasource = new DriverManagerDataSource(System.getenv("POSTGRES_TEST_URL"),
             System.getenv().getOrDefault("POSTGRES_TEST_USERNAME", "distribuidora"),
             System.getenv().getOrDefault("POSTGRES_TEST_PASSWORD", "distribuidora"));
-        Flyway.configure().dataSource(datasource).load().migrate();
+        Flyway.configure().dataSource(datasource).callbacks(new InitialPriceListMigrationCallback()).load().migrate();
         jdbc = new JdbcTemplate(datasource);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(datasource));
     }
@@ -41,8 +42,8 @@ class PricingBatchPostgresTest {
                 UUID second = product();
                 UUID missing = product();
                 UUID general = UUID.fromString("00000000-0000-0000-0000-000000000001");
-                UUID previous = UUID.fromString("00000000-0000-0000-0000-000000000002");
-                UUID selected = UUID.fromString("00000000-0000-0000-0000-000000000003");
+                UUID previous = list(11, "BATCH_PREVIOUS");
+                UUID selected = list(12, "BATCH_SELECTED");
                 jdbc.update("insert into customer.customers(id, business_name, price_list_id, created_at) values (?, 'Batch test', ?, current_timestamp)", customerId, selected);
                 price(general, first, "20", 0, 0);
                 price(previous, first, "25", 0, -1);
@@ -72,6 +73,15 @@ class PricingBatchPostgresTest {
                 transaction.setRollbackOnly();
             }
         });
+    }
+
+    private UUID list(long sequence, String code) {
+        UUID id = new UUID(0, sequence);
+        jdbc.update("""
+            insert into catalog.price_lists (id, code, name, created_at, updated_at)
+            values (?, ?, ?, current_timestamp, current_timestamp)
+            """, id, code, code);
+        return id;
     }
 
     private UUID product() {

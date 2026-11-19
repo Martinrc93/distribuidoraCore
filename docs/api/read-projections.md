@@ -236,6 +236,13 @@ en los extremos. No se envía un nombre manual. El listado devuelve `description
 por separado y permite buscar el nombre generado. Costo y precios por lista
 mantienen sus reglas actuales.
 
+`POST /api/products` admite `initialStock` opcional, no negativo y en múltiplos
+de `0.5`. Omitirlo crea el producto con saldo cero. Un valor positivo exige
+`STOCK_ADJUST` además de `ADMIN_ALL` y se guarda junto con el producto y un
+movimiento `MANUAL_ADJUSTMENT` de motivo «Stock inicial» en la misma transacción.
+`PUT /api/products/{id}` rechaza ese campo. Para cambios posteriores se utiliza
+`POST /api/inventory/{productId}/adjustments`.
+
 V34 recupera la descripción desde el nombre anterior, separando el prefijo de
 marca cuando corresponde, y amplía el nombre a 301 caracteres. Los productos
 antiguos sin marca conservan su nombre y deben completar la marca al editarse.

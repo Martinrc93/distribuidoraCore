@@ -69,9 +69,56 @@ test('text size preference toggles from the top bar and persists after reload', 
 })
 
 for (const width of [1280, 390]) {
+  test(`new price list uses only a name with aligned actions at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 })
+    await mockApi(page)
+    await page.addInitScript(() => localStorage.setItem('distribuidora.theme', 'dark'))
+    await page.route('**/api/pricing/lists/creation-preview', (route) => route.fulfill({ json: { productsToCopy: 1 } }))
+    await page.route('**/api/pricing/lists', (route) => route.request().method() === 'POST'
+      ? route.fulfill({ status: 201, json: { id: 'list-2' } }) : route.fallback())
+    await page.goto('/price-lists')
+    const open = page.getByRole('button', { name: '+ Nueva lista' })
+    const dialog = page.getByRole('dialog', { name: 'Nueva lista de precios' })
+    const name = dialog.getByRole('textbox', { name: 'Nombre de lista' })
+    const cancel = dialog.getByRole('button', { name: 'Cancelar' })
+    const save = dialog.getByRole('button', { name: 'Guardar lista' })
+    await open.click()
+    await expect(dialog.getByRole('textbox')).toHaveCount(1)
+    await expect(name).toBeFocused()
+    await expect(save).toBeDisabled()
+    await name.fill('Promoción')
+    const cancelBounds = (await cancel.boundingBox())!
+    const saveBounds = (await save.boundingBox())!
+    expect(saveBounds.y).toBeCloseTo(cancelBounds.y, 0)
+    expect(saveBounds.x).toBeGreaterThanOrEqual(cancelBounds.x + cancelBounds.width)
+    await expectInsideViewport(page, dialog)
+    await page.screenshot({ path: testInfo.outputPath(`new-price-list-${width}.png`) })
+
+    await cancel.click()
+    await expect(dialog).toHaveCount(0)
+    await expect(open).toBeFocused()
+    await open.click()
+    await expect(name).toHaveValue('')
+    await name.fill('Promoción')
+    await save.click()
+    const confirmation = page.getByRole('dialog', { name: /¿Crear la lista con los precios/ })
+    await expect(confirmation).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(confirmation).toHaveCount(0)
+    await expect(name).toHaveValue('Promoción')
+
+    await save.click()
+    const posted = page.waitForRequest((request) => request.method() === 'POST' && new URL(request.url()).pathname === '/api/pricing/lists')
+    await confirmation.getByRole('button', { name: 'Crear lista' }).click()
+    expect((await posted).postDataJSON()).toEqual({ name: 'Promoción' })
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByRole('status')).toContainText('Lista creada')
+  })
+
   test(`price list actions stay visible and readable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 800 })
     await mockApi(page)
+    if (width === 1280) await page.addInitScript(() => localStorage.setItem('distribuidora.theme', 'dark'))
     await page.route(/\/api\/pricing\/lists\/list-1\/prices/, (route) => route.fulfill({ json: {
       content: products.slice(0, 3).map((product) => ({ productId: product.id, name: product.name, price: 150.5, effectiveOn: '2026-11-01' })),
       page: 0, size: 20, totalElements: 3, totalPages: 1,
@@ -90,6 +137,83 @@ for (const width of [1280, 390]) {
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     await page.screenshot({ path: testInfo.outputPath(`price-list-${width}.png`) })
+
+    await edit.click()
+    const dialog = page.getByRole('dialog', { name: 'Programar precio' })
+    const price = dialog.getByRole('textbox', { name: `Precio de ${products[0].name}` })
+    const date = dialog.getByLabel('Fecha de vigencia')
+    await expect(dialog.getByText(`${products[0].name} · Lista general`)).toBeVisible()
+    await expect(price).toBeFocused()
+    await expectInsideViewport(page, dialog)
+    const priceBox = (await price.boundingBox())!
+    const dateBox = (await date.boundingBox())!
+    expect(dateBox.y).toBeGreaterThan(priceBox.y + priceBox.height)
+    expect(dateBox.x).toBeCloseTo(priceBox.x)
+    expect(dateBox.width).toBeCloseTo(priceBox.width)
+    await expect(dialog.getByRole('button', { name: 'Guardar precio' })).toBeInViewport()
+    await page.screenshot({ path: testInfo.outputPath(`schedule-price-${width}.png`) })
+
+    await date.fill('2026-12-01')
+    await page.keyboard.press('Escape')
+    const discard = page.getByRole('dialog', { name: '¿Descartar los cambios?' })
+    await discard.getByRole('button', { name: 'Seguir editando' }).click()
+    await expect(date).toHaveValue('2026-12-01')
+    await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+    await discard.getByRole('button', { name: 'Descartar cambios' }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(edit).toBeFocused()
+  })
+}
+
+for (const width of [1280, 680, 390]) {
+  test(`price history fits its modal at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 })
+    await mockApi(page)
+    if (width === 1280) await page.addInitScript(() => localStorage.setItem('distribuidora.theme', 'dark'))
+    if (width === 390) await page.addInitScript(() => localStorage.setItem('distribuidora.text-size', 'large'))
+    const product = products[0]
+    const priceHistory = [{ effectiveOn: '2026-11-01', price: 150.5, scheduled: false }, { effectiveOn: '2026-12-01', price: 165, scheduled: true }]
+    await page.route('**/api/pricing/lists/list-1/prices?*', (route) => route.fulfill({ json: {
+      content: [{ productId: product.id, name: product.name, price: 150.5, effectiveOn: '2026-11-01' }], totalElements: 1, totalPages: 1,
+    } }))
+    await page.route(`**/api/pricing/lists/list-1/products/${product.id}/history?*`, (route) => route.fulfill({ json: {
+      content: priceHistory.map((entry) => ({ ...entry, recordedAt: '2026-11-01T14:00:00Z', updatedAt: '2026-11-03T17:00:00Z' })), totalElements: 2, totalPages: 1,
+    } }))
+    await page.goto('/price-lists')
+    const trigger = page.getByRole('button', { name: `Ver historial de precios de ${product.name}` })
+    if (width === 1280) {
+      const heading = page.getByRole('columnheader', { name: 'Precio de lista' })
+      await expect(heading).toHaveCSS('text-transform', 'none')
+      await expect(heading).toHaveCSS('padding-top', '13px')
+    }
+    await trigger.click()
+    const dialog = page.getByRole('dialog', { name: 'Historial de precios' })
+    const close = dialog.getByRole('button', { name: 'Cerrar historial' })
+    const cancel = dialog.getByRole('button', { name: 'Cancelar precio del 2026-12-01' })
+    await expect(dialog).toHaveAccessibleDescription(`${product.name} · Lista general`)
+    await expect(close).toBeFocused()
+    await expect(cancel).toBeVisible()
+    await expectInsideViewport(page, dialog)
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    if (width > 640) {
+      await expect(dialog.getByRole('columnheader', { name: 'Registrado el' })).toBeInViewport()
+      await expect(dialog.getByRole('columnheader', { name: 'Acciones' })).toBeInViewport()
+      const wrapper = dialog.locator('.price-history-table')
+      expect(await wrapper.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    } else {
+      await expect(dialog.locator('tbody tr').first()).toHaveCSS('display', 'block')
+    }
+    await page.screenshot({ path: testInfo.outputPath(`price-history-${width}.png`) })
+
+    await cancel.click()
+    const confirmation = page.getByRole('dialog', { name: '¿Cancelar el precio programado para 2026-12-01?' })
+    await expect(confirmation.getByRole('button', { name: 'Volver' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(cancel).toBeFocused()
+    await expect(close).toBeInViewport()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(trigger).toBeFocused()
   })
 }
 

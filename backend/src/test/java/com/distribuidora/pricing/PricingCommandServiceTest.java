@@ -19,7 +19,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -36,10 +35,9 @@ class PricingCommandServiceTest {
     }
 
     @Test
-    void createsListWhenTotalIsBelowTenAndAuditsCreation() {
+    void createsListAndAuditsCreation() {
         UUID actorId = authenticate();
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("CUSTOM"))).thenReturn(false);
-        when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenReturn(3);
+        when(jdbc.update(anyString(), any(), eq("CUSTOM"), eq("Clientes"), any(), any())).thenReturn(1);
 
         UUID id = service.createList(" CUSTOM ", " Clientes ");
 
@@ -50,31 +48,24 @@ class PricingCommandServiceTest {
     }
 
     @Test
-    void locksListCreationBeforeCheckingCodeAndCount() {
-        authenticate();
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("CUSTOM"))).thenReturn(false);
-        when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenReturn(3);
-
-        service.createList("CUSTOM", "Clientes");
-
-        var order = inOrder(jdbc);
-        order.verify(jdbc).queryForObject(eq("select pg_advisory_xact_lock(?)"), eq(Object.class), eq(4_839_271_106L));
-        order.verify(jdbc).queryForObject(anyString(), eq(Boolean.class), eq("CUSTOM"));
-        order.verify(jdbc).queryForObject(anyString(), eq(Integer.class));
-        order.verify(jdbc).update(anyString(), any(), eq("CUSTOM"), eq("Clientes"), any(), any());
+    void rejectsDuplicateCode() {
+        assertThatThrownBy(() -> service.createList("CUSTOM", "Clientes"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Ya existe una lista con ese código");
+        verifyNoInteractions(audit);
     }
 
     @Test
-    void rejectsDuplicateCodeAndMaximumListCount() {
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("CUSTOM"))).thenReturn(true);
-        assertThatThrownBy(() -> service.createList("CUSTOM", "Clientes"))
-            .isInstanceOf(IllegalStateException.class);
+    void generatesAUniqueCodeFromTheNameWhenTheCodeIsOmitted() {
+        UUID actorId = authenticate();
+        when(jdbc.update(anyString(), any(), eq("PROMOCION_NORTE_2"), eq("Promoción Norte"), any(), any()))
+            .thenReturn(1);
 
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("L11"))).thenReturn(false);
-        when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenReturn(10);
-        assertThatThrownBy(() -> service.createList("L11", "Once"))
-            .isInstanceOf(IllegalStateException.class);
-        verifyNoInteractions(audit);
+        UUID id = service.createList(null, " Promoción Norte ");
+
+        verify(jdbc).update(anyString(), eq(id), eq("PROMOCION_NORTE"), eq("Promoción Norte"), any(), any());
+        verify(jdbc).update(anyString(), eq(id), eq("PROMOCION_NORTE_2"), eq("Promoción Norte"), any(), any());
+        verify(audit).record(actorId, "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS", Map.of("code", "PROMOCION_NORTE_2"));
     }
 
     @Test

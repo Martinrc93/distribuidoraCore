@@ -4,6 +4,12 @@ Todos los endpoints están bajo `/api/pricing`. Las consultas requieren un
 usuario autenticado y el permiso indicado para cada operación. Las modificaciones
 requieren `ADMIN_ALL` y se registran en auditoría.
 
+`POST /api/pricing/lists` crea una lista activa sin un máximo fijo de listas.
+Recibe `name` y un `code` opcional. Si se omite, el sistema lo genera a partir
+del nombre y añade un sufijo numérico cuando hay una coincidencia. Un código
+explícito duplicado devuelve `409 CONFLICT`.
+Una instalación nueva inicia únicamente con la lista predeterminada `GENERAL`.
+
 ## Regla de vigencia
 
 `catalog.product_price_history` es la fuente de verdad. Para la fecha comercial

@@ -31,28 +31,48 @@ function renderPage(authorities = ['ADMIN_ALL'], initialEntries = ['/price-lists
 }
 
 describe('PriceListsPage', () => {
-  afterEach(() => { cleanup(); sessionStorage.clear() })
+  afterEach(() => { cleanup(); sessionStorage.clear(); localStorage.removeItem('distribuidora.user-preferences.session.priceLists') })
   beforeEach(() => { vi.restoreAllMocks() })
 
-  it('creates a named price list and refreshes the list query', async () => {
+  it('shows the only list even when saved preferences would hide it', async () => {
+    localStorage.setItem('distribuidora.user-preferences.session.priceLists', JSON.stringify({ visibility: 'INACTIVE', expanded: false }))
+    const general = { id: 'general', code: 'GENERAL', name: 'Lista general', status: 'ACTIVE', isDefault: true }
+    const onlyList = { ...lists, content: [general], totalElements: 1 }
+    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      if (String(input) === '/api/pricing/lists?page=0&size=20') return response(onlyList)
+      return response({ ...prices, content: [], totalElements: 0, totalPages: 0 })
+    })
+    renderPage()
+
+    expect(await screen.findByRole('tab', { name: /lista general/i, selected: true })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Renombrar Lista general' })).toBeVisible()
+    expect(screen.queryByRole('combobox', { name: 'Mostrar listas' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /plegar listas/i })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Esta lista todavía no tiene precios' })).toBeVisible()
+  })
+
+  it('creates a named price list after ten existing lists and refreshes the list query', async () => {
     const user = userEvent.setup()
+    const extraLists = Array.from({ length: 8 }, (_, index) => ({ id: `extra-${index}`, code: `EXTRA_${index}`, name: `Lista extra ${index}`, status: 'INACTIVE', isDefault: false }))
+    const existingLists = { ...lists, content: [...lists.content, ...extraLists], totalElements: 10 }
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
-      if (String(input) === '/api/pricing/lists?page=0&size=20' && !init?.method) return response(lists)
+      if (String(input) === '/api/pricing/lists?page=0&size=20' && !init?.method) return response(existingLists)
       if (String(input) === '/api/pricing/lists' && init?.method === 'POST') return response({ id: 'list-3' }, 201)
       return response({})
     })
     const queryClient = renderPage()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
-    await user.click(await screen.findByRole('button', { name: /nueva lista/i }))
+    await screen.findByRole('tab', { name: /lista extra 7/i })
+    await user.click(screen.getByRole('button', { name: /nueva lista/i }))
     expect(screen.queryByRole('tab', { name: 'Reglas de descuento' })).not.toBeInTheDocument()
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/discount-rules'))).toBe(false)
-    await user.type(screen.getByLabelText('Código'), 'PROMO')
+    expect(screen.queryByLabelText('Código', { exact: true })).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('Nombre de lista'), 'Promoción')
     await user.click(screen.getByRole('button', { name: /guardar lista/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ code: 'PROMO', name: 'Promoción' }),
+      method: 'POST', body: JSON.stringify({ name: 'Promoción' }),
     })))
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ predicate: expect.any(Function) }))
     expect(await screen.findByText('Lista creada correctamente.')).toBeInTheDocument()
@@ -103,6 +123,7 @@ describe('PriceListsPage', () => {
 
   it('shows price history and confirms cancellation of a scheduled entry', async () => {
     const user = userEvent.setup()
+    let cancelled = false
     const history = { content: [
       { effectiveOn: '2026-09-24', price: 150.5, recordedAt: '2026-09-24T12:00:00Z', updatedAt: '2026-09-24T12:00:00Z', scheduled: false },
       { effectiveOn: '2026-10-01', price: 180, recordedAt: '2026-09-24T13:00:00Z', updatedAt: '2026-09-24T13:00:00Z', scheduled: true },
@@ -110,23 +131,29 @@ describe('PriceListsPage', () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
       if (String(input) === '/api/pricing/lists?page=0&size=20') return response(lists)
       if (String(input) === '/api/pricing/lists/list-1/prices?page=0&size=20') return response(prices)
-      if (String(input) === '/api/pricing/lists/list-1/products/product-1/history?page=0&size=20') return response(history)
-      if (String(input) === '/api/pricing/lists/list-1/products/product-1/history/2026-10-01' && init?.method === 'DELETE') return response({}, 204)
+      if (String(input) === '/api/pricing/lists/list-1/products/product-1/history?page=0&size=20') return response(cancelled ? pageHistory('2026-09-24') : history)
+      if (String(input) === '/api/pricing/lists/list-1/products/product-1/history/2026-10-01' && init?.method === 'DELETE') {
+        cancelled = true
+        return response({}, 204)
+      }
       return response({})
     })
     const queryClient = renderPage()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     await user.click(await screen.findByRole('button', { name: /historial de precios de harina/i }))
-    expect(await screen.findByText('2026-10-01')).toBeInTheDocument()
-    expect(screen.getByText('Programado')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /cancelar precio del 2026-10-01/i }))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    const historyDialog = within(screen.getByRole('dialog', { name: 'Historial de precios' }))
+    expect(await historyDialog.findByText('2026-10-01')).toBeInTheDocument()
+    expect(historyDialog.getByText('Programado')).toBeInTheDocument()
+    await user.click(historyDialog.getByRole('button', { name: 'Cancelar precio del 2026-10-01' }))
+    const confirmation = within(screen.getByRole('dialog', { name: '¿Cancelar el precio programado para 2026-10-01?' }))
     expect(fetchMock).not.toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1/history/2026-10-01', expect.anything())
-    await user.click(screen.getByRole('button', { name: /confirmar cancelación/i }))
+    await user.click(confirmation.getByRole('button', { name: 'Confirmar cancelación' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1/history/2026-10-01', expect.objectContaining({ method: 'DELETE' })))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/pricing/lists/list-1/products/product-1/history?page=0&size=20'] })
+    expect(await historyDialog.findByRole('status')).toHaveTextContent('Precio programado para 2026-10-01 cancelado.')
+    expect(historyDialog.queryByRole('button', { name: 'Cancelar precio del 2026-10-01' })).not.toBeInTheDocument()
   })
 
   it('pages through the selected product price history', async () => {
@@ -147,7 +174,12 @@ describe('PriceListsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Siguiente historial' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1/history?page=1&size=20', expect.anything()))
-    expect(await screen.findByText('2026-10-01')).toBeInTheDocument()
+    const historyDialog = within(screen.getByRole('dialog', { name: 'Historial de precios' }))
+    expect(await historyDialog.findByText('2026-10-01')).toBeInTheDocument()
+    expect(historyDialog.queryByRole('button', { name: /cancelar precio/i })).not.toBeInTheDocument()
+    await user.click(historyDialog.getByRole('button', { name: 'Cerrar historial' }))
+    await user.click(screen.getByRole('button', { name: /historial de precios de harina/i }))
+    expect(await screen.findByText(/Página 1 de 2/)).toBeInTheDocument()
   })
 
   it('resets the selected list price page when changing lists', async () => {
@@ -208,7 +240,6 @@ describe('PriceListsPage', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: /nueva lista/i }))
-    await user.type(screen.getByLabelText('Código'), 'PROMO')
     await user.type(screen.getByLabelText('Nombre de lista'), 'Promoción')
     await user.click(screen.getByRole('button', { name: /guardar lista/i }))
     const dialog = await screen.findByRole('dialog', { name: '¿Crear la lista con los precios de Mayorista?' })

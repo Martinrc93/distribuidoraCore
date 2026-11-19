@@ -188,7 +188,8 @@ export default function CustomersPage() {
   const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin })
   const assignmentQuery = useQuery({ queryKey: ['/api/customers/assignment-context'], queryFn: () => apiGet<Seller>('/api/customers/assignment-context'), enabled: !isAdmin && (canCreate || canEdit), retry: false })
   const zonesQuery = useQuery({ queryKey: ['/api/zones'], queryFn: () => apiGet<Zone[]>('/api/zones'), enabled: canCreate || canEdit })
-  const listsQuery = useQuery({ queryKey: ['/api/pricing/lists?page=0&size=100'], queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=100'), enabled: canCreate || canEdit || canList })
+  const priceListOptionsPath = '/api/pricing/lists?page=0&size=100'
+  const listsQuery = useQuery({ queryKey: [priceListOptionsPath, 'customer-options'], queryFn: () => apiGetAllPages<PriceList>(priceListOptionsPath), enabled: canCreate || canEdit || canList })
   const [formCustomer, setFormCustomer] = useState<Customer | undefined>()
   const [showForm, setShowForm] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -248,7 +249,6 @@ export default function CustomersPage() {
 
   const rows = (query.data?.content ?? []).map((customer) => ({
     id: customer.id,
-    number: customer.number ?? '',
     name: customer.name,
     cuitId: customer.cuitId ?? '-',
     seller: customer.seller ?? 'Sin asignar',
@@ -260,7 +260,7 @@ export default function CustomersPage() {
     reseller: customer.reseller ?? '',
   }))
   const columns: TableColumn[] = [
-    { key: 'name', label: 'Cliente', emphasis: true, render: (value, row) => <div className="min-w-0"><span>{value}</span>{row.kind === 'RESELLER' && <> <Badge>Revendedor</Badge></>}{row.number && <span className="block text-[11px] font-normal text-muted">Cliente {row.number}</span>}{row.reseller && <span className="block text-[11px] font-normal text-muted">Cuenta: {row.reseller}</span>}</div> },
+    { key: 'name', label: 'Cliente', emphasis: true, render: (value, row) => <div className="min-w-0"><span>{value}</span>{row.kind === 'RESELLER' && <> <Badge>Revendedor</Badge></>}{row.reseller && <span className="block text-[11px] font-normal text-muted">Cuenta: {row.reseller}</span>}</div> },
     { key: 'cuitId', label: 'CUIT' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'balance', label: 'Saldo', align: 'right' },

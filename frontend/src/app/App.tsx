@@ -12,6 +12,7 @@ import DashboardPage from '../features/dashboard/DashboardPage'
 import CustomersPage from '../features/customers/CustomersPage'
 import SuppliersPage from '../features/suppliers/SuppliersPage'
 import SupplierOrdersPage from '../features/purchasing/SupplierOrdersPage'
+import SupplierOrderCreatePage from '../features/purchasing/SupplierOrderCreatePage'
 import SupplierOrderDetailPage from '../features/purchasing/SupplierOrderDetailPage'
 import SupplierOrderRestockPage from '../features/purchasing/SupplierOrderRestockPage'
 import CustomerDetailPage from '../features/customers/CustomerDetailPage'
@@ -104,6 +105,7 @@ export default function App() {
         <Route path="/sales/products" element={<RequireReportsView back="/sales"><SoldProductsPage /></RequireReportsView>} />
         <Route path="/sales/products/:productId" element={<RequireReportsView back="/sales"><SoldProductsPage /></RequireReportsView>} />
         <Route path="/supplier-orders" element={<RequireAdmin><SupplierOrdersPage /></RequireAdmin>} />
+        <Route path="/supplier-orders/new" element={<RequireAdmin><SupplierOrderCreatePage /></RequireAdmin>} />
         <Route path="/supplier-orders/restock" element={<RequireAdmin><SupplierOrderRestockPage /></RequireAdmin>} />
         <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />
         <Route path="/customers" element={<CustomersPage />} />

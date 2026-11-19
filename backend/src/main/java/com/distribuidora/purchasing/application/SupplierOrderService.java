@@ -5,6 +5,7 @@ import com.distribuidora.inventory.application.InventoryMovementService;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import com.distribuidora.shared.web.PageResponse;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,9 @@ public class SupplierOrderService {
     public record OrderResult(UUID id, String number, BigDecimal total, String status) {
         public OrderResult(UUID id, String number, BigDecimal total) { this(id, number, total, null); }
     }
+
+    public record DocumentLine(String product, BigDecimal quantity) { }
+    public record OrderDocument(String number, String supplier, LocalDate date, List<DocumentLine> lines) { }
 
     private static final BigDecimal HALF = new BigDecimal("0.5");
     private final JdbcTemplate jdbc;
@@ -266,6 +270,27 @@ public class SupplierOrderService {
             where i.order_id = ? order by i.product_name, i.product_id
             """, id);
         return Map.of("order", order, "items", items);
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDocument document(UUID id) {
+        return jdbc.query("""
+            select o.order_number, o.supplier_name, o.order_date, i.product_name, i.quantity
+            from purchasing.supplier_orders o
+            left join purchasing.supplier_order_items i on i.order_id = o.id
+            where o.id = ? order by i.product_name, i.product_id
+            """, rows -> {
+                if (!rows.next()) throw new EmptyResultDataAccessException(1);
+                String number = rows.getString("order_number");
+                String supplier = rows.getString("supplier_name");
+                LocalDate date = rows.getObject("order_date", LocalDate.class);
+                var lines = new ArrayList<DocumentLine>();
+                do {
+                    String product = rows.getString("product_name");
+                    if (product != null) lines.add(new DocumentLine(product, rows.getBigDecimal("quantity")));
+                } while (rows.next());
+                return new OrderDocument(number, supplier, date, List.copyOf(lines));
+            }, id);
     }
 
     @Transactional(readOnly = true)

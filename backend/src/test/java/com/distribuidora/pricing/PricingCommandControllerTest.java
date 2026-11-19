@@ -46,6 +46,17 @@ class PricingCommandControllerTest {
     }
 
     @Test
+    void createsListWithOnlyAName() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.createList(null, "Promoción")).thenReturn(id);
+
+        mockMvc.perform(post("/api/pricing/lists").contentType(APPLICATION_JSON)
+                .content("{\"name\":\"Promoción\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
     void returnsNoContentForTheThreeUpdateCommands() {
         UUID listId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();

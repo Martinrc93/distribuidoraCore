@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 
 async function selectProduct(page: Page, search: string) {
   await page.getByRole('combobox', { name: 'Producto', exact: true }).fill(search)
@@ -107,6 +108,7 @@ test('previous orders are disabled without history and admins choose whether to 
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const path = new URL(route.request().url()).pathname
     let json: unknown = {}
+    if (path === '/api/orders') json = paged([])
     if (path === '/api/customers') json = paged([
       { id: 'c1', name: 'Cliente con historial', priceListId: 'list1', sellerId: 'seller1' },
       { id: 'c2', name: 'Cliente sin historial', priceListId: 'list1', sellerId: 'seller1' },
@@ -119,17 +121,30 @@ test('previous orders are disabled without history and admins choose whether to 
     if (path === '/api/customers/c1/last-order') json = { available: true, orderId: 'old', orderNumber: 'PED-ANTERIOR', orderDiscountPercent: 5, items: [{ productId: 'p1', productName: 'Harina', presentation: 'Bolsa', status: 'ACTIVE', quantity: 2, lineDiscountPercent: 10 }] }
     await route.fulfill({ json })
   })
-  await page.goto('/orders/new')
+  await page.goto('/orders')
+  await page.getByRole('link', { name: '+ Nuevo pedido', exact: true }).first().click()
+  const customerSearch = page.getByRole('combobox', { name: 'Cliente', exact: true })
+  await expect(customerSearch).toBeFocused()
   const load = page.getByRole('button', { name: 'Cargar pedido anterior' })
   await expect(load).toBeDisabled()
-  await page.getByRole('combobox', { name: 'Cliente', exact: true }).fill('Cliente sin historial')
-  await page.getByRole('option', { name: 'Cliente sin historial', exact: true }).click()
+  await page.keyboard.type('sin historial')
+  await expect(page.getByRole('option', { name: 'Cliente sin historial', exact: true })).toBeVisible()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(customerSearch).toHaveValue('Cliente sin historial')
+  const productSearch = page.getByRole('combobox', { name: 'Producto', exact: true })
+  await expect(productSearch).toBeFocused()
+  await page.keyboard.type('harina')
+  await expect(page.getByRole('option', { name: 'Harina', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect(load).toHaveAttribute('title', 'Este cliente no tiene pedidos anteriores.')
   await expect(load).toBeDisabled()
   expect(await load.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe('rgb(232, 239, 235)')
   await page.screenshot({ path: testInfo.outputPath('previous-order-disabled.png'), fullPage: true })
   await page.getByRole('combobox', { name: 'Cliente', exact: true }).fill('Cliente con historial')
   await page.getByRole('option', { name: 'Cliente con historial', exact: true }).click()
+  await expect(productSearch).toBeFocused()
   await expect(load).toBeEnabled()
   if (testInfo.project.name.startsWith('desktop')) {
     const boxes = await Promise.all([page.getByRole('combobox', { name: 'Cliente', exact: true }), page.getByLabel('Vendedor', { exact: true }), page.getByLabel('Lista de precios', { exact: true }), load].map((element) => element.boundingBox()))
@@ -205,6 +220,9 @@ test('new orders select the customer list and confirm without collecting payment
     if (url.pathname === '/api/orders/confirm') {
       confirmed = route.request().postDataJSON()
       json = { orderId: 'order-1', saleId: 'sale-1', orderNumber: 'PED-001', saleNumber: 'VEN-001', total: 202.5, paid: 0, balance: 202.5, previousBalanceAmount: 100, collectionTotal: 302.5 }
+    }
+    if (url.pathname === '/api/orders/order-1/documents/a4') {
+      return route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.7\n%%EOF' })
     }
     await route.fulfill({ json })
   })
@@ -351,9 +369,20 @@ test('new orders select the customer list and confirm without collecting payment
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
   await page.screenshot({ path: testInfo.outputPath('new-order.png'), fullPage: true })
-  await page.getByRole('button', { name: 'Confirmar pedido', exact: true }).click()
+  await productInput.focus()
+  await page.keyboard.press('Enter')
+  expect(confirmed).toBeUndefined()
+  await page.keyboard.press('Enter')
   await expect(page.getByText('Pedido PED-001 · El pedido y la venta quedaron registrados.')).toBeVisible()
   expect(confirmed).toMatchObject({ customerId: 'customer-1', orderDate: '2026-09-29', priceListId: 'list-2', orderDiscountPercent: 10, previousBalanceAmount: 100, payments: [], lines: [{ productId: 'product-1', quantity: 2, lineDiscountPercent: 10, unitPriceOverride: 125 }] })
   expect(confirmed!.lines).toHaveLength(1)
   await expect(page.getByText('Total a cobrar con la entrega', { exact: true })).toBeVisible()
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Descargar PDF', exact: true }).click(),
+  ])
+  expect(download.suggestedFilename()).toBe('PED-001-a4.pdf')
+  expect(await readFile((await download.path())!, 'utf8')).toBe('%PDF-1.7\n%%EOF')
+  await expect(page.getByRole('heading', { name: 'Resultado de la confirmación' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width)
 })

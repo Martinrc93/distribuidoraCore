@@ -5,14 +5,14 @@ import { apiGet, apiPost } from '../../shared/api/client'
 import { Badge } from '../../shared/components/Badge'
 import { Button } from '../../shared/components/Button'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
-import { CurrencyText } from '../../shared/components/CurrencyText'
 import { DataTable } from '../../shared/components/DataTable'
+import { DocumentActions } from '../../shared/components/DocumentActions'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { displayDate } from '../dashboard/dashboardDates'
 import { SupplierOrderForm } from './SupplierOrderForm'
-import { money, purchaseStatusLabel, purchaseStatusTone, supplierOrdersKey, type SupplierOrderDetail } from './supplierOrders'
+import { purchaseStatusLabel, purchaseStatusTone, supplierOrdersKey, type SupplierOrderDetail } from './supplierOrders'
 
 type PendingAction = 'confirm' | 'cancel'
 
@@ -71,14 +71,19 @@ export default function SupplierOrderDetailPage() {
       setFeedback(status === 'CONFIRMED' ? `Compra ${result.number} actualizada: el stock se ajustó por la diferencia.` : `Compra ${result.number} actualizada.`)
     }} />
       : <Panel title="Compra" description={statusHelp[status]} action={<Badge tone={purchaseStatusTone[status]}>{purchaseStatusLabel[status]}</Badge>}>
-        {status !== 'CANCELLED' && <div className="page-actions mb-[18px] justify-start">
-          {status === 'DRAFT' && <Button onClick={() => { setError(''); setAction('confirm') }}>Confirmar compra</Button>}
-          <Button variant="secondary" onClick={() => { setFeedback(''); setEditing(true) }}>Editar compra</Button>
-          <Button variant="danger" onClick={() => { setError(''); setAction('cancel') }}>Anular compra</Button>
-        </div>}
-        <DataTable columns={[{ key: 'product', label: 'Producto', emphasis: true }, { key: 'quantity', label: 'Cantidad', align: 'right' }, { key: 'cost', label: 'Costo unitario', align: 'right' }, { key: 'total', label: 'Subtotal', align: 'right' }]}
-          rows={items.map((item) => ({ id: item.productId, product: item.productName, quantity: String(item.quantity), cost: money(item.unitCost), total: money(item.lineTotal) }))} />
-        <p className="mt-[18px] mb-0 text-[15px] font-bold">Total estimado: <CurrencyText>{money(order.total)}</CurrencyText></p>
+        <div className="page-actions mb-[18px] items-start">
+          <div className="flex min-w-0 flex-wrap items-start gap-[8px] [&>.button]:flex-none">
+            <DocumentActions key={order.id} path={`/api/supplier-orders/${encodeURIComponent(order.id)}/documents/a4`}
+              filename={`compra-${order.number}.pdf`} downloadLabel="Descargar PDF" />
+            {status === 'DRAFT' && <Button onClick={() => { setError(''); setAction('confirm') }}>Confirmar compra</Button>}
+            {status !== 'CANCELLED' && <Button variant="secondary" onClick={() => { setFeedback(''); setEditing(true) }}>Editar compra</Button>}
+          </div>
+          {status !== 'CANCELLED' && <div className="ml-auto flex">
+            <Button variant="danger" onClick={() => { setError(''); setAction('cancel') }}>Anular compra</Button>
+          </div>}
+        </div>
+        <DataTable columns={[{ key: 'product', label: 'Producto', emphasis: true }, { key: 'quantity', label: 'Cantidad', align: 'right' }]}
+          rows={items.map((item) => ({ id: item.productId, product: item.productName, quantity: String(item.quantity) }))} />
       </Panel>}
     {action && <ConfirmationDialog
       title={action === 'confirm' ? `¿Confirmar la compra ${order.number}?` : `¿Anular la compra ${order.number}?`}

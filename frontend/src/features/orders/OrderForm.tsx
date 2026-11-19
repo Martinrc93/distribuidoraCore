@@ -6,6 +6,7 @@ import { apiGet, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/ap
 import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
+import { DocumentActions } from '../../shared/components/DocumentActions'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
@@ -66,6 +67,7 @@ const stockUnits = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
 const PRODUCT_KEY = ['order-create-products', '/api/products?page=0&size=100&includeStock=true']
 const PRICE_LIST_KEY = ['/api/pricing/lists?page=0&size=20']
 const SELLER_KEY = ['/api/sellers?page=0&size=100']
+const DOUBLE_ENTER_WINDOW_MS = 700
 
 function money(value: number) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
@@ -273,6 +275,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     setOrderPayment({ method: 'CASH', amount: '', reference: '' })
     setDebtPayment({ method: 'CASH', amount: '', reference: '' })
     setPreviousBalanceError('')
+    if (selectedCustomer) focusProductSearch()
   }
 
   function includePreviousBalance(amountText = previousBalanceInput) {
@@ -335,8 +338,10 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   }
 
   // Keyboard loading: choose a product → quantity → Enter adds it and returns to the product search.
+  const productPicker = useRef<HTMLDivElement>(null)
   const quantityInput = useRef<HTMLInputElement>(null)
   const focusQuantityAfterSelect = useRef(false)
+  const lastProductEnter = useRef<number | null>(null)
   useEffect(() => {
     // Runs after the quantity input is enabled for the newly selected product.
     if (!selectedProductId || !focusQuantityAfterSelect.current) return
@@ -345,13 +350,37 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     quantityInput.current?.select()
   }, [selectedProductId])
   function focusProductSearch() {
-    window.setTimeout(() => document.querySelector<HTMLInputElement>('.order-product-choice input[role="combobox"]')?.focus(), 0)
+    // Selecting a customer remounts the product search with the new customer's price list.
+    window.setTimeout(() => productPicker.current?.querySelector<HTMLInputElement>('input[role="combobox"]:enabled')?.focus(), 0)
   }
   function addFromKeyboard(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') return
-    // Enter inside the product picker never submits (confirms) the whole order.
     event.preventDefault()
     if (addProduct()) focusProductSearch()
+  }
+
+  function handleProductPickerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const input = event.target
+    if (event.defaultPrevented || event.key !== 'Enter' || event.nativeEvent.isComposing ||
+        !(input instanceof HTMLInputElement) || input.getAttribute('role') !== 'combobox') {
+      lastProductEnter.current = null
+      return
+    }
+
+    event.preventDefault()
+    if (event.repeat) return
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !lines.length || selectedProductId) {
+      lastProductEnter.current = null
+      return
+    }
+
+    const previousEnter = lastProductEnter.current
+    if (previousEnter !== null && event.timeStamp - previousEnter <= DOUBLE_ENTER_WINDOW_MS) {
+      lastProductEnter.current = null
+      input.form?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click()
+    } else {
+      lastProductEnter.current = event.timeStamp
+    }
   }
 
   function updateLine(productId: string, field: keyof Omit<DraftLine, 'productId'>, value: string) {
@@ -453,7 +482,15 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
       <dl className="confirmation-result"><dt>Venta</dt><dd>{responseData.saleNumber}</dd><dt>Total</dt><dd><CurrencyText>{money(responseData.total)}</CurrencyText></dd><dt>Cobrado</dt><dd><CurrencyText>{money(responseData.paid)}</CurrencyText></dd><dt>Saldo pendiente</dt><dd><CurrencyText>{money(responseData.balance)}</CurrencyText></dd></dl>
       {Number(responseData.previousBalanceAmount ?? 0) > 0 && <dl className="confirmation-result"><dt>Saldo anterior para entrega</dt><dd><CurrencyText>{money(responseData.previousBalanceAmount!)}</CurrencyText></dd><dt>Total a cobrar con la entrega</dt><dd><CurrencyText>{money(responseData.collectionTotal ?? responseData.total + responseData.previousBalanceAmount!)}</CurrencyText></dd></dl>}
       {responseData.creditLimitWarning && <p className="warning-text" role="status">El saldo proyectado <CurrencyText>{money(responseData.creditLimitWarning.projectedBalance)}</CurrencyText> supera el límite de crédito <CurrencyText>{money(responseData.creditLimitWarning.creditLimit)}</CurrencyText> por <CurrencyText>{money(responseData.creditLimitWarning.exceededBy)}</CurrencyText>.</p>}
-      <div className="page-actions"><Button href={`/orders/${responseData.orderId}`}>Ver pedido</Button><Button variant="secondary" onClick={() => navigate('/orders')}>Volver a pedidos</Button></div>
+      <div className="page-actions">
+        <Button href={`/orders/${responseData.orderId}`}>Ver pedido</Button>
+        <Button variant="secondary" onClick={() => navigate('/orders')}>Volver a pedidos</Button>
+        {hasPermission('ORDER_DOCUMENT_EXPORT') && <DocumentActions
+          path={`/api/orders/${responseData.orderId}/documents/a4`}
+          filename={`${responseData.orderNumber}-a4.pdf`}
+          downloadLabel="Descargar PDF"
+        />}
+      </div>
     </Panel>
   </>
 
@@ -471,7 +508,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
             {invalidOrderDate && <p id="order-date-error" className="error-text" role="alert">Ingresá una fecha válida con formato dd/mm/aaaa.</p>}
             {discountPrompt && <PreviousOrderDiscountDialog orderNumber={discountPrompt.order.orderNumber ?? ''} orderDiscount={Number(discountPrompt.order.orderDiscountPercent ?? 0)} items={discountPrompt.order.items ?? []} anchor={discountPrompt.anchor} onDismiss={() => setDiscountPrompt(undefined)} onChoose={(copyDiscounts) => { applyPreviousOrder(discountPrompt.order, copyDiscounts); setDiscountPrompt(undefined) }} />}
             <div className="order-customer-grid">
-              <CustomerSelect mode="selection" label="Cliente" options={customers} value={customerId} onChange={selectCustomer} required disabled={submitting || Boolean(editOrder)} />
+              <CustomerSelect mode="selection" label="Cliente" options={customers} value={customerId} onChange={selectCustomer} required autoFocus={!editOrder} disabled={submitting || Boolean(editOrder)} />
               {editOrder ? <SellerSelect mode="selection" label="Vendedor" options={[{ id: 'locked-seller', name: editOrder.order.seller ?? 'Sin asignar' }]} value="locked-seller" onChange={() => {}} disabled /> : isAdmin
                 ? <SellerSelect mode="selection" label="Vendedor" options={(sellersQuery.data?.content ?? []).map((seller) => ({ id: seller.id, name: seller.displayName }))} value={sellerId} onChange={(value) => { draftChanged(); setSellerId(value) }} emptyLabel="Usar vendedor del cliente" disabled={submitting} />
                 : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>}
@@ -480,7 +517,9 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
             </div>
             {resellerId && <p className="helper-text">Cuenta: <strong>{resellerName}</strong> (revendedor). El pedido queda a nombre del cliente y la deuda se carga a esa cuenta corriente.</p>}
             {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
-            <div className={`product-picker order-product-picker${canDiscount ? ' order-product-picker-discount' : ''}`}>
+            <div ref={productPicker} className={`product-picker order-product-picker${canDiscount ? ' order-product-picker-discount' : ''}`}
+              onKeyDown={editOrder ? undefined : handleProductPickerKeyDown} onBlur={() => { lastProductEnter.current = null }}
+              onPointerDown={() => { lastProductEnter.current = null }}>
               <SearchableSelect key={customerId} label="Producto" className="order-product-choice" fullWidth preserveSearch allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" options={products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => ({ id: item.id, name: item.name, ...(item.stock !== undefined ? { detail: `Stock: ${stockUnits.format(Number(item.stock))}` } : {}) }))} value={selectedProductId} onChange={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError(''); focusQuantityAfterSelect.current = Boolean(value) }} disabled={!customerId || !selectedList || submitting} />
               {canOverride
                 ? <label className="field"><span>Precio</span><input className="input currency-input" aria-label="Precio" aria-busy={selectedPriceQuery.isFetching} placeholder={selectedProductId && selectedPriceQuery.isFetching ? 'Consultando...' : selectedProductId && selectedPriceQuery.isError ? 'No disponible' : '—'} type="text" inputMode="decimal" value={selectedProductPriceOverride ?? (selectedProductId && selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '')} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} disabled={submitting || !customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data} /></label>

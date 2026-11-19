@@ -6,6 +6,7 @@ import com.distribuidora.catalog.application.ProductPriceValidationException;
 import com.distribuidora.pricing.application.PriceListFollowService;
 import com.distribuidora.pricing.application.PricingCommandService;
 import com.distribuidora.pricing.application.PricingQueryService;
+import com.distribuidora.pricing.infrastructure.InitialPriceListMigrationCallback;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -32,8 +33,6 @@ import static org.mockito.Mockito.mock;
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 class PriceListFollowPostgresTest {
     private static final UUID GENERAL = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final UUID LISTA_4 = UUID.fromString("00000000-0000-0000-0000-000000000004");
-    private static final UUID LISTA_10 = UUID.fromString("00000000-0000-0000-0000-000000000010");
     private static JdbcTemplate jdbc;
     private static TransactionTemplate transactions;
 
@@ -47,7 +46,7 @@ class PriceListFollowPostgresTest {
         var datasource = new DriverManagerDataSource(System.getenv("POSTGRES_TEST_URL"),
             System.getenv().getOrDefault("POSTGRES_TEST_USERNAME", "distribuidora"),
             System.getenv().getOrDefault("POSTGRES_TEST_PASSWORD", "distribuidora"));
-        Flyway.configure().dataSource(datasource).load().migrate();
+        Flyway.configure().dataSource(datasource).callbacks(new InitialPriceListMigrationCallback()).load().migrate();
         jdbc = new JdbcTemplate(datasource);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(datasource));
     }
@@ -75,7 +74,6 @@ class PriceListFollowPostgresTest {
             jdbc.update("update catalog.products set status = 'INACTIVE' where id = ?", inactive);
             LocalDate future = today().plusDays(5);
             pricing.setProductPrice(GENERAL, followed, new BigDecimal("120"), future);
-            jdbc.update("delete from catalog.price_lists where id = ?", LISTA_10);
 
             assertThat(pricing.creationPreview()).containsEntry("defaultListId", GENERAL)
                 .containsEntry("defaultListName", "Lista general");
@@ -117,41 +115,42 @@ class PriceListFollowPostgresTest {
     @Test
     void activatingAnInactiveListCopiesOnlyMissingPricesAndProductsFollowAfterCostChanges() {
         rollback(() -> {
+            UUID inactiveList = inactiveList();
             UUID followed = product("100");
             UUID ownPrice = product("80");
             jdbc.update("""
                 insert into catalog.product_price_history(id, price_list_id, product_id, price, effective_on, created_at, updated_at)
                 values (?, ?, ?, 95, (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date, current_timestamp, current_timestamp)
-                """, UUID.randomUUID(), LISTA_4, ownPrice);
+                """, UUID.randomUUID(), inactiveList, ownPrice);
 
-            pricing.setListStatus(LISTA_4, "ACTIVE");
-            assertThat(currentPrice(LISTA_4, followed)).isEqualByComparingTo("100");
-            assertThat(status(LISTA_4, followed)).isEqualTo("PENDING");
-            assertThat(currentPrice(LISTA_4, ownPrice)).isEqualByComparingTo("95");
-            assertThat(status(LISTA_4, ownPrice)).isNull();
-            assertThat(pricing.confirmFollowingPrices(LISTA_4, null)).isGreaterThanOrEqualTo(1);
-            assertThat(status(LISTA_4, followed)).isEqualTo("CONFIRMED");
+            pricing.setListStatus(inactiveList, "ACTIVE");
+            assertThat(currentPrice(inactiveList, followed)).isEqualByComparingTo("100");
+            assertThat(status(inactiveList, followed)).isEqualTo("PENDING");
+            assertThat(currentPrice(inactiveList, ownPrice)).isEqualByComparingTo("95");
+            assertThat(status(inactiveList, ownPrice)).isNull();
+            assertThat(pricing.confirmFollowingPrices(inactiveList, null)).isGreaterThanOrEqualTo(1);
+            assertThat(status(inactiveList, followed)).isEqualTo("CONFIRMED");
 
             UUID[] catalog = brandAndCategory();
             UUID created = products.create(new ProductCommandService.ProductInput("Created", null, null, BigDecimal.TEN,
                 List.of(new ProductCommandService.ProductPriceInput(GENERAL, new BigDecimal("50"))), catalog[1], catalog[0]));
-            assertThat(currentPrice(LISTA_4, created)).isEqualByComparingTo("50");
-            assertThat(status(LISTA_4, created)).isEqualTo("PENDING");
+            assertThat(currentPrice(inactiveList, created)).isEqualByComparingTo("50");
+            assertThat(status(inactiveList, created)).isEqualTo("PENDING");
 
             // Followers are not asked for replacement prices when the cost exceeds them: they take the General price.
             assertThatCode(() -> products.update(created, new ProductCommandService.ProductInput("Created", null, null,
                 new BigDecimal("60"), List.of(new ProductCommandService.ProductPriceInput(GENERAL, new BigDecimal("70"))),
                 catalog[1], catalog[0]), true)).doesNotThrowAnyException();
-            assertThat(currentPrice(LISTA_4, created)).isEqualByComparingTo("70");
+            assertThat(currentPrice(inactiveList, created)).isEqualByComparingTo("70");
             assertThat(follows.unacknowledgedFollowers(created)).isEmpty();
-            assertThat(status(LISTA_4, created)).isEqualTo("PENDING");
+            assertThat(status(inactiveList, created)).isEqualTo("PENDING");
 
             products.setStatus(created, "INACTIVE");
-            jdbc.update("delete from catalog.price_list_follows where product_id = ? and price_list_id = ?", created, LISTA_4);
-            jdbc.update("delete from catalog.product_price_history where product_id = ? and price_list_id = ?", created, LISTA_4);
+            jdbc.update("delete from catalog.price_list_follows where product_id = ? and price_list_id = ?", created, inactiveList);
+            jdbc.update("delete from catalog.product_price_history where product_id = ? and price_list_id = ?", created, inactiveList);
             products.setStatus(created, "ACTIVE");
-            assertThat(currentPrice(LISTA_4, created)).isEqualByComparingTo("70");
-            assertThat(status(LISTA_4, created)).isEqualTo("PENDING");
+            assertThat(currentPrice(inactiveList, created)).isEqualByComparingTo("70");
+            assertThat(status(inactiveList, created)).isEqualTo("PENDING");
         });
     }
 
@@ -159,17 +158,18 @@ class PriceListFollowPostgresTest {
     void costIncreaseStillRequiresPricesForListsWithTheirOwnPrice() {
         rollback(() -> {
             UUID[] catalog = brandAndCategory();
-            pricing.setListStatus(LISTA_4, "ACTIVE");
+            UUID ownList = pricing.createList("OWN", "Own price");
+            UUID followingList = pricing.createList("FOLLOWING", "Following General");
             UUID created = products.create(new ProductCommandService.ProductInput("Own price", null, null, BigDecimal.TEN,
                 List.of(new ProductCommandService.ProductPriceInput(GENERAL, new BigDecimal("50"))), catalog[1], catalog[0]));
-            pricing.setProductPrice(LISTA_4, created, new BigDecimal("55"), null);
+            pricing.setProductPrice(ownList, created, new BigDecimal("55"), null);
             var exception = org.assertj.core.api.Assertions.catchThrowableOfType(ProductPriceValidationException.class,
                 () -> products.update(created, new ProductCommandService.ProductInput("Own price", null, null,
                     new BigDecimal("80"), List.of(), catalog[1], catalog[0])));
             assertThat(exception).isNotNull();
             assertThat(exception.getAffectedPriceLists()).extracting(ProductPriceValidationException.AffectedPriceList::priceListId)
-                .contains(GENERAL, LISTA_4)
-                .doesNotContain(UUID.fromString("00000000-0000-0000-0000-000000000002"), UUID.fromString("00000000-0000-0000-0000-000000000003"));
+                .contains(GENERAL, ownList)
+                .doesNotContain(followingList);
         });
     }
 
@@ -196,6 +196,15 @@ class PriceListFollowPostgresTest {
                 .extracting(row -> row.get("productId")).contains(rice).doesNotContain(flour);
             assertThat(queries.prices(GENERAL, 0, 100, new PricingQueryService.PriceFilter(null, first[1], second[0], null)).totalElements()).isZero();
         });
+    }
+
+    private UUID inactiveList() {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+            insert into catalog.price_lists (id, code, name, status, created_at, updated_at)
+            values (?, 'INACTIVE_TEST', 'Inactive list', 'INACTIVE', current_timestamp, current_timestamp)
+            """, id);
+        return id;
     }
 
     private UUID[] brandAndCategory() {

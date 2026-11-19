@@ -1,6 +1,7 @@
 package com.distribuidora.catalog.api;
 
 import com.distribuidora.catalog.application.ProductPriceValidationException;
+import com.distribuidora.catalog.application.CatalogEntryInUseException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -11,8 +12,13 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = ProductCommandController.class)
+@RestControllerAdvice(assignableTypes = {ProductCommandController.class, BrandController.class, CategoryController.class})
 public class CatalogExceptionHandler {
+
+    @ExceptionHandler(CatalogEntryInUseException.class)
+    ProblemDetail handleCatalogEntryInUse(CatalogEntryInUseException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
 
     @ExceptionHandler(ProductPriceValidationException.class)
     ResponseEntity<ProblemDetail> handleProductPriceValidation(

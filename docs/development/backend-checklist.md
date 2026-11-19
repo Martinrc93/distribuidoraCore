@@ -42,7 +42,8 @@ Estado actualizado: 2026-09-25
 
 - [x] Migración V5 con `price_lists` y `product_prices`.
 - [x] Listas `GENERAL`, `LISTA_2` y `LISTA_3`.
-- [x] Máximo de diez listas con protección concurrente.
+- [x] Alta sin máximo fijo, con unicidad de código en PostgreSQL.
+- [x] Instalaciones nuevas con `GENERAL` como única lista inicial.
 - [x] Precios `NUMERIC(19,4)` y validación de precisión.
 - [x] Asignación opcional de lista a clientes.
 - [x] Resolución explícita, asignada y fallback `GENERAL`.

@@ -2,7 +2,9 @@ package com.distribuidora.catalog;
 
 import com.distribuidora.catalog.api.BrandController;
 import com.distribuidora.catalog.api.CatalogAdminDtos;
+import com.distribuidora.catalog.api.CatalogExceptionHandler;
 import com.distribuidora.catalog.application.BrandService;
+import com.distribuidora.catalog.application.CatalogEntryInUseException;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,11 +19,13 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -36,7 +40,7 @@ class BrandControllerTest {
     void setUp() {
         service = mock(BrandService.class);
         controller = new BrandController(service);
-        mockMvc = standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        mockMvc = standaloneSetup(controller).setControllerAdvice(new CatalogExceptionHandler(), new ApiExceptionHandler()).build();
     }
 
     @Test
@@ -52,6 +56,9 @@ class BrandControllerTest {
 
         Method delete = BrandController.class.getDeclaredMethod("delete", UUID.class);
         assertThat(delete.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+
+        Method permanentDelete = BrandController.class.getDeclaredMethod("deletePermanently", UUID.class);
+        assertThat(permanentDelete.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
     }
 
     @Test
@@ -98,6 +105,16 @@ class BrandControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         verify(service).deactivate(id);
+    }
+
+    @Test
+    void permanentDeleteReturnsConflictWithTheReasonWhenTheBrandIsInUse() throws Exception {
+        UUID id = UUID.randomUUID();
+        doThrow(new CatalogEntryInUseException("La marca tiene productos asociados.")).when(service).deletePermanently(id);
+
+        mockMvc.perform(delete("/api/brands/{id}/permanent", id))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.detail").value("La marca tiene productos asociados."));
     }
 
     @Test

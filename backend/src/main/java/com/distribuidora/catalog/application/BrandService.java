@@ -2,6 +2,7 @@ package com.distribuidora.catalog.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -51,8 +52,8 @@ public class BrandService {
         Timestamp now = Timestamp.from(Instant.now());
 
         jdbc.update(
-            "insert into catalog.brands(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)",
-            id, name, now
+            "insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
+            id, name, id.toString(), now
         );
 
         audit.record(actorId(), "BRAND_CREATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
@@ -110,6 +111,24 @@ public class BrandService {
     @Transactional
     public void deactivate(UUID id) {
         setStatus(id, "INACTIVE");
+    }
+
+    @Transactional
+    public void deletePermanently(UUID id) {
+        int deleted;
+        try {
+            deleted = jdbc.update("""
+                delete from catalog.brands b
+                where b.id = ? and not exists (select 1 from catalog.products p where p.brand_id = b.id)
+                """, id);
+        } catch (DataIntegrityViolationException exception) {
+            throw new CatalogEntryInUseException("La marca está en uso por productos o reglas de comisión.", exception);
+        }
+        if (deleted == 0) {
+            getById(id);
+            throw new CatalogEntryInUseException("La marca tiene productos asociados.");
+        }
+        audit.record(actorId(), "BRAND_DELETE", "BRAND", id.toString(), "SUCCESS", Map.of());
     }
 
     public BrandView getById(UUID id) {

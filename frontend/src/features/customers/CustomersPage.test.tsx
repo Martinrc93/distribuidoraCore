@@ -248,6 +248,7 @@ describe('CustomersPage', () => {
       const path = String(input)
       if (path.startsWith('/api/customers') && !init?.method) return response(customers)
       if (path.startsWith('/api/sellers')) return response({ content: [] })
+      if (path.startsWith('/api/pricing/lists')) return response({ content: [], totalPages: 0 })
       if (path === '/api/customers' && init?.method === 'POST') return response({ id: 'new-customer' }, 201)
       return response({})
     })
@@ -263,13 +264,14 @@ describe('CustomersPage', () => {
     })))
   })
 
-  it('edits a customer, assigns a price list, and confirms status changes', async () => {
+  it('edits a customer, assigns a price list from a later page, and confirms status changes', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/customers') && !init?.method) return response(customers)
       if (path.startsWith('/api/sellers')) return response({ content: [] })
-      if (path.startsWith('/api/pricing/lists')) return response({ content: [{ id: 'list-2', code: 'PREMIUM', name: 'Premium', status: 'ACTIVE' }] })
+      if (path === '/api/pricing/lists?page=0&size=100') return response({ content: [{ id: 'list-1', code: 'GENERAL', name: 'Lista general', status: 'ACTIVE' }], totalPages: 2 })
+      if (path === '/api/pricing/lists?page=1&size=100') return response({ content: [{ id: 'list-2', code: 'PREMIUM', name: 'Premium', status: 'ACTIVE' }], totalPages: 2 })
       return response({}, 204)
     })
     renderPage()
@@ -278,7 +280,8 @@ describe('CustomersPage', () => {
     expect(screen.getByLabelText(/razón social/i)).toHaveValue('Almacén Norte')
     await user.clear(screen.getByLabelText(/razón social/i))
     await user.type(screen.getByLabelText(/razón social/i), 'Almacén Sur')
-    await user.selectOptions(await screen.findByLabelText(/lista de precios/i), 'list-2')
+    await screen.findByRole('option', { name: 'PREMIUM - Premium' })
+    await user.selectOptions(screen.getByLabelText(/lista de precios/i), 'list-2')
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
     await waitFor(() => expect(screen.queryByRole('button', { name: /guardar cambios/i })).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: /editar/i }))

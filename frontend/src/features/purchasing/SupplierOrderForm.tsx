@@ -5,18 +5,27 @@ import { apiGet, apiPost, apiPut } from '../../shared/api/client'
 import { apiGetAllPages } from '../../shared/api/pagination'
 import { Button } from '../../shared/components/Button'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
-import { DataTable } from '../../shared/components/DataTable'
+import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { SupplierSelect } from '../../shared/components/EntitySelect'
 import { Panel } from '../../shared/components/Panel'
 import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import { displayDate, parseDate, todayInArgentina } from '../dashboard/dashboardDates'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
-import { decimal, isHalfUnit, money, purchaseProductsKey, suggestedRestockQuantity, supplierOrdersKey, suppliersOptionsKey, type PreviousSupplierOrder, type PurchaseProduct, type Supplier, type SupplierOrderDetail, type SupplierOrderResult } from './supplierOrders'
+import { decimal, isHalfUnit, purchaseProductsKey, suggestedRestockQuantity, supplierOrdersKey, suppliersOptionsKey, type PreviousSupplierOrder, type PurchaseProduct, type Supplier, type SupplierOrderDetail, type SupplierOrderResult } from './supplierOrders'
 
-type DraftLine = { productId: string; name: string; quantity: string; unitCost: string }
+type DraftLine = { productId: string; name: string; quantity: string; unitCost?: string }
 type RestockProduct = PurchaseProduct & { stock: number; suppliers: Supplier[] }
-type Payload = { supplierId: string; orderDate: string; lines: Array<{ productId: string; quantity: number; unitCost: number }>; idempotencyKey: string; confirm: boolean }
+type Payload = { supplierId: string; orderDate: string; lines: Array<{ productId: string; quantity: number; unitCost?: number }>; idempotencyKey: string; confirm: boolean }
+
+function formatDraftCost(cost?: number | null) {
+  return cost == null ? undefined : String(cost).replace('.', ',')
+}
+
+function invalidUnitCost(value: string) {
+  const amount = decimal(value)
+  return value.trim() !== '' && (!Number.isFinite(amount) || amount >= 1e15)
+}
 
 /**
  * Creates a purchase (as draft or confirmed) or edits an existing one when `initial` is given.
@@ -31,13 +40,14 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
   const formRef = useRef<HTMLFormElement>(null)
   const confirmIntent = useRef(false)
   const editing = Boolean(initial)
+  const title = initial ? `Editar compra ${initial.order.number}` : 'Nueva compra'
   const initialStatus = initial?.order.status
   const suppliers = useQuery({ queryKey: suppliersOptionsKey, queryFn: () => apiGetAllPages<Supplier>('/api/suppliers?page=0&size=100'), retry: false })
   const products = useQuery({ queryKey: purchaseProductsKey, queryFn: () => apiGetAllPages<PurchaseProduct>('/api/products?page=0&size=100&includeStock=true'), retry: false })
   const [supplierId, setSupplierId] = useState(initial?.order.supplierId ?? '')
   const [orderDate, setOrderDate] = useState(() => displayDate(initial?.order.date ?? todayInArgentina()))
   const [lines, setLines] = useState<DraftLine[]>(() => (initial?.items ?? []).map((item) => ({
-    productId: item.productId, name: item.productName, quantity: String(item.quantity), unitCost: String(item.unitCost),
+    productId: item.productId, name: item.productName, quantity: String(item.quantity),
   })))
   const [restockProduct, setRestockProduct] = useState<RestockProduct | null>()
   const [productId, setProductId] = useState('')
@@ -52,7 +62,6 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
   const waitingForRestock = Boolean(restockProductId && restockProduct === undefined)
   const activeProducts = (products.data?.content ?? []).filter((product) => product.status === 'ACTIVE')
   const isoDate = parseDate(orderDate)
-  const total = lines.reduce((sum, line) => sum + (decimal(line.quantity) * decimal(line.unitCost) || 0), 0)
   const pristine = useRef(JSON.stringify({ supplierId, orderDate, lines }))
   const hasChanges = editing || restockProductId ? JSON.stringify({ supplierId, orderDate, lines }) !== pristine.current
     : Boolean(supplierId || lines.length || orderDate !== displayDate(todayInArgentina()))
@@ -62,14 +71,15 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
     if (!waitingForRestock || !products.isSuccess || products.isFetching || !suppliers.isSuccess || suppliers.isFetching) return
     const product = products.data.content.find((item) => item.id === restockProductId)
     if (!product || product.status !== 'ACTIVE' || product.stock === undefined
-      || !Number.isFinite(product.stock) || !Number.isFinite(product.cost)) {
+      || !Number.isFinite(product.stock)) {
       setRestockProduct(null)
       return
     }
     const associated = suppliers.data.content.filter((supplier) => product.suppliers?.some((candidate) => candidate.id === supplier.id))
     const suggestedSupplier = associated.length === 1 ? associated[0].id : ''
     const suggestedLines = [{
-      productId: product.id, name: product.name, quantity: suggestedRestockQuantity(product.stock), unitCost: String(product.cost),
+      productId: product.id, name: product.name, quantity: suggestedRestockQuantity(product.stock),
+      unitCost: formatDraftCost(product.cost),
     }]
     pristine.current = JSON.stringify({ supplierId: suggestedSupplier, orderDate, lines: suggestedLines })
     setSupplierId(suggestedSupplier)
@@ -86,9 +96,17 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
   }, [waitingForRestock])
 
   function changed() { setAttempt(undefined); setError('') }
+  function updateLine(productId: string, field: 'quantity' | 'unitCost', value: string) {
+    setLines((current) => current.map((line) => line.productId === productId ? { ...line, [field]: value } : line))
+    changed()
+  }
+
   function applyPrevious(data: PreviousSupplierOrder) {
     if (data.order?.supplierId !== supplierId || !data.items?.length) return
-    setLines(data.items.map((item) => ({ productId: item.productId, name: item.productName, quantity: String(item.quantity), unitCost: String(item.currentCost) })))
+    setLines(data.items.map((item) => ({
+      productId: item.productId, name: item.productName, quantity: String(item.quantity),
+      unitCost: editing ? undefined : formatDraftCost(item.currentCost ?? activeProducts.find((product) => product.id === item.productId)?.cost),
+    })))
     setProductId('')
     setReplacement(undefined)
     changed()
@@ -117,8 +135,9 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
     if (!restockCandidates.length) return
     // Suggest enough to cover the negative balance plus one unit, in half units; the user can adjust it.
     setLines((current) => [...current, ...restockCandidates.map((product) => ({
-      productId: product.id, name: product.name, unitCost: String(product.cost),
+      productId: product.id, name: product.name,
       quantity: suggestedRestockQuantity(Number(product.stock)),
+      unitCost: editing ? undefined : formatDraftCost(product.cost),
     }))])
     changed()
   }
@@ -126,7 +145,7 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
     const product = activeProducts.find((candidate) => candidate.id === productId)
     if (!product || !Number.isFinite(decimal(quantity)) || decimal(quantity) <= 0) { setError('Selecciona un producto y una cantidad mayor a cero, con hasta cuatro decimales.'); return }
     if (initialStatus !== 'LEGACY' && !isHalfUnit(decimal(quantity))) { setError('La cantidad debe ser múltiplo de 0,5.'); return }
-    setLines((current) => [...current, { productId: product.id, name: product.name, quantity, unitCost: String(product.cost) }])
+    setLines((current) => [...current, { productId: product.id, name: product.name, quantity, unitCost: editing ? undefined : formatDraftCost(product.cost) }])
     setProductId('')
     setQuantity('1')
     changed()
@@ -135,21 +154,35 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
     event.preventDefault()
     if (busy) return
     if (!supplierId || !isoDate || !lines.length) { setError('Selecciona un proveedor, una fecha válida y al menos un producto.'); return }
-    if (lines.some((line) => !Number.isFinite(decimal(line.quantity)) || decimal(line.quantity) <= 0 || !Number.isFinite(decimal(line.unitCost)) || decimal(line.unitCost) < 0)) {
-      setError('Revisa las cantidades y costos: deben ser válidos y tener hasta cuatro decimales.'); return
+    if (lines.some((line) => !Number.isFinite(decimal(line.quantity)) || decimal(line.quantity) <= 0)) {
+      setError('Las cantidades deben ser mayores a cero y tener hasta cuatro decimales.'); return
     }
     if (initialStatus !== 'LEGACY' && lines.some((line) => !isHalfUnit(decimal(line.quantity)))) {
       setError('Las cantidades deben ser múltiplos de 0,5 porque la compra mueve el stock.'); return
     }
+    const invalidCost = lines.find((line) => invalidUnitCost(line.unitCost ?? ''))
+    if (invalidCost) {
+      setError(`Ingresa un costo unitario válido para ${invalidCost.name}, igual o mayor a cero y con hasta cuatro decimales.`); return
+    }
     const confirm = !editing && confirmIntent.current
     const sameAttempt = attempt && attempt.confirm === confirm
-    const payload = sameAttempt ? attempt : { supplierId, orderDate: isoDate, lines: lines.map((line) => ({ productId: line.productId, quantity: decimal(line.quantity), unitCost: decimal(line.unitCost) })), idempotencyKey: crypto.randomUUID(), confirm }
+    const payload = sameAttempt ? attempt : {
+      supplierId, orderDate: isoDate,
+      lines: lines.map((line) => ({ productId: line.productId, quantity: decimal(line.quantity), unitCost: line.unitCost?.trim() ? decimal(line.unitCost) : undefined })),
+      idempotencyKey: crypto.randomUUID(), confirm,
+    }
     setAttempt(payload)
     setSaving(true)
     setError('')
     try {
+      // Keep recorded costs for existing lines; new products use the catalog cost on the server.
+      const recordedCosts = initial && new Map(initial.items.map((item) => [item.productId, item.unitCost]))
       const result = initial
-        ? await apiPut<SupplierOrderDetail>(`/api/supplier-orders/${initial.order.id}`, { supplierId: payload.supplierId, orderDate: payload.orderDate, lines: payload.lines })
+        ? await apiPut<SupplierOrderDetail>(`/api/supplier-orders/${initial.order.id}`, {
+          supplierId: payload.supplierId,
+          orderDate: payload.orderDate,
+          lines: payload.lines.map((line) => ({ ...line, unitCost: recordedCosts?.get(line.productId) })),
+        })
           .then((detail) => ({ id: detail.order.id, number: detail.order.number, total: detail.order.total, status: detail.order.status }))
         : await apiPost<SupplierOrderResult>('/api/supplier-orders', payload)
       await Promise.all([
@@ -181,11 +214,11 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
   }
 
   return <>
-    <Panel title={initial ? `Editar compra ${initial.order.number}` : 'Nueva compra'} description={!initial ? 'Guardala como borrador o confirmala: al confirmar, las cantidades se suman al stock.' : initialStatus === 'CONFIRMED' ? 'La compra está confirmada: al guardar, el stock se ajusta por la diferencia de cantidades.' : initialStatus === 'LEGACY' ? 'Compra registrada antes de que las compras movieran stock: editarla no cambia el stock.' : 'Borrador: los cambios no mueven stock hasta confirmar la compra.'}>
+    <Panel title={initial || restockProductId ? title : 'Datos de la compra'} description={!initial ? 'Guardala como borrador o confirmala: al confirmar, las cantidades se suman al stock.' : initialStatus === 'CONFIRMED' ? 'La compra está confirmada: al guardar, el stock se ajusta por la diferencia de cantidades.' : initialStatus === 'LEGACY' ? 'Compra registrada antes de que las compras movieran stock: editarla no cambia el stock.' : 'Borrador: los cambios no mueven stock hasta confirmar la compra.'}>
       {restockProduct && <p className="helper-text mb-[18px] [overflow-wrap:anywhere]">
         Stock de {restockProduct.name} al abrir: {new Intl.NumberFormat('es-AR').format(restockProduct.stock)}.
       </p>}
-      <form ref={formRef} onSubmit={submit} aria-label={initial ? `Editar compra ${initial.order.number}` : 'Nueva compra'} aria-busy={busy}>
+      <form ref={formRef} onSubmit={submit} aria-label={title} aria-busy={busy}>
         <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0">
           <div className="form-grid items-end mb-[18px]">
             <SupplierSelect mode="selection" label="Proveedor" options={suppliers.data?.content ?? []} value={supplierId} onChange={(id) => { setSupplierId(id); setProductId(''); changed() }} loading={suppliers.isLoading} disabled={suppliers.isError} required />
@@ -207,12 +240,14 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
           {products.isError && <p className="error-text" role="alert">No se pudieron cargar los productos. <Button type="button" variant="link" onClick={() => void products.refetch()}>Reintentar productos</Button></p>}
           <DataTable columns={[
             { key: 'name', label: 'Producto', emphasis: true },
-            { key: 'quantity', label: 'Cantidad', render: (value, row) => <input className="input w-[120px] max-w-full" inputMode="decimal" aria-label={`Cantidad de ${row.name}`} value={value} onChange={(event) => { setLines((current) => current.map((line) => line.productId === row.id ? { ...line, quantity: event.target.value } : line)); changed() }} /> },
-            { key: 'unitCost', label: 'Costo unitario', render: (value, row) => <input className="input w-[140px] max-w-full currency-input" inputMode="decimal" aria-label={`Costo de ${row.name}`} value={value} onChange={(event) => { setLines((current) => current.map((line) => line.productId === row.id ? { ...line, unitCost: event.target.value } : line)); changed() }} /> },
-            { key: 'total', label: 'Subtotal', align: 'right' },
+            { key: 'quantity', label: 'Cantidad', render: (value, row) => <input className="input w-[120px] max-w-full" inputMode="decimal" aria-label={`Cantidad de ${row.name}`} value={value} onChange={(event) => updateLine(row.id, 'quantity', event.target.value)} /> },
+            ...(!editing ? [{ key: 'unitCost', label: 'Costo unitario', align: 'right', render: (value, row) =>
+              <input className="input currency-input w-[120px] max-w-full text-right" inputMode="decimal" aria-label={`Costo de ${row.name}`} aria-invalid={invalidUnitCost(value) || undefined}
+                placeholder="Costo de catálogo" value={value} onChange={(event) => updateLine(row.id, 'unitCost', event.target.value)} />,
+            } satisfies TableColumn] : []),
             { key: 'actions', label: 'Acciones', render: (_, row) => <Button type="button" variant="danger" aria-label={`Quitar ${row.name}`} onClick={() => { setLines((current) => current.filter((line) => line.productId !== row.id)); changed() }}>Quitar</Button> },
-          ]} rows={lines.map((line) => ({ id: line.productId, name: line.name, quantity: line.quantity, unitCost: line.unitCost, total: money(decimal(line.quantity) * decimal(line.unitCost) || 0) }))} emptyContent={<p className="table-empty-message">Agrega productos para registrar la compra.</p>} />
-          <p className="mt-[18px] text-[15px] font-bold">Total estimado: <CurrencyText>{money(total)}</CurrencyText></p>
+          ]} rows={lines.map((line) => ({ id: line.productId, name: line.name, quantity: line.quantity, unitCost: line.unitCost ?? '' }))} emptyContent={<p className="table-empty-message">Agrega productos para registrar la compra.</p>} />
+          {!editing && lines.length > 0 && <p className="helper-text">Si dejas el costo vacío, se usa el costo del catálogo.</p>}
         </fieldset>
         {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
         <div className="page-actions mt-[18px]">
@@ -226,7 +261,7 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
         </div>
       </form>
     </Panel>
-    {replacement && <ConfirmationDialog title="¿Reemplazar los productos?" description="Se copiarán los productos y cantidades de la última compra a este proveedor, con sus costos actuales. Los productos del borrador se reemplazarán." confirmLabel="Reemplazar productos" onConfirm={() => applyPrevious(replacement)} onCancel={() => setReplacement(undefined)} />}
+    {replacement && <ConfirmationDialog title="¿Reemplazar los productos?" description="Los productos y cantidades de la última compra a este proveedor reemplazarán los del borrador." confirmLabel="Reemplazar productos" onConfirm={() => applyPrevious(replacement)} onCancel={() => setReplacement(undefined)} />}
     {discardDialog}
   </>
 }

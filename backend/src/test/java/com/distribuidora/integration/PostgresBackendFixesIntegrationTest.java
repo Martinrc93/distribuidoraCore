@@ -149,6 +149,7 @@ class PostgresBackendFixesIntegrationTest {
     private final Set<UUID> sales = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> saleItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> products = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> priceLists = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> brands = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> categories = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> commissionPlans = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -182,6 +183,7 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from catalog.product_price_history where product_id in (%s)", products);
         deleteIds("delete from catalog.product_prices where product_id in (%s)", products);
         deleteIds("delete from catalog.products where id in (%s)", products);
+        deleteIds("delete from catalog.price_lists where id in (%s)", priceLists);
         deleteIds("delete from seller.seller_profiles where id in (%s)", sellers);
         deleteIds("delete from identity.refresh_tokens where user_id in (%s)", users);
         deleteIds("delete from identity.user_activation_tokens where user_id in (%s)", users);
@@ -2457,7 +2459,12 @@ class PostgresBackendFixesIntegrationTest {
         assignRole(actor, createRoleWithPermission("CUSTOMER_CREATE"));
         UUID customer = createCustomer(profile);
         UUID general = jdbc.queryForObject("select id from catalog.price_lists where code = 'GENERAL'", UUID.class);
-        UUID other = jdbc.queryForObject("select id from catalog.price_lists where code = 'LISTA_2'", UUID.class);
+        UUID other = UUID.randomUUID();
+        jdbc.update("""
+            insert into catalog.price_lists (id, code, name, created_at, updated_at)
+            values (?, ?, 'Alternate list', now(), now())
+            """, other, "ALT-" + other);
+        priceLists.add(other);
         jdbc.update("update customer.customers set price_list_id = ? where id = ?", general, customer);
         String token = loginHttp(email(actor));
         String contact = objectMapper.writeValueAsString(Map.of("businessName", "Contact updated", "email", "contact@example.test", "priceListId", general));

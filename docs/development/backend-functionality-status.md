@@ -72,7 +72,7 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Mantener precios con `NUMERIC(19,4)` y `BigDecimal`.
 - [x] Crear, editar y cambiar estado de listas de precios.
 - [x] Mantener listas iniciales `GENERAL`, `LISTA_2` y `LISTA_3`.
-- [x] Limitar a diez listas y proteger la lista `GENERAL`.
+- [x] Crear listas sin un máximo fijo y proteger la lista predeterminada `GENERAL`.
 - [x] Crear y editar precios por producto/lista.
 - [x] Historial y vigencias actuales/futuras por fecha comercial; consulta y
   cancelación de programaciones. Contrato en `docs/api/pricing.md`.

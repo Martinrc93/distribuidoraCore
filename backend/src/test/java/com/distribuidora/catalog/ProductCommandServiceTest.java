@@ -6,10 +6,15 @@ import com.distribuidora.catalog.application.ProductCommandService.ProductInput;
 import com.distribuidora.catalog.application.ProductCommandService.ProductPriceInput;
 import com.distribuidora.catalog.application.ProductPriceValidationException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -53,6 +58,28 @@ class ProductCommandServiceTest {
             input("Producto", "Bebidas", "Unidad", BigDecimal.ONE,
                 List.of(new ProductPriceInput(UUID.randomUUID(), BigDecimal.valueOf(-1))))))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void productCreationWithStockRequiresStockAdjustmentAuthority() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+            UUID.randomUUID().toString(), null, List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        var product = new ProductInput("Producto", null, null, BigDecimal.ONE, List.of(), categoryId, brandId, null, BigDecimal.TEN);
+
+        assertThatThrownBy(() -> service.create(product)).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void rejectsStockOutsideHalfUnitIncrementsAndStockOnUpdates() {
+        var product = new ProductInput("Producto", null, null, BigDecimal.ONE, List.of(), categoryId, brandId, null, new BigDecimal("2.3"));
+
+        assertThatThrownBy(() -> service.create(product)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("0,5");
+        assertThatThrownBy(() -> service.update(UUID.randomUUID(), product)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("al crear");
     }
 
     @Test

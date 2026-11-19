@@ -8,10 +8,10 @@ import SupplierOrderDetailPage from './SupplierOrderDetailPage'
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }))
 const paged = (content: unknown[]) => ({ content, page: 0, size: 100, totalPages: 1, totalElements: content.length })
 const supplier = { id: 'supplier-a', name: 'Proveedor Norte' }
-const product = { id: 'product-a', name: 'Harina', cost: 20, status: 'ACTIVE' }
+const product = { id: 'product-a', name: 'Harina', cost: 25, status: 'ACTIVE' }
 const detail = (status: string) => ({
   order: { id: 'order-1', number: 'PRV-00000003', supplierId: supplier.id, supplier: supplier.name, date: '2026-11-10', total: 40, status },
-  items: [{ productId: product.id, productName: product.name, quantity: 2, unitCost: 20, lineTotal: 40, status: 'ACTIVE', currentCost: 20 }],
+  items: [{ productId: product.id, productName: product.name, quantity: 2, unitCost: 20, lineTotal: 40, status: 'ACTIVE', currentCost: product.cost }],
 })
 
 function renderDetail() {
@@ -57,7 +57,7 @@ describe('Supplier order detail', () => {
     expect(await screen.findByText('Compra PRV-00000003 anulada: se descontaron sus cantidades del stock.')).toBeInTheDocument()
   })
 
-  it('edits a confirmed purchase with half-unit quantities through PUT', async () => {
+  it('edits quantities in half units and preserves the recorded unit cost', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const path = String(input)
       if (path.startsWith('/api/suppliers')) return json(paged([supplier]))
@@ -68,7 +68,10 @@ describe('Supplier order detail', () => {
     const user = userEvent.setup()
     renderDetail()
 
-    await user.click(await screen.findByRole('button', { name: 'Editar compra' }))
+    const edit = await screen.findByRole('button', { name: 'Editar compra' })
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Producto', 'Cantidad'])
+    expect(screen.queryByText(/Total estimado/)).not.toBeInTheDocument()
+    await user.click(edit)
     expect(await screen.findByText(/el stock se ajusta por la diferencia/)).toBeInTheDocument()
     const quantity = screen.getByLabelText('Cantidad de Harina')
     await user.clear(quantity)

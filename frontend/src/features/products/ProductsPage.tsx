@@ -1,6 +1,6 @@
 import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiPut, ApiError, type AffectedPriceList, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
@@ -46,11 +46,13 @@ type ProductFormValues = {
   categoryId: string
   brandId: string
   cost: string
+  initialStock: string
   prices: Record<string, string>
   supplierIds: string[]
 }
 
-const PRICE_LIST_QUERY_KEY = ['/api/pricing/lists?page=0&size=20']
+const PRICE_LIST_OPTIONS_PATH = '/api/pricing/lists?page=0&size=20'
+const PRICE_LIST_QUERY_KEY = [PRICE_LIST_OPTIONS_PATH, 'product-options']
 const CATEGORIES_QUERY_KEY = ['/api/categories']
 const BRANDS_QUERY_KEY = ['/api/brands']
 
@@ -60,6 +62,7 @@ function initialFormValues(initial?: Product): ProductFormValues {
     categoryId: initial?.categoryId ?? '',
     brandId: initial?.brandId ?? '',
     cost: initial?.cost === undefined ? '' : String(initial.cost),
+    initialStock: '',
     prices: {},
     supplierIds: initial?.suppliers?.map((supplier) => supplier.id) ?? [],
   }
@@ -121,6 +124,9 @@ function ProductForm({
   const queryClient = useQueryClient()
   const [form, setForm] = useState<ProductFormValues>(() => initialFormValues(initial))
   const [error, setError] = useState('')
+  const [stockError, setStockError] = useState('')
+  const stockInputId = useId()
+  const stockErrorId = `${stockInputId}-error`
   const [saving, setSaving] = useState(false)
   const [affectedLists, setAffectedLists] = useState<AffectedPriceList[]>([])
   const suppliersQuery = useQuery({ queryKey: ['/api/suppliers', 'product-options'], queryFn: () => apiGetAllPages<{ id: string; name: string }>('/api/suppliers?page=0&size=100'), retry: false })
@@ -130,6 +136,7 @@ function ProductForm({
   const brandOptions = brands.filter((brand) => brand.status === 'ACTIVE' || brand.id === initial?.brandId)
   const brandName = brands.find((brand) => brand.id === form.brandId)?.name ?? ''
   const generatedName = brandName && form.description.trim() ? `${brandName} ${form.description.trim()}` : ''
+  const canSetInitialStock = !initial && hasAuthority('STOCK_ADJUST')
   const hasChanges = JSON.stringify(form) !== JSON.stringify(initialFormValues(initial))
   const { requestDiscard: requestClose, discardDialog } = useDiscardChanges({ hasChanges, onDiscard: onDone, disabled: saving })
 
@@ -137,6 +144,7 @@ function ProductForm({
     setForm(initialFormValues(initial))
     setAffectedLists([])
     setError('')
+    setStockError('')
   }, [initial])
 
   function change(field: keyof Omit<ProductFormValues, 'prices' | 'supplierIds'>, value: string) {
@@ -173,6 +181,12 @@ function ProductForm({
       setError('No se pudieron cargar las listas y categorías. Reintentá antes de guardar.')
       return
     }
+    const rawStock = canSetInitialStock ? form.initialStock.trim() : ''
+    const initialStock = rawStock ? Number(rawStock.replace(',', '.')) : undefined
+    if (initialStock !== undefined && (!/^\d+(?:[.,](?:0+|50*))?$/.test(rawStock) || initialStock > 999_999_999_999_999.5)) {
+      setStockError('Ingresá una cantidad válida, mayor o igual a 0 y en múltiplos de 0,5.')
+      return
+    }
     const prices: Array<{ priceListId: string; price: number }> = []
     for (const list of visiblePriceLists) {
       const rawPrice = form.prices[list.id]
@@ -188,10 +202,10 @@ function ProductForm({
       }
       prices.push({ priceListId: list.id, price })
     }
-    await saveProduct(cost, prices)
+    await saveProduct(cost, prices, initialStock)
   }
 
-  async function saveProduct(cost: number, prices: Array<{ priceListId: string; price: number }>) {
+  async function saveProduct(cost: number, prices: Array<{ priceListId: string; price: number }>, initialStock?: number) {
     const body: ProductBody = {
       description: form.description.trim(),
       cost,
@@ -199,6 +213,7 @@ function ProductForm({
       categoryId: form.categoryId || null,
       brandId: form.brandId || null,
       ...(suppliersChanged ? { supplierIds: form.supplierIds } : {}),
+      ...(initialStock !== undefined ? { initialStock } : {}),
     }
     if (initial && defaultList && prices.some((price) => price.priceListId === defaultList.id)) {
       // Changing the default price also changes the lists that follow it: warn once per product and list.
@@ -224,7 +239,10 @@ function ProductForm({
     try {
       if (initial) await apiPut(`/api/products/${initial.id}`, acknowledgeFollowers ? { ...body, acknowledgeFollowers: true } : body)
       else await apiPost('/api/products', body)
-      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products?') })
+      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
+        const key = String(queryKey[0])
+        return key.startsWith('/api/products?') || (!initial && key.startsWith('/api/inventory'))
+      } })
       await queryClient.invalidateQueries({ queryKey: PRICE_LIST_QUERY_KEY })
       onSuccess(initial ? 'Producto actualizado correctamente.' : 'Producto creado correctamente.')
       onDone()
@@ -255,6 +273,10 @@ function ProductForm({
       <label className="field"><span>Costo</span><input className="input currency-input" type="text" inputMode="decimal" value={form.cost} onChange={(event) => change('cost', event.target.value)} required disabled={saving} /></label>
       {visiblePriceLists.map((list) => <label className="field" key={list.id}><span>Precio para {list.code}{isOptionalPrice(list.id) ? " (opcional)" : ""}</span><input className="input currency-input" type="text" inputMode="decimal" value={form.prices[list.id] ?? ''} onChange={(event) => changePrice(list.id, event.target.value)} required={!isOptionalPrice(list.id)} placeholder={isOptionalPrice(list.id) ? `Igual a ${defaultList?.code}` : undefined} disabled={saving} /></label>)}
       {!initial && defaultList && activeLists.length > 1 && <p className="helper-text col-span-full m-0">Las listas sin precio toman el de {defaultList.code} y lo siguen hasta que les pongas un precio propio.</p>}
+      {canSetInitialStock && <div className="field content-start"><label htmlFor={stockInputId}>Stock inicial (opcional)</label><input id={stockInputId} className="input" type="text" inputMode="decimal" placeholder="0" value={form.initialStock}
+        onChange={(event) => { change('initialStock', event.target.value); setStockError('') }} disabled={saving} aria-invalid={Boolean(stockError)} aria-describedby={stockError ? stockErrorId : undefined} />
+        {stockError && <span id={stockErrorId} className="error-text" role="alert">{stockError}</span>}
+      </div>}
       <div className="col-span-full min-w-0 grid gap-[8px]">
         <SupplierSelect mode="selection" label="Proveedores (opcional)" emptyLabel="Agregar proveedor..." value="" options={supplierOptions.filter((supplier) => !form.supplierIds.includes(supplier.id))}
           loading={suppliersQuery.isLoading} disabled={saving || suppliersQuery.isError} onChange={(id) => { if (id) setForm((current) => ({ ...current, supplierIds: [...current.supplierIds, id] })) }} />
@@ -347,7 +369,7 @@ export default function ProductsPage() {
   const productPath = `/api/products?page=${page}&size=${pageSize}${searchParam}${catalogParams}`
   const productQueryKey = [productPath]
   const query = useQuery({ queryKey: productQueryKey, queryFn: () => apiGet<ApiPage<Product>>(productPath) })
-  const listsQuery = useQuery({ queryKey: PRICE_LIST_QUERY_KEY, queryFn: () => apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20'), enabled: isAdmin })
+  const listsQuery = useQuery({ queryKey: PRICE_LIST_QUERY_KEY, queryFn: () => apiGetAllPages<PriceList>(PRICE_LIST_OPTIONS_PATH), enabled: isAdmin })
   const categoriesQuery = useQuery({ queryKey: CATEGORIES_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/categories') })
   const brandsQuery = useQuery({ queryKey: BRANDS_QUERY_KEY, queryFn: () => apiGet<CatalogOption[]>('/api/brands') })
   const [formProduct, setFormProduct] = useState<Product | undefined>()
@@ -443,12 +465,11 @@ export default function ProductsPage() {
     cost: money(product.cost),
     stock: String(product.stock ?? 0),
     status: product.status ?? 'ACTIVE',
-    suppliers: product.suppliers?.map((supplier) => supplier.name).join(', ') ?? '',
   }))
   const columns: TableColumn[] = [
-    { key: 'name', label: 'Producto', emphasis: true, render: (value, row) => <div className="min-w-0"><span className="block truncate" title={value}>{value}</span>{isAdmin && row.suppliers && <span className="block truncate text-[11px] font-normal text-muted" title={row.suppliers}>Proveedores: {row.suppliers}</span>}</div> },
-    { key: 'category', label: 'Categoría' },
+    { key: 'name', label: 'Producto', emphasis: true, render: (value) => <span className="block truncate" title={value}>{value}</span> },
     { key: 'brand', label: 'Marca' },
+    { key: 'category', label: 'Categoría' },
     ...(isAdmin ? [{ key: 'cost', label: 'Costo', align: 'right' as const, render: (value: string) => <span className="font-bold">{value}</span> }] : []),
     { key: 'stock', label: 'Stock', align: 'right', render: (value) => <span className={`font-bold${Number(value) < 0 ? ' negative-number' : ''}`}>{value}</span> },
     { key: 'actions', label: 'Estado y acciones', align: 'right', render: (_value: string, row: Record<string, string>) => {
@@ -457,7 +478,7 @@ export default function ProductsPage() {
       const canRestock = isAdmin && product.status === 'ACTIVE' && product.stock !== undefined && product.stock <= 0
       return <div className="product-row-controls">
         <StatusBadge value={product.status ?? 'ACTIVE'} />
-        <div className={canRecordShrinkage || canRestock ? 'table-row-actions flex-wrap' : 'table-row-actions'}>
+        <div className="table-row-actions">
           <Button variant="secondary" onClick={() => setSelectedProduct(product)} aria-label={`Ver movimientos de ${product.name}`}>Ver movimientos</Button>
           {hasAuthority('STOCK_ADJUST') && <Button variant="secondary" onClick={() => { setAdjustmentProduct(product); setAdjustmentMode('target'); setQuantity(''); setReason(''); setAdjustmentError('') }} aria-label={`Ajustar stock de ${product.name}`}>Ajustar stock</Button>}
           {canRecordShrinkage && product.status !== 'INACTIVE' && <Button id={`shrinkage-${product.id}`} variant="secondary"

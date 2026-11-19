@@ -119,7 +119,8 @@ class ProductCommandControllerTest {
                         "description": "Producto",
                         "categoryId": "%s",
                         "brandId": "%s",
-                        "cost": 100
+                        "cost": 100,
+                        "initialStock": 12.5
                     }
                     """.formatted(categoryId, brandId)))
             .andExpect(status().isCreated());
@@ -129,6 +130,7 @@ class ProductCommandControllerTest {
         assertThat(input.getValue().categoryId()).isEqualTo(categoryId);
         assertThat(input.getValue().brandId()).isEqualTo(brandId);
         assertThat(input.getValue().description()).isEqualTo("Producto");
+        assertThat(input.getValue().initialStock()).isEqualByComparingTo("12.5");
     }
 
     @Test

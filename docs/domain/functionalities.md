@@ -154,11 +154,9 @@ reemplazo.
 
 #### Listas de precios
 
-- Se crean diez listas iniciales: `Lista general` (`GENERAL`), `Lista 2` (`LISTA_2`) a `Lista 10` (`LISTA_10`).
-- Las tres primeras quedan activas; de la 4 a la 10 quedan inactivas.
-- El administrador puede cambiar sus nombres.
-- El administrador puede agregar listas hasta un máximo total de diez.
-- El máximo incluye listas activas e inactivas.
+- Una instalación nueva inicia con una sola lista activa y predeterminada, `Lista general` (`GENERAL`).
+- El administrador puede crear listas sin un máximo fijo y cambiar sus nombres.
+- Las instalaciones existentes conservan sus listas y precios al actualizarse.
 - Una lista puede modificarse.
 - Una lista puede darse de baja.
 - Una lista dada de baja puede reactivarse.
@@ -166,7 +164,7 @@ reemplazo.
 - Los pedidos históricos conservan el precio aplicado.
 - Un cliente puede tener una lista asignada, pero no es obligatorio.
 - `GENERAL` (`Lista general`) es la lista predeterminada cuando el cliente no tiene una lista
-  asignada; no se crea una cuarta lista automática.
+  asignada.
 - La lista puede cambiarse durante la creación del pedido (administradores y
   vendedores con el permiso `ORDER_PRICE_LIST_CHANGE`, otorgado por defecto).
 - Si falta el precio en la lista activa seleccionada, se prueban las listas
@@ -195,8 +193,6 @@ Los productos no pueden quedar sin precio en una lista activa:
   lo toman y la siguen. Lo mismo ocurre al reactivar un producto.
 - Al subir el costo, solo se piden precios de reemplazo para las listas con precio
   propio: las que siguen a la General toman el nuevo precio de la General.
-- En la práctica, las instancias ya tienen las diez listas creadas (tres activas),
-  por lo que «agregar» una lista equivale a activar y renombrar una inactiva.
 
 No se guardan precios históricos de la lista como historial independiente; el
 historial comercial se conserva mediante snapshots en pedidos y ventas.

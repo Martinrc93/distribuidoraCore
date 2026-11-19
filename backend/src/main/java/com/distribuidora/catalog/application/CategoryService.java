@@ -2,6 +2,7 @@ package com.distribuidora.catalog.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -52,8 +53,8 @@ public class CategoryService {
         Timestamp now = Timestamp.from(Instant.now());
 
         jdbc.update(
-            "insert into catalog.categories(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)",
-            id, name, now
+            "insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
+            id, name, id.toString(), now
         );
 
         audit.record(actorId(), "CATEGORY_CREATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name));
@@ -109,6 +110,26 @@ public class CategoryService {
     @Transactional
     public void deactivate(UUID id) {
         setStatus(id, "INACTIVE");
+    }
+
+    @Transactional
+    public void deletePermanently(UUID id) {
+        int deleted;
+        try {
+            deleted = jdbc.update("""
+                delete from catalog.categories c
+                where c.id = ? and not exists (
+                    select 1 from catalog.products p where p.category_id = c.id or lower(p.category) = lower(c.name)
+                )
+                """, id);
+        } catch (DataIntegrityViolationException exception) {
+            throw new CatalogEntryInUseException("La categoría está en uso por productos o reglas de comisión.", exception);
+        }
+        if (deleted == 0) {
+            getById(id);
+            throw new CatalogEntryInUseException("La categoría tiene productos asociados.");
+        }
+        audit.record(actorId(), "CATEGORY_DELETE", "CATEGORY", id.toString(), "SUCCESS", Map.of());
     }
 
     public CategoryView getById(UUID id) {

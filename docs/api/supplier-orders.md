@@ -33,6 +33,11 @@ Se exige un proveedor existente, fecha y entre 1 y 1000 productos activos sin
 repetir. La cantidad debe ser positiva y el costo no negativo, con hasta cuatro
 decimales. Omitir `unitCost` usa el costo actual del producto. Los subtotales se
 redondean a cuatro decimales con `HALF_UP`; el backend calcula el total.
+El formulario de alta permite editar cantidad y costo unitario por línea. El
+costo inicial se toma del catálogo, también al copiar una compra o reponer stock.
+El costo ingresado se guarda en la compra. El detalle muestra producto y cantidad.
+Al editar desde la interfaz, se preserva el costo registrado de las líneas
+existentes. Las líneas nuevas toman el costo del catálogo.
 El pedido conserva el nombre del proveedor, los nombres de productos, cantidades
 y costos al solicitarlo. Cambios posteriores no recalculan el historial.
 
@@ -45,6 +50,8 @@ borrador. La numeración `PRV-00000001` usa una secuencia; puede tener saltos.
 
 - `GET /api/supplier-orders?page=0&size=20&supplierId=<UUID>&dateMin=2026-09-01&dateMax=2026-09-30`
 - `GET /api/supplier-orders/{id}`
+- `GET /api/supplier-orders/{id}/documents/a4` descarga `compra-{number}.pdf`
+  con proveedor, fecha, productos y cantidades. Requiere `ADMIN_ALL`.
 - `GET /api/supplier-orders/supplier/{supplierId}/last-order`
 
 Proveedor y fechas son opcionales. El rango es inclusivo y se filtra antes de
@@ -56,7 +63,7 @@ El último pedido usa el ID exacto del proveedor y todo su historial, sin depend
 del calendario del listado. Devuelve `{available: false}` si no hay pedidos;
 si existe devuelve `order`, `items` y `available: true`. Cada item incluye
 `status` y `currentCost` además de su snapshot histórico. El formulario copia
-cantidades con costos actuales; productos inactivos impiden la copia. Cargar
+productos y cantidades. Los productos inactivos impiden la copia. Cargar
 el anterior requiere confirmación si reemplazará productos del borrador.
 
 ## Estados y stock (V40)
@@ -98,15 +105,15 @@ requiere un flujo separado.
 
 La acción «Reponer» de Stock está disponible en productos activos con saldo
 cero o negativo. También está disponible en las filas de Cobertura estimada
-de stock del Dashboard. Abre el formulario de compra con el producto, costo
-y saldo leídos del catálogo al abrir. Si el producto está inactivo o ya no está
+de stock del Dashboard. Abre el formulario de compra con el producto y el
+saldo leídos del catálogo al abrir. Si el producto está inactivo o ya no está
 en el catálogo, el formulario muestra el aviso y ofrece volver al origen.
 
 Sugiere cubrir el saldo negativo más una unidad, redondeando hacia arriba al
 próximo múltiplo de 0,5. Si el saldo ya es positivo, sugiere una unidad. Completa
 el proveedor si hay una única asociación disponible. Con varias, muestra sus
 nombres y permite elegir. El selector conserva el catálogo de proveedores con
-todas sus páginas. Cantidad y costo son editables antes de guardar.
+todas sus páginas. La cantidad es editable antes de guardar.
 
 «Agregar productos sin stock» sigue disponible en Compras y usa la misma
 sugerencia. Agrega productos activos con saldo menor o igual a cero. Si el

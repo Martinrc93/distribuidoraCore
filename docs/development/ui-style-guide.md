@@ -309,12 +309,18 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 
 ### Listas de precios que siguen a la General
 
+- «Nueva lista de precios» pide solo el nombre. El sistema genera el código.
+  «Cancelar» y «Guardar lista» comparten una fila al pie del modal.
 - Crear una lista con productos cargados abre `ConfirmationDialog` (`primary`)
   sobre el formulario: «Ya hay N productos cargados…» y explica que tomarán los
   precios de la General y la seguirán. Activar una lista inactiva lo explica en el
-  diálogo de estado. Con diez listas, «+ Nueva lista» se deshabilita y una ayuda
-  indica activar y renombrar una inactiva.
-- La tarjeta de cada lista muestra «N sin revisar» (`.price-list-pending`).
+  diálogo de estado. «+ Nueva lista» está disponible para administradores sin
+  límite de cantidad. El selector de listas de la pantalla se pagina y las
+  opciones de clientes, productos y pedidos recorren todas las páginas.
+- Si hay una sola lista, su tarjeta se muestra siempre y el selector omite el
+  filtro de estado y el botón para plegar. Con varias listas se aplican las
+  preferencias guardadas. La tarjeta muestra «N sin revisar» (`.price-list-pending`)
+  cuando hay precios pendientes.
 - En una lista que no es la General, la tabla agrega «Estado» con `Badge`:
   «Sin revisar» (`strong`), «Sin cambios» (`soft`, revisado y sigue a la General) y
   «Precio propio» (`muted`). El encabezado ofrece el filtro «Estado» (Todos, Sin
@@ -331,8 +337,17 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   cambio sin guardar el borde usa `--copper` y se muestra «Enter para guardar · Esc
   para descartar». Nunca se acepta un precio menor al costo: el error se muestra en
   la fila con `role="alert"` y `aria-invalid`. En la General se aplica el mismo
-  aviso de listas seguidoras. «Programar» abre el diálogo para fijar una vigencia
-  futura (dejar la fecha vacía aplica desde hoy).
+  aviso de listas seguidoras. «Programar» abre un `FormModal` compacto con el
+  producto y la lista en el encabezado, y el precio y la fecha en una columna.
+  Si la fecha queda vacía, se aplica desde hoy. Cancelar o pulsar Escape con
+  cambios sin guardar pide confirmar el descarte.
+- La tabla principal y la de historial muestran encabezados de `12px` con
+  capitalización de frase, padding vertical de `13px` e importes alineados a la
+  derecha. «Ver historial» abre un `FormModal` de hasta `1040px` con el producto
+  y la lista en el encabezado fijo. El diálogo mantiene la paginación, permite
+  reintentar la carga y usa tarjetas con etiquetas a `640px` o menos. «Cerrar» y
+  Escape devuelven el foco a «Ver historial». Los administradores pueden cancelar
+  vigencias futuras mediante un `ConfirmationDialog` sobre el historial.
 - Al subir el costo de un producto por encima del precio de alguna lista con precio
   propio, el formulario abre `CostPriceFixDialog` (`FormModal` compacto) con un campo
   por lista, el precio actual como ayuda y el costo como mínimo. «Guardar precios y
@@ -421,7 +436,7 @@ gestiona la administración: las acciones requieren `ADMIN_ALL` y
 
 - **Listado de Clientes.** El nombre del revendedor lleva un `Badge` «Revendedor»
   (tono `soft`). Un cliente asociado agrega debajo del nombre el texto secundario
-  «Cuenta: {revendedor}» (`11px`, `text-muted`), como el número de cliente. El
+  «Cuenta: {revendedor}» (`11px`, `text-muted`). El
   filtro «Buscar por revendedor» es un `CustomerSelect` en modo `filter` con
   `emptyLabel` «Todos los revendedores», visible para administradores y con
   opciones cargadas por todas las páginas (`kind=RESELLER`). «Registrar pago» no
@@ -472,7 +487,10 @@ La columna «Estado» usa `Badge`: «Confirmada» (`strong`), «Borrador» (`sof
 explicación de su efecto en el stock y las acciones «Confirmar compra» (solo
 borrador), «Editar compra» y «Anular compra» (`danger`), todas con
 `ConfirmationDialog` salvo editar, que reutiliza el formulario con una descripción
-según el estado. Las cantidades de compras no históricas deben ser múltiplos de 0,5.
+según el estado. «Descargar PDF» se alinea a la izquierda junto a «Editar
+compra». «Anular compra» se alinea al extremo derecho y pasa a la fila siguiente
+si falta espacio. El PDF A4 incluye proveedor, fecha y las columnas Producto y
+Cantidad. Las cantidades de compras no históricas deben ser múltiplos de 0,5.
 «Agregar productos sin stock (N)» carga los productos activos con stock ≤ 0 del
 proveedor (o todos si no tiene productos asociados).
 
@@ -484,12 +502,18 @@ catálogo actual, muestra reintento si falla y preserva los filtros de origen
 al cancelar o volver después de guardar. La preselección por reposición queda
 como estado inicial. Si se modifica, Cancelar pide confirmar el descarte.
 
-La solicitud se crea en un panel en la misma página, con proveedor, fecha,
-selector de productos activos, cantidades y costos editables. Reutiliza
-`.form-grid` y `.product-picker`, que se apilan a `760px`, sin variantes globales.
-La fecha inicia en el día de Argentina. «Cargar pedido anterior» consulta el
-último del ID exacto del proveedor: copia cantidades con costos actuales,
-requiere confirmación para reemplazar productos y bloquea productos inactivos.
+«Nueva compra» abre la página `/supplier-orders/new`, con un `PageHeader` y un
+`Panel` para el proveedor, la fecha, el selector de productos activos y el
+detalle con cantidad y costo unitario editables por producto. El costo se
+precarga desde el catálogo al agregar, reponer o copiar productos. El importe
+ingresado se guarda en la compra. Si se deja vacío, la API usa el costo vigente
+del catálogo. El detalle de una compra guardada y su PDF muestran producto y
+cantidad por línea. Reutiliza `.form-grid` y
+`.product-picker`, que se apilan a `760px`. Al cancelar o guardar se vuelve al
+listado con sus filtros. Cancelar pide confirmación si hay cambios sin guardar.
+La fecha inicia en el día de Argentina. «Cargar compra anterior» consulta la
+última del ID exacto del proveedor y copia sus productos y cantidades. Requiere
+confirmación para reemplazar productos y bloquea productos inactivos.
 Cancelar un borrador modificado pide confirmación. Durante guardado/carga se
 bloquean campos y acciones; errores conservan el borrador y el intento para
 reintentar. Proveedores y productos cargan todas sus páginas y ofrecen reintento.
@@ -498,8 +522,9 @@ El flujo no envía mensajes al proveedor. Contrato y alcance en
 [`supplier-orders.md`](../api/supplier-orders.md).
 
 En productos, «Proveedores (opcional)» permite agregar varios mediante
-`SupplierSelect`, sin repetir, y quitarlos individualmente. El listado muestra
-sus nombres debajo del producto, manteniendo las columnas y anchos existentes.
+`SupplierSelect`, sin repetir, y quitarlos individualmente. En Stock, el listado
+empieza con Producto, Marca y Categoría. En escritorio, el estado y las acciones
+comparten un renglón. Hasta `640px`, las acciones se acomodan en las tarjetas.
 Un producto se puede guardar sin asociaciones. Un error de carga de opciones
 no borra asociaciones existentes ni impide guardar campos ajenos al proveedor.
 Las filas de selección se adaptan al ancho y admiten nombres largos.
@@ -605,9 +630,12 @@ Con ese permiso se puede elegir otra lista activa; la API rechaza cambios no aut
 lista asignada no está disponible, el vendedor ve un mensaje para solicitar
 revisión administrativa y no puede agregar productos ni confirmar.
 
-La creación y edición de pedidos comparten `OrderForm`. En edición, cliente y
-vendedor usan `CustomerSelect` y `SellerSelect` deshabilitados con los nombres
-del pedido, sin cargar opciones para modificarlos. Se precargan productos,
+La creación y edición de pedidos comparten `OrderForm`. Al abrir «Nuevo pedido»
+y completar la carga, el foco inicial queda en «Cliente» para buscar por nombre.
+Al seleccionar un cliente con una lista de precios activa, el foco pasa a «Producto».
+En edición, cliente y vendedor usan `CustomerSelect` y `SellerSelect`
+deshabilitados con los nombres del pedido, sin cargar opciones para modificarlos.
+Se precargan productos,
 cantidades, precios guardados, descuentos y saldo anterior. `ORDER_EDIT` o
 `ADMIN_ALL` permiten agregar/quitar productos y editar cantidades; el precio
 unitario requiere `ORDER_PRICE_OVERRIDE` y los descuentos `ORDER_DISCOUNT`.
@@ -626,8 +654,7 @@ secundaria de `13px`; el detalle también muestra la fecha. La variante local
 sin cambiar encabezados de otras pantallas. El número concatena el número completo
 del cliente, con un mínimo de cuatro dígitos, y cinco del correlativo por cliente
 (ejemplos `000100004` y `1000000001`).
-El listado de clientes muestra su número debajo del nombre en `11px`, y la ficha
-lo incluye como dato «N.º de cliente». Contrato en
+La ficha incluye el dato «N.º de cliente». Contrato en
 [`order-numbering.md`](../api/order-numbering.md).
 
 
@@ -667,8 +694,10 @@ del filtro; en el detalle, al bloque de operaciones. No se bloquea el trabajo ve
 
 En la carga de pedidos, elegir un producto con Enter pasa el foco a «Cantidad»
 (seleccionada); Enter en «Cantidad» o «Descuento» agrega la línea y vuelve al
-buscador de productos. Enter dentro del selector de productos nunca confirma el
-pedido.
+buscador de productos. En «Nuevo pedido», dos pulsaciones de Enter seguidas
+en «Producto» activan «Confirmar pedido» si el desplegable está cerrado, ya hay
+líneas agregadas y no hay un producto pendiente de agregar. El atajo usa las
+mismas validaciones que el botón. Con el desplegable abierto, Enter elige la opción.
 En el listado, `.table-row-actions` agrupa «Ver detalle», «Editar» y «Pasar a
 entregado». «Editar» aparece con `ORDER_EDIT` o `ADMIN_ALL` en pedidos confirmados.
 «Pasar a entregado» aparece en pedidos confirmados con `SALE_DELIVER` o
@@ -823,10 +852,11 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   clientes omite el saldo global para vendedores y carga todas las páginas de
   deudas autorizadas. Los saldos devueltos después de cobrar corresponden a las
   deudas del vendedor; el administrador conserva la vista completa del cliente.
-- En pedidos, `.orders-date-filters` agrupa fecha mínima y máxima a la derecha
-  de `.orders-toolbar`. Cada campo mide `140px`; a `640px` o menos, búsqueda y
-  estado ocupan filas completas y las fechas se distribuyen en dos columnas
-  iguales. Esta variante pertenece a pedidos. Los campos usan `dd/mm/aaaa`,
+- En pedidos, la búsqueda en `.orders-toolbar` usa `14ch + 22px` y cada select
+  toma el ancho que necesita su opción más larga o su etiqueta. `.orders-date-filters`
+  agrupa dos campos de `120px` a la derecha, en la misma fila si hay espacio. A
+  `640px` o menos, la búsqueda y los selects ocupan filas completas y las fechas
+  se distribuyen en dos columnas iguales. Los campos usan `dd/mm/aaaa`,
   labels visibles y errores asociados mediante `aria-describedby`.
   `OrderDateFilter` conserva el texto numérico y abre `OrderCalendar` en español al
   hacer clic en el campo o su botón de calendario, o con `Enter`/`Alt+ArrowDown`.
@@ -961,6 +991,7 @@ vendedores siguen usando un input: buscan texto, no seleccionan una entidad.
   `emptyLabel` define el significado del ID vacío: seleccionar, sin asignar,
   todos o usar el vendedor del cliente. `required` exige elegir una opción;
   escribir un nombre sin seleccionarlo no satisface la validación nativa.
+  `autoFocus` permite enfocar el campo de búsqueda al montarlo habilitado.
 - Clic o flechas abren la lista. Escribir filtra las opciones por nombre sin
   distinguir mayúsculas ni acentos; seleccionar confirma el ID. Flechas recorren,
   Enter elige, Escape cancela y Tab/clic fuera cierran conservando la selección
@@ -1009,9 +1040,11 @@ fuera de la vista (problema reportado en Productos y Listas de precios).
 
 ### Formularios en modal (`FormModal`)
 
-`FormModal` recibe `label` (nombre accesible, normalmente el título del
-formulario), `onClose`, `busy` y `size` (`default` o `compact`). Envuelve un
-`Panel` con el formulario. Usa `<dialog>` con `showModal()` en un portal a
+`FormModal` recibe `label` (nombre accesible) o `labelledBy` (ID del título
+visible), y admite `describedBy` (ID de la descripción) y `className` para
+variantes locales. Recibe también `onClose`, `busy` y `size` (`default` o
+`compact`). Envuelve un `Panel` con el formulario o detalle. Usa `<dialog>`
+con `showModal()` en un portal a
 `document.body`: se dibuja en la capa superior del navegador, por lo que siempre
 abre dentro del viewport sin importar el scroll; bloquea el scroll del fondo con
 `lockBodyScroll`, enfoca el primer campo, contiene Tab/Shift+Tab y devuelve el
@@ -1076,7 +1109,7 @@ o `ConfirmationDialog`.
 
 [`DocumentActions`](../../frontend/src/shared/components/DocumentActions.tsx) recibe
 `path` (endpoint PDF autenticado), `filename`, `printLabel`, `downloadLabel`,
-`disabled` y `onDone`. Muestra dos botones secundarios en `.document-actions`
+`disabled` y `onDone`. `printLabel` es opcional. Muestra los botones secundarios en `.document-actions`
 (flex con wrap, gap `8px`): imprimir llama a `apiPrintPdf`, que carga el PDF en un
 iframe oculto y abre el diálogo de impresión sin descargar el archivo; en
 dispositivos táctiles (`pointer: coarse`) abre una pestaña en el mismo clic y
@@ -1110,6 +1143,12 @@ No cierra al pulsar el fondo.
 `danger`. Limita la altura con `100dvh` y scroll interno; a `760px` reduce padding
 y márgenes, y a `640px` las acciones comparten el ancho y permiten wrap.
 
+En Marcas y categorías, un administrador puede eliminar definitivamente una
+marca o categoría activa o inactiva cuando muestra cero productos asociados. La acción
+abre `ConfirmationDialog`; si hay productos o reglas de comisión que impiden
+borrarla, el error queda en el diálogo. Al eliminarla, el foco vuelve a la
+pestaña activa. Desactivar sigue disponible como acción independiente.
+
 [`useDiscardChanges`](../../frontend/src/shared/useDiscardChanges.tsx) recibe
 `hasChanges`, `onDiscard`, `disabled` y `protectUnload` opcionales; devuelve
 `requestDiscard` y `discardDialog`. Sin cambios ejecuta el cierre directamente;
@@ -1130,6 +1169,11 @@ comparte el formulario de ajuste en Stock (Productos) e Inventario. Reutiliza
 `.confirmation-dialog-*`: encabezado con producto, resumen de stock actual y
 resultante en dos columnas, selector de tipo de ajuste, campos de cantidad y
 motivo en una columna y acciones fuera de la grilla.
+
+«Nuevo producto» ofrece «Stock inicial (opcional)» a administradores con
+`STOCK_ADJUST`. El campo admite cantidades no negativas en múltiplos de `0,5`,
+queda vacío por defecto y muestra errores junto al campo. Si se indica una
+cantidad positiva, se registra el movimiento «Stock inicial» al guardar.
 
 El tipo de ajuste (`.stock-adjustment-mode`, radios de `44px`) ofrece «Indicar
 cantidad final» (por defecto: reemplaza el stock por la cantidad contada y muestra

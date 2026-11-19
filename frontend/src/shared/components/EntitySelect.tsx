@@ -10,6 +10,7 @@ type EntitySelectProps = {
   emptyLabel?: string
   loading?: boolean
   disabled?: boolean
+  autoFocus?: boolean
   required?: boolean
   invalid?: boolean
   describedBy?: string

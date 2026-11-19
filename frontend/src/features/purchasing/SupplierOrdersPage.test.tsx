@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SupplierOrdersPage from './SupplierOrdersPage'
+import SupplierOrderCreatePage from './SupplierOrderCreatePage'
 
 const paged = (content: unknown[], page = 0, totalPages = 1) => ({ content, page, size: 100, totalPages, totalElements: content.length * totalPages })
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }))
@@ -22,7 +23,12 @@ function fixture(input: RequestInfo | URL) {
 }
 function renderPage(entry = '/supplier-orders') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><SupplierOrdersPage /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}>
+    <Routes>
+      <Route path="/supplier-orders" element={<SupplierOrdersPage />} />
+      <Route path="/supplier-orders/new" element={<SupplierOrderCreatePage />} />
+    </Routes>
+  </MemoryRouter></QueryClientProvider>)
   return client
 }
 async function choose(label: string, name: string) {
@@ -32,7 +38,7 @@ async function choose(label: string, name: string) {
   await user.click(await screen.findByRole('option', { name }))
 }
 async function startForm() {
-  await userEvent.setup().click(screen.getByRole('button', { name: '+ Nueva compra' }))
+  await userEvent.setup().click(screen.getByRole('link', { name: '+ Nueva compra' }))
   await choose('Proveedor', supplierA.name)
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -56,9 +62,9 @@ describe('Supplier orders', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('La fecha inicial no puede ser posterior a la final.')
     expect(fetch.mock.calls.some(([input]) => String(input).startsWith('/api/supplier-orders'))).toBe(false)
   })
-  it('copies the latest order of the selected supplier with current costs and preserves its quantities', async () => {
+  it('copies the products and quantities from the latest order with current catalog costs', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => init?.method === 'POST' ? json({ id: 'new', number: 'PRV-00000002', total: 75, status: 'CONFIRMED' }, 201) : fixture(input))
-    renderPage()
+    renderPage('/supplier-orders?supplierId=supplier-a&page=2')
     await startForm()
     const load = screen.getByRole('button', { name: 'Cargar compra anterior' })
     await waitFor(() => expect(load).toBeEnabled())
@@ -66,22 +72,30 @@ describe('Supplier orders', () => {
     expect(await screen.findByLabelText('Cantidad de Harina')).toHaveValue('3')
     expect(screen.getByLabelText('Costo de Harina')).toHaveValue('25')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Confirmar compra' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Compra PRV-00000002 confirmada: las cantidades se sumaron al stock.')
+    expect(await screen.findByText(/Compra PRV-00000002 confirmada: las cantidades se sumaron al stock/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '+ Nueva compra' })).toHaveAttribute('href', '/supplier-orders/new?supplierId=supplier-a')
     const body = JSON.parse(String(fetch.mock.calls.find(([, init]) => init?.method === 'POST')![1]!.body))
-    expect(body).toMatchObject({ supplierId: supplierA.id, lines: [{ productId: product.id, quantity: 3, unitCost: 25 }], confirm: true })
+    expect(body).toMatchObject({ supplierId: supplierA.id, confirm: true })
+    expect(body.lines).toEqual([{ productId: product.id, quantity: 3, unitCost: 25 }])
     expect(body.idempotencyKey).toBeTruthy()
   })
-  it('allows a new order without history and adds products with editable quantity and cost', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => fixture(input))
+  it('adds products with editable quantity and rejects an invalid unit cost', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => fixture(input))
     renderPage()
-    await userEvent.setup().click(screen.getByRole('button', { name: '+ Nueva compra' }))
+    await userEvent.setup().click(screen.getByRole('link', { name: '+ Nueva compra' }))
     await choose('Proveedor', supplierB.name)
     await screen.findByText('Este proveedor no tiene compras anteriores.')
     expect(screen.getByRole('button', { name: 'Cargar compra anterior' })).toBeDisabled()
     await choose('Producto', product.name)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Agregar producto' }))
     expect(screen.getByLabelText('Cantidad de Harina')).toHaveValue('1')
-    expect(screen.getByLabelText('Costo de Harina')).toHaveValue('20')
+    const cost = screen.getByLabelText('Costo de Harina')
+    expect(cost).toHaveValue('20')
+    fireEvent.change(cost, { target: { value: '-1' } })
+    expect(cost).toHaveAttribute('aria-invalid', 'true')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Guardar borrador' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ingresa un costo unitario válido para Harina')
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Quitar Harina' }))
     expect(screen.getByRole('button', { name: 'Guardar borrador' })).toBeDisabled()
   })
@@ -95,13 +109,16 @@ describe('Supplier orders', () => {
     await startForm()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Cargar compra anterior' })).toBeEnabled())
     await userEvent.setup().click(screen.getByRole('button', { name: 'Cargar compra anterior' }))
+    fireEvent.change(await screen.findByLabelText('Costo de Harina'), { target: { value: '18,75' } })
     await userEvent.setup().click(screen.getByRole('button', { name: 'Guardar borrador' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Error temporal')
     expect(screen.getByLabelText('Cantidad de Harina')).toHaveValue('3')
+    expect(screen.getByLabelText('Costo de Harina')).toHaveValue('18,75')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Guardar borrador' }))
     await screen.findByText(/Compra PRV-00000002 guardada como borrador/)
     expect(submissions).toHaveLength(2)
     expect(submissions[0]).toBe(submissions[1])
+    expect(JSON.parse(submissions[0]).lines).toEqual([{ productId: product.id, quantity: 3, unitCost: 18.75 }])
   })
   it('confirms before replacing an existing draft with a previous order', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => fixture(input))
@@ -110,7 +127,7 @@ describe('Supplier orders', () => {
     await choose('Producto', product.name)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Agregar producto' }))
     await userEvent.setup().click(screen.getByRole('button', { name: 'Cargar compra anterior' }))
-    expect(await screen.findByRole('dialog')).toHaveTextContent('¿Reemplazar los productos?')
+    expect(await screen.findByRole('dialog', { name: '¿Reemplazar los productos?' })).toBeVisible()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Volver' }))
     expect(screen.getByLabelText('Cantidad de Harina')).toHaveValue('1')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Cargar compra anterior' }))

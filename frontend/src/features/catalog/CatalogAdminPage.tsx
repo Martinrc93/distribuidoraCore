@@ -1,9 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRef, useState, type FormEvent } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
+import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
@@ -35,6 +36,8 @@ export default function CatalogAdminPage() {
   const [editing, setEditing] = useState<CatalogItem | undefined>()
   const [name, setName] = useState('')
   const [deactivateItem, setDeactivateItem] = useState<CatalogItem | undefined>()
+  const [deleteItem, setDeleteItem] = useState<CatalogItem | undefined>()
+  const catalogTabs = useRef<HTMLDivElement>(null)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [saving, setSaving] = useState(false)
@@ -42,6 +45,20 @@ export default function CatalogAdminPage() {
     ? { singular: 'marca', plural: 'marcas', endpoint: '/api/brands', queryKey: BRANDS_KEY, query: brandsQuery }
     : { singular: 'categoría', plural: 'categorías', endpoint: '/api/categories', queryKey: CATEGORIES_KEY, query: categoriesQuery }
   const items = resource.query.data ?? []
+  const deleteEntry = useMutation({
+    mutationFn: (id: string) => apiDelete(`${resource.endpoint}/${id}/permanent`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: resource.queryKey })
+      setDeleteItem(undefined)
+      setFeedback(`${capitalize(resource.singular)} eliminada correctamente.`)
+      requestAnimationFrame(() => catalogTabs.current?.querySelector<HTMLButtonElement>('button[aria-selected="true"]')?.focus())
+    },
+    onError: (cause) => {
+      if (cause instanceof ApiError && (cause.status === 409 || cause.status === 404)) {
+        void queryClient.invalidateQueries({ queryKey: resource.queryKey })
+      }
+    },
+  })
 
   function openCreate() {
     setEditing(undefined)
@@ -123,11 +140,17 @@ export default function CatalogAdminPage() {
     ...(isAdmin ? [{ key: 'actions', label: '', render: (_value: string, row: Row) => {
       const item = items.find((candidate) => candidate.id === row.id)
       if (!item) return null
-      return <div className="catalog-row-actions">
+      return <div className="catalog-row-actions flex-wrap">
         <Button variant="secondary" onClick={() => openEdit(item)} aria-label={`Editar ${resource.singular} ${item.name}`}>Editar</Button>
         {item.status === 'ACTIVE'
           ? <Button variant="danger" onClick={() => openDeactivate(item)} aria-label={`Desactivar ${resource.singular} ${item.name}`}>Desactivar</Button>
           : <Button variant="secondary" onClick={() => reactivate(item)} aria-label={`Activar ${resource.singular} ${item.name}`}>Activar</Button>}
+        {item.productCount === 0 && <Button variant="danger" aria-label={`Eliminar ${resource.singular} ${item.name}`} onClick={() => {
+          deleteEntry.reset()
+          setError('')
+          setFeedback('')
+          setDeleteItem(item)
+        }}>Eliminar</Button>}
       </div>
     } }] : []),
   ]
@@ -136,7 +159,7 @@ export default function CatalogAdminPage() {
     <PageHeader eyebrow="Catálogo" title="Marcas y categorías" description="Organizá el catálogo y mantené asociaciones visibles en los productos." actions={isAdmin ? <Button onClick={openCreate}>+ Nueva {resource.singular}</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && !showForm && <p className="error-text" role="alert">{error}</p>}
-    <div className="catalog-tabs" role="tablist" aria-label="Administrar marcas y categorías">
+    <div ref={catalogTabs} className="catalog-tabs" role="tablist" aria-label="Administrar marcas y categorías">
       <button type="button" role="tab" aria-selected={kind === 'brands'} className={`catalog-tab${kind === 'brands' ? ' selected' : ''}`} onClick={() => { setKind('brands'); setShowForm(false); setEditing(undefined); setError(''); setFeedback('') }}>Marcas</button>
       <button type="button" role="tab" aria-selected={kind === 'categories'} className={`catalog-tab${kind === 'categories' ? ' selected' : ''}`} onClick={() => { setKind('categories'); setShowForm(false); setEditing(undefined); setError(''); setFeedback('') }}>Categorías</button>
     </div>
@@ -162,6 +185,12 @@ export default function CatalogAdminPage() {
     <Panel title={capitalize(resource.plural)}>
       {resource.query.isLoading ? <EmptyState title={`Cargando ${resource.plural}`} description="Consultando el catálogo." /> : resource.query.isError ? <EmptyState title={`No se pudieron cargar ${resource.plural}`} description={resource.query.error.message} /> : items.length === 0 ? <EmptyState title={`Todavía no hay ${resource.plural}`} description={`Creá la primera ${resource.singular} para organizar los productos.`} action={isAdmin ? <Button onClick={openCreate}>+ Nueva {resource.singular}</Button> : undefined} /> : <DataTable columns={columns} rows={rows} />}
     </Panel>
+    {deleteItem && <ConfirmationDialog title={`¿Eliminar «${deleteItem.name}»?`}
+      description={`La ${resource.singular} se eliminará definitivamente.`}
+      confirmLabel={`Eliminar ${resource.singular}`} cancelLabel="Cancelar" pendingLabel="Eliminando..."
+      pending={deleteEntry.isPending}
+      error={deleteEntry.error ? errorMessage(deleteEntry.error, `No se pudo eliminar la ${resource.singular}.`) : undefined}
+      onConfirm={() => deleteEntry.mutate(deleteItem.id)} onCancel={() => setDeleteItem(undefined)} />}
     {deactivateItem && <div role="dialog" aria-modal="true" aria-labelledby="catalog-status-title" className="modal-backdrop catalog-modal-backdrop" onKeyDown={(event) => { if (event.key === 'Escape') setDeactivateItem(undefined) }}>
       <section className="panel catalog-modal">
         <header className="catalog-modal-header">

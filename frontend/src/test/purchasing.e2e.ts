@@ -2,13 +2,13 @@ import { expect, test } from '@playwright/test'
 import { analyticsReport } from './fixtures/analyticsDashboard'
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`))
+  await page.addInitScript(() => sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL', 'STOCK_ADJUST', 'STOCK_SHRINKAGE'] }))}.signature`))
   await page.route(/^https?:\/\/[^/]+\/api\//, async (route) => {
     const url = new URL(route.request().url())
     const pageNumber = Number(url.searchParams.get('page') ?? 0)
     const paged = (content: unknown[], totalPages = 1) => ({ content, page: pageNumber, size: 100, totalPages, totalElements: content.length * totalPages })
     if (url.pathname === '/api/suppliers') return route.fulfill({ json: paged([{ id: pageNumber ? 'supplier-a' : 'supplier-b', name: pageNumber ? 'Proveedor Norte' : 'Proveedor Sur' }], 2) })
-    if (url.pathname === '/api/products') return route.fulfill({ json: paged([{ id: 'product-a', name: 'Molino Norte Harina', description: 'Harina', brandId: 'brand', categoryId: 'category', cost: 20, status: 'ACTIVE', suppliers: [{ id: 'supplier-a', name: 'Proveedor Norte' }] }]) })
+    if (url.pathname === '/api/products') return route.fulfill({ json: paged([{ id: 'product-a', name: 'Molino Norte Harina', description: 'Harina', brandId: 'brand', category: 'Almacén', categoryId: 'category', cost: 20, stock: 1, status: 'ACTIVE', suppliers: [{ id: 'supplier-a', name: 'Proveedor Norte' }] }]) })
     if (url.pathname === '/api/pricing/lists') return route.fulfill({ json: paged([{ id: 'list', code: 'GENERAL', name: 'General', status: 'ACTIVE' }]) })
     if (url.pathname === '/api/categories') return route.fulfill({ json: [{ id: 'category', name: 'Almacén', status: 'ACTIVE' }] })
     if (url.pathname === '/api/brands') return route.fulfill({ json: [{ id: 'brand', name: 'Molino Norte', status: 'ACTIVE' }] })
@@ -18,6 +18,7 @@ test.beforeEach(async ({ page }) => {
     if (url.pathname === '/api/supplier-orders' && route.request().method() === 'POST') return route.fulfill({ status: 201, json: { id: 'order-a', number: 'PRV-00000001', total: 75 } })
     if (url.pathname === '/api/supplier-orders') return route.fulfill({ json: paged([order]) })
     if (url.pathname === '/api/supplier-orders/order-a') return route.fulfill({ json: { order, items } })
+    if (url.pathname === '/api/supplier-orders/order-a/documents/a4') return route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.7\n%%EOF' })
     if (route.request().method() === 'PUT') return route.fulfill({ status: 204 })
     return route.fulfill({ json: paged([]) })
   })
@@ -33,8 +34,19 @@ for (const width of [320, 760, 1440]) {
     expect(links.indexOf('Compras')).toBe(links.indexOf('Ventas') + 1)
     expect(links.indexOf('Clientes')).toBe(links.indexOf('Compras') + 1)
     if (width <= 1050) await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: '+ Nueva compra' }).click()
-    const supplier = page.getByRole('combobox', { name: 'Proveedor', exact: true })
+    await page.getByRole('link', { name: '+ Nueva compra' }).click()
+    await expect(page).toHaveURL(/\/supplier-orders\/new$/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Nueva compra' })).toBeVisible()
+    const purchase = page.getByRole('main').getByRole('form', { name: 'Nueva compra' })
+    await expect(purchase).toBeVisible()
+    const purchaseCalendarButton = purchase.getByRole('button', { name: 'Abrir calendario: Fecha de la compra' })
+    await purchaseCalendarButton.click()
+    const purchaseCalendar = page.getByRole('dialog', { name: /Calendario: Fecha de la compra/ })
+    await expect(purchaseCalendar).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(purchaseCalendar).toHaveCount(0)
+    await expect(purchaseCalendarButton).toBeFocused()
+    const supplier = purchase.getByRole('combobox', { name: 'Proveedor', exact: true })
     await expect(supplier).toBeEnabled()
     await supplier.fill('Norte')
     await page.getByRole('option', { name: 'Proveedor Norte', exact: true }).click()
@@ -42,14 +54,21 @@ for (const width of [320, 760, 1440]) {
     await expect(previous).toBeEnabled()
     await previous.click()
     await expect(page.getByLabel('Cantidad de Molino Norte Harina')).toHaveValue('3')
-    await expect(page.getByLabel('Costo de Molino Norte Harina')).toHaveValue('25')
+    const unitCost = purchase.getByLabel('Costo de Molino Norte Harina')
+    await expect(unitCost).toHaveValue('25')
+    await unitCost.fill('27,125')
+    await expect(purchase.getByText(/Subtotal|Total estimado/)).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Guardar borrador' })).toBeEnabled()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: info.outputPath(`purchase-form-${width}.png`), fullPage: true })
     const request = page.waitForRequest((request) => request.method() === 'POST' && new URL(request.url()).pathname === '/api/supplier-orders')
     await page.getByRole('button', { name: 'Guardar borrador' }).click()
-    expect((await request).postDataJSON()).toMatchObject({ supplierId: 'supplier-a', lines: [{ productId: 'product-a', quantity: 3, unitCost: 25 }], confirm: false })
+    const body = (await request).postDataJSON()
+    expect(body).toMatchObject({ supplierId: 'supplier-a', confirm: false })
+    expect(body.lines).toEqual([{ productId: 'product-a', quantity: 3, unitCost: 27.125 }])
     await expect(page.getByText('Compra PRV-00000001 guardada como borrador.', { exact: false })).toBeVisible()
+    await expect(page).toHaveURL(/\/supplier-orders$/)
+    await expect(purchase).toHaveCount(0)
     await page.getByRole('button', { name: 'Abrir calendario: Desde' }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.keyboard.press('Escape')
@@ -57,11 +76,46 @@ for (const width of [320, 760, 1440]) {
     await expect(page.getByRole('button', { name: 'Abrir calendario: Desde' })).toBeFocused()
     await page.getByRole('link', { name: 'Ver compra PRV-00000001', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'PRV-00000001' })).toBeVisible()
+    const downloadButton = page.getByRole('button', { name: 'Descargar PDF' })
+    await expect(downloadButton).toBeVisible()
+    const downloadBounds = (await downloadButton.boundingBox())!
+    const tableBounds = (await page.locator('.table-wrap').boundingBox())!
+    const cancelBounds = (await page.getByRole('button', { name: 'Anular compra' }).boundingBox())!
+    expect(downloadBounds.x).toBeCloseTo(tableBounds.x, 0)
+    expect(cancelBounds.x + cancelBounds.width).toBeCloseTo(tableBounds.x + tableBounds.width, 0)
+    if (width > 320) {
+      const editBounds = (await page.getByRole('button', { name: 'Editar compra' }).boundingBox())!
+      expect(editBounds.x).toBeGreaterThan(downloadBounds.x)
+      expect(downloadBounds.y).toBeCloseTo(editBounds.y, 0)
+      expect(downloadBounds.y).toBeCloseTo(cancelBounds.y, 0)
+    }
+    await page.screenshot({ path: info.outputPath(`purchase-detail-${width}.png`), fullPage: true })
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      downloadButton.click(),
+    ])
+    expect(download.suggestedFilename()).toBe('compra-PRV-00000001.pdf')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
   test(`optional product supplier associations remain usable at ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/products')
+    const row = page.locator('.data-table tbody tr').filter({ hasText: 'Molino Norte Harina' })
+    await expect(row.locator('td').nth(0)).toHaveText('Molino Norte Harina')
+    await expect(row.locator('td').nth(1)).toHaveText('Molino Norte')
+    await expect(row.locator('td').nth(2)).toHaveText('Almacén')
+    if (width === 1440) {
+      const actions = row.getByRole('button')
+      await expect(actions).toHaveCount(4)
+      const centers = await actions.evaluateAll((buttons) => buttons.map((button) => {
+        const bounds = button.getBoundingClientRect()
+        return bounds.top + bounds.height / 2
+      }))
+      for (const center of centers) expect(center).toBeCloseTo(centers[0], 0)
+      const tableFits = await page.locator('.products-table-admin').evaluate((table) => table.scrollWidth <= table.clientWidth + 1)
+      expect(tableFits).toBe(true)
+      await page.screenshot({ path: info.outputPath('stock-desktop.png') })
+    }
     await page.getByRole('button', { name: 'Editar Molino Norte Harina', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Quitar proveedor Proveedor Norte' })).toBeVisible()
     const suppliers = page.getByRole('combobox', { name: 'Proveedores (opcional)' })
@@ -77,8 +131,26 @@ for (const width of [320, 760, 1440]) {
   })
 }
 
+test('closing a new purchase with changes asks before discarding them', async ({ page }) => {
+  await page.goto('/supplier-orders?supplierId=supplier-a&page=2')
+  await page.getByRole('link', { name: '+ Nueva compra' }).click()
+  await expect(page).toHaveURL(/\/supplier-orders\/new\?supplierId=supplier-a&page=2$/)
+  const purchase = page.getByRole('form', { name: 'Nueva compra' })
+  await purchase.getByRole('combobox', { name: 'Proveedor', exact: true }).fill('Norte')
+  await page.getByRole('option', { name: 'Proveedor Norte' }).click()
+
+  await purchase.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  const discard = page.getByRole('dialog', { name: '¿Descartar los cambios?' })
+  await discard.getByRole('button', { name: 'Seguir editando' }).click()
+  await expect(purchase.getByRole('combobox', { name: 'Proveedor', exact: true })).toHaveValue('Proveedor Norte')
+  await purchase.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  await discard.getByRole('button', { name: 'Descartar cambios' }).click()
+  await expect(purchase).toHaveCount(0)
+  await expect(page).toHaveURL(/\/supplier-orders\?supplierId=supplier-a&page=2$/)
+})
+
 for (const width of [320, 760, 1440]) {
-  test(`starts replenishment with fresh stock and costs at ${width}px`, async ({ page }, info) => {
+  test(`starts replenishment with fresh stock at ${width}px`, async ({ page }, info) => {
     const fromDashboard = width === 1440
     const askSupplier = width !== 320
     const productName = 'Harina para reponer'
@@ -88,7 +160,7 @@ for (const width of [320, 760, 1440]) {
     const expectedQuantity = fromDashboard ? 1 : 3.5
     let failOptionsOnce = width === 320
     let savedStock = -10
-    const writes: unknown[] = []
+    const writes: Array<{ supplierId: string; confirm: boolean; lines: Array<{ productId: string; quantity: number; unitCost: number }> }> = []
     await page.setViewportSize({ width, height: 900 })
     await page.route((url) => url.pathname === '/api/dashboard/analytics', (route) => route.fulfill({ json: {
       ...analyticsReport, stockCoverage: [{ id: 'restock-product', name: productName, stock: 1, dailyUnits: 3, days: 0.3 }],
@@ -135,7 +207,7 @@ for (const width of [320, 760, 1440]) {
     const supplier = page.getByRole('combobox', { name: 'Proveedor', exact: true })
     const quantity = page.getByLabel(`Cantidad de ${productName}`)
     await expect(quantity).toHaveValue(String(expectedQuantity).replace('.', ','))
-    await expect(page.getByLabel(`Costo de ${productName}`)).toHaveValue('25.5')
+    await expect(page.getByLabel(`Costo de ${productName}`)).toHaveValue('25,5')
     expect(writes).toHaveLength(0)
     if (askSupplier) {
       await expect(supplier).toHaveValue('Seleccionar proveedor...')
@@ -162,10 +234,8 @@ for (const width of [320, 760, 1440]) {
     await page.getByRole('button', { name: confirm ? 'Confirmar compra' : 'Guardar borrador' }).click()
     await expect(page.getByRole('status')).toContainText(confirm ? 'Compra confirmada' : 'Compra guardada como borrador')
     expect(writes).toHaveLength(1)
-    expect(writes[0]).toMatchObject({
-      supplierId: askSupplier ? 'supplier-b' : 'supplier-a', confirm,
-      lines: [{ productId: 'restock-product', quantity: width === 760 ? 4 : expectedQuantity, unitCost: 25.5 }],
-    })
+    expect(writes[0]).toMatchObject({ supplierId: askSupplier ? 'supplier-b' : 'supplier-a', confirm })
+    expect(writes[0].lines).toEqual([{ productId: 'restock-product', quantity: width === 760 ? 4 : expectedQuantity, unitCost: 25.5 }])
     await expect(page.getByRole('link', { name: 'Ver compra' })).toHaveAttribute('href', '/supplier-orders/restock-order')
     await page.getByRole('button', { name: fromDashboard ? 'Volver a Dashboard' : 'Volver a Stock' }).click()
     await expect(page).toHaveURL(new RegExp(source.replace('?', '\\?')))

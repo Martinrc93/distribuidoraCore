@@ -1,10 +1,12 @@
 package com.distribuidora.catalog.application;
 
 import com.distribuidora.audit.application.AuditService;
+import com.distribuidora.inventory.application.InventoryMovementService;
 import com.distribuidora.pricing.application.PriceListFollowService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,19 +24,27 @@ import java.util.stream.Collectors;
 
 @Service
 public class ProductCommandService {
+    private static final BigDecimal HALF = new BigDecimal("0.5");
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final PriceListFollowService follows;
+    private final InventoryMovementService inventory;
 
     public ProductCommandService(JdbcTemplate jdbc, AuditService audit) {
         this(jdbc, audit, new PriceListFollowService(jdbc));
     }
 
-    @Autowired
     public ProductCommandService(JdbcTemplate jdbc, AuditService audit, PriceListFollowService follows) {
+        this(jdbc, audit, follows, new InventoryMovementService(jdbc));
+    }
+
+    @Autowired
+    public ProductCommandService(JdbcTemplate jdbc, AuditService audit, PriceListFollowService follows,
+                                 InventoryMovementService inventory) {
         this.jdbc = jdbc;
         this.audit = audit;
         this.follows = follows;
+        this.inventory = inventory;
     }
 
     public record ProductPriceInput(UUID priceListId, BigDecimal price) { }
@@ -47,8 +57,14 @@ public class ProductCommandService {
         List<ProductPriceInput> prices,
         UUID categoryId,
         UUID brandId,
-        List<UUID> supplierIds
+        List<UUID> supplierIds,
+        BigDecimal initialStock
     ) {
+        public ProductInput(String description, String category, String presentation, BigDecimal cost,
+                            List<ProductPriceInput> prices, UUID categoryId, UUID brandId, List<UUID> supplierIds) {
+            this(description, category, presentation, cost, prices, categoryId, brandId, supplierIds, null);
+        }
+
         public ProductInput(String description, String category, String presentation, BigDecimal cost,
                             List<ProductPriceInput> prices, UUID categoryId, UUID brandId) {
             this(description, category, presentation, cost, prices, categoryId, brandId, null);
@@ -93,6 +109,17 @@ public class ProductCommandService {
     @Transactional
     public UUID create(ProductInput input) {
         validate(input);
+        BigDecimal initialStock = input.initialStock() == null ? BigDecimal.ZERO : input.initialStock();
+        if (initialStock.signum() < 0 || initialStock.remainder(HALF).signum() != 0) {
+            throw new IllegalArgumentException("El stock inicial debe ser una cantidad no negativa y múltiplo de 0,5.");
+        }
+        if (initialStock.signum() > 0) {
+            var authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || authentication.getAuthorities().stream()
+                .noneMatch(authority -> "STOCK_ADJUST".equals(authority.getAuthority()))) {
+                throw new AccessDeniedException("Se requiere el permiso STOCK_ADJUST para cargar stock inicial.");
+            }
+        }
         validateSuppliers(input.supplierIds());
         validateCreatePrices(input.prices());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
@@ -103,7 +130,11 @@ public class ProductCommandService {
             values (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
             """, id, name, input.description().trim(), categoryName.trim(), nullable(input.presentation()),
             input.cost(), timestamp(), input.categoryId(), input.brandId());
-        jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, 0, ?)", id, timestamp());
+        if (initialStock.signum() == 0) {
+            jdbc.update("insert into inventory.inventory_balances(product_id, quantity, updated_at) values (?, 0, ?)", id, timestamp());
+        } else {
+            inventory.apply(id, initialStock, "MANUAL_ADJUSTMENT", null, "Stock inicial");
+        }
 
         if (input.prices() != null) {
             for (ProductPriceInput priceInput : input.prices()) {
@@ -114,7 +145,8 @@ public class ProductCommandService {
         follows.copyDefaultPricesForProduct(id);
 
         replaceSuppliers(id, input.supplierIds());
-        audit.record(actorId(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS", Map.of("name", name));
+        audit.recordWithinTransaction(actorId(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS",
+            Map.of("name", name, "initialStock", initialStock));
         return id;
     }
 
@@ -130,6 +162,9 @@ public class ProductCommandService {
     @Transactional
     public void update(UUID id, ProductInput input, boolean acknowledgeFollowers) {
         validate(input);
+        if (input.initialStock() != null) {
+            throw new IllegalArgumentException("El stock inicial solo se puede indicar al crear el producto.");
+        }
         validateSuppliers(input.supplierIds());
         String categoryName = resolveActiveName("catalog.categories", input.categoryId(), input.category());
         String name = productName(input);

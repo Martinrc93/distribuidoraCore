@@ -97,7 +97,7 @@ public class PricingCommandController {
     }
 
     public record CreateListRequest(
-        @NotBlank @Size(max = 40) String code,
+        @Size(max = 40) String code,
         @NotBlank @Size(max = 120) String name
     ) { }
 

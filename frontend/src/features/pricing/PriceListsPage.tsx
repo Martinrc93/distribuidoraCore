@@ -1,6 +1,6 @@
 import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError, getAccessToken, type ApiPage } from '../../shared/api/client'
 import { hasAuthority } from '../../shared/auth/permissions'
@@ -15,6 +15,7 @@ import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
 import { Badge } from '../../shared/components/Badge'
 import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { DocumentActions } from '../../shared/components/DocumentActions'
+import { useDiscardChanges } from '../../shared/useDiscardChanges'
 
 type PriceList = { id: string; code: string; name: string; status: string; isDefault: boolean; pendingReviewCount?: number }
 /** `followStatus`: PENDING (copied from the default list, not reviewed), CONFIRMED (reviewed, still follows it) or null (own price). */
@@ -24,8 +25,7 @@ type CreationPreview = { productsToCopy: number; defaultListName?: string | null
 type Follower = { priceListId: string; code: string; name: string }
 type CatalogOption = { id: string; name: string; status: string }
 type FollowerWarning = { followers: Follower[]; amount: number; effectiveOn: string; product: ProductPrice }
-
-const MAX_PRICE_LISTS = 10
+type HistorySelection = { productId: string; productName: string; listId: string; listName: string }
 
 /** Accepts "1250.5", "1250,50" and "1.250,50" (es-AR); returns NaN for anything else. */
 function parsePriceInput(value: string) {
@@ -41,6 +41,9 @@ function followerNames(followers: Follower[]) {
   return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} y ${names.at(-1)}`
 }
 type PriceHistory = { effectiveOn: string; price: number; recordedAt: string; updatedAt: string; scheduled: boolean }
+const priceHistoryTimestamp = new Intl.DateTimeFormat('es-AR', {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
 type ListVisibility = 'ACTIVE' | 'INACTIVE' | 'ALL'
 type PriceListPreferences = { visibility: ListVisibility; expanded: boolean }
 type Row = Record<string, string>
@@ -148,10 +151,11 @@ function InlinePriceInput({ product, disabled, validate, onSave }: {
 export default function PriceListsPage() {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const queryClient = useQueryClient()
+  const historyDialogId = useId()
+  const historyHeader = useRef<HTMLElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const preferencesKey = priceListPreferenceKey()
   const [preferences, setPreferences] = useState(() => readPriceListPreferences(preferencesKey))
-  const { visibility: listVisibility, expanded: listExpanded } = preferences
   const { page: listPage, pageSize, setPage: setListPage } = useUrlListState([], 20, 'page')
   const { page: pricePage, setPage: setPricePage } = useUrlListState([], 20, 'pricePage')
   const { page: historyPage, setPage: setHistoryPage } = useUrlListState([], 20, 'historyPage')
@@ -159,11 +163,14 @@ export default function PriceListsPage() {
   const listsKey = [listsPath]
   const listsQuery = useQuery({ queryKey: listsKey, queryFn: () => apiGet<ApiPage<PriceList>>(listsPath) })
   const lists = listsQuery.data?.content ?? []
+  const hasMultipleLists = (listsQuery.data?.totalElements ?? 0) > 1
+  const listVisibility = hasMultipleLists ? preferences.visibility : 'ALL'
+  const listExpanded = !hasMultipleLists || preferences.expanded
   const visibleLists = lists.filter((list) => listVisibility === 'ALL' || list.status === listVisibility)
   const [selectedId, setSelectedId] = useState('')
   const selectedList = lists.find((list) => list.id === selectedId)
-  const [editingHistoryProduct, setEditingHistoryProduct] = useState<ProductPrice | undefined>()
-  const [historyEntryToCancel, setHistoryEntryToCancel] = useState<PriceHistory | undefined>()
+  const [historySelection, setHistorySelection] = useState<HistorySelection | undefined>()
+  const [historyDateToCancel, setHistoryDateToCancel] = useState<string | undefined>()
   const [followFilter, setFollowFilter] = useState<FollowFilter>('')
   const showFollowState = Boolean(selectedList && !selectedList.isDefault)
   const activeFollowFilter = showFollowState ? followFilter : ''
@@ -194,13 +201,29 @@ export default function PriceListsPage() {
   }
   const pricesKey = [pricesPath]
   const pricesQuery = useQuery({ queryKey: pricesKey, queryFn: () => apiGet<ApiPage<ProductPrice>>(pricesPath), enabled: Boolean(selectedId) })
-  const historyPath = editingHistoryProduct && selectedId
-    ? `/api/pricing/lists/${selectedId}/products/${editingHistoryProduct.productId}/history?page=${historyPage}&size=${pageSize}`
-    : ''
+  const historyBasePath = historySelection ? `/api/pricing/lists/${historySelection.listId}/products/${historySelection.productId}/history` : ''
+  const historyPath = historyBasePath ? `${historyBasePath}?page=${historyPage}&size=${pageSize}` : ''
   const historyKey = [historyPath]
-  const historyQuery = useQuery({ queryKey: historyKey, queryFn: () => apiGet<ApiPage<PriceHistory>>(historyPath), enabled: Boolean(historyPath) })
+  const historyQuery = useQuery({ queryKey: historyKey, queryFn: ({ signal }) => apiGet<ApiPage<PriceHistory>>(historyPath, signal), enabled: Boolean(historyPath), retry: false })
+  const cancelHistoryPrice = useMutation({
+    mutationFn: async (effectiveOn: string) => {
+      await apiDelete(`${historyBasePath}/${effectiveOn}`)
+      return effectiveOn
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: historyKey }),
+        queryClient.invalidateQueries({ queryKey: pricesKey }),
+      ])
+      const latestHistory = queryClient.getQueryData<ApiPage<PriceHistory>>(historyKey)
+      if (latestHistory && historyPage > 0 && historyPage >= latestHistory.totalPages) setHistoryPage(Math.max(0, latestHistory.totalPages - 1))
+      setHistoryDateToCancel(undefined)
+    },
+  })
+  useEffect(() => {
+    if (cancelHistoryPrice.isSuccess) historyHeader.current?.querySelector('button')?.focus({ preventScroll: true })
+  }, [cancelHistoryPrice.isSuccess])
   const [showCreate, setShowCreate] = useState(false)
-  const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [renameList, setRenameList] = useState<PriceList | undefined>()
   const [rename, setRename] = useState('')
@@ -215,7 +238,11 @@ export default function PriceListsPage() {
   const [followerWarning, setFollowerWarning] = useState<FollowerWarning | undefined>()
   const [savingPrice, setSavingPrice] = useState(false)
   const [confirmingReview, setConfirmingReview] = useState(false)
-  const listLimitReached = (listsQuery.data?.totalElements ?? 0) >= MAX_PRICE_LISTS
+  const { requestDiscard: closePriceEditor, discardDialog: priceDiscardDialog } = useDiscardChanges({
+    hasChanges: Boolean(editingProduct && (effectiveOn || price !== String(editingProduct.price).replace('.', ','))),
+    disabled: savingPrice,
+    onDiscard: () => { setEditingProduct(undefined); setError('') },
+  })
   const refreshPricing = () => queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/pricing/lists') })
 
   useEffect(() => {
@@ -233,27 +260,32 @@ export default function PriceListsPage() {
   }, [preferences, preferencesKey])
 
   const createMutation = useMutation({
-    mutationFn: () => apiPost('/api/pricing/lists', { code: code.trim(), name: name.trim() }),
+    mutationFn: () => apiPost('/api/pricing/lists', { name: name.trim() }),
     onSuccess: async () => {
       await refreshPricing()
       const copied = createPreview?.productsToCopy ?? 0
-      setCreatePreview(undefined)
-      setShowCreate(false)
-      setCode('')
-      setName('')
-      setError('')
+      closeCreate()
       setFeedback(copied > 0
         ? `Lista creada con ${copied} ${copied === 1 ? 'producto marcado' : 'productos marcados'} «Sin revisar».`
         : 'Lista creada correctamente.')
     },
     onError: (cause) => { setCreatePreview(undefined); setError(readableError(cause, 'No se pudo crear la lista.')) },
   })
+  const creatingList = checkingCreate || createMutation.isPending
+
+  function closeCreate() {
+    setCreatePreview(undefined)
+    setShowCreate(false)
+    setName('')
+    setError('')
+  }
 
   async function submitCreate(event: FormEvent) {
     event.preventDefault()
+    if (creatingList || createPreview) return
     setError('')
-    if (!code.trim() || !name.trim()) {
-      setError('Completá el código y el nombre de la lista.')
+    if (!name.trim()) {
+      setError('Completá el nombre de la lista.')
       return
     }
     // With products already loaded, the new list takes the default list prices: ask first.
@@ -317,7 +349,7 @@ export default function PriceListsPage() {
 
   async function savePrice(event: FormEvent) {
     event.preventDefault()
-    if (!editingProduct) return
+    if (!editingProduct || savingPrice || followerWarning) return
     const amount = parsePriceInput(price)
     const invalid = priceError(editingProduct, price, amount)
     if (invalid) {
@@ -370,7 +402,6 @@ export default function PriceListsPage() {
         ...(acknowledgeFollowers ? { acknowledgeFollowers: true } : {}),
       })
       await refreshPricing()
-      if (editingHistoryProduct?.productId === product.productId) await queryClient.invalidateQueries({ queryKey: historyKey })
       const followers = followerWarning?.followers ?? []
       setFollowerWarning(undefined)
       setEditingProduct(undefined)
@@ -388,20 +419,10 @@ export default function PriceListsPage() {
     }
   }
 
-  async function cancelScheduledPrice() {
-    if (!selectedList || !editingHistoryProduct || !historyEntryToCancel?.scheduled) return
-    const path = `/api/pricing/lists/${selectedList.id}/products/${editingHistoryProduct.productId}/history/${historyEntryToCancel.effectiveOn}`
-    try {
-      await apiDelete(path)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: historyKey }),
-        queryClient.invalidateQueries({ queryKey: pricesKey }),
-      ])
-      setHistoryEntryToCancel(undefined)
-      setFeedback(`Precio programado para ${historyEntryToCancel.effectiveOn} cancelado.`)
-    } catch (cause) {
-      setError(readableError(cause, 'No se pudo cancelar el precio programado.'))
-    }
+  function closeHistory() {
+    setHistorySelection(undefined)
+    cancelHistoryPrice.reset()
+    setHistoryPage(0)
   }
 
   const rows: Row[] = (pricesQuery.data?.content ?? []).map((item) => ({
@@ -427,11 +448,15 @@ export default function PriceListsPage() {
       : value === 'CONFIRMED' ? <Badge tone="soft">Sin cambios</Badge> : <Badge tone="muted">Precio propio</Badge> } satisfies TableColumn] : []),
     { key: 'actions', label: 'Acciones', align: 'right', render: (_value: string, row: Row) => {
       const product = pricesQuery.data?.content.find((item) => item.productId === row.id)
-      if (!product) return null
+      if (!product || !selectedList) return null
       return <div className="table-row-actions">
         {isAdmin && showFollowState && product.followStatus === 'PENDING' && <Button variant="secondary" disabled={confirmingReview} onClick={() => void confirmReview([product.productId])} aria-label={`Confirmar precio de ${product.name} sin cambios`}>Confirmar</Button>}
         {isAdmin && <Button variant="secondary" onClick={() => { setEditingProduct(product); setPrice(String(product.price).replace('.', ',')); setEffectiveOn(''); setError('') }} aria-label={`Programar precio de ${product.name}`}>Programar</Button>}
-        <Button variant="secondary" onClick={() => { setEditingHistoryProduct(product); setHistoryPage(0); setError('') }} aria-label={`Ver historial de precios de ${product.name}`}>Ver historial</Button>
+        <Button variant="secondary" aria-haspopup="dialog" aria-label={`Ver historial de precios de ${product.name}`} onClick={() => {
+          setHistorySelection({ productId: product.productId, productName: product.name, listId: selectedList.id, listName: selectedList.name })
+          setHistoryPage(0)
+          setError('')
+        }}>Ver historial</Button>
       </div>
     } },
   ]
@@ -440,30 +465,37 @@ export default function PriceListsPage() {
   const nextStatusIsActive = statusList?.status !== 'ACTIVE'
 
   return <div className="price-lists-page">
-    <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }} disabled={listLimitReached} title={listLimitReached ? `Se alcanzó el máximo de ${MAX_PRICE_LISTS} listas. Activá y renombrá una lista inactiva.` : undefined}>+ Nueva lista</Button> : undefined} />
-    {isAdmin && listLimitReached && <p className="helper-text">Se alcanzó el máximo de {MAX_PRICE_LISTS} listas. Para usar una lista nueva, activá y renombrá una de las inactivas: tomará los precios de {defaultListName}.</p>}
+    <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {error && !showCreate && !renameList && !editingProduct && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-    {showCreate && isAdmin && <FormModal size="compact" label="Nueva lista de precios" busy={createMutation.isPending} onClose={() => { setShowCreate(false); setError('') }}><Panel title="Nueva lista de precios"><form className="form-grid" onSubmit={submitCreate}>
-      <label className="field"><span>Código</span><input className="input" value={code} onChange={(event) => setCode(event.target.value)} required maxLength={40} disabled={createMutation.isPending} /></label>
-      <label className="field"><span>Nombre de lista</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} disabled={createMutation.isPending} /></label>
-      {error && <p className="error-text col-span-full" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => { setShowCreate(false); setError('') }} disabled={createMutation.isPending || checkingCreate}>Cancelar</Button><Button type="submit" disabled={createMutation.isPending || checkingCreate || Boolean(createPreview)}>{createMutation.isPending || checkingCreate ? 'Guardando...' : 'Guardar lista'}</Button></div>
-    </form></Panel>
-    {createPreview && <ConfirmationDialog
-      title={`¿Crear la lista con los precios de ${createPreview.defaultListName ?? defaultListName}?`}
-      description={`Ya hay ${createPreview.productsToCopy} ${createPreview.productsToCopy === 1 ? 'producto cargado' : 'productos cargados'}. La nueva lista va a tomar los precios de ${createPreview.defaultListName ?? defaultListName} y los vas a ver marcados «Sin revisar» hasta que los confirmes o cambies. Mientras no les pongas un precio propio, van a seguir los cambios de ${createPreview.defaultListName ?? defaultListName}.`}
-      confirmLabel="Crear lista" confirmVariant="primary" cancelLabel="Volver" pendingLabel="Creando..."
-      pending={createMutation.isPending}
-      onCancel={() => setCreatePreview(undefined)} onConfirm={() => createMutation.mutate()}
-    />}</FormModal>}
+    {showCreate && isAdmin && <>
+      <FormModal size="compact" label="Nueva lista de precios" busy={creatingList} onClose={closeCreate}>
+        <Panel title="Nueva lista de precios">
+          <form className="grid gap-[14px]" onSubmit={submitCreate}>
+            <label className="field"><span>Nombre de lista</span><input className="input w-full" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} disabled={creatingList} /></label>
+            {error && <p className="error-text m-0" role="alert"><CurrencyText>{error}</CurrencyText></p>}
+            <div className="page-actions justify-end">
+              <Button variant="secondary" type="button" onClick={closeCreate} disabled={creatingList}>Cancelar</Button>
+              <Button type="submit" disabled={creatingList || Boolean(createPreview) || !name.trim()}>{creatingList ? 'Guardando...' : 'Guardar lista'}</Button>
+            </div>
+          </form>
+        </Panel>
+      </FormModal>
+      {createPreview && <ConfirmationDialog
+        title={`¿Crear la lista con los precios de ${createPreview.defaultListName ?? defaultListName}?`}
+        description={`Ya hay ${createPreview.productsToCopy} ${createPreview.productsToCopy === 1 ? 'producto cargado' : 'productos cargados'}. La nueva lista va a tomar los precios de ${createPreview.defaultListName ?? defaultListName} y los vas a ver marcados «Sin revisar» hasta que los confirmes o cambies. Mientras no les pongas un precio propio, van a seguir los cambios de ${createPreview.defaultListName ?? defaultListName}.`}
+        confirmLabel="Crear lista" confirmVariant="primary" cancelLabel="Volver" pendingLabel="Creando..."
+        pending={createMutation.isPending}
+        onCancel={() => setCreatePreview(undefined)} onConfirm={() => createMutation.mutate()}
+      />}
+    </>}
     {renameList && <FormModal size="compact" label={`Renombrar ${renameList.code}`} onClose={() => { setRenameList(undefined); setError('') }}><Panel title={`Renombrar ${renameList.code}`}><form className="form-grid" onSubmit={submitRename}>
       <label className="field"><span>Nuevo nombre</span><input className="input" value={rename} onChange={(event) => setRename(event.target.value)} required maxLength={120} /></label>
       {error && <p className="error-text col-span-full" role="alert"><CurrencyText>{error}</CurrencyText></p>}
       <div className="page-actions"><Button variant="secondary" type="button" onClick={() => { setRenameList(undefined); setError('') }}>Cancelar</Button><Button type="submit">Guardar nombre</Button></div>
     </form></Panel></FormModal>}
     {listsQuery.isLoading || listsQuery.isError ? <Panel><State error={listsQuery.error} /></Panel> : lists.length === 0 ? <Panel><EmptyState title="Todavía no hay listas" description="Creá una lista de precios para asignar valores de venta a los productos." action={isAdmin ? <Button onClick={() => setShowCreate(true)}>+ Nueva lista</Button> : undefined} /></Panel> : <>
-      <Panel title="Listas de precios" description={`${visibleLists.length} ${visibleLists.length === 1 ? 'lista visible' : 'listas visibles'} · Los pedidos usan la lista asignada al cliente.`} action={<div className="price-list-controls">
+      <Panel title="Listas de precios" description={`${visibleLists.length} ${visibleLists.length === 1 ? 'lista disponible' : 'listas disponibles'} · Los pedidos usan la lista asignada al cliente.`} action={hasMultipleLists && <div className="price-list-controls">
         <label className="price-list-filter"><span>Mostrar</span><select className="select" aria-label="Mostrar listas" value={listVisibility} onChange={(event) => setPreferences((current) => ({ ...current, visibility: event.target.value as ListVisibility }))}>
           <option value="ALL">Todas</option><option value="ACTIVE">Activas</option><option value="INACTIVE">Inactivas</option>
         </select></label>
@@ -471,7 +503,7 @@ export default function PriceListsPage() {
           <svg className={`price-list-toggle-icon${listExpanded ? ' expanded' : ''}`} viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </Button>
       </div>}>
-        {listExpanded && (visibleLists.length > 0 ? <div id="price-list-selector" className="price-list-selector" role="tablist" aria-label="Listas disponibles">{visibleLists.map((list) => <button className={`price-list-card${selectedId === list.id ? ' selected' : ''}`} type="button" role="tab" aria-selected={selectedId === list.id} key={list.id} onClick={() => { const next = new URLSearchParams(searchParams); next.delete('pricePage'); next.delete('historyPage'); setSearchParams(next); setSelectedId(list.id); setFollowFilter(''); setEditingHistoryProduct(undefined); setFeedback(''); setError('') }}>
+        {listExpanded && (visibleLists.length > 0 ? <div id="price-list-selector" className="price-list-selector" role="tablist" aria-label="Listas disponibles">{visibleLists.map((list) => <button className={`price-list-card${selectedId === list.id ? ' selected' : ''}`} type="button" role="tab" aria-selected={selectedId === list.id} key={list.id} onClick={() => { const next = new URLSearchParams(searchParams); next.delete('pricePage'); next.delete('historyPage'); setSearchParams(next); setSelectedId(list.id); setFollowFilter(''); setHistorySelection(undefined); setFeedback(''); setError('') }}>
           <span className="price-list-card-heading"><strong>{list.name}</strong>{list.isDefault && <span className="price-list-default">Predeterminada</span>}</span>
           <span className="price-list-code">{list.code}</span>
           <span className={`price-list-status${list.status === 'ACTIVE' ? ' active' : ''}`}><i aria-hidden="true" />{list.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span>
@@ -503,36 +535,82 @@ export default function PriceListsPage() {
         {pricesQuery.data && pricesQuery.data.totalPages > 1 && <div className="pagination"><span>Página {pricePage + 1} de {pricesQuery.data.totalPages} · {pricesQuery.data.totalElements} productos</span><div><Button variant="secondary" onClick={() => setPricePage(pricePage - 1)} disabled={pricePage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPricePage(pricePage + 1)} disabled={pricePage + 1 >= pricesQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
     </>}
-    {editingHistoryProduct && <Panel title={`Historial de precios · ${editingHistoryProduct.name}`} action={<Button variant="link" onClick={() => { setEditingHistoryProduct(undefined); setHistoryPage(0) }}>Cerrar historial</Button>}>
-      {historyQuery.isLoading ? <EmptyState title="Cargando historial" description="Consultando vigencias registradas." /> : historyQuery.isError ? <EmptyState title="No se pudo cargar el historial" description={historyQuery.error.message} /> : historyQuery.data?.content.length ? <DataTable columns={[
-        { key: 'effectiveOn', label: 'Vigente desde', emphasis: true },
-        { key: 'price', label: 'Precio', align: 'right' },
-        { key: 'recordedAt', label: 'Registrado' },
-        { key: 'updatedAt', label: 'Actualizado' },
-        { key: 'status', label: 'Estado' },
-        { key: 'actions', label: '', render: (_value: string, row: Row) => {
-          const entry = historyQuery.data?.content.find((item) => item.effectiveOn === row.id)
-          return entry?.scheduled ? <Button variant="link" onClick={() => setHistoryEntryToCancel(entry)}>Cancelar precio del {entry.effectiveOn}</Button> : null
-        } },
-      ]} rows={historyQuery.data.content.map((entry) => ({
-        id: entry.effectiveOn,
-        effectiveOn: entry.effectiveOn,
-        price: money(entry.price),
-        recordedAt: new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.recordedAt)),
-        updatedAt: new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.updatedAt)),
-        status: entry.scheduled ? 'Programado' : 'Vigente/histórico',
-      }))} /> : <EmptyState title="Sin historial" description="Este producto no registra vigencias de precio." />}
-      {historyQuery.data && historyQuery.data.totalPages > 1 && <div className="pagination"><span>Página {historyPage + 1} de {historyQuery.data.totalPages} · {historyQuery.data.totalElements} vigencias</span><div><Button variant="secondary" aria-label="Historial anterior" onClick={() => setHistoryPage(historyPage - 1)} disabled={historyPage === 0}>Anterior</Button><Button variant="secondary" aria-label="Siguiente historial" onClick={() => setHistoryPage(historyPage + 1)} disabled={historyPage + 1 >= historyQuery.data.totalPages}>Siguiente</Button></div></div>}
-    </Panel>}
-    {editingProduct && <div role="dialog" aria-modal="true" aria-labelledby="price-dialog-title" className="modal-backdrop"><Panel title="Programar precio"><form className="form-grid" onSubmit={savePrice}>
-      <h2 id="price-dialog-title">{editingProduct.name} · {selectedList?.name}</h2>
-      <label className="field"><span>Precio de {editingProduct.name}</span><input className="input currency-input" type="text" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required autoFocus /></label>
-      <label className="field"><span>Vigente desde</span><input className="input" aria-label="Fecha de vigencia" type="date" value={effectiveOn} onChange={(event) => setEffectiveOn(event.target.value)} /><small>Dejalo vacío para aplicar el precio desde hoy.</small></label>
-      {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-      {showFollowState && editingProduct.followStatus && <p className="helper-text">Este precio sigue a {defaultListName}. Al guardarlo pasa a ser propio y deja de seguir sus cambios.</p>}
-      {selectedList?.isDefault && <p className="helper-text">Si otras listas siguen este precio, se te va a avisar antes de guardar.</p>}
-      <div className="page-actions"><Button variant="secondary" type="button" onClick={() => setEditingProduct(undefined)} disabled={savingPrice}>Cancelar</Button><Button type="submit" disabled={savingPrice}>{savingPrice ? "Guardando..." : "Guardar precio"}</Button></div>
-    </form></Panel></div>}
+    {historySelection && <FormModal className="price-history-dialog" labelledBy={`${historyDialogId}-title`} describedBy={`${historyDialogId}-context`} busy={cancelHistoryPrice.isPending} onClose={closeHistory}>
+      <Panel>
+        <header className="price-history-header" ref={historyHeader}>
+          <div className="min-w-0">
+            <h2 id={`${historyDialogId}-title`}>Historial de precios</h2>
+            <p id={`${historyDialogId}-context`}>{historySelection.productName} · {historySelection.listName}</p>
+          </div>
+          <Button type="button" variant="secondary" aria-label="Cerrar historial" onClick={closeHistory} disabled={cancelHistoryPrice.isPending}>Cerrar</Button>
+        </header>
+        <div className="price-history-body">
+          {cancelHistoryPrice.data && <p className="success-text mt-0" role="status">Precio programado para {cancelHistoryPrice.data} cancelado.</p>}
+          {historyQuery.isLoading ? <div role="status"><EmptyState title="Cargando historial" description="Consultando vigencias registradas." /></div>
+            : historyQuery.isError ? <div role="alert"><EmptyState title="No se pudo cargar el historial" description={historyQuery.error.message}
+              action={<Button type="button" variant="secondary" onClick={() => void historyQuery.refetch()}>Reintentar</Button>} /></div>
+            : historyQuery.data?.content.length ? <DataTable className="price-history-table" columns={[
+              { key: 'effectiveOn', label: 'Vigente desde', emphasis: true },
+              { key: 'price', label: 'Precio', align: 'right' },
+              { key: 'recordedAt', label: 'Registrado el' },
+              { key: 'updatedAt', label: 'Actualizado el' },
+              { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'Programado' ? 'strong' : 'muted'}>{value}</Badge> },
+              ...(isAdmin ? [{ key: 'actions', label: 'Acciones', align: 'right', render: (date) => date &&
+                <Button type="button" variant="link" aria-haspopup="dialog" aria-label={`Cancelar precio del ${date}`} onClick={() => {
+                  cancelHistoryPrice.reset()
+                  setHistoryDateToCancel(date)
+                }}>Cancelar precio</Button>,
+              } satisfies TableColumn] : []),
+            ]} rows={historyQuery.data.content.map((entry) => ({
+              id: entry.effectiveOn,
+              effectiveOn: entry.effectiveOn,
+              price: money(entry.price),
+              recordedAt: priceHistoryTimestamp.format(new Date(entry.recordedAt)),
+              updatedAt: priceHistoryTimestamp.format(new Date(entry.updatedAt)),
+              status: entry.scheduled ? 'Programado' : 'Vigente o histórico',
+              actions: entry.scheduled ? entry.effectiveOn : '',
+            }))} /> : <EmptyState title="Sin historial" description="Este producto no registra vigencias de precio." />}
+          {historyQuery.data && historyQuery.data.totalPages > 1 && <div className="pagination">
+            <span>Página {historyPage + 1} de {historyQuery.data.totalPages} · {historyQuery.data.totalElements} vigencias</span>
+            <div>
+              <Button variant="secondary" aria-label="Historial anterior" onClick={() => setHistoryPage(historyPage - 1)} disabled={historyPage === 0}>Anterior</Button>
+              <Button variant="secondary" aria-label="Siguiente historial" onClick={() => setHistoryPage(historyPage + 1)} disabled={historyPage + 1 >= historyQuery.data.totalPages}>Siguiente</Button>
+            </div>
+          </div>}
+        </div>
+      </Panel>
+    </FormModal>}
+    {historySelection && historyDateToCancel && <ConfirmationDialog
+      title={`¿Cancelar el precio programado para ${historyDateToCancel}?`}
+      description={`Se quitará esta vigencia programada de ${historySelection.productName} en ${historySelection.listName}. Las demás fechas de vigencia se conservan.`}
+      confirmLabel="Confirmar cancelación" pendingLabel="Cancelando…" pending={cancelHistoryPrice.isPending}
+      error={cancelHistoryPrice.error ? readableError(cancelHistoryPrice.error, 'No se pudo cancelar el precio programado.') : undefined}
+      onCancel={() => setHistoryDateToCancel(undefined)}
+      onConfirm={() => cancelHistoryPrice.mutate(historyDateToCancel)}
+    />}
+    {editingProduct && <FormModal size="compact" label="Programar precio" busy={savingPrice} onClose={closePriceEditor}>
+      <Panel title="Programar precio" description={`${editingProduct.name} · ${selectedList?.name ?? defaultListName}`}>
+        <form className="grid grid-cols-1 gap-[14px]" onSubmit={savePrice}>
+          <label className="field">
+            <span>Precio de {editingProduct.name}</span>
+            <input className="input currency-input w-full min-w-0" type="text" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required readOnly={savingPrice} />
+          </label>
+          <label className="field">
+            <span>Vigente desde</span>
+            <input className="input w-full min-w-0" aria-label="Fecha de vigencia" aria-describedby="scheduled-price-date-help" type="date" value={effectiveOn} onChange={(event) => setEffectiveOn(event.target.value)} readOnly={savingPrice} />
+            <small id="scheduled-price-date-help" className="text-muted text-[11px] font-normal leading-[1.5]">Dejalo vacío para aplicar el precio desde hoy.</small>
+          </label>
+          {error && <p className="error-text m-0" role="alert"><CurrencyText>{error}</CurrencyText></p>}
+          {showFollowState && editingProduct.followStatus && <p className="helper-text m-0">Este precio sigue a {defaultListName}. Al guardarlo pasa a ser propio y deja de seguir sus cambios.</p>}
+          {selectedList?.isDefault && <p className="helper-text m-0">Si otras listas siguen este precio, se te va a avisar antes de guardar.</p>}
+          <div className="page-actions justify-end [border-top:1px_solid_var(--line)] pt-[14px]">
+            <Button variant="secondary" type="button" onClick={closePriceEditor} disabled={savingPrice}>Cancelar</Button>
+            <Button type="submit" disabled={savingPrice}>{savingPrice ? 'Guardando...' : 'Guardar precio'}</Button>
+          </div>
+        </form>
+      </Panel>
+    </FormModal>}
+    {priceDiscardDialog}
     {followerWarning && <ConfirmationDialog
       title={`Este cambio también se aplica en ${followerNames(followerWarning.followers)}`}
       description={`${followerWarning.followers.length === 1 ? 'Esa lista sigue' : 'Esas listas siguen'} a ${selectedList?.name ?? defaultListName} para ${followerWarning.product.name}, así que su precio va a cambiar igual. Si confirmás, no se volverá a avisar para este producto en ${followerWarning.followers.length === 1 ? 'esa lista' : 'esas listas'}.`}
@@ -540,7 +618,6 @@ export default function PriceListsPage() {
       pending={savingPrice}
       onCancel={() => setFollowerWarning(undefined)} onConfirm={() => void persistPrice(followerWarning.product, followerWarning.amount, followerWarning.effectiveOn, true)}
     />}
-    {historyEntryToCancel && <div role="dialog" aria-modal="true" aria-labelledby="cancel-price-title" className="modal-backdrop"><Panel title="Cancelar precio programado"><h2 id="cancel-price-title">¿Cancelar la vigencia del {historyEntryToCancel.effectiveOn}?</h2><p>El cambio no modificará precios que ya entraron en vigor.</p><div className="page-actions"><Button variant="secondary" onClick={() => setHistoryEntryToCancel(undefined)}>Volver</Button><Button onClick={cancelScheduledPrice}>Confirmar cancelación</Button></div></Panel></div>}
     {statusList && <div role="dialog" aria-modal="true" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description" className="price-status-dialog-backdrop">
       <section className={`price-status-dialog${nextStatusIsActive ? ' is-activating' : ' is-deactivating'}`}>
         <header className="price-status-dialog-header">

@@ -1,10 +1,10 @@
 export type Supplier = { id: string; name: string }
-export type PurchaseProduct = { id: string; name: string; cost: number; status: string; stock?: number; suppliers?: Array<{ id: string; name: string }> }
+export type PurchaseProduct = { id: string; name: string; status: string; cost?: number | null; stock?: number; suppliers?: Array<{ id: string; name: string }> }
 /** LEGACY: registered before purchases moved stock; DRAFT: no stock effect; CONFIRMED: added to stock; CANCELLED: reverted. */
 export type SupplierOrderStatus = 'LEGACY' | 'DRAFT' | 'CONFIRMED' | 'CANCELLED'
 export type SupplierOrder = { id: string; number: string; supplierId: string; supplier: string; date: string; total: number; status?: SupplierOrderStatus }
 export type SupplierOrderResult = Pick<SupplierOrder, 'id' | 'number' | 'total' | 'status'>
-export type SupplierOrderItem = { productId: string; productName: string; quantity: number; unitCost: number; lineTotal: number; status: string; currentCost: number }
+export type SupplierOrderItem = { productId: string; productName: string; quantity: number; unitCost: number; currentCost?: number | null; status: string }
 export type SupplierOrderDetail = { order: SupplierOrder; items: SupplierOrderItem[] }
 export type PreviousSupplierOrder = Partial<SupplierOrderDetail> & { available: boolean }
 export const supplierOrdersKey = ['supplier-orders']

@@ -65,14 +65,13 @@ class BrandServiceTest {
     void create_succeedsAndAudits() {
         when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(name) = ?)"), eq(Boolean.class), eq("coca cola")))
             .thenReturn(false);
-        when(jdbc.update(anyString(), any(), any(), any())).thenReturn(1);
 
         UUID brandId = service.create(new CatalogAdminDtos.CreateBrandRequest("Coca Cola"));
 
         assertThat(brandId).isNotNull();
         verify(jdbc).update(
-            eq("insert into catalog.brands(id, name, status, created_at) values (?, ?, 'ACTIVE', ?)"),
-            eq(brandId), eq("Coca Cola"), any(Timestamp.class)
+            eq("insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)"),
+            eq(brandId), eq("Coca Cola"), eq(brandId.toString()), any(Timestamp.class)
         );
         verify(audit).record(eq(adminUserId), eq("BRAND_CREATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
     }

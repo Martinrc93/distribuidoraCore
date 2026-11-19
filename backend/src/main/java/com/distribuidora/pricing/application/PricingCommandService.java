@@ -10,17 +10,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class PricingCommandService {
-    private static final long CREATE_LIST_LOCK_KEY = 4_839_271_106L;
-
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final PriceListFollowService follows;
@@ -38,28 +38,47 @@ public class PricingCommandService {
 
     @Transactional
     public UUID createList(String code, String name) {
-        String normalizedCode = validateText(code, "code", 40);
         String normalizedName = validateText(name, "name", 120);
-        jdbc.queryForObject("select pg_advisory_xact_lock(?)", Object.class, CREATE_LIST_LOCK_KEY);
-        if (Boolean.TRUE.equals(jdbc.queryForObject(
-            "select exists(select 1 from catalog.price_lists where code = ?)", Boolean.class, normalizedCode))) {
-            throw new IllegalStateException("Ya existe una lista con ese código");
-        }
-        Integer count = jdbc.queryForObject("select count(*) from catalog.price_lists", Integer.class);
-        if (count != null && count >= 10) {
-            throw new IllegalStateException("No se pueden crear más de diez listas de precios");
-        }
-
         UUID id = UUID.randomUUID();
         Timestamp now = timestamp();
-        jdbc.update("insert into catalog.price_lists(id, code, name, status, is_default, created_at, updated_at) values (?, ?, ?, 'ACTIVE', false, ?, ?)",
-            id, normalizedCode, normalizedName, now, now);
+        String normalizedCode;
+        if (code == null) {
+            normalizedCode = insertWithGeneratedCode(id, normalizedName, now);
+        } else {
+            normalizedCode = validateText(code, "code", 40);
+            if (!insertList(id, normalizedCode, normalizedName, now)) {
+                throw new IllegalStateException("Ya existe una lista con ese código");
+            }
+        }
         // Existing products are linked with the default list prices and stay marked until reviewed.
         int copied = follows.copyDefaultPricesIntoList(id);
         Map<String, Object> details = new HashMap<>(Map.of("code", normalizedCode));
         if (copied > 0) details.put("copiedFromDefault", copied);
         audit.record(actorId(), "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS", details);
         return id;
+    }
+
+    private String insertWithGeneratedCode(UUID id, String name, Timestamp now) {
+        String base = Normalizer.normalize(name, Normalizer.Form.NFKD)
+            .replaceAll("\\p{M}", "")
+            .toUpperCase(Locale.ROOT)
+            .replaceAll("[^A-Z0-9]+", "_")
+            .replaceAll("^_+|_+$", "");
+        if (base.isEmpty()) base = "LISTA";
+        if (base.equals("GENERAL")) base = "LISTA_GENERAL";
+        // Use the unique constraint to claim a code atomically, including concurrent creations.
+        for (int number = 1; ; number++) {
+            String suffix = number == 1 ? "" : "_" + number;
+            String code = base.substring(0, Math.min(base.length(), 40 - suffix.length())) + suffix;
+            if (insertList(id, code, name, now)) return code;
+        }
+    }
+
+    private boolean insertList(UUID id, String code, String name, Timestamp now) {
+        return jdbc.update("""
+            insert into catalog.price_lists(id, code, name, status, is_default, created_at, updated_at)
+            values (?, ?, ?, 'ACTIVE', false, ?, ?) on conflict (code) do nothing
+            """, id, code, name, now, now) == 1;
     }
 
     /** What creating a list would copy, so the UI can ask for confirmation first. */

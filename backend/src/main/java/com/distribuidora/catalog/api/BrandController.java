@@ -58,6 +58,13 @@ public class BrandController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/{id}/permanent")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<Void> deletePermanently(@PathVariable UUID id) {
+        service.deletePermanently(id);
+        return ResponseEntity.noContent().build();
+    }
+
     private static CatalogAdminDtos.BrandResponse toResponse(BrandService.BrandView view) {
         return new CatalogAdminDtos.BrandResponse(view.id(), view.name(), view.status(),
             view.createdAt(), view.productCount());

@@ -13,6 +13,7 @@ type Props = {
   loadingLabel: string
   loading?: boolean
   disabled?: boolean
+  autoFocus?: boolean
   required?: boolean
   invalid?: boolean
   describedBy?: string
@@ -23,7 +24,7 @@ type Props = {
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim()
 
-export function SearchableSelect({ label, options, value, onChange, allLabel, unavailableLabel, loadingLabel, loading = false, disabled = false, required = false, invalid, describedBy, fullWidth = false, preserveSearch = false, className = '' }: Props) {
+export function SearchableSelect({ label, options, value, onChange, allLabel, unavailableLabel, loadingLabel, loading = false, disabled = false, autoFocus = false, required = false, invalid, describedBy, fullWidth = false, preserveSearch = false, className = '' }: Props) {
   const id = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
@@ -84,7 +85,7 @@ export function SearchableSelect({ label, options, value, onChange, allLabel, un
       <input ref={inputRef} id={id} className={`input${hasCurrencyAmount(selectedName) ? ' currency-input' : ''}`} role="combobox" aria-autocomplete="list" aria-expanded={expanded}
         aria-controls={expanded ? `${id}-list` : undefined} aria-activedescendant={activeOption >= 0 ? `${id}-option-${activeOption}` : undefined}
         aria-required={required || undefined} aria-invalid={invalid} aria-describedby={describedBy} aria-busy={loading || undefined}
-        autoComplete="off" disabled={disabled || loading} placeholder="Buscar por nombre…"
+        autoComplete="off" autoFocus={autoFocus} disabled={disabled || loading} placeholder="Buscar por nombre…"
         value={loading ? loadingLabel : expanded && search !== null ? search : previousSearch && (expanded || !value) ? previousSearch : selectedName}
         onFocus={(event) => event.target.select()} onClick={(event) => { if (!expanded) event.currentTarget.select(); setOpen(true) }} onKeyDown={handleKeyDown}
         onChange={(event) => { setSearch(event.target.value); setOpen(true); setActive(-1) }} />
