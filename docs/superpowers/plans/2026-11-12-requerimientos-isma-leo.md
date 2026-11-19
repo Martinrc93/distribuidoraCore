@@ -48,7 +48,7 @@ Tamaños aproximados para una persona: **S** ≤ 1 día · **M** 2–4 días ·
 
 ### Fase 1 — Correcciones y mejoras rápidas (bajo riesgo)
 
-**Estado (2026-11-12): implementada en `support`, sin commit.** Resumen:
+**Estado (2026-11-19): implementada y commiteada en `support` (`f1cb90a`).** Resumen:
 
 - 1.1 `POST /settlement` acepta `partial: true`; «Registrar pago» en Clientes admite
   pagos parciales combinados (FIFO, una transacción).
@@ -96,8 +96,8 @@ marca y nombre en la tabla de precios). 2.6 implementado tras confirmar que lo
 pidió Leo: permiso `ORDER_PRICE_LIST_CHANGE` (V39), otorgado a ADMIN y SELLER en
 ambas instancias y revocable por rol. Descartados: el aumento masivo por % de 2.4
 («no se manejan de esa manera») y 2.2 (renombrar, activar y editar precios
-alcanza; el código es un identificador interno). Queda abierto si se quiere la
-edición en línea de precios de 2.4 sin el aumento por %.
+alcanza; el código es un identificador interno). La edición en línea de 2.4, sin el
+aumento por %, se implementó el 2026-11-16 (`f31c1be`; ver Decisiones, punto 8).
 
 | # | Cambio | Tamaño | Notas |
 |---|---|---|---|
