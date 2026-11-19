@@ -85,6 +85,15 @@ describe('App shell', () => {
     expect(screen.queryByRole('navigation', { name: /navegación principal/i })).not.toBeInTheDocument()
   })
 
+  it('hides expenses and blocks direct access for sellers', async () => {
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ORDER_CREATE'] }))}.signature`)
+    const fetch = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], totalElements: 0, totalPages: 0 }))
+    renderApp('/expenses')
+    expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Gastos' })).not.toBeInTheDocument()
+    expect(fetch.mock.calls.some(([input]) => String(input).startsWith('/api/expenses'))).toBe(false)
+  })
+
   it('keeps login data after a proxy failure and allows retrying when the server recovers', async () => {
     const accessToken = `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('Proxy error', { status: 500 }))

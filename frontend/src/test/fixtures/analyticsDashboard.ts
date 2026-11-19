@@ -4,6 +4,7 @@ export const analyticsReport: DashboardReport = {
   dateMin: '2026-09-01', dateMax: '2026-09-30', previousDateMin: '2026-08-02', previousDateMax: '2026-08-31', generatedAt: '2026-10-02T13:00:00Z',
   sales: { amount: 1500, orders: 3 }, previousSales: { amount: 1000, orders: 2 },
   collections: { amount: 900, cash: 500, transfer: 400 }, previousCollections: { amount: 600, cash: 600, transfer: 0 },
+  expenses: { amount: 245.5, count: 1, recent: [{ id: 'expense-1', type: 'FUEL', amount: 245.5, observation: 'Recorrido de entregas', createdAt: '2026-09-05T15:00:00Z' }] },
   current: { debt: 600, debtorCount: 1, pendingOrders: 2, pendingAmount: 800, oldestPendingAt: '2026-09-01T14:00:00Z', failedDeliveries: 1, stockAlertCount: 1 },
   trend: [{ date: '2026-09-01', amount: 500, orders: 1 }, { date: '2026-09-02', amount: 1000, orders: 2 }],
   topDebtors: [{ id: 'customer-1', name: 'Cliente principal', balance: 600 }],

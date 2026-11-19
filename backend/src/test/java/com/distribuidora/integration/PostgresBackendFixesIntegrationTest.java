@@ -154,6 +154,7 @@ class PostgresBackendFixesIntegrationTest {
     private final Set<UUID> categories = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> commissionPlans = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> notificationRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> expenses = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<String> auditResources = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @AfterEach
@@ -185,6 +186,7 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from catalog.products where id in (%s)", products);
         deleteIds("delete from catalog.price_lists where id in (%s)", priceLists);
         deleteIds("delete from seller.seller_profiles where id in (%s)", sellers);
+        deleteIds("delete from expense.expenses where id in (%s)", expenses);
         deleteIds("delete from identity.refresh_tokens where user_id in (%s)", users);
         deleteIds("delete from identity.user_activation_tokens where user_id in (%s)", users);
         deleteIds("delete from identity.user_roles where user_id in (%s)", users);
@@ -2769,6 +2771,57 @@ class PostgresBackendFixesIntegrationTest {
                 .param("dateMin", "2026-10-01").param("dateMax", "2026-10-01"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.summary.totalAmount").value(0))
             .andExpect(jsonPath("$.purchases.totalElements").value(0));
+    }
+
+    @Test
+    void administratorsCanRegisterExpensesAndSeeThemInTheDashboardPeriod() throws Exception {
+        UUID admin = createUser("expenses-admin");
+        assignRole(admin, "ADMIN");
+        String token = "Bearer " + loginHttp(email(admin));
+        UUID seller = createSeller("expenses-seller");
+        UUID sellerUser = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, seller);
+        String sellerToken = "Bearer " + loginHttp(email(sellerUser));
+        UUID inside = UUID.randomUUID();
+        UUID outside = UUID.randomUUID();
+        expenses.addAll(List.of(inside, outside));
+        String body = """
+            {"idempotencyKey":"%s","amount":120.75,"type":"FUEL","observation":"  Entregas  "}
+            """.formatted(inside);
+
+        mockMvc.perform(get("/api/expenses").header("Authorization", sellerToken)).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/expenses").header("Authorization", sellerToken).contentType("application/json").content(body))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/dashboard/analytics").header("Authorization", sellerToken)).andExpect(status().isForbidden());
+        for (String invalid : List.of(body.replace("120.75", "0"), body.replace("120.75", "120.755"), body.replace("FUEL", "UNKNOWN"))) {
+            mockMvc.perform(post("/api/expenses").header("Authorization", token).contentType("application/json").content(invalid))
+                .andExpect(status().isBadRequest());
+        }
+        for (int submission = 0; submission < 2; submission++) {
+            mockMvc.perform(post("/api/expenses").header("Authorization", token).contentType("application/json").content(body))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(inside.toString()))
+                .andExpect(jsonPath("$.amount").value(120.75)).andExpect(jsonPath("$.observation").value("Entregas"));
+        }
+        mockMvc.perform(post("/api/expenses").header("Authorization", token).contentType("application/json")
+                .content(body.replace("120.75", "125.75"))).andExpect(status().isConflict());
+        mockMvc.perform(post("/api/expenses").header("Authorization", token).contentType("application/json")
+                .content("""
+                    {"idempotencyKey":"%s","amount":90,"type":"SERVICES"}
+                    """.formatted(outside)))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.observation").doesNotExist());
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where operation = 'EXPENSE_CREATE' and resource_id = ?",
+            Long.class, inside.toString())).isEqualTo(1L);
+
+        jdbc.update("update expense.expenses set created_at = ? where id = ?", Timestamp.from(Instant.parse("2024-03-01T02:59:59Z")), inside);
+        jdbc.update("update expense.expenses set created_at = ? where id = ?", Timestamp.from(Instant.parse("2024-03-01T03:00:00Z")), outside);
+        mockMvc.perform(get("/api/expenses").header("Authorization", token).param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
+            .andExpect(jsonPath("$.content[0].id").value(outside.toString()));
+        mockMvc.perform(get("/api/dashboard/analytics").header("Authorization", token)
+                .param("dateMin", "2024-02-29").param("dateMax", "2024-02-29"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.expenses.amount").value(120.75))
+            .andExpect(jsonPath("$.expenses.count").value(1)).andExpect(jsonPath("$.expenses.recent[0].id").value(inside.toString()))
+            .andExpect(jsonPath("$.expenses.recent[0].type").value("FUEL"))
+            .andExpect(jsonPath("$.expenses.recent[0].createdAt").isString());
     }
 
     @Test

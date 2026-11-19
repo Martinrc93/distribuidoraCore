@@ -10,6 +10,7 @@ import { PageHeader } from '../shared/components/PageHeader'
 import { Panel } from '../shared/components/Panel'
 import DashboardPage from '../features/dashboard/DashboardPage'
 import CustomersPage from '../features/customers/CustomersPage'
+import ExpensesPage from '../features/expenses/ExpensesPage'
 import SuppliersPage from '../features/suppliers/SuppliersPage'
 import SupplierOrdersPage from '../features/purchasing/SupplierOrdersPage'
 import SupplierOrderCreatePage from '../features/purchasing/SupplierOrderCreatePage'
@@ -109,6 +110,7 @@ export default function App() {
         <Route path="/supplier-orders/restock" element={<RequireAdmin><SupplierOrderRestockPage /></RequireAdmin>} />
         <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />
         <Route path="/customers" element={<CustomersPage />} />
+        <Route path="/expenses" element={<RequireAdmin><ExpensesPage /></RequireAdmin>} />
         <Route path="/suppliers" element={<RequireAdmin><SuppliersPage /></RequireAdmin>} />
         <Route path="/customers/:customerId" element={<RequireCustomerView />} />
         <Route path="/customers/:customerId/purchases" element={<RequireReportsView back="/customers"><CustomerPurchasesPage /></RequireReportsView>} />

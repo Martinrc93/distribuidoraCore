@@ -9,6 +9,7 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { StatCard } from '../../shared/components/StatCard'
+import { expenseColumns, expenseMoney, expenseRows, type Expense } from '../expenses/expenses'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 import { restockPurchasePath } from '../purchasing/supplierOrders'
 import { businessTimeZone, displayDate, parseDate, presetRange, rangeError, todayInArgentina } from './dashboardDates'
@@ -21,6 +22,7 @@ type TrendPoint = { date: string; amount: number; orders: number }
 export type DashboardReport = {
   dateMin: string; dateMax: string; previousDateMin: string; previousDateMax: string; generatedAt: string
   sales: Sales; previousSales: Sales; collections: Collections; previousCollections: Collections
+  expenses: { amount: number; count: number; recent: Expense[] }
   current: { debt: number; debtorCount: number; pendingOrders: number; pendingAmount: number; oldestPendingAt: string | null; failedDeliveries: number; stockAlertCount: number }
   trend: TrendPoint[]
   topDebtors: Array<{ id: string; name: string; balance: number }>
@@ -110,8 +112,8 @@ export default function AnalyticsDashboardPage() {
     return range.start === start && range.end === end
   }) ?? 'custom'
   return <div className="grid min-w-0 gap-[20px] [&>.page-header]:mb-0">
-    <PageHeader eyebrow="Operación" title="Dashboard" description="Ventas, cobros y prioridades de la distribuidora." actions={<Button type="button" variant="secondary" disabled={Boolean(error) || query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Actualizando…' : 'Actualizar datos'}</Button>} />
-    <Panel title="Período de análisis" description="El período se aplica a ventas, cobros, rankings y pedidos recientes.">
+    <PageHeader eyebrow="Operación" title="Dashboard" description="Ventas, cobros, gastos y prioridades de la distribuidora." actions={<Button type="button" variant="secondary" disabled={Boolean(error) || query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Actualizando…' : 'Actualizar datos'}</Button>} />
+    <Panel title="Período de análisis" description="El período se aplica a ventas, cobros, gastos, rankings y pedidos recientes.">
       <div className="toolbar mb-0 items-end [&>.field]:min-w-0 [@media(max-width:640px)]:grid [@media(max-width:640px)]:grid-cols-1">
         <label className="field"><span id="analytics-period-label">Período</span><select className="select" aria-labelledby="analytics-period-label" value={preset} onChange={(event) => changePreset(event.target.value)}><option value="today">Hoy</option><option value="week">Esta semana</option><option value="month">Este mes</option><option value="custom">Personalizado</option></select></label>
         <OrderDateFilter id="analytics-date-min" label="Desde" value={dateMin} isoValue={start ?? ''} invalid={Boolean(error)} describedBy={error ? 'analytics-date-error' : undefined} onChange={(value) => changeDate('dateMin', value)} />
@@ -139,6 +141,12 @@ export default function AnalyticsDashboardPage() {
           <div className="mt-[16px] flex flex-wrap gap-[8px]"><Button variant="link" href="/orders?status=CONFIRMED&dateMin=&dateMax=">Ver pendientes</Button></div>
         </Panel>
       </div>
+      <Panel title="Gastos del período"
+        description={`${expenseMoney.format(data.expenses.amount)} en ${number(data.expenses.count)} ${data.expenses.count === 1 ? 'gasto registrado' : 'gastos registrados'}. ${data.expenses.count > data.expenses.recent.length ? 'Se muestran los últimos cinco.' : ''}`.trim()}
+        action={<Button variant="link" href="/expenses">Ver gastos</Button>}>
+        <DataTable className={compactTable} columns={expenseColumns} rows={expenseRows(data.expenses.recent)}
+          emptyContent={empty('No hay gastos registrados en este período.')} />
+      </Panel>
       <div className="grid min-w-0 grid-cols-2 gap-[20px] [@media(max-width:760px)]:grid-cols-1">
         <Panel title="Clientes con mayor saldo por cobrar" description="Cinco mayores saldos actuales y su porcentaje del total por cobrar. No depende del período." action={<Button variant="link" aria-label="Ver todos los deudores" href="/customers?hasBalance=true&status=ALL">Ver deudores</Button>}>
           {topDebtors.length > 0 && <p className="mb-[16px] mt-0 text-[13px]" role="status">{topDebtors.length === 1 ? 'Este cliente concentra' : `Estos ${topDebtors.length} clientes concentran`} <strong><CurrencyText>{money(topDebt)}</CurrencyText></strong>, el <strong>{debtShare(topDebt, data.current.debt)}</strong> del total por cobrar.</p>}

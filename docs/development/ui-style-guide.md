@@ -288,7 +288,7 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   y `OrderDateFilter`. Las cuatro métricas principales siguen `.stats-grid`;
   la tendencia y los pendientes usan `.content-grid.two-thirds`.
 - Los filtros usan Hoy/Semana/Mes/Personalizado, fechas en la URL y el calendario
-  existente. Ventas y cobros se filtran por período; deuda, entregas y stock
+  existente. Ventas, cobros y gastos se filtran por período; deuda, entregas y stock
   indican explícitamente su situación actual. No se muestran porcentajes con
   base anterior cero. Errores de fechas bloquean la consulta.
 - El gráfico SVG tiene descripción accesible y una tabla de datos expandible
@@ -306,6 +306,15 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Las alertas usan texto además de color. Se distingue antigüedad de deuda de
   vencimiento, y cobertura estimada de stock de un mínimo de reposición.
 - Contrato y limitaciones: [dashboard-analytics.md](../api/dashboard-analytics.md).
+
+### Gastos
+
+«Gastos» aparece debajo de «Clientes» en Operación, con acceso exclusivo de
+`ADMIN_ALL`. El historial usa `DataTable` con paginación y tarjetas hasta `640px`.
+«Nuevo gasto» abre un `FormModal` compacto con importe, tipo y observación
+opcional. El diálogo conserva el borrador ante errores y confirma el descarte
+de cambios. El Dashboard muestra el total y los últimos cinco gastos del
+período seleccionado, con un enlace al historial.
 
 ### Listas de precios que siguen a la General
 

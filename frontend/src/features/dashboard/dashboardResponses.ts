@@ -1,6 +1,7 @@
 import type { DashboardData } from './DashboardPage'
 import type { DashboardReport } from './AnalyticsDashboardPage'
 import type { ApiPage } from '../../shared/api/client'
+import { expenseTypes } from '../expenses/expenses'
 import type { SellerOrder } from './SellerOrdersDialog'
 
 type Validator = (value: unknown) => boolean
@@ -27,10 +28,13 @@ const sellerOrders = fields({
 })
 const sales = fields({ amount: numeric, orders: numeric })
 const collections = fields({ amount: numeric, cash: numeric, transfer: numeric })
+const expense = fields({ id: text, amount: numeric, createdAt: timestamp, observation: nullable(text),
+  type: (value) => typeof value === 'string' && Object.hasOwn(expenseTypes, value) })
 const order = fields({ id: text, number: text, customer: text, seller: text, total: numeric, status: text, date: timestamp })
 const report = fields({
   dateMin: isoDate, dateMax: isoDate, previousDateMin: isoDate, previousDateMax: isoDate, generatedAt: timestamp,
   sales, previousSales: sales, collections, previousCollections: collections,
+  expenses: fields({ amount: numeric, count: numeric, recent: list(expense) }),
   current: fields({ debt: numeric, debtorCount: numeric, pendingOrders: numeric, pendingAmount: numeric,
     oldestPendingAt: nullable(timestamp), failedDeliveries: numeric, stockAlertCount: numeric }),
   trend: list(fields({ date: isoDate, amount: numeric, orders: numeric })),

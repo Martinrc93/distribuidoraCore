@@ -13,6 +13,9 @@ The report is read in a single transaction with repeatable-read isolation.
   sale creation date. Totals already include discounts. Cancelled sales are excluded.
 - `collections`: actual `CASH` and `BANK_TRANSFER` receipts by payment date,
   including receipts against older sales. Account debits are not receipts.
+- `expenses`: total amount (`amount`), number of expenses (`count`), and the five
+  most recent entries (`recent`) by registration time in the selected period.
+  Each entry includes `id`, `amount`, `type`, optional `observation`, and `createdAt`.
 - `previousSales` and `previousCollections`: the immediately preceding interval
   of equal length. If the current interval ends today, both stop at the same
   elapsed time on their last day. A zero comparison baseline has no percentage.
@@ -72,3 +75,15 @@ due dates respectively; neither is calculated from missing data.
 Los revendedores aparecen como deudores con el saldo de su cuenta, que incluye los
 pedidos de sus clientes. «Ver deuda» abre Ventas con `accountCustomerId`, que filtra
 por la cuenta que debe cada venta (Fase 9.2).
+
+## Recording expenses
+
+`GET /api/expenses?page=0&size=20` returns the paginated expense history,
+newest first. `POST /api/expenses` creates an expense and returns it with status
+`201`. Both endpoints require `ADMIN_ALL`.
+
+Send a unique UUID `idempotencyKey`, a positive ARS `amount` with up to two
+decimal places, and `type` (`PETTY_CASH`, `OTHER`, `SERVICES`, or `FUEL`).
+`observation` is optional and accepts up to 500 characters. The server records
+the registration time and administrator. Reusing the same key with the same
+payload returns the original entry. Reusing it for a different expense returns `409`.

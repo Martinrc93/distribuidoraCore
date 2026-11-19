@@ -61,6 +61,16 @@ public class DashboardAnalyticsService {
         result.put("previousSales", sales(previousFromSql, previousUntilSql));
         result.put("collections", collections(from, until));
         result.put("previousCollections", collections(previousFromSql, previousUntilSql));
+        Map<String, Object> expenses = new LinkedHashMap<>(jdbc.queryForMap("""
+            select coalesce(sum(amount), 0) as amount, count(*) as count
+            from expense.expenses where created_at >= ? and created_at < ?
+            """, from, until));
+        expenses.put("recent", jdbc.queryForList("""
+            select id, amount, type, observation, created_at as "createdAt"
+            from expense.expenses where created_at >= ? and created_at < ?
+            order by created_at desc, id desc limit 5
+            """, from, until));
+        result.put("expenses", expenses);
         result.put("current", jdbc.queryForMap("""
             select
                 (select coalesce(sum(balance), 0) from customer.customers where balance > 0) as debt,

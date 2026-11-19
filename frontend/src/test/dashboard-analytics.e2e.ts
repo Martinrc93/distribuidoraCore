@@ -31,7 +31,7 @@ for (const width of [320, 640, 760, 1050, 1440]) {
     expect(await page.locator('table').evaluateAll((tables) => tables.filter((table) => table.parentElement?.className.includes('min-w-0')).every((table) => table.scrollWidth <= table.parentElement!.clientWidth))).toBe(true)
     if (width <= 1050) await page.getByRole('button', { name: 'Abrir menú' }).click()
     const links = page.getByRole('navigation', { name: 'Navegación principal' }).getByRole('link')
-    expect((await links.allTextContents()).slice(0, 2)).toEqual(['Resumen', 'Dashboard'])
+    expect((await links.allTextContents()).slice(0, 7)).toEqual(['Resumen', 'Dashboard', 'Pedidos', 'Ventas', 'Compras', 'Clientes', 'Gastos'])
     await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toHaveAttribute('aria-current', 'page')
     if (width <= 1050) await page.keyboard.press('Escape')
     await page.screenshot({ path: info.outputPath(`dashboard-${width}.png`), fullPage: true })
@@ -54,4 +54,60 @@ test('period controls, calendar keyboard and administrative access work', async 
   await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toHaveCount(0)
   expect(requests.some((url) => url.includes('/api/dashboard/analytics'))).toBe(false)
+})
+
+test('registers an expense on mobile and shows it in the refreshed dashboard', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 })
+  const entries: typeof analyticsReport.expenses.recent = []
+  const submittedIds: string[] = []
+  await page.route('**/api/expenses**', async (route) => {
+    if (route.request().method() === 'POST') {
+      const { idempotencyKey, type, amount, observation } = route.request().postDataJSON()
+      submittedIds.push(idempotencyKey)
+      if (submittedIds.length === 1) return route.fulfill({ status: 500, json: { detail: 'No se pudo guardar.' } })
+      const entry = { id: idempotencyKey, type, amount, observation, createdAt: '2026-09-05T15:00:00Z' }
+      entries.push(entry)
+      return route.fulfill({ status: 201, json: entry })
+    }
+    return route.fulfill({ json: { content: entries, page: 0, size: 20, totalElements: entries.length, totalPages: entries.length } })
+  })
+  await page.route('**/api/dashboard/analytics?**', (route) => route.fulfill({
+    json: { ...analyticsReport, expenses: { amount: entries[0]?.amount ?? 0, count: entries.length, recent: entries } },
+  }))
+
+  await page.goto('/analytics?dateMin=01%2F09%2F2026&dateMax=30%2F09%2F2026')
+  await expect(page.getByText('No hay gastos registrados en este período.')).toBeVisible()
+  // Use the app navigation so the dashboard's query stays in the cache.
+  await page.getByRole('button', { name: 'Abrir menú' }).click()
+  await page.getByRole('link', { name: 'Gastos', exact: true }).click()
+  await expect(page.getByText('No hay gastos registrados.', { exact: true })).toBeVisible()
+  const create = page.getByRole('button', { name: 'Nuevo gasto' })
+  await create.click()
+  const dialog = page.getByRole('dialog', { name: 'Nuevo gasto' })
+  const amount = dialog.getByLabel('Importe ($)')
+  await expect(amount).toBeFocused()
+  await amount.fill('0')
+  await dialog.getByLabel('Tipo').selectOption({ label: 'Combustible' })
+  await dialog.getByRole('button', { name: 'Guardar gasto' }).click()
+  await expect(dialog.getByRole('alert')).toContainText('mayor a cero')
+  await amount.fill('120,75')
+  await dialog.getByLabel('Observación (opcional)').fill('Recarga para entregas')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Seguir editando' }).click()
+  await expect(amount).toHaveValue('120,75')
+  await dialog.getByRole('button', { name: 'Guardar gasto' }).click()
+  await expect(dialog.getByRole('alert')).toHaveText('No se pudo guardar.')
+  await dialog.getByRole('button', { name: 'Guardar gasto' }).click()
+  await expect(page.getByRole('status', { name: '' }).filter({ hasText: 'Gasto registrado.' })).toBeVisible()
+  await expect(create).toBeFocused()
+  await expect(page.getByText('Recarga para entregas')).toBeVisible()
+  expect(submittedIds).toHaveLength(2)
+  expect(submittedIds[0]).toBe(submittedIds[1])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+
+  await page.goBack()
+  const panel = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Gastos del período' }) })
+  await expect(panel).toContainText('$ 120,75 en 1 gasto registrado.')
+  await expect(panel.getByText('Combustible', { exact: true })).toBeVisible()
+  await expect(panel.getByText('Recarga para entregas')).toBeVisible()
 })
