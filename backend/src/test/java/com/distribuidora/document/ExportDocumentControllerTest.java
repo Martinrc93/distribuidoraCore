@@ -15,6 +15,8 @@ class ExportDocumentControllerTest {
     void priceListsAreForOrderCreatorsAndStatementsForPaymentUsers() throws Exception {
         assertThat(ExportDocumentController.class.getDeclaredMethod("priceList", UUID.class, UUID.class, UUID.class, String.class)
             .getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')");
+        assertThat(ExportDocumentController.class.getDeclaredMethod("allPriceLists")
+            .getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
         assertThat(ExportDocumentController.class.getDeclaredMethod("statement", UUID.class, String.class)
             .getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAnyAuthority('CUSTOMER_STATEMENT_EXPORT', 'ADMIN_ALL')");
     }

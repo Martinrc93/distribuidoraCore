@@ -18,9 +18,17 @@ descarga, con el componente compartido `DocumentActions`.
 - Requiere `ORDER_CREATE` o `ADMIN_ALL`: los vendedores pueden descargarla para
   consultarla sin conexión.
 - A4 con los precios vigentes hoy (fecha de Buenos Aires) de los productos activos,
-  agrupados por categoría (rubro) y ordenados por nombre. Nunca incluye el costo.
+  con categorías (rubros) en orden alfabético y productos en orden alfabético
+  dentro de cada categoría. Nunca incluye el costo.
 - Los filtros opcionales son los mismos de la tabla de precios y se describen en el
   encabezado. Una lista, categoría o marca inexistente devuelve `404`.
+
+`GET /api/documents/price-lists`
+
+- Requiere `ADMIN_ALL`.
+- Devuelve un solo PDF A4 con todas las listas activas. Cada lista
+  comienza en una página nueva y usa el mismo orden de categorías y productos que
+  la descarga individual.
 
 ## Estado de deuda del cliente
 

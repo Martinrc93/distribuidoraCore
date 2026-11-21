@@ -464,8 +464,17 @@ export default function PriceListsPage() {
   const priceTableClass = ['price-products-table', isAdmin ? 'price-products-table-admin' : 'price-products-table-standard', showFollowState ? 'price-products-table-follow' : ''].filter(Boolean).join(' ')
   const nextStatusIsActive = statusList?.status !== 'ACTIVE'
 
+  function reportDocumentAction(message: string) {
+    setError('')
+    setFeedback(message)
+  }
+
   return <div className="price-lists-page">
-    <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button> : undefined} />
+    <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <>
+      <DocumentActions path="/api/documents/price-lists" filename="listas-de-precios.pdf" downloadLabel="Descargar todas las listas"
+        disabled={!listsQuery.data?.totalElements} onDone={reportDocumentAction} />
+      <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button>
+    </> : undefined} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {error && !showCreate && !renameList && !editingProduct && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
     {showCreate && isAdmin && <>
@@ -509,7 +518,14 @@ export default function PriceListsPage() {
           <span className={`price-list-status${list.status === 'ACTIVE' ? ' active' : ''}`}><i aria-hidden="true" />{list.status === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span>
           {(list.pendingReviewCount ?? 0) > 0 && <span className="price-list-pending">{list.pendingReviewCount} sin revisar</span>}
         </button>)}</div> : <EmptyState title={`No hay listas ${listVisibility === 'ACTIVE' ? 'activas' : 'inactivas'}`} description="Elegí otro filtro para ver las listas disponibles." />)}
-        {listExpanded && isAdmin && selectedList && <div className="page-actions price-list-actions"><Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button><Button variant="secondary" onClick={() => { setError(''); setStatusList(selectedList) }}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button></div>}
+        {selectedList && <div className="page-actions price-list-actions">
+          <DocumentActions key={selectedList.id} path={`/api/documents/price-lists/${selectedList.id}`}
+            filename={`lista-${selectedList.code}.pdf`} downloadLabel={`Descargar ${selectedList.name}`} onDone={reportDocumentAction} />
+          {listExpanded && isAdmin && <>
+            <Button variant="secondary" onClick={() => { setRenameList(selectedList); setRename(selectedList.name); setError('') }}>Renombrar {selectedList.name}</Button>
+            <Button variant="secondary" onClick={() => { setError(''); setStatusList(selectedList) }}>{selectedList.status === 'ACTIVE' ? `Desactivar ${selectedList.name}` : `Activar ${selectedList.name}`}</Button>
+          </>}
+        </div>}
         {listsQuery.data && listsQuery.data.totalPages > 1 && <div className="pagination"><span>Página {listPage + 1} de {listsQuery.data.totalPages} · {listsQuery.data.totalElements} listas</span><div><Button variant="secondary" onClick={() => setListPage(listPage - 1)} disabled={listPage === 0}>Anterior</Button><Button variant="secondary" onClick={() => setListPage(listPage + 1)} disabled={listPage + 1 >= listsQuery.data.totalPages}>Siguiente</Button></div></div>}
       </Panel>
       <Panel title={selectedList ? `Precios de ${selectedList.name}` : 'Precios'} description={pricesQuery.data ? `${pricesQuery.data.totalElements} productos ${activeFollowFilter || hasProductFilters ? 'con estos filtros' : 'en esta lista'}` : selectedList ? `${selectedList.code}${selectedList.isDefault ? ' · Lista predeterminada' : ''}` : undefined}
@@ -520,8 +536,8 @@ export default function PriceListsPage() {
           {isAdmin && showFollowState && pendingReviewCount > 0 && <Button variant="secondary" disabled={confirmingReview} onClick={() => void confirmReview()}>{confirmingReview ? 'Confirmando...' : `Confirmar ${pendingReviewCount} sin revisar`}</Button>}
           {/* The PDF uses the product filters (category, brand, name) currently applied to the table. */}
           <DocumentActions path={`/api/documents/price-lists/${selectedList.id}${productFilterParams ? `?${productFilterParams.slice(1)}` : ''}`}
-            filename={`lista-${selectedList.code}.pdf`} printLabel="Imprimir lista" downloadLabel="Descargar PDF"
-            onDone={(message) => { setError(''); setFeedback(message) }} />
+            filename={`lista-${selectedList.code}.pdf`} printLabel="Imprimir lista" downloadLabel={hasProductFilters ? 'Descargar PDF filtrado' : undefined}
+            onDone={reportDocumentAction} />
         </div> : undefined}>
         <div className="toolbar items-end price-product-filters">
           <label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Buscar producto</span><input className="input search-input [@media(max-width:640px)]:max-w-none" aria-label="Buscar producto en la lista" placeholder="Nombre del producto" value={priceSearch} onChange={(event) => setPriceFilter('q', event.target.value)} /></label>

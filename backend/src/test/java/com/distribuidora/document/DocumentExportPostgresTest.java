@@ -83,6 +83,47 @@ class DocumentExportPostgresTest {
     }
 
     @Test
+    void exportsOnlyActiveListsWithSpanishAlphabeticalOrder() {
+        rollback(() -> {
+            UUID inactive = UUID.randomUUID();
+            UUID active = UUID.randomUUID();
+            jdbc.update("""
+                insert into catalog.price_lists(id, code, name, status, created_at, updated_at)
+                values (?, 'TEST_INACTIVE', 'Lista de prueba inactiva', 'INACTIVE', now(), now()),
+                       (?, 'TEST_ACTIVE', 'Lista de prueba activa', 'ACTIVE', now(), now())
+                """, inactive, active);
+            UUID oils = UUID.randomUUID();
+            UUID pantry = UUID.randomUUID();
+            jdbc.update("""
+                insert into catalog.categories(id, name, code, status, created_at)
+                values (?, 'Ésteres de prueba', ?, 'ACTIVE', now()), (?, 'Frutas de prueba', ?, 'ACTIVE', now())
+                """, oils, "T_" + oils, pantry, "T_" + pantry);
+            product("Zumaque de prueba", oils, "1500", "ACTIVE");
+            UUID anise = product("Ánís de prueba", oils, "2000", "ACTIVE");
+            product("Ananá de prueba", pantry, "3000", "ACTIVE");
+            jdbc.update("""
+                insert into catalog.product_price_history(id, price_list_id, product_id, price, effective_on, created_at, updated_at)
+                values (?, ?, ?, 3500, current_date - 1, now(), now()),
+                       (?, ?, ?, 3600, current_date - 1, now(), now())
+                """, UUID.randomUUID(), inactive, anise, UUID.randomUUID(), active, anise);
+
+            var service = new PriceListDocumentService(jdbc);
+            var lists = service.loadActiveLists();
+            var general = lists.stream().filter(list -> list.listCode().equals("GENERAL")).findFirst().orElseThrow();
+            assertThat(general).isEqualTo(service.load(GENERAL, null, null, null));
+            assertThat(general.lines()).extracting(line -> line.product())
+                .containsSubsequence("Ánís de prueba", "Zumaque de prueba", "Ananá de prueba");
+
+            String pdf = text(new PriceListPdfRenderer().renderAll(lists));
+            assertThat(pdf).containsSubsequence("Ésteres de prueba", "Ánís de prueba", "Zumaque de prueba", "Frutas de prueba", "Ananá de prueba");
+            assertThat(pdf).containsSubsequence("Lista de precios: Lista de prueba activa", "Ánís de prueba", "3.600,00")
+                .doesNotContain("Lista de precios: Lista de prueba inactiva");
+            assertThat(service.load(inactive, null, null, null).lines()).extracting(line -> line.product())
+                .containsExactly("Ánís de prueba");
+        });
+    }
+
+    @Test
     void accountStatementListsOpenDebtsOldestFirstAndRendersA4AndTicket() {
         rollback(() -> {
             UUID customer = UUID.randomUUID();

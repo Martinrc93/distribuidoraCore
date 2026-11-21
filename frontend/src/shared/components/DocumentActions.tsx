@@ -8,7 +8,7 @@ type Props = {
   filename: string
   /** Visible names, e.g. «Imprimir remito A4» and «Descargar remito A4». */
   printLabel?: string
-  downloadLabel: string
+  downloadLabel?: string
   disabled?: boolean
   onDone?: (message: string) => void
 }
@@ -43,7 +43,7 @@ export function DocumentActions({ path, filename, printLabel, downloadLabel, dis
 
   return <span className="document-actions">
     {printLabel && <Button type="button" variant="secondary" disabled={disabled || Boolean(pending)} onClick={() => void run('print')}>{pending === 'print' ? 'Preparando...' : printLabel}</Button>}
-    <Button type="button" variant="secondary" disabled={disabled || Boolean(pending)} onClick={() => void run('download')}>{pending === 'download' ? 'Descargando...' : downloadLabel}</Button>
+    {downloadLabel && <Button type="button" variant="secondary" disabled={disabled || Boolean(pending)} onClick={() => void run('download')}>{pending === 'download' ? 'Descargando...' : downloadLabel}</Button>}
     {error && <span className="error-text document-actions-error" role="alert">{error}</span>}
   </span>
 }

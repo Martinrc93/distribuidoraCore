@@ -35,6 +35,12 @@ public class ExportDocumentController {
         this.statementRenderer = statementRenderer;
     }
 
+    @GetMapping("/price-lists")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public ResponseEntity<byte[]> allPriceLists() {
+        return pdf(priceListRenderer.renderAll(priceLists.loadActiveLists()), "listas-de-precios.pdf");
+    }
+
     /** A4 price list with current prices, optionally filtered; sellers can download it for offline use. */
     @GetMapping("/price-lists/{listId}")
     @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")

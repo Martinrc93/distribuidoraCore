@@ -257,6 +257,42 @@ for (const width of [1280, 390]) {
   })
 }
 
+test('downloads all lists or the selected full list independently of product filters', async ({ page }) => {
+  await mockApi(page)
+  await page.addInitScript(() => localStorage.setItem('distribuidora.text-size', 'large'))
+  await page.route('**/api/pricing/lists?*', (route) => route.fulfill({ json: {
+    content: [
+      { id: 'list-1', code: 'GENERAL', name: 'Lista general', status: 'ACTIVE', isDefault: true },
+      { id: 'list-2', code: 'PROMO', name: 'Lista promociones', status: 'INACTIVE', isDefault: false },
+    ], page: 0, size: 20, totalElements: 2, totalPages: 1,
+  } }))
+  const requested: string[] = []
+  await page.route(/\/api\/documents\/price-lists(?:[/?]|$)/, (route) => {
+    const url = new URL(route.request().url())
+    requested.push(url.pathname + url.search)
+    return route.fulfill({ contentType: 'application/pdf', body: Buffer.from('%PDF-1.4\n%%EOF\n') })
+  })
+  await page.goto('/price-lists?categoryId=category-1')
+  await page.getByRole('tab', { name: /Lista promociones/i }).click()
+  await expect(page.getByRole('button', { name: 'Descargar Lista promociones' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width)
+
+  for (const [buttonName, filename] of [
+    ['Descargar todas las listas', 'listas-de-precios.pdf'],
+    ['Descargar Lista promociones', 'lista-PROMO.pdf'],
+    ['Descargar PDF filtrado', 'lista-PROMO.pdf'],
+  ]) {
+    const download = page.waitForEvent('download')
+    await page.getByRole('button', { name: buttonName, exact: true }).click()
+    expect((await download).suggestedFilename()).toBe(filename)
+  }
+  expect(requested).toEqual([
+    '/api/documents/price-lists',
+    '/api/documents/price-lists/list-2',
+    '/api/documents/price-lists/list-2?categoryId=category-1',
+  ])
+})
+
 test('prints the filtered price list without downloading it', async ({ page }) => {
   await mockApi(page)
   let requested = ''

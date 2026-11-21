@@ -330,6 +330,11 @@ período seleccionado, con un enlace al historial.
   filtro de estado y el botón para plegar. Con varias listas se aplican las
   preferencias guardadas. La tarjeta muestra «N sin revisar» (`.price-list-pending`)
   cuando hay precios pendientes.
+- «Descargar todas las listas» queda en el encabezado, junto a «+ Nueva lista»,
+  y genera un único PDF con todas las listas activas. «Descargar [nombre]» está
+  debajo de las tarjetas (también disponible al plegarlas) y exporta la lista
+  seleccionada completa. La tabla ofrece «Imprimir lista» y, si se aplica una
+  búsqueda, categoría o marca, «Descargar PDF filtrado».
 - En una lista que no es la General, la tabla agrega «Estado» con `Badge`:
   «Sin revisar» (`strong`), «Sin cambios» (`soft`, revisado y sigue a la General) y
   «Precio propio» (`muted`). El encabezado ofrece el filtro «Estado» (Todos, Sin
@@ -1118,7 +1123,8 @@ o `ConfirmationDialog`.
 
 [`DocumentActions`](../../frontend/src/shared/components/DocumentActions.tsx) recibe
 `path` (endpoint PDF autenticado), `filename`, `printLabel`, `downloadLabel`,
-`disabled` y `onDone`. `printLabel` es opcional. Muestra los botones secundarios en `.document-actions`
+`disabled` y `onDone`. Cada etiqueta habilita su acción y se puede omitir.
+Muestra los botones secundarios en `.document-actions`
 (flex con wrap, gap `8px`): imprimir llama a `apiPrintPdf`, que carga el PDF en un
 iframe oculto y abre el diálogo de impresión sin descargar el archivo; en
 dispositivos táctiles (`pointer: coarse`) abre una pestaña en el mismo clic y
