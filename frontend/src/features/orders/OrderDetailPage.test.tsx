@@ -62,11 +62,13 @@ describe('OrderDetailPage', () => {
   afterEach(() => { cleanup(); sessionStorage.clear() })
   beforeEach(() => { vi.restoreAllMocks() })
 
-  it('uses the customer as the main heading and keeps the order number underneath', async () => {
+  it('shows the order number and status under the customer heading', async () => {
     vi.spyOn(global, 'fetch').mockImplementation(() => response(detail))
     renderPage()
     expect(await screen.findByRole('heading', { level: 1, name: 'Almacén Norte' })).toBeInTheDocument()
-    expect(document.querySelector('.order-customer-header p')).toHaveTextContent('Pedido 000100004')
+    const metadata = document.querySelector('.order-customer-header p')
+    expect(metadata).toHaveTextContent('Pedido 000100004')
+    expect(metadata).toHaveTextContent('Estado del pedido: Confirmado')
     expect(screen.queryByRole('heading', { name: '000100004' })).not.toBeInTheDocument()
   })
 
@@ -120,18 +122,52 @@ describe('OrderDetailPage', () => {
     if (deliveryAttempts.length > 1) expect(panel.getByText('Entregada')).toBeInTheDocument()
   })
 
-  it('renders order and sale snapshots, payments and account ledger totals', async () => {
+  it('renders items, payments and order totals without a separate account panel', async () => {
     vi.spyOn(global, 'fetch').mockImplementation(() => response(detail))
     renderPage(['ORDER_CREATE'])
 
     expect(await screen.findByRole('heading', { name: 'Almacén Norte', level: 1 })).toBeInTheDocument()
-    expect(screen.getAllByText('Almacén Norte')).toHaveLength(2)
+    expect(screen.getByText('Almacén Norte')).toBeInTheDocument()
     expect(screen.getByText('Harina')).toBeInTheDocument()
-    expect(screen.getByText(/VEN-001/)).toBeInTheDocument()
+    expect(screen.queryByText('Total de la venta')).not.toBeInTheDocument()
+    expect(screen.queryByText('Saldo de la venta')).not.toBeInTheDocument()
     expect(screen.getByText('MAYORISTA')).toBeInTheDocument()
     expect(screen.getByText('Efectivo')).toBeInTheDocument()
-    expect(screen.getByText('Saldo total del cliente')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Cuenta corriente' })).not.toBeInTheDocument()
+    const totals = within(screen.getByRole('heading', { name: 'Detalle del pedido' }).closest('section')!)
+    expect(totals.getByText('Descuento general').nextElementSibling).toHaveTextContent('0%')
+    expect(totals.queryByText('Saldo anterior de cuenta corriente')).not.toBeInTheDocument()
+    expect(totals.getByText('Total', { exact: true }).nextElementSibling).toHaveTextContent('$ 300,00')
     expect(screen.queryByRole('button', { name: /editar pedido/i })).not.toBeInTheDocument()
+  })
+
+  it.each([881.25, undefined])('shows combined discounts and the included balance with collection total %s', async (collectionTotal) => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => response({
+      ...detail,
+      order: { ...detail.order, subtotal: 1000, orderDiscountPercent: 5.5, discount: 244, total: 756, previousBalanceAmount: 125.25, collectionTotal },
+      items: [{ ...detail.items[0], quantity: 2, unitPrice: 500, lineDiscountPercent: 20, lineTotal: 800 }],
+    }))
+    renderPage(['ORDER_CREATE'])
+
+    const heading = await screen.findByRole('heading', { name: 'Detalle del pedido' })
+    const totals = within(heading.closest('section')!)
+    expect(totals.getByText('Subtotal').nextElementSibling).toHaveTextContent('$ 1.000,00')
+    expect(totals.getByText('Descuento general').nextElementSibling).toHaveTextContent('5,5%')
+    expect(totals.getByText('Descuento total').nextElementSibling).toHaveTextContent('-$ 244,00')
+    expect(totals.getByText('Saldo anterior de cuenta corriente').nextElementSibling).toHaveTextContent('$ 125,25')
+    expect(totals.getByText('Total a cobrar').nextElementSibling).toHaveTextContent('$ 881,25')
+    expect(screen.queryByRole('heading', { name: 'Cuenta corriente' })).not.toBeInTheDocument()
+  })
+
+  it('identifies the reseller that owes the order in the order totals panel', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => response({
+      ...detail,
+      order: { ...detail.order, accountCustomerId: 'reseller-1', accountCustomer: 'Distribuidora Sur' },
+    }))
+    renderPage(['ORDER_CREATE'])
+
+    const heading = await screen.findByRole('heading', { name: 'Detalle del pedido' })
+    expect(within(heading.closest('section')!).getByText('Titular de la deuda: Distribuidora Sur (revendedor)')).toBeVisible()
   })
 
   it('edits a confirmed order only for admins and sends line snapshots to the edit endpoint', async () => {

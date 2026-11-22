@@ -232,7 +232,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   también protege búsqueda, opciones, conteos y acceso directo por ID o número.
 - `.page-content`: ancho máximo `1440px`, centrado y padding desktop `38px`.
 - Usar [`PageHeader`](../../frontend/src/shared/components/PageHeader.tsx):
-  `eyebrow` y `title` obligatorios; `description` y `actions` opcionales.
+  `eyebrow` y `title` obligatorios; `description` (texto o contenido en línea)
+  y `actions` opcionales.
   Las acciones se agrupan automáticamente en `.page-actions`.
 - Usar [`Panel`](../../frontend/src/shared/components/Panel.tsx): `title`,
   `description` y `action` opcionales, más `children`. Genera un `section.panel`
@@ -478,7 +479,7 @@ gestiona la administración: las acciones requieren `ADMIN_ALL` y
   cuenta del revendedor y explica que el remito no incluye saldo anterior; sin
   `ADMIN_ALL` se reemplaza el cobro al confirmar por el aviso «Los cobros de cuentas
   de revendedor los registra un administrador.». El detalle del pedido agrega
-  «Titular de la deuda» al panel de cuenta corriente.
+  «Titular de la deuda» al encabezado de «Detalle del pedido».
 - **Ventas y Pagos.** Las filas de Ventas muestran «Cuenta: {revendedor}» bajo el
   cliente cuando difieren; con `accountCustomerId` en la URL, un `.helper-text`
   con `role="status"` identifica la cuenta y ofrece «Quitar filtro de cuenta». El
@@ -663,7 +664,9 @@ y ventas confirmados, con una misma lista entre sus líneas.
 
 El detalle del pedido y el resultado de confirmación usan el nombre del cliente
 como `h1` de `PageHeader`. Debajo muestran «Pedido» y su número con la fuente
-secundaria de `13px`; el detalle también muestra la fecha. La variante local
+secundaria de `13px`. El detalle agrega la fecha y el `Badge` del estado general
+(Confirmado, Entregado o Cancelado) en esa franja, con salto de línea si falta
+espacio. La variante local
 `.order-customer-header` permite partir nombres largos sin desbordar en móvil,
 sin cambiar encabezados de otras pantallas. El número concatena el número completo
 del cliente, con un mínimo de cuatro dígitos, y cinco del correlativo por cliente
@@ -671,6 +674,11 @@ del cliente, con un mínimo de cuatro dígitos, y cinco del correlativo por clie
 La ficha incluye el dato «N.º de cliente». Contrato en
 [`order-numbering.md`](../api/order-numbering.md).
 
+
+«Detalle del pedido» se ubica junto a «Pagos registrados» en escritorio. Muestra
+el subtotal, el porcentaje general por separado y el descuento total guardado
+de productos más general. Si el pedido incluye un importe de la cuenta corriente,
+lo muestra en «Saldo anterior de cuenta corriente» y lo suma al «Total a cobrar».
 
 Filtros adicionales del listado: «Cobro» (Todos / Pagados sin entregar) para todos
 los usuarios y «Cargado por» (Todos / Administrador / Vendedor) solo para

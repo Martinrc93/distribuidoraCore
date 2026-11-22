@@ -464,9 +464,6 @@
   .confirmation-result { @apply grid grid-cols-[1fr_auto] gap-[10px_24px] [margin:0_0_20px] text-[13px]; }
   .confirmation-result dt { @apply text-muted; }
   .confirmation-result dd { @apply m-[0] text-ink font-bold text-right; }
-  .account-ledger { @apply grid grid-cols-[1fr_auto] gap-[10px_16px] m-[0] text-[12px]; }
-  .account-ledger dt { @apply text-muted; }
-  .account-ledger dd { @apply m-[0] text-ink font-bold text-right; }
   .warning-text { @apply p-[12px] [border-left:3px_solid_var(--copper)] bg-[var(--detail-warning-bg,#faf4eb)] text-[var(--detail-warning-text,#79501e)] text-[12px] leading-[1.5]; }
   .roles-table .data-table td { @apply whitespace-normal [overflow-wrap:anywhere]; }
   .role-permissions-list { @apply m-0 pl-[18px] grid gap-[6px]; }

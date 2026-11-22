@@ -11,6 +11,7 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { OrderNavigator, readOrderNavigation } from './orderNavigation'
 import { Panel } from '../../shared/components/Panel'
+import { orderStatusLabel } from './orderStatus'
 import OrderLifecycleActions from './OrderLifecycleActions'
 import OrderForm from './OrderForm'
 import { OrderOperationalActions, OrderReviewBadge } from './OrderOperationalActions'
@@ -24,7 +25,6 @@ type OrderDetail = {
   sale: { id: string; number: string; status: string; total: number; paid: number; balance: number; previousDebtAvailable?: number; date: string }
   payments: Payment[]
   deliveryAttempts: DeliveryAttempt[]
-  account: { debit: number; credit: number; net: number }
 }
 type Row = Record<string, string>
 
@@ -53,12 +53,16 @@ export default function OrderDetailPage() {
   if (query.isLoading) return <><PageHeader eyebrow="Operación" title="Pedido" description="Consultando pedido, venta y cobros." /><Panel><EmptyState title="Cargando pedido" description="Consultando snapshots comerciales." /></Panel></>
   if (query.isError || !query.data) return <><PageHeader eyebrow="Operación" title="Pedido" description="No se pudo abrir el detalle." /><Panel><EmptyState title="No se pudo cargar el pedido" description={query.error?.message ?? 'Revisá el número o el acceso al pedido.'} action={<Button variant="secondary" href="/orders">Volver a pedidos</Button>} /></Panel></>
 
-  const { order, items, sale, payments, account, deliveryAttempts = [] } = query.data
+  const { order, items, sale, payments, deliveryAttempts = [] } = query.data
   const commonListId = items[0]?.priceListId
   const samePriceList = items.every((item) => item.priceListId === commonListId)
   const canEdit = hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && sale.status === 'CONFIRMED' && samePriceList
   // A reseller owes the orders of its customers: the account differs from the customer that receives the order.
   const resellerAccount = Boolean(order.accountCustomerId && order.accountCustomerId !== order.customerId)
+
+  const previousBalance = Number(order.previousBalanceAmount ?? 0)
+  const includesPreviousBalance = previousBalance > 0
+  const total = includesPreviousBalance ? order.collectionTotal ?? Number(order.total) + previousBalance : order.total
 
   if (editing && canEdit) return <OrderForm editOrder={query.data} onCancel={() => setEditing(false)} onSaved={async () => {
     await queryClient.invalidateQueries({ queryKey })
@@ -98,7 +102,14 @@ export default function OrderDetailPage() {
   ]
 
   return <>
-    <div className="order-customer-header"><PageHeader eyebrow="Operación" title={order.customer} description={`Pedido ${order.number} · ${date(order.date)}`} actions={<div className="page-actions"><Button variant="secondary" href={readOrderNavigation()?.returnTo ?? "/orders"}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} /></div>
+    <div className="order-customer-header">
+      <PageHeader eyebrow="Operación" title={order.customer} description={<span className="flex flex-wrap items-center gap-x-[8px] gap-y-[4px]">
+        <span>{`Pedido ${order.number} · ${date(order.date)}`}</span>
+        <Badge tone={order.status === 'DELIVERED' ? 'strong' : order.status === 'CANCELLED' ? 'muted' : 'soft'}>
+          <span className="sr-only">Estado del pedido: </span>{orderStatusLabel(order.status)}
+        </Badge>
+      </span>} actions={<div className="page-actions"><Button variant="secondary" href={readOrderNavigation()?.returnTo ?? "/orders"}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} />
+    </div>
     <OrderNavigator orderId={orderId} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     <Panel title="Preparación y revisión"><div id="order-operations" tabIndex={-1} className="page-actions">
@@ -110,12 +121,6 @@ export default function OrderDetailPage() {
       {order.preparedAt && <p className="helper-text">Preparado el {date(order.preparedAt)}.</p>}
       {order.reviewedAt && <p className="helper-text">Revisión administrativa confirmada el {date(order.reviewedAt)}.</p>}
     </Panel>
-    {Number(order.previousBalanceAmount ?? 0) > 0 && <Panel title="Importe para la entrega"><dl className="confirmation-result"><dt>Total del pedido</dt><dd><CurrencyText>{money(order.total)}</CurrencyText></dd><dt>Saldo anterior incluido</dt><dd><CurrencyText>{money(order.previousBalanceAmount)}</CurrencyText></dd><dt>Total a cobrar</dt><dd><CurrencyText>{money(order.collectionTotal ?? order.total + Number(order.previousBalanceAmount))}</CurrencyText></dd></dl></Panel>}
-    <div className="stats-grid compact">
-      <article className="stat-card"><span>Estado del pedido</span><strong><Badge tone="soft">{order.status}</Badge></strong><small className="[overflow-wrap:anywhere]">{order.customer}</small></article>
-      <article className="stat-card"><span>Total de la venta</span><strong><CurrencyText>{money(sale.total)}</CurrencyText></strong><small>Venta {sale.number}</small></article>
-      <article className="stat-card"><span>Saldo de la venta</span><strong><CurrencyText>{money(sale.balance)}</CurrencyText></strong><small><CurrencyText>{money(sale.paid)}</CurrencyText> cobrados</small></article>
-    </div>
     <>
       <Panel title="Productos del pedido"><DataTable columns={itemColumns} rows={itemRows} /></Panel>
       {deliveryAttempts.some((attempt) => attempt.result === 'FAILED') && <Panel title="Intentos de entrega">
@@ -129,11 +134,19 @@ export default function OrderDetailPage() {
           rows={deliveryAttempts.map((attempt) => ({ id: attempt.id, attempt: String(attempt.attemptNumber), result: attempt.result, date: date(attempt.attemptedAt), observation: attempt.observation || '—' }))}
         />
       </Panel>}
-      <div className="content-grid two-thirds">
+      <div className="content-grid two-thirds items-start">
         <Panel title="Pagos registrados">{paymentRows.length ? <DataTable columns={paymentColumns} rows={paymentRows} /> : <EmptyState title="Todavía no hay pagos" description={resellerAccount ? `El saldo permanece en la cuenta corriente de ${order.accountCustomer}.` : 'El saldo permanece en la cuenta corriente del cliente.'} />}</Panel>
-        <Panel title="Cuenta corriente"><dl className="account-ledger">{resellerAccount && <><dt>Titular de la deuda</dt><dd className="[overflow-wrap:anywhere]">{order.accountCustomer} (revendedor)</dd></>}<dt>Débitos de esta venta</dt><dd><CurrencyText>{money(account.debit)}</CurrencyText></dd><dt>Créditos aplicados</dt><dd><CurrencyText>{money(account.credit)}</CurrencyText></dd><dt>Saldo pendiente</dt><dd><CurrencyText>{money(account.net)}</CurrencyText></dd><dt>{resellerAccount ? 'Saldo total de la cuenta' : 'Saldo total del cliente'}</dt><dd><CurrencyText>{money(order.customerBalance)}</CurrencyText></dd></dl></Panel>
+        <Panel title="Detalle del pedido" description={resellerAccount ? `Titular de la deuda: ${order.accountCustomer} (revendedor)` : undefined}>
+          <dl className="order-totals m-0 max-w-none">
+            <dt>Subtotal</dt><dd><CurrencyText>{money(order.subtotal)}</CurrencyText></dd>
+            <dt>Descuento general</dt><dd>{Number(order.orderDiscountPercent ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}%</dd>
+            <dt>Descuento total</dt><dd><CurrencyText>{money(order.discount ? -order.discount : 0)}</CurrencyText></dd>
+            {includesPreviousBalance && <><dt>Saldo anterior de cuenta corriente</dt><dd><CurrencyText>{money(previousBalance)}</CurrencyText></dd></>}
+            <dt className="total-label">{includesPreviousBalance ? 'Total a cobrar' : 'Total'}</dt>
+            <dd className="total-value"><CurrencyText>{money(total)}</CurrencyText></dd>
+          </dl>
+        </Panel>
       </div>
-      <Panel title="Resumen"><dl className="order-totals"><dt>Subtotal</dt><dd><CurrencyText>{money(order.subtotal)}</CurrencyText></dd><dt>Descuentos</dt><dd><CurrencyText>{money(order.discount)}</CurrencyText></dd><dt className="total-label">Total</dt><dd className="total-value"><CurrencyText>{money(order.total)}</CurrencyText></dd></dl><p className="helper-text">Lista(s) usada(s): {Array.from(new Set(items.map((item) => item.priceListCode))).join(', ') || '—'}</p></Panel>
       <OrderLifecycleActions orderId={order.id} orderNumber={order.number} orderStatus={order.status} saleBalance={sale.balance} previousDebtAvailable={sale.previousDebtAvailable} accountKind={order.accountKind} onChanged={() => { void query.refetch() }} />
     </>
   </>
