@@ -33,6 +33,17 @@ public final class PdfFormat {
         return value == null ? "" : DATE.format(value);
     }
 
+    public static String number(BigDecimal value) {
+        DecimalFormat format = new DecimalFormat("#,##0.####",
+            DecimalFormatSymbols.getInstance(Locale.forLanguageTag("es-AR")));
+        format.setMaximumFractionDigits(Math.max(0, value.scale()));
+        return format.format(value);
+    }
+
+    public static String discount(BigDecimal value) {
+        return value.signum() > 0 ? "-" + money(value) : money(value.negate());
+    }
+
     public static PdfPCell cell(String text, Font font, int alignment) {
         PdfPCell cell = new PdfPCell(new Phrase(text == null ? "" : text, font));
         cell.setHorizontalAlignment(alignment);

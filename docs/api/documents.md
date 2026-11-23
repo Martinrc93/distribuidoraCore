@@ -11,6 +11,21 @@ descarga, con el componente compartido `DocumentActions`.
   `ORDER_DOCUMENT_EXPORT` o `ADMIN_ALL`, con el alcance del vendedor. Ver
   [permisos comerciales](commerce-permissions.md) para la actualización desde ORDER_CREATE.
 
+El encabezado del A4 y del ticket usa el nombre, la dirección y el teléfono vigentes en
+Configuración comercial → Datos del comercio. Los campos vacíos se omiten.
+`GET` y `PUT /api/settings/business-profile` requieren `ADMIN_ALL` y devuelven
+`name`, `address` y `phone`. Ambos muestran el vendedor asignado al pedido
+y la fecha de Buenos Aires en formato `dd/MM/aaaa`, sin hora.
+
+Cada producto muestra la cantidad por precio unitario y el importe a la derecha.
+Si tiene descuento, muestra el porcentaje, el importe descontado y el «Importe
+C/Desc». El resumen muestra la suma de cantidades, el subtotal bruto y los
+descuentos por producto. Debajo de «Descuentos» aparece el descuento general si
+corresponde. «Pagado» y «Pendiente» aparecen cuando hay un pago registrado.
+Los importes usan formato argentino con dos decimales. El A4 organiza los
+productos en columnas y repite sus encabezados en cada página. El ticket
+ajusta el alto del papel al contenido.
+
 ## Lista de precios
 
 `GET /api/documents/price-lists/{listId}?categoryId=&brandId=&search=`

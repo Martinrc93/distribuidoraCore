@@ -1,7 +1,7 @@
 # Guía de estilos y patrones de interfaz
 
 Referencia obligatoria para crear, modificar o revisar interfaces del proyecto.
-Revisada contra el código actual el **2026-10-01**.
+Revisada contra el código actual el **2026-11-20**.
 
 ## Uso y mantenimiento
 
@@ -135,7 +135,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   y admite Enter/Espacio. No cambia los permisos ni la navegación.
 - El tema inicial es claro. La preferencia se guarda por navegador en
   `localStorage` (`distribuidora.theme`), se restaura antes de pintar y se sincroniza
-  entre pestañas. No es una configuración del usuario en el servidor. Si el
+  entre pestañas. También está disponible en Ingresar y Activar cuenta.
+  No es una configuración del usuario en el servidor. Si el
   almacenamiento está bloqueado, el cambio funciona durante la sesión actual.
 - `data-theme` en `html` y `color-scheme` controlan la paleta y los controles
   nativos. La preferencia también se aplica al login y a los diálogos en portales.
@@ -154,15 +155,30 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   visible y Enter/Espacio; hasta `460px` muestra solo el icono «AA».
 - La preferencia se guarda por navegador en `localStorage`
   (`distribuidora.text-size`), se restaura antes de pintar y se sincroniza entre
-  pestañas, igual que el tema. El valor por defecto es normal.
+  pestañas, igual que el tema. El control también aparece en las pantallas públicas.
+  El valor por defecto es normal.
 - Con `data-text-size="large"` en `html` se aplica `zoom: 1.125` a `.page-content`,
-  al contenido de los `<dialog>` y a los hijos de `.modal-backdrop`. No se aplica a
+  al panel de autenticación y al contenido de los `<dialog>` y a los hijos de `.modal-backdrop`. No se aplica a
   la raíz: allí `zoom` agrandaría las alturas `100dvh` de los modales y los sacaría
   del viewport. La navegación lateral y la barra superior conservan su tamaño.
 - Los tamaños del resto de la guía siguen siendo los valores base exactos; no
   convertirlos a `rem` ni duplicar estilos por tamaño. En texto grande las tablas
   anchas pueden activar su scroll horizontal interno antes; la página no debe
   desbordar horizontalmente (verificado en Stock y Listas de precios a 390 y 1280 px).
+
+### Atajos de teclado de Operación
+
+- Administración → Configuración muestra el panel «Atajos de teclado» con las
+  siete secciones de Operación. Reutiliza `.form-grid`, `.field`, `.input` y
+  `Button`. La grilla pasa a una columna hasta `760px`.
+- Cada campo captura Ctrl, Alt o Meta con una letra o un número y admite Mayús
+  como modificador adicional. Al asignar o quitar se guarda de inmediato por
+  cuenta y por instancia en el navegador. Una combinación ocupada muestra el
+  destino que la tiene y conserva la asignación anterior.
+- El menú muestra cada combinación asignada con `kbd` y `aria-keyshortcuts`.
+  El atajo abre la misma ruta que el enlace, respeta sus permisos y lleva el
+  foco al contenido principal. Se suspende mientras hay un diálogo abierto o
+  el foco está en un control de edición.
 
 ### Selector de instancias de desarrollo
 
@@ -208,6 +224,9 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Escape, clic en el fondo o selección de un enlace cierran el menú, también
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
+- La sesión activa muestra el correo del usuario cuando está disponible en su
+  token. En escritorio también aparece en la barra superior. Con el menú
+  compacto se consulta en el pie del menú.
 - Las rutas de Resumen, Dashboard, Stock (`/products`), Marcas
   y categorías, Listas de precios, Proveedores, Compras (`/supplier-orders`, listado y
   detalle), Usuarios, Roles, Vendedores, Zonas, Configuración y Auditoría usan `RequireAdmin` en
@@ -237,7 +256,9 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Las acciones se agrupan automáticamente en `.page-actions`.
 - Usar [`Panel`](../../frontend/src/shared/components/Panel.tsx): `title`,
   `description` y `action` opcionales, más `children`. Genera un `section.panel`
-  y un `.panel-header` cuando corresponde.
+  y un `.panel-header` cuando corresponde. Las acciones directas conservan su
+  texto en una línea. Si el título y la acción no caben juntos, la acción pasa
+  debajo.
 - `.content-grid` agrupa secciones con `20px` de separación;
   `.content-grid.two-thirds` distribuye contenido principal y secundario.
 - Usar [`StatCard`](../../frontend/src/shared/components/StatCard.tsx) con
@@ -252,8 +273,10 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   alineado con los campos; el conjunto se adapta al ancho disponible y solo
   separa el botón en una segunda fila si no entra junto a las fechas.
   Fechas inválidas o invertidas bloquean la consulta y ocultan los resultados.
-  Los cinco `StatCard` usan `.stats-grid.compact`: tres columnas en escritorio,
-  dos a `760px` o menos y una a `460px` o menos. Debajo, `DataTable` presenta las
+  Las dos tarjetas de pedidos se agrupan bajo «Pedidos». Las cinco de
+  facturación y cobros usan `.stats-grid.compact` en tres columnas en escritorio
+  y dos a `760px` o menos. Ambos grupos pasan a una columna a `460px` o menos.
+  Debajo, `DataTable` presenta las
   mismas métricas por vendedor y separa «Pagado en efectivo» y «Pagado en
   transferencia» en columnas; a `640px` se adapta a tarjetas etiquetadas.
   Los encabezados de esta tabla admiten varias líneas para conservar visible
@@ -293,7 +316,9 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   indican explícitamente su situación actual. No se muestran porcentajes con
   base anterior cero. Errores de fechas bloquean la consulta.
 - El gráfico SVG tiene descripción accesible y una tabla de datos expandible
-  mediante teclado. Los rankings reutilizan la transformación de tablas en
+  mediante teclado. El eje vertical marca máximo, mitad y cero. Cada día con
+  ventas tiene un marcador con su fecha completa y su importe.
+  Los rankings reutilizan la transformación de tablas en
   tarjetas hasta `640px`. La grilla local de paneles pasa de dos columnas a una
   hasta `760px`; los filtros se apilan hasta `640px`. Estas utilidades son
   específicas de Dashboard y no cambian los patrones globales.
@@ -311,7 +336,16 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 ### Gastos
 
 «Gastos» aparece debajo de «Clientes» en Operación, con acceso exclusivo de
-`ADMIN_ALL`. El historial usa `DataTable` con paginación y tarjetas hasta `640px`.
+`ADMIN_ALL`. El historial usa `DataTable` con 50 gastos por página y tarjetas
+hasta `640px`. Al entrar, «Desde» y «Hasta» muestran el día actual de Argentina.
+El tipo y las fechas de carga «Desde» y «Hasta» se combinan antes de paginar y se
+conservan en la URL. Cada cambio vuelve a la primera página. Las fechas reutilizan
+el calendario compartido, admiten límites abiertos y se muestran en dos columnas
+hasta `640px`. «Limpiar filtros» vuelve al historial completo. Los tipos aparecen
+como Caja chica, Combustible, Servicios y Otros en el filtro y en el formulario.
+Un clic en la fila o la acción «Ver detalle» abre un `FormModal` compacto con el
+tipo, la fecha, el importe y la observación completa. «Cerrar» y Escape devuelven
+el foco a la acción de la fila.
 «Nuevo gasto» abre un `FormModal` compacto con importe, tipo y observación
 opcional. El diálogo conserva el borrador ante errores y confirma el descarte
 de cambios. El Dashboard muestra el total y los últimos cinco gastos del
@@ -358,7 +392,7 @@ período seleccionado, con un enlace al historial.
   cambios sin guardar pide confirmar el descarte.
 - La tabla principal y la de historial muestran encabezados de `12px` con
   capitalización de frase, padding vertical de `13px` e importes alineados a la
-  derecha. «Ver historial» abre un `FormModal` de hasta `1040px` con el producto
+  derecha. «Vigente desde» usa `dd/mm/aaaa` en ambas tablas y al cancelar una vigencia. «Ver historial» abre un `FormModal` de hasta `1040px` con el producto
   y la lista en el encabezado fijo. El diálogo mantiene la paginación, permite
   reintentar la carga y usa tarjetas con etiquetas a `640px` o menos. «Cerrar» y
   Escape devuelven el foco a «Ver historial». Los administradores pueden cancelar
@@ -382,7 +416,11 @@ El listado autoriza cada acción por separado mediante su permiso o ADMIN_ALL:
 «Ver cliente» (CUSTOMER_VIEW), alta (CUSTOMER_CREATE), edición (CUSTOMER_EDIT),
 estado (CUSTOMER_STATUS_CHANGE), lista predeterminada (CUSTOMER_PRICE_LIST_CHANGE),
 cobro (ACCOUNT_SETTLE) y documentos (CUSTOMER_STATEMENT_EXPORT). Las acciones de
-fila usan `.table-row-actions`. «Ver cliente» abre
+fila muestran «Ver cliente», «Registrar pago» y «Editar» según los permisos.
+Cambio de lista, revendedor, estado y documentos quedan en «Más acciones».
+Los documentos se agrupan con un separador y «Desactivar cliente» usa el color
+de peligro. Imprimir y descargar muestran el progreso y los errores en el menú.
+El saldo muestra dos decimales. «Ver cliente» abre
 `/customers/{customerId}` como página con `PageHeader`, `Panel` y `StatCard`:
 datos de contacto, vendedor, lista, estado, fecha de alta y saldo actual. La
 tarjeta de saldo se alinea arriba sin estirarse a la altura de los datos.
@@ -449,9 +487,8 @@ sus clientes asociados; el pedido sigue a nombre del cliente que lo recibe. Lo
 gestiona la administración: las acciones requieren `ADMIN_ALL` y
 `RESELLER_MANAGE`.
 
-- **Listado de Clientes.** El nombre del revendedor lleva un `Badge` «Revendedor»
-  (tono `soft`). Un cliente asociado agrega debajo del nombre el texto secundario
-  «Cuenta: {revendedor}» (`11px`, `text-muted`). El
+- **Listado de Clientes.** La columna «Cliente» muestra solo el nombre, sin el
+  `Badge` «Revendedor» ni el texto secundario «Cuenta: {revendedor}». El
   filtro «Buscar por revendedor» es un `CustomerSelect` en modo `filter` con
   `emptyLabel` «Todos los revendedores», visible para administradores y con
   opciones cargadas por todas las páginas (`kind=RESELLER`). «Registrar pago» no
@@ -467,8 +504,7 @@ gestiona la administración: las acciones requieren `ADMIN_ALL` y
   explicación enumera los pasos que faltan). Al cambiar el revendedor, un `.warning-text` lista
   los pedidos sin entregar que conservan su cuenta. Escape y Cancelar usan
   `useDiscardChanges`; un `409` muestra el detalle de la API dentro del diálogo.
-  Se usa una única acción para no ensanchar la fila: la tabla de administradores
-  ya desplaza dentro de `.table-wrap` en escritorio.
+  La acción comparte el desplegable con los demás controles secundarios de la fila.
 - **Ficha.** El revendedor muestra el `Badge` junto al estado, «Tipo de cliente»
   con la cantidad de clientes asociados, el panel «Clientes asociados» (`DataTable`
   con paginación propia `clientsPage`) y la acción «Ver deuda de la cuenta», que
@@ -480,8 +516,12 @@ gestiona la administración: las acciones requieren `ADMIN_ALL` y
   `ADMIN_ALL` se reemplaza el cobro al confirmar por el aviso «Los cobros de cuentas
   de revendedor los registra un administrador.». El detalle del pedido agrega
   «Titular de la deuda» al encabezado de «Detalle del pedido».
-- **Ventas y Pagos.** Las filas de Ventas muestran «Cuenta: {revendedor}» bajo el
-  cliente cuando difieren; con `accountCustomerId` en la URL, un `.helper-text`
+- **Ventas y Pagos.** Las filas de Ventas muestran solo el cliente en «Cliente».
+  La columna «Vendedor / Revendedor» muestra el revendedor de la cuenta guardada
+  en la venta cuando difiere del cliente; en cuentas propias muestra el vendedor
+  del pedido, con fallback al vendedor del cliente y «Sin asignar» si falta.
+  Hasta `640px` conserva su etiqueta en las tarjetas compartidas.
+  Con `accountCustomerId` en la URL, un `.helper-text`
   con `role="status"` identifica la cuenta y ofrece «Quitar filtro de cuenta». El
   detalle de una venta de revendedor reemplaza el formulario de devolución por
   un texto. En Pagos, cada deuda de la cuenta nombra al cliente final.
@@ -496,13 +536,15 @@ sin fechas incluyen todo el historial. «Todas las fechas» limpia solo el rango
 Fechas inválidas o invertidas bloquean la consulta y ocultan datos anteriores.
 La tabla presenta número, proveedor, fecha, total estimado y enlace al detalle;
 hasta `640px` usa las tarjetas compartidas. Al volver del detalle conserva filtros.
-La columna «Estado» usa `Badge`: «Confirmada» (`strong`), «Borrador» (`soft`),
-«Anulada» e «Histórica» (`muted`). El alta ofrece «Guardar borrador» (secundario) y
-«Confirmar compra» (principal; suma al stock). El detalle muestra el estado con una
+La columna «Estado» usa `Badge`: «Confirmada» (`strong`), «Pendiente» (`soft`),
+«Anulada» e «Histórica» (`muted`). El alta ofrece «Guardar compra» como acción
+principal y deja la compra pendiente. El detalle muestra el estado con una
 explicación de su efecto en el stock y las acciones «Confirmar compra» (solo
-borrador), «Editar compra» y «Anular compra» (`danger`), todas con
+para compras pendientes), «Editar compra» y «Anular compra» (`danger`), todas con
 `ConfirmationDialog` salvo editar, que reutiliza el formulario con una descripción
-según el estado. «Descargar PDF» se alinea a la izquierda junto a «Editar
+según el estado. Al confirmar, el diálogo identifica la compra, explica el ingreso
+de cantidades al stock y enfoca «Aceptar». Enter confirma y Escape cierra el
+diálogo antes de enviar la operación. «Descargar PDF» se alinea a la izquierda junto a «Editar
 compra». «Anular compra» se alinea al extremo derecho y pasa a la fila siguiente
 si falta espacio. El PDF A4 incluye proveedor, fecha y las columnas Producto y
 Cantidad. Las cantidades de compras no históricas deben ser múltiplos de 0,5.
@@ -524,7 +566,8 @@ precarga desde el catálogo al agregar, reponer o copiar productos. El importe
 ingresado se guarda en la compra. Si se deja vacío, la API usa el costo vigente
 del catálogo. El detalle de una compra guardada y su PDF muestran producto y
 cantidad por línea. Reutiliza `.form-grid` y
-`.product-picker`, que se apilan a `760px`. Al cancelar o guardar se vuelve al
+`.product-picker`, que se apilan a `760px`. La fecha y la cantidad quedan limitadas
+respectivamente a `200px` y `140px`. Al cancelar o guardar se vuelve al
 listado con sus filtros. Cancelar pide confirmación si hay cambios sin guardar.
 La fecha inicia en el día de Argentina. «Cargar compra anterior» consulta la
 última del ID exacto del proveedor y copia sus productos y cantidades. Requiere
@@ -532,14 +575,15 @@ confirmación para reemplazar productos y bloquea productos inactivos.
 Cancelar un borrador modificado pide confirmación. Durante guardado/carga se
 bloquean campos y acciones; errores conservan el borrador y el intento para
 reintentar. Proveedores y productos cargan todas sus páginas y ofrecen reintento.
-Guardar como borrador conserva el stock. Confirmar ingresa las cantidades.
+Guardar la compra conserva el stock. Confirmar desde el detalle ingresa las cantidades.
 El flujo no envía mensajes al proveedor. Contrato y alcance en
 [`supplier-orders.md`](../api/supplier-orders.md).
 
 En productos, «Proveedores (opcional)» permite agregar varios mediante
 `SupplierSelect`, sin repetir, y quitarlos individualmente. En Stock, el listado
-empieza con Producto, Marca y Categoría. En escritorio, el estado y las acciones
-comparten un renglón. Hasta `640px`, las acciones se acomodan en las tarjetas.
+empieza con Producto, Marca y Categoría. Estado y Acciones tienen columnas
+propias. «Más acciones» agrupa movimientos, mermas y reposición cuando corresponde.
+Hasta `640px`, los controles se acomodan en las tarjetas.
 Un producto se puede guardar sin asociaciones. Un error de carga de opciones
 no borra asociaciones existentes ni impide guardar campos ajenos al proveedor.
 Las filas de selección se adaptan al ancho y admiten nombres largos.
@@ -570,7 +614,16 @@ nativos, `variant` y `fullWidth`; `href` hace que renderice un enlace.
   un nombre accesible y los íconos decorativos `aria-hidden="true"`.
 - `.page-actions`: acciones generales con gap `8px` y wrap.
   `.table-row-actions`: acciones de fila alineadas a la derecha, gap `7px`,
-  botones `34px` de alto y texto `11px`.
+  botones de `34px` de alto y texto de `11px`. Cuando la fila tiene acciones
+  secundarias, [`SecondaryRowActions`](../../frontend/src/shared/components/SecondaryRowActions.tsx)
+  las muestra en un menú flotante de hasta `232px` alineado al extremo del botón.
+  La fila conserva sus dimensiones al abrirlo. Con poco espacio debajo, el menú
+  se abre arriba y permite desplazamiento interno cuando hace falta. Las
+  acciones se alinean a la izquierda y tienen una altura mínima de `44px` hasta
+  `640px`. El botón incluye el nombre de la fila y ofrece Enter y Espacio para
+  abrirlo. Tab recorre sus acciones. Escape lo cierra y devuelve el foco al
+  botón. Un clic fuera o la salida de foco también lo cierran. Al abrir un
+  diálogo desde el menú, el foco vuelve a «Más acciones» al cerrar el diálogo.
 - `Button` no combina el `className` recibido con sus clases internas: no pasar
   un `className` suponiendo que se conservará `.button`. Para ajustar un contexto,
   usar un contenedor con selector acotado o mejorar explícitamente el componente.
@@ -588,20 +641,40 @@ nativos, `variant` y `fullWidth`; `href` hace que renderice un enlace.
 
 ## Tablas, filtros y paginación
 
-La creación de pedidos usa un único `Panel` de ancho completo con los datos y
-productos. «Fecha del pedido» aparece a la derecha del encabezado en un campo
-de `160px`, con el día actual de Argentina por defecto, formato `dd/mm/aaaa`
-y el calendario compartido en español. A `760px` o menos ocupa todo el ancho
-debajo del título. Es obligatoria; una fecha inválida muestra un error asociado
-y bloquea la confirmación. Se conserva al cambiar de cliente o cargar un pedido
-anterior. La edición conserva la fecha registrada, sin ofrecer este campo.
-El cierre `.order-checkout` usa tres columnas sobre fondo blanco,
+«Nuevo pedido» muestra la ruta Operación / Pedidos y la acción «Cancelar».
+`.order-create-form` agrupa «Cliente y condiciones» y «Productos»
+en paneles consecutivos y alinea «Resumen del pedido» a su derecha cuando hay
+al menos `840px` de ancho disponible. En espacios más estrechos el resumen queda
+debajo del formulario. Usa los tokens de tema claro y oscuro.
+«Cliente», «Fecha del pedido», «Vendedor» y «Lista de precios» comparten una fila
+alineada a la izquierda, con `8px` entre campos y `4px` entre cada etiqueta y su control.
+A `760px` o menos se apilan. Los selectores ocupan hasta `35ch`,
+`20ch` y `30ch` de texto respectivamente, además de sus bordes, padding e iconos,
+y se reducen para caber en el espacio disponible. «Del cliente» indica que el
+pedido usa el vendedor asignado al cliente. La fecha conserva `10ch` de texto y espacio
+para el calendario. Las medidas son visuales y permiten seleccionar nombres
+completos. La fecha usa el día actual de Argentina por defecto, formato
+`dd/mm/aaaa` y el calendario compartido en
+español. Una fecha inválida muestra un error asociado y bloquea la confirmación.
+Se conserva al cambiar de cliente o cargar un pedido anterior. La edición conserva
+la fecha registrada y omite este campo.
+
+El resumen de creación incluye subtotal, descuento general con sufijo `%` según
+permisos, total y acciones de ancho completo. En creación y edición, al tocar o
+enfocar el descuento se selecciona el valor completo. Las flechas a la izquierda
+del campo y las teclas ↑ y ↓ suman o restan un punto porcentual, con límites de
+`0` y `100` y entrada manual con coma decimal. «Guardar borrador»
+conserva un pedido en este navegador por usuario y lo recupera al volver a
+«Nuevo pedido». Se elimina después de la confirmación exitosa. Cancelar descarta
+las modificaciones posteriores al guardado si el usuario lo confirma.
+
+En edición, el cierre `.order-checkout` usa tres columnas sobre el panel,
 separadas de los productos por un borde superior: descuento general compacto
 de `96px` con sufijo `%`, desglose de subtotal/descuento de hasta `240px` y
 total con confirmación de hasta `340px`. Solo el bloque final usa fondo canvas,
 borde y padding `16px`; el total se destaca en `22px` y el botón de ancho
-completo queda debajo, con altura mínima `42px`. Sin permisos de administrador
-se muestran solo desglose y confirmación. El descuento admite coma decimal,
+completo queda debajo, con altura mínima `42px`. Con `ORDER_DISCOUNT` o `ADMIN_ALL`
+se muestra el campo de descuento. El descuento admite coma decimal,
 muestra errores asociados al campo para valores fuera de `0–100` y bloquea
 confirmación hasta corregirlos. A `1050px` se usan dos columnas, con descuento
 y desglose a la izquierda y total/confirmación a la derecha. A `760px` o menos se apilan los tres bloques,
@@ -611,7 +684,7 @@ Al elegir un cliente, su saldo aparece debajo de los productos en `.order-accoun
 con importe destacado, un campo «Importe para el remito» y acciones para agregar
 un importe parcial o el saldo completo. Sin saldo deudor se deshabilitan las
 acciones. El importe elegido aparece como una fila «Saldo anterior», sin cantidad
-ni descuento y con papelera para quitarlo. Los totales separan el pedido del
+ni descuento y con su propia acción para quitarlo. Los totales separan el pedido del
 saldo anterior y muestran «Total a cobrar». Cambiar cliente elimina la selección;
 actualizar el importe reemplaza la fila existente. En móvil, importe y acciones
 se apilan sin desbordar. El importe se guarda en el pedido para el futuro remito
@@ -627,8 +700,9 @@ su lista asignada o `GENERAL` si no tiene una, y se descarta la selección manua
 del cliente anterior. Se cargan todas las páginas de listas para poder mostrar
 la asignada. Una lista asignada no disponible se señala y requiere seleccionar
 una lista activa.
-La fila de cliente, vendedor y lista incluye «Cargar pedido anterior» a la derecha;
-en móvil se apila con ancho completo. El botón queda gris y deshabilitado sin
+«Cargar pedido anterior» aparece en el encabezado de «Cliente y condiciones» al
+crear y junto a la lista en edición. A `460px` o menos ocupa su propia fila de
+ancho completo en creación. El botón queda gris y deshabilitado sin
 cliente, durante la consulta o si no hay pedido previo. Carga el último pedido
 confirmado o entregado visible para el usuario, reemplazando los productos del
 borrador y conservando cantidades. Usa la lista y precios actuales. La carga
@@ -659,7 +733,7 @@ de lista descarta los precios anteriores y consulta los de la lista elegida.
 La acción principal es «Guardar cambios» y actualiza el pedido existente, sin
 crear otra venta ni modificar los cobros. Cancelar vuelve al detalle; si hubo
 cambios, utiliza la confirmación compartida de descarte. Conserva las mismas
-validaciones, tabla, totales y adaptación móvil de creación. Solo admite pedidos
+validaciones y cálculos de creación. Solo admite pedidos
 y ventas confirmados, con una misma lista entre sus líneas.
 
 El detalle del pedido y el resultado de confirmación usan el nombre del cliente
@@ -671,9 +745,11 @@ espacio. La variante local
 sin cambiar encabezados de otras pantallas. El número concatena el número completo
 del cliente, con un mínimo de cuatro dígitos, y cinco del correlativo por cliente
 (ejemplos `000100004` y `1000000001`).
+Desde V57, la venta usa ese mismo número visible en sus listados, detalles y
+comprobantes; las ventas existentes también se unifican. La búsqueda de ventas
+acepta el número compartido y los números anteriores conservados como alias.
 La ficha incluye el dato «N.º de cliente». Contrato en
 [`order-numbering.md`](../api/order-numbering.md).
-
 
 «Detalle del pedido» se ubica junto a «Pagos registrados» en escritorio. Muestra
 el subtotal, el porcentaje general por separado y el descuento total guardado
@@ -682,8 +758,9 @@ lo muestra en «Saldo anterior de cuenta corriente» y lo suma al «Total a cobr
 
 Filtros adicionales del listado: «Cobro» (Todos / Pagados sin entregar) para todos
 los usuarios y «Cargado por» (Todos / Administrador / Vendedor) solo para
-administradores, guardados en la URL (`paid`, `createdBy`). Los administradores ven
-la columna «Cargado por» (Administrador, Vendedor o «—» si no hay dato). Un pedido
+administradores, guardados en la URL (`paid`, `createdBy`). La celda «Fecha» muestra
+solo la fecha, sin atribución «Cargado por» ni distintivo de revisión pendiente.
+«Todas las fechas» limpia el rango y conserva los demás filtros. Un pedido
 confirmado totalmente pagado muestra el badge «Pagado» junto al estado
 (`.order-status-badges`).
 
@@ -701,13 +778,33 @@ reinicia la página. La preparación usa `Badge` con texto español.
 `ConfirmationDialog` (`primary`), permite reintentar errores y bloquea cierre y
 doble envío durante guardado.
 
-La celda administrativa «Cargado por» conserva la atribución y agrega
-`OrderReviewBadge`: «Vendedor · Pendiente de revisión», con texto y color de
-advertencia mediante `.order-review-pending .badge` (variante local). Preparar o
-entregar no lo elimina; solo la revisión del administrador lo quita. Las tablas
-mantienen tarjetas hasta `640px` y las acciones usan el wrap compartido.
+`OrderReviewBadge`: «Vendedor · Pendiente de revisión» se conserva en el detalle
+y en Resumen, con texto y color de advertencia mediante
+`.order-review-pending .badge` (variante local); no aparece en las filas del listado. En
+escritorio (sobre `640px`), los encabezados de `.orders-list-table`, el número
+de pedido, la fecha y los badges de preparación y
+estado (`.badge`) permanecen en una línea sin cortar palabras ni números; los
+importes `.currency-value` conservan el mismo comportamiento en todas las
+`.compact-list-table`, mientras cliente y vendedor ajustan solo en límites de
+palabra. Preparar o entregar no elimina el distintivo de revisión; solo la
+revisión del administrador lo quita. Hasta `640px`, las tablas mantienen las
+tarjetas compartidas, `.order-review-pending .badge` permite salto de línea si
+falta ancho y las acciones usan el wrap compartido.
 
-El detalle presenta preparación, revisión y aviso para históricos cuyo stock ya
+El detalle de «Operaciones del pedido» alinea los estados a la izquierda y los
+botones a la derecha, con alineación vertical centrada y salto de fila cuando
+falta espacio. «Cancelar pedido» usa la variante `danger`. Las notas de
+preparación, revisión y stock histórico quedan debajo.
+El resultado de «Nuevo pedido» incluye «Enviar por WhatsApp» con el logo del
+canal y texto visible, junto a las acciones de consulta y descarga, para usuarios
+con `ORDER_NOTIFY` o `ADMIN_ALL`. Por ahora muestra un error accesible (`role="alert"`)
+indicando que el envío todavía no está implementado; no solicita ni registra envíos.
+Impresión, descargas y envío se agrupan bajo «Documentos del pedido», cerca del
+encabezado. «Enviar por email» y «Enviar por WhatsApp» abren un `FormModal`
+compacto con el contacto disponible y el formato del comprobante. Si falta el
+dato o su formato impide usarlo, el modal permite cargarlo. Con permiso de
+edición se puede guardar el dato en la ficha antes de solicitar el envío.
+También presenta un aviso para históricos cuyo stock ya
 estaba descontado. Resumen incorpora `PendingOrderReviews`, con contador y hasta
 cinco pendientes de todas las fechas, incluidos entregados, más enlace al listado
 completo. Tiene carga, vacío, error con reintento y revisión individual. Al revisar,
@@ -715,11 +812,16 @@ el foco vuelve al enlace estable; en Pedidos, a «Ver detalle» o búsqueda si s
 del filtro; en el detalle, al bloque de operaciones. No se bloquea el trabajo vendedor.
 
 En la carga de pedidos, elegir un producto con Enter pasa el foco a «Cantidad»
-(seleccionada); Enter en «Cantidad» o «Descuento» agrega la línea y vuelve al
-buscador de productos. En «Nuevo pedido», dos pulsaciones de Enter seguidas
-en «Producto» activan «Confirmar pedido» si el desplegable está cerrado, ya hay
-líneas agregadas y no hay un producto pendiente de agregar. El atajo usa las
-mismas validaciones que el botón. Con el desplegable abierto, Enter elige la opción.
+(seleccionada). Enter en «Cantidad», «Descuento» o «Agregar» agrega la línea y
+vuelve a «Producto». En «Nuevo pedido», después de agregar con el teclado se abre
+el desplegable con la búsqueda anterior y se pueden elegir los productos restantes.
+Escape lo cierra. Dos pulsaciones de Enter seguidas
+en «Producto» activan «Confirmar pedido» con el desplegable cerrado o abierto
+sin un producto marcado (sin opción activa o en «Seleccionar producto...»), si ya
+hay líneas agregadas y no hay un producto pendiente de agregar. El atajo usa las
+mismas validaciones que el botón. Con un producto marcado, Enter lo elige y
+reinicia el doble Enter. `SearchableSelect.onEmptyEnter` permite este atajo solo
+en el alta de pedidos; los demás selectores conservan su comportamiento.
 En el listado, `.table-row-actions` agrupa «Ver detalle», «Editar» y «Pasar a
 entregado». «Editar» aparece con `ORDER_EDIT` o `ADMIN_ALL` en pedidos confirmados.
 «Pasar a entregado» aparece en pedidos confirmados con `SALE_DELIVER` o
@@ -779,7 +881,9 @@ limitar el valor a cuatro caracteres; el descuento admite valores entre `0` y
 `100`. Producto, precio, cantidad, descuento y acción se alinean en una misma
 fila en escritorio. El selector de producto
 recibe el espacio restante de la fila y puede reducir su ancho sin desbordar
-la página. Los campos se apilan a `760px`.
+la página. En creación, cuando la columna principal mide hasta `660px` el selector ocupa
+una fila completa. A `760px` de viewport o menos, el selector y «Agregar» ocupan cada uno
+su fila y los campos numéricos se distribuyen en dos columnas. En edición se apilan.
 La acción de agregar espera la consulta de precio y permite reintentar errores.
 Durante la consulta, «Consultando…» aparece como placeholder dentro del campo,
 sin cambiar la alineación de la fila. La consulta de precio tiene un límite de
@@ -800,10 +904,11 @@ encabezados y muestra la ayuda para elegir un producto dentro de una celda que
 ocupa todas las columnas, sin reemplazar la tabla por un estado vacío externo.
 Producto, cantidad, precio unitario, descuento porcentual, subtotal y eliminación
 se muestran en una fila en escritorio. Cantidad y descuento conservan los campos
-compactos; solo `ORDER_DISCOUNT` o `ADMIN_ALL` permiten editar descuentos. La acción final es un
-botón `danger` de `38px` con una papelera de `16px` y nombre accesible «Quitar
-{producto}». A `640px` o menos se utiliza el patrón de tarjetas de la tabla
-compartida, con etiquetas visibles y la papelera al final.
+compactos; solo `ORDER_DISCOUNT` o `ADMIN_ALL` permiten editar descuentos. La acción
+final mide `38px` y mantiene el nombre accesible «Quitar {producto}». Usa una cruz
+en creación y una papelera en edición. El panel de creación muestra la cantidad de
+productos y unidades debajo de la tabla. A `640px` o menos se utiliza el patrón
+de tarjetas de la tabla compartida, con etiquetas visibles y la acción al final.
 
 Usar [`DataTable`](../../frontend/src/shared/components/DataTable.tsx).
 
@@ -840,7 +945,9 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
 - Cada celda recibe `data-label`: a `640px` o menos la tabla se transforma en
   tarjetas y utiliza ese atributo como etiqueta. Una tabla manual debe mantenerlo.
 - Agrupar búsqueda y filtros en `.toolbar`; input `.input.search-input` y
-  select `.select`, con labels visibles o nombres accesibles.
+  select `.select`, con labels visibles o nombres accesibles. Los buscadores
+  miden `240px` en escritorio y ocupan el ancho disponible a `640px` o menos.
+  Auditoría usa `260px` en escritorio para mostrar el placeholder completo.
 - En clientes, la búsqueda por nombre o identificación se combina con vendedor
   por ID mediante `SearchableSelect` (administradores), cuenta corriente «Solo
   con saldo» (saldo distinto de cero) y estado Activo/Inactivo/Todos. El estado
@@ -883,8 +990,10 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   `OrderDateFilter` conserva el texto numérico y abre `OrderCalendar` en español al
   hacer clic en el campo o su botón de calendario, o con `Enter`/`Alt+ArrowDown`.
   `.orders-date-control` posiciona el botón sobre el campo. El calendario utiliza
-  un `dialog` nativo anclado al campo y limitado al viewport, con meses y días
-  en español, semana desde el lunes y acciones Hoy/Limpiar/Cerrar. Conserva el
+  un `dialog` nativo anclado al campo y limitado al viewport. Se monta en `body`
+  para posicionarlo en coordenadas de la ventana y aplicar «Texto grande» una
+  sola vez a su contenido. Muestra meses y días en español, semana desde el
+  lunes y acciones Hoy/Limpiar/Cerrar. Conserva el
   foco dentro del diálogo y lo devuelve al disparador al cerrar; admite Escape,
   flechas, Home/End y PageUp/PageDown (con Shift cambia el año). La selección
   conserva `dd/mm/aaaa` y se aplica también en mobile.
@@ -943,7 +1052,10 @@ conserva el borrador para corregir el código; cancelar/Escape piden descarte.
 
 Usuarios carga el catálogo completo para crear/invitar o cambiar roles, con
 carga, error y reintento; no guarda sin catálogo disponible. El alta usa `FormModal`
-y pide nombre para los roles que requieren perfil de vendedor. `UserRoleDialog`
+compacto. El email ocupa su fila y los campos de rol y nombre reservan `20ch`
+más espacio para bordes, padding y flecha del selector. Estos anchos son visuales.
+A `760px` o menos los campos se apilan. El nombre es obligatorio para los roles
+que requieren perfil de vendedor. `UserRoleDialog`
 es compacto, deshabilita opciones incompatibles con el estado del perfil y
 confirma reemplazo y cierre de sesiones, conservando asignaciones e historial.
 Los errores permanecen dentro del diálogo. El cambio propio limpia sesión/caché
@@ -1152,11 +1264,13 @@ confirmación. Recibe `title`, `description`, `confirmLabel`, `onConfirm` y
 `onCancel`; opcionalmente `cancelLabel`, `pendingLabel`, `pending`, `error` y
 `confirmVariant` (`danger` por defecto; `primary` para confirmar una creación o un
 guardado, por ejemplo crear una lista con los precios de la General o el aviso de
-listas que la siguen).
+listas que la siguen), e `initialFocus` (`cancel` por defecto o `confirm`).
 Usa `<dialog>` con `showModal()` en un portal a `document.body`: contiene el foco,
 impide interacción con el fondo y queda sobre los formularios existentes. Tab y
 Shift+Tab recorren sus acciones de forma circular sin salir del diálogo. Enfoca
-la acción segura al abrir y devuelve el foco al disparador si sigue montado.
+la acción segura al abrir por defecto y devuelve el foco al disparador si sigue
+montado. Confirmar una compra pendiente usa `initialFocus="confirm"` para que
+Enter active «Aceptar» tras mostrar el efecto en stock.
 Escape conserva los datos. Mientras `pending` está activo, ambas acciones y
 Escape quedan bloqueados; los errores se muestran dentro con `role="alert"`.
 No cierra al pulsar el fondo.
@@ -1220,7 +1334,7 @@ líneas sin desbordar y la ayuda está asociada al campo de cantidad.
 ### Mermas
 
 Stock muestra «Registrar merma» en acciones de productos activos con
-`ADMIN_ALL` y `STOCK_SHRINKAGE`. Reutiliza `FormModal` compacto,
+`ADMIN_ALL` y `STOCK_SHRINKAGE`, dentro de «Más acciones». Reutiliza `FormModal` compacto,
 `.stock-adjustment-summary` y `.stock-adjustment-fields`. Cantidad perdida
 acepta múltiplos positivos de 0,5. El motivo es obligatorio. El stock estimado
 advierte cuando queda negativo. Escape y Cancelar protegen el borrador.
@@ -1259,12 +1373,15 @@ Las líneas usan `DataTable` y sus tarjetas compartidas hasta `640px`.
 
 ### Configuración de comisiones
 
-«Comisiones» se abre desde Configuración con `ADMIN_ALL`. La pantalla reutiliza
+`ADMIN_ALL` puede abrir «Planes y asignaciones» y «Liquidación de revendedores»
+desde el panel «Comisiones» de Configuración comercial. La pantalla de planes reutiliza
 `DataTable` para los planes, `FormModal` y `useDiscardChanges` para editarlos
 y dos paneles de asignación con el mismo formulario: «Asignación a vendedores»
 con `SellerSelect` y «Asignación a revendedores» con `CustomerSelect`, ambos en
 modo selección y con todas las páginas de opciones. Cada formulario tiene nombre
-accesible (el título del panel) y su propio selector de plan. Las reglas se agrupan con `fieldset` y usan la
+accesible (el título del panel) y su propio selector de plan, visible desde el
+inicio. El selector se deshabilita y explica qué falta si aún no se eligió un
+beneficiario o todavía no hay planes. Las reglas se agrupan con `fieldset` y usan la
 grilla habitual de campos, con una columna a `760px` o menos. La selección de
 marca, categoría y artículo reutiliza `SearchableSelect`.
 
@@ -1277,18 +1394,51 @@ al vendedor» o «al revendedor» abre `ConfirmationDialog` con el importe y el
 beneficiario elegidos. Si el saldo
 cambió, la pantalla actualiza el importe y pide revisar la nueva liquidación.
 
+### Catálogo y administración
+
+- El alta y la edición de marcas, categorías, proveedores, vendedores y zonas
+  usan `FormModal`. La desactivación de marcas y categorías, los cambios de
+  estado de vendedores, la eliminación de zonas y el bloqueo, desbloqueo o
+  revocación de sesiones usan `ConfirmationDialog`.
+- En «Nuevo vendedor», quienes tienen `ADMIN_ALL` y `RESELLER_MANAGE` pueden
+  elegir el tipo de perfil. «Vendedor» requiere vincular un usuario activo.
+  «Revendedor» solo pide el nombre y crea la ficha en Clientes.
+  «Perfiles comerciales» muestra vendedores y revendedores en la misma tabla,
+  con una columna «Tipo», búsqueda por nombre, filtro de estado y paginación
+  común. «Mostrar» permite limitar la tabla a un tipo. Al guardar un revendedor,
+  la búsqueda se completa con su nombre en «Todos los perfiles». Su acción
+  «Ver ficha» abre la cuenta en Clientes.
+- Las reasignaciones de vendedores usan el selector compartido con las opciones
+  de todas las páginas. La confirmación muestra la consecuencia, bloquea el
+  cierre durante el guardado y conserva la selección si la API devuelve un error.
+- Roles muestra los permisos en dos columnas desde `761px` y en una en espacios
+  más estrechos.
+- Configuración comercial usa la grilla `content-grid two-thirds` para Límite
+  de crédito y Comisiones. El límite indica su estado o si hay cambios sin guardar.
+  La casilla de activación y el importe se agrupan. El importe aparece cuando la
+  casilla está marcada.
+  «Guardar límite» conserva el ancho de su contenido.
+  «Datos del comercio» ocupa el ancho completo y reutiliza los campos del
+  formulario compartido. El nombre, la dirección y el teléfono se guardan juntos
+  y se usan al generar tickets de venta.
+- Auditoría muestra las operaciones y los resultados en español. Un identificador
+  largo se recorta visualmente. El valor completo aparece al pasar el puntero
+  o al desplegarlo con teclado o toque. La búsqueda acepta los códigos de
+  auditoría y las etiquetas traducidas completas.
+
 ### Variantes específicas por pantalla
 
 | Variante | Alcance y diferencia |
 | --- | --- |
 | `.modal-backdrop .panel` | Patrón básico de `520px`; no incluye por sí solo límite de altura ni las tres secciones |
-| `.product-movements-backdrop > .panel` | Movimientos del producto: ancho adaptable hasta `1100px` y altura limitada al viewport con scroll vertical. `.product-movements-table` muestra las cinco columnas sin scroll horizontal, con anchos proporcionales y texto completo adaptable, incluidas las referencias largas. Hasta `640px` conserva las tarjetas compartidas |
+| `.product-movements-dialog` | Movimientos del producto: ancho adaptable hasta `1100px` y altura limitada al viewport con scroll vertical. `.product-movements-table` muestra las cinco columnas sin scroll horizontal, con anchos proporcionales y texto completo adaptable, incluidas las referencias largas. Hasta `640px` conserva las tarjetas compartidas |
 | `.customer-modal` | Formulario de clientes de ancho adaptable hasta `1040px`, scroll interno y descarte mediante `ConfirmationDialog` |
 | `.price-status-dialog-*` | Confirmación de estado de listas: `480px`, radio `12px`, resumen del cambio, cierre y capa `35` |
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
 | `.price-list-pending`, `.price-products-table-follow` | Listas que siguen a la General: contador «N sin revisar» en la tarjeta (fondo de advertencia, `11px`) y tabla de cinco columnas con «Estado» (mínimo `880px`; en tarjetas hasta `640px`) |
 | `.price-lists-page .panel-header` | Hasta `640px` los controles del encabezado (filtros, confirmar pendientes) pasan a su propia fila |
-| `.sale-detail-backdrop > .panel` | Detalle de venta: hasta `1040px` sobre `760px`, padding `28px`, títulos de `20px` y tablas/datos de `14px`; hasta `760px` conserva el ancho y tipografía compactos. Altura limitada al viewport con scroll interno |
+| `.compact-list-table` | Clientes, pedidos, stock y auditoría permiten ajustar el texto de las celdas. Las acciones pueden pasar a otra línea dentro de la misma celda. Hasta `640px` conservan la disposición compartida de tarjetas |
+| `.sale-detail-dialog` | Detalle de venta: hasta `1040px` sobre `760px`, padding `28px`, títulos de `20px` y tablas/datos de `14px`; hasta `760px` conserva el ancho y tipografía compactos. Altura limitada al viewport con scroll interno |
 | `.delivery-attempt-dialog` | Registro de entrega: diálogo nativo de hasta `720px`, encabezado y pie fijos, cuerpo con scroll y pagos con medio, importe y eliminación alineados. Número de transferencia dentro del mismo fondo. Hasta `640px`, los pagos se apilan y las acciones del pie comparten el ancho |
 
 Mantener estas diferencias acotadas. Si se generaliza una variante, extraer la
@@ -1346,16 +1496,20 @@ Esta variante no modifica las dimensiones ni el cierre de otros modales.
   `role="alert"`; advertencia: `.warning-text`, borde cobre y descripción de la
   consecuencia. No comunicar un estado únicamente por color.
 - [`EmptyState`](../../frontend/src/shared/components/EmptyState.tsx) recibe
-  `title`, `description` y `action` opcional. Contenido centrado, mínimo `220px`.
+  `title`, `description` y `action` opcional. Por defecto, usa un mínimo de
+  `220px`. La variante `compact` ajusta la altura al contenido y se usa en «Pagos
+  registrados» del pedido cuando comparte la fila con la cuenta corriente.
 - Distinguir carga, error recuperable, ausencia de datos y filtros sin resultados.
   Ofrecer reintento o limpieza de filtros cuando corresponda; mostrar acciones
   de creación solo si el usuario tiene permisos.
 - En el login, solo `401`/`403` muestran «Credenciales inválidas». Un error de
   conexión o `5xx` informa que no se pudo conectar o que el servidor no está
   disponible, conservando los campos y permitiendo reintentar. El mensaje usa
-  `.error-text` con `role="alert"`.
-- El componente vacío también se usa hoy para carga/error: no trae spinner,
-  reintento automático ni anuncios accesibles incorporados.
+  `.error-text` con `role="alert"`. El campo de contraseña se puede mostrar u ocultar
+  con un botón que conserva su valor y no envía el formulario.
+- Usar `state="loading"` para mostrar un indicador de progreso y anunciarlo
+  como estado. `state="error"` usa un símbolo de advertencia y anuncia el error.
+  El reintento se pasa como `action`. El indicador respeta movimiento reducido.
 
 ## Responsive y movimiento
 

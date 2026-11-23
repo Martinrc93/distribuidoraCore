@@ -40,7 +40,7 @@ class SaleDocumentServiceTest {
         when(jdbc.queryForMap(anyString(), any(Object[].class))).thenReturn(Map.of(
                 "sale_id", saleId, "sale_number", "SAL-1", "sale_date", Timestamp.valueOf(LocalDateTime.of(2026, 9, 19, 10, 15)),
                 "customer_name", "Customer", "seller_name", "Seller", "total", new BigDecimal("30.1234"),
-                "paid", new BigDecimal("20.0123")));
+                "paid", new BigDecimal("20.0123"), "order_discount_percent", new BigDecimal("5.5000")));
         when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenAnswer(invocation -> {
             String sql = invocation.getArgument(0, String.class);
             RowMapper<?> mapper = invocation.getArgument(1, RowMapper.class);
@@ -67,6 +67,7 @@ class SaleDocumentServiceTest {
         assertThat(model.payments()).extracting(SaleDocumentModel.Payment::method).containsExactly("CASH");
         assertThat(model.total()).isEqualByComparingTo("30.1234");
         assertThat(model.paid()).isEqualByComparingTo("20.0123");
+        assertThat(model.orderDiscountPercent()).isEqualByComparingTo("5.5000");
         verify(jdbc).queryForMap(anyString(), any(Object[].class));
         verify(jdbc, org.mockito.Mockito.times(2)).query(anyString(), any(RowMapper.class), any(Object[].class));
         verifyNoMoreInteractions(jdbc);

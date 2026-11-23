@@ -2,6 +2,7 @@ package com.distribuidora.document;
 
 import com.distribuidora.document.rendering.OpenPdfA4Renderer;
 import com.distribuidora.document.rendering.SaleDocumentModel;
+import com.distribuidora.settings.application.BusinessProfile;
 import org.junit.jupiter.api.Test;
 import org.openpdf.text.Document;
 import org.openpdf.text.PageSize;
@@ -33,19 +34,22 @@ class OpenPdfA4RendererTest {
             assertThat(reader.getPageSize(1).getHeight()).isEqualTo(PageSize.A4.getHeight());
 
             String text = new PdfTextExtractor(reader).getTextFromPage(1);
-            assertThat(text).contains("SAL-2026-001", "Acme Retail", "Blue Widget", "Total",
-                    "Paid", "Pending", "1234.50", "500.00", "734.50");
+            assertThat(text).contains("COMPROBANTE DE VENTA", "Casa Central", "Av. Principal 123", "Tel. 011 5555-0000",
+                "SAL-2026-001", "19/09/2026", "Acme Retail", "Maria Seller", "Blue Widget",
+                "10%", "-$ 140,00", "$ 1.260,00", "Descuentos", "Desc. general 2,5%", "-$ 31,50",
+                "TOTAL", "$ 1.228,50", "Pagado", "$ 500,00", "Pendiente", "$ 728,50");
+            assertThat(text.indexOf("Descuentos")).isLessThan(text.indexOf("Desc. general"));
         }
     }
 
     @Test
-    void preservesScaleFourValuesWithoutLocaleGrouping() throws IOException {
+    void formatsAmountsInEsArAndOmitsPaymentRowsWhenUnpaid() throws IOException {
         byte[] pdf = renderer.render(scaleFourFixture());
 
         try (PdfReader reader = new PdfReader(pdf)) {
             String text = new PdfTextExtractor(reader).getTextFromPage(1);
-            assertThat(text).contains("1234.5000", "500.0123", "734.4877");
-            assertThat(text).doesNotContain(",");
+            assertThat(text).contains("$ 1.234,50", "$ 700,00", "TOTAL")
+                .doesNotContain("1234.5000", "700.0000", "Pagado", "Pendiente", "Desc. general");
         }
     }
 
@@ -80,10 +84,12 @@ class OpenPdfA4RendererTest {
                 "Maria Seller",
                 List.of(new SaleDocumentModel.Line(
                         "Blue Widget", new BigDecimal("2"), new BigDecimal("700.00"),
-                        new BigDecimal("10.00"), new BigDecimal("1234.50"))),
+                        new BigDecimal("10.00"), new BigDecimal("1260.00"))),
                 List.of(new SaleDocumentModel.Payment("CASH", new BigDecimal("500.00"))),
-                new BigDecimal("1234.50"),
-                new BigDecimal("500.00"));
+                new BigDecimal("1228.50"),
+                new BigDecimal("500.00"),
+                new BigDecimal("2.5"),
+                new BusinessProfile("Casa Central", "Av. Principal 123", "011 5555-0000"));
     }
 
     private SaleDocumentModel scaleFourFixture() {
@@ -95,8 +101,8 @@ class OpenPdfA4RendererTest {
                 List.of(new SaleDocumentModel.Line(
                         "Blue Widget", new BigDecimal("2.0000"), new BigDecimal("700.0000"),
                         new BigDecimal("10.0000"), new BigDecimal("1234.5000"))),
-                List.of(new SaleDocumentModel.Payment("CASH", new BigDecimal("500.0123"))),
+                List.of(),
                 new BigDecimal("1234.5000"),
-                new BigDecimal("500.0123"));
+                BigDecimal.ZERO);
     }
 }

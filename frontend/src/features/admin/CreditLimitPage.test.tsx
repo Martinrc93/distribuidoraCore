@@ -10,6 +10,28 @@ function response(body: unknown, status = 200) { return Promise.resolve({ ok: st
 describe('CreditLimitPage', () => {
   afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks() })
 
+  it('loads and saves the business details used in tickets', async () => {
+    const user = userEvent.setup()
+    const existing = { name: 'Distribuidora Central', address: 'Av. Ejemplo 123', phone: '011 4444-5555' }
+    const saved = { ...existing, phone: '011 4444-7777' }
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) =>
+      String(input) === '/api/settings/business-profile'
+        ? response(init?.method === 'PUT' ? saved : existing)
+        : response({ creditLimit: null, enabled: false }))
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><CreditLimitPage /></MemoryRouter></QueryClientProvider>)
+
+    expect(await screen.findByLabelText('Nombre del comercio')).toHaveValue(existing.name)
+    expect(screen.getByLabelText('Dirección')).toHaveValue(existing.address)
+    const phone = screen.getByLabelText('Teléfono')
+    await user.clear(phone)
+    await user.type(phone, saved.phone)
+    await user.click(screen.getByRole('button', { name: 'Guardar datos del comercio' }))
+    expect(await screen.findByText('Datos del comercio guardados.')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings/business-profile', expect.objectContaining({
+      method: 'PUT', body: JSON.stringify(saved),
+    }))
+  })
+
   it('loads and saves the global non-blocking credit limit', async () => {
     const user = userEvent.setup()
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`)

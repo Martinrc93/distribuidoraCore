@@ -1,20 +1,33 @@
 package com.distribuidora.document.rendering;
 
 import org.openpdf.text.Document;
+import org.openpdf.text.Element;
+import org.openpdf.text.Font;
+import org.openpdf.text.FontFactory;
 import org.openpdf.text.PageSize;
 import org.openpdf.text.Paragraph;
+import org.openpdf.text.Rectangle;
+import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
 import org.openpdf.text.pdf.PdfWriter;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
-import java.math.BigDecimal;
-import java.time.format.DateTimeFormatter;
+import java.awt.Color;
+
+import static com.distribuidora.document.rendering.PdfFormat.BOLD;
+import static com.distribuidora.document.rendering.PdfFormat.NORMAL;
+import static com.distribuidora.document.rendering.PdfFormat.SMALL;
+import static com.distribuidora.document.rendering.PdfFormat.discount;
+import static com.distribuidora.document.rendering.PdfFormat.money;
+import static com.distribuidora.document.rendering.PdfFormat.number;
 
 @Component
 public class OpenPdfA4Renderer {
 
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
+    private static final Font BANNER = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14f, Font.NORMAL, Color.WHITE);
+    private static final Font BUSINESS_NAME = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20f);
+    private static final Color LINE = new Color(210, 210, 210);
 
     public byte[] render(SaleDocumentModel model) {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -25,31 +38,10 @@ public class OpenPdfA4Renderer {
             PdfWriter.getInstance(document, output);
             document.open();
 
-            document.add(new Paragraph("SALE DOCUMENT"));
-            document.add(new Paragraph("Sale: " + model.saleNumber()));
-            document.add(new Paragraph("Date: " + DATE_FORMAT.format(model.saleDate())));
-            document.add(new Paragraph("Customer: " + model.customerName()));
-            document.add(new Paragraph("Seller: " + model.sellerName()));
-
-            PdfPTable lines = new PdfPTable(5);
-            lines.setWidthPercentage(100);
-            lines.addCell("Description");
-            lines.addCell("Quantity");
-            lines.addCell("Unit price");
-            lines.addCell("Discount");
-            lines.addCell("Subtotal");
-            for (SaleDocumentModel.Line line : model.lines()) {
-                lines.addCell(line.description());
-                lines.addCell(line.quantity().toPlainString());
-                lines.addCell(decimal(line.unitPrice()));
-                lines.addCell(decimal(line.discount()));
-                lines.addCell(decimal(line.subtotal()));
-            }
-            document.add(lines);
-
-            document.add(new Paragraph("Total: " + decimal(model.total())));
-            document.add(new Paragraph("Paid: " + decimal(model.paid())));
-            document.add(new Paragraph("Pending: " + decimal(model.pendingBalance())));
+            addBusinessHeader(document, model);
+            document.add(metadata(model));
+            document.add(products(model));
+            document.add(summary(model));
         } catch (RuntimeException exception) {
             failure = exception;
         } finally {
@@ -75,7 +67,113 @@ public class OpenPdfA4Renderer {
         return new Document(PageSize.A4);
     }
 
-    private String decimal(BigDecimal value) {
-        return value.toPlainString();
+    private void addBusinessHeader(Document document, SaleDocumentModel model) {
+        var business = model.businessProfile();
+        if (!business.name().isBlank()) document.add(centered(business.name(), BUSINESS_NAME));
+        if (!business.address().isBlank()) document.add(centered(business.address(), NORMAL));
+        if (!business.phone().isBlank()) document.add(centered("Tel. " + business.phone(), NORMAL));
+
+        var banner = new PdfPTable(1);
+        banner.setWidthPercentage(100);
+        banner.setSpacingBefore(12f);
+        var title = plainCell("COMPROBANTE DE VENTA", BANNER, Element.ALIGN_CENTER);
+        title.setPaddingTop(8f);
+        title.setPaddingBottom(8f);
+        title.setBackgroundColor(Color.BLACK);
+        banner.addCell(title);
+        document.add(banner);
+        document.add(centered("Documento no válido como factura", SMALL));
+    }
+
+    private Paragraph centered(String value, Font font) {
+        var paragraph = new Paragraph(value, font);
+        paragraph.setAlignment(Element.ALIGN_CENTER);
+        return paragraph;
+    }
+
+    private PdfPTable metadata(SaleDocumentModel model) {
+        var table = new PdfPTable(new float[]{16f, 47f, 15f, 22f});
+        table.setWidthPercentage(100);
+        table.setSpacingBefore(12f);
+        metadataField(table, "Venta", model.saleNumber());
+        metadataField(table, "Fecha", PdfFormat.date(model.saleDate()));
+        metadataField(table, "Cliente", model.customerName());
+        metadataField(table, "Vendedor", model.sellerName().isBlank() ? "Sin asignar" : model.sellerName());
+        return table;
+    }
+
+    private void metadataField(PdfPTable table, String label, String value) {
+        table.addCell(plainCell(label, BOLD, Element.ALIGN_LEFT));
+        table.addCell(plainCell(value, NORMAL, Element.ALIGN_LEFT));
+    }
+
+    private PdfPTable products(SaleDocumentModel model) {
+        var table = new PdfPTable(new float[]{32f, 9f, 15f, 9f, 16f, 19f});
+        table.setWidthPercentage(100);
+        table.setSpacingBefore(14f);
+        for (String caption : new String[]{"Descripción", "Cant.", "P. unitario", "Desc. %", "Descuento", "Importe final"}) {
+            var heading = borderedCell(caption, BOLD, "Descripción".equals(caption) ? Element.ALIGN_LEFT : Element.ALIGN_RIGHT);
+            heading.setGrayFill(0.93f);
+            table.addCell(heading);
+        }
+        table.setHeaderRows(1);
+        for (var line : model.lines()) {
+            boolean hasDiscount = line.discount().signum() > 0;
+            table.addCell(borderedCell(line.description(), NORMAL, Element.ALIGN_LEFT));
+            table.addCell(borderedCell(number(line.quantity()), NORMAL, Element.ALIGN_RIGHT));
+            table.addCell(borderedCell(money(line.unitPrice()), NORMAL, Element.ALIGN_RIGHT));
+            table.addCell(borderedCell(hasDiscount ? number(line.discount()) + "%" : "-", NORMAL, Element.ALIGN_RIGHT));
+            table.addCell(borderedCell(hasDiscount ? discount(line.discountAmount()) : "-", NORMAL, Element.ALIGN_RIGHT));
+            table.addCell(borderedCell(money(line.subtotal()), BOLD, Element.ALIGN_RIGHT));
+        }
+        return table;
+    }
+
+    private PdfPTable summary(SaleDocumentModel model) {
+        var table = new PdfPTable(new float[]{58f, 42f});
+        table.setWidthPercentage(60);
+        table.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        table.setSpacingBefore(14f);
+        table.setKeepTogether(true);
+
+        var totals = model.totals();
+        summaryRow(table, "Cant. de artículos", number(totals.quantity()), NORMAL, false);
+        summaryRow(table, "Subtotal", money(totals.gross()), NORMAL, false);
+        summaryRow(table, "Descuentos", discount(totals.productDiscount()), NORMAL, false);
+        if (model.orderDiscountPercent().signum() > 0) {
+            summaryRow(table, "Desc. general " + number(model.orderDiscountPercent()) + "%",
+                discount(totals.generalDiscount()), NORMAL, false);
+        }
+        summaryRow(table, "TOTAL", money(model.total()), PdfFormat.TITLE, true);
+        if (model.paid().signum() > 0) {
+            summaryRow(table, "Pagado", money(model.paid()), NORMAL, false);
+            summaryRow(table, "Pendiente", money(model.pendingBalance()), BOLD, false);
+        }
+        return table;
+    }
+
+    private void summaryRow(PdfPTable table, String label, String value, Font font, boolean emphasized) {
+        var left = plainCell(label, font, Element.ALIGN_LEFT);
+        var right = plainCell(value, font, Element.ALIGN_RIGHT);
+        if (emphasized) {
+            left.setGrayFill(0.93f);
+            right.setGrayFill(0.93f);
+        }
+        table.addCell(left);
+        table.addCell(right);
+    }
+
+    private PdfPCell plainCell(String value, Font font, int alignment) {
+        var cell = PdfFormat.cell(value, font, alignment);
+        cell.setBorder(Rectangle.NO_BORDER);
+        return cell;
+    }
+
+    private PdfPCell borderedCell(String value, Font font, int alignment) {
+        var cell = plainCell(value, font, alignment);
+        cell.setPadding(6f);
+        cell.setBorder(Rectangle.BOTTOM);
+        cell.setBorderColor(LINE);
+        return cell;
     }
 }

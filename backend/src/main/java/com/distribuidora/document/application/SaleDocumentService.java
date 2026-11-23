@@ -1,6 +1,7 @@
 package com.distribuidora.document.application;
 
 import com.distribuidora.document.rendering.SaleDocumentModel;
+import com.distribuidora.settings.application.BusinessProfile;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -46,13 +47,15 @@ public class SaleDocumentService {
         Map<String, Object> header;
         try {
             header = jdbc.queryForMap("""
-                select s.id as sale_id, s.sale_number, s.created_at as sale_date,
+                select s.id as sale_id, s.sale_number,
+                       (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as sale_date,
                        c.business_name as customer_name, coalesce(sp.display_name, '') as seller_name,
-                       s.total, s.paid
+                       s.total, s.paid, s.order_discount_percent, b.business_name, b.business_address, b.business_phone
                   from orders.orders o
                   left join sale.sales s on s.order_id = o.id
                   join customer.customers c on c.id = coalesce(s.customer_id, o.customer_id)
                   left join seller.seller_profiles sp on sp.id = o.seller_id
+                  cross join app.business_settings b
                  where o.id = ?
                 """, orderId);
         } catch (EmptyResultDataAccessException exception) {
@@ -92,7 +95,10 @@ public class SaleDocumentService {
             lines,
             payments,
             decimal(header.get("total")),
-            decimal(header.get("paid")));
+            decimal(header.get("paid")),
+            decimal(header.getOrDefault("order_discount_percent", BigDecimal.ZERO)),
+            new BusinessProfile((String) header.getOrDefault("business_name", ""),
+                (String) header.getOrDefault("business_address", ""), (String) header.getOrDefault("business_phone", "")));
     }
 
     private UUID uuid(Object value) {

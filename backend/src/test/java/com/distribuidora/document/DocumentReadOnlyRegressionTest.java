@@ -32,10 +32,13 @@ class DocumentReadOnlyRegressionTest {
         jdbc.execute("CREATE SCHEMA seller");
         jdbc.execute("CREATE SCHEMA payment");
         jdbc.execute("CREATE SCHEMA inventory");
+        jdbc.execute("CREATE SCHEMA app");
+        jdbc.execute("CREATE TABLE app.business_settings (id SMALLINT PRIMARY KEY, business_name VARCHAR(120), business_address VARCHAR(240), business_phone VARCHAR(60))");
+        jdbc.update("INSERT INTO app.business_settings VALUES (1, 'Comercio', '', '')");
         jdbc.execute("CREATE TABLE customer.customers (id UUID PRIMARY KEY, business_name VARCHAR(120), balance NUMERIC(19,4))");
         jdbc.execute("CREATE TABLE seller.seller_profiles (id UUID PRIMARY KEY, display_name VARCHAR(120))");
         jdbc.execute("CREATE TABLE orders.orders (id UUID PRIMARY KEY, customer_id UUID, seller_id UUID, status VARCHAR(20))");
-        jdbc.execute("CREATE TABLE sale.sales (id UUID PRIMARY KEY, order_id UUID, customer_id UUID, sale_number VARCHAR(40), created_at TIMESTAMP, total NUMERIC(19,4), paid NUMERIC(19,4), status VARCHAR(20))");
+        jdbc.execute("CREATE TABLE sale.sales (id UUID PRIMARY KEY, order_id UUID, customer_id UUID, sale_number VARCHAR(40), created_at TIMESTAMP WITH TIME ZONE, total NUMERIC(19,4), paid NUMERIC(19,4), status VARCHAR(20), order_discount_percent NUMERIC(19,4))");
         jdbc.execute("CREATE TABLE sale.sale_items (id UUID PRIMARY KEY, sale_id UUID, product_name VARCHAR(120), quantity NUMERIC(19,4), unit_price NUMERIC(19,4), line_discount_percent NUMERIC(19,4), line_total NUMERIC(19,4))");
         jdbc.execute("CREATE TABLE payment.payments (id UUID PRIMARY KEY, sale_id UUID, method VARCHAR(30), amount NUMERIC(19,4), created_at TIMESTAMP)");
         jdbc.execute("CREATE TABLE inventory.inventory_balances (product_id UUID PRIMARY KEY, quantity NUMERIC(19,4))");
@@ -50,7 +53,7 @@ class DocumentReadOnlyRegressionTest {
         jdbc.update("INSERT INTO customer.customers VALUES (?, ?, ?)", customerId, "Customer", new BigDecimal("12.50"));
         jdbc.update("INSERT INTO seller.seller_profiles VALUES (?, ?)", sellerId, "Seller");
         jdbc.update("INSERT INTO orders.orders VALUES (?, ?, ?, ?)", orderId, customerId, sellerId, "CONFIRMED");
-        jdbc.update("INSERT INTO sale.sales VALUES (?, ?, ?, ?, ?, ?, ?, ?)", saleId, orderId, customerId, "SAL-READ-ONLY", Timestamp.valueOf(LocalDateTime.of(2026, 9, 19, 10, 15)), new BigDecimal("30.00"), new BigDecimal("20.00"), "CONFIRMED");
+        jdbc.update("INSERT INTO sale.sales VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)", saleId, orderId, customerId, "SAL-READ-ONLY", Timestamp.valueOf(LocalDateTime.of(2026, 9, 19, 10, 15)), new BigDecimal("30.00"), new BigDecimal("20.00"), "CONFIRMED");
         jdbc.update("INSERT INTO sale.sale_items VALUES (?, ?, ?, ?, ?, ?, ?)", UUID.randomUUID(), saleId, "Product", new BigDecimal("2.00"), new BigDecimal("15.00"), BigDecimal.ZERO, new BigDecimal("30.00"));
         jdbc.update("INSERT INTO payment.payments VALUES (?, ?, ?, ?, ?)", UUID.randomUUID(), saleId, "CASH", new BigDecimal("20.00"), Timestamp.valueOf(LocalDateTime.of(2026, 9, 19, 10, 16)));
         jdbc.update("INSERT INTO inventory.inventory_balances VALUES (?, ?)", productId, new BigDecimal("8.00"));

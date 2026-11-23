@@ -2,6 +2,7 @@ package com.distribuidora.settings;
 
 import com.distribuidora.settings.api.BusinessSettingsController;
 import com.distribuidora.settings.api.BusinessSettingsDtos;
+import com.distribuidora.settings.application.BusinessProfile;
 import com.distribuidora.settings.application.BusinessSettingsService;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -28,6 +30,25 @@ class BusinessSettingsControllerTest {
     private final MockMvc mockMvc = standaloneSetup(controller)
         .setControllerAdvice(new ApiExceptionHandler())
         .build();
+
+    @Test
+    void readsAndUpdatesTheBusinessProfile() throws Exception {
+        var profile = new BusinessProfile("Comercio Central", "Av. Ejemplo 123", "011 4444-5555");
+        when(service.businessProfile()).thenReturn(profile);
+        when(service.updateBusinessProfile(profile)).thenReturn(profile);
+
+        mockMvc.perform(get("/api/settings/business-profile"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value(profile.name()))
+            .andExpect(jsonPath("$.address").value(profile.address()))
+            .andExpect(jsonPath("$.phone").value(profile.phone()));
+        mockMvc.perform(put("/api/settings/business-profile").contentType(APPLICATION_JSON)
+                .content("""
+                    {"name":"Comercio Central","address":"Av. Ejemplo 123","phone":"011 4444-5555"}
+                    """))
+            .andExpect(status().isOk());
+        verify(service).updateBusinessProfile(profile);
+    }
 
     @Test
     void delegatesGetAndUpdateCreditLimit() throws Exception {

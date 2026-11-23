@@ -31,6 +31,26 @@ public class BusinessSettingsService {
         this.audit = audit;
     }
 
+    @Transactional(readOnly = true)
+    public BusinessProfile businessProfile() {
+        requireAdmin();
+        return jdbc.queryForObject("""
+            select business_name, business_address, business_phone from app.business_settings where id = 1
+            """, (row, index) -> new BusinessProfile(row.getString(1), row.getString(2), row.getString(3)));
+    }
+
+    @Transactional
+    public BusinessProfile updateBusinessProfile(BusinessProfile profile) {
+        requireAdmin();
+        var saved = new BusinessProfile(profile.name().strip(), profile.address().strip(), profile.phone().strip());
+        jdbc.update("""
+            update app.business_settings set business_name = ?, business_address = ?, business_phone = ? where id = 1
+            """, saved.name(), saved.address(), saved.phone());
+        audit.recordWithinTransaction(actorId(), "BUSINESS_PROFILE_UPDATE", "BUSINESS_SETTINGS", "1", "SUCCESS",
+            Map.of("name", saved.name(), "address", saved.address(), "phone", saved.phone()));
+        return saved;
+    }
+
     public CreditLimitResult creditLimit() {
         requireAdmin();
         Map<String, Object> row = jdbc.queryForMap(
