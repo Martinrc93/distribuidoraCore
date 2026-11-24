@@ -56,7 +56,8 @@ export default function CommissionSettlementsPage() {
   const [saving, setSaving] = useState(false)
   const { page, pageSize, setPage } = useUrlListState([], 20)
   const month = presetRange('month', today)
-  const beneficiary: Beneficiary = params.get('type') === 'reseller' ? 'reseller' : 'seller'
+  const type = params.get('type')
+  const beneficiary: Beneficiary = type === 'seller' || (type === null && params.has('sellerId')) ? 'seller' : 'reseller'
   const labels = beneficiaryLabels[beneficiary]
   const beneficiaryId = params.get(labels.param) ?? ''
   const dateMin = params.get('dateMin') ?? displayDate(month.start)
@@ -116,7 +117,7 @@ export default function CommissionSettlementsPage() {
     {error && !confirmation && <p className="error-text" role="alert">{error}</p>}
     <div className="content-grid">
       <Panel title="Beneficiario y período">
-        <div className="form-grid mb-0">
+        <div className="form-grid commission-settlement-fields mb-0">
           <label className="field"><span>Comisiones de</span>
             <select className="select min-w-0 w-full" value={beneficiary} disabled={saving} onChange={(event) => setFilter('type', event.target.value)}>
               <option value="seller">Vendedores</option>
@@ -130,7 +131,7 @@ export default function CommissionSettlementsPage() {
             : <CustomerSelect mode="selection" label="Revendedor" options={(resellers.data?.content ?? []).map((reseller) => ({
               id: reseller.id, name: reseller.status === 'INACTIVE' ? `${reseller.name} (inactivo)` : reseller.name,
             }))} value={beneficiaryId} onChange={(id) => setFilter('resellerId', id)} loading={resellers.isPending} disabled={resellers.isError || saving} />}
-          <div className="orders-date-filters ml-0">
+          <div className="orders-date-filters">
             <OrderDateFilter id="commission-from" label="Desde" value={dateMin} isoValue={from ?? ''} invalid={Boolean(dateError)}
               describedBy={dateError ? 'commission-date-error' : undefined} onChange={(value) => setFilter('dateMin', value)} />
             <OrderDateFilter id="commission-to" label="Hasta" value={dateMax} isoValue={to ?? ''} invalid={Boolean(dateError)}

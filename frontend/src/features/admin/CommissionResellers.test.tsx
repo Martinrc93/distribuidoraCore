@@ -83,7 +83,7 @@ describe('Reseller commissions', () => {
       ? response({ id: 'settlement-1', amount: '6.0000', entryCount: 1, paidAt: '2026-11-19T12:00:00Z' }, 201)
       : call.path.startsWith('/api/commissions/resellers/reseller-1?') ? response(statement) : undefined)
     const user = userEvent.setup()
-    renderWith(<CommissionSettlementsPage />, '/admin/settings/commissions/settlements?type=reseller')
+    renderWith(<CommissionSettlementsPage />, '/admin/settings/commissions/settlements')
 
     expect(screen.getByRole('combobox', { name: 'Comisiones de' })).toHaveValue('reseller')
     expect(screen.queryByRole('combobox', { name: 'Vendedor' })).not.toBeInTheDocument()

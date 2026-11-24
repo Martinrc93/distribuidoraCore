@@ -1385,11 +1385,14 @@ beneficiario o todavía no hay planes. Las reglas se agrupan con `fieldset` y us
 grilla habitual de campos, con una columna a `760px` o menos. La selección de
 marca, categoría y artículo reutiliza `SearchableSelect`.
 
-«Liquidación de comisiones» elige primero «Comisiones de» (vendedores o
-revendedores, guardado en la URL como `type`) y luego el beneficiario con
-`SellerSelect` o `CustomerSelect`. Reutiliza los campos Desde y Hasta y
-`DataTable` para el historial por período, con el cliente de cada pedido. El
-saldo pendiente incluye todos los movimientos del beneficiario. «Registrar pago
+«Liquidación de comisiones» inicia en «Revendedores». La selección de
+«Comisiones de» se guarda en la URL como `type`. Un enlace anterior con
+`sellerId` y sin `type` abre «Vendedores». El tipo, el beneficiario
+(`SellerSelect` o `CustomerSelect`) y los campos Desde/Hasta se alinean en
+una fila. Hasta `760px`, el tipo y el beneficiario se apilan y las fechas
+comparten la última fila. El historial por período usa `DataTable` e incluye
+el cliente de cada pedido. El saldo pendiente incluye todos los movimientos del
+beneficiario. «Registrar pago
 al vendedor» o «al revendedor» abre `ConfirmationDialog` con el importe y el
 beneficiario elegidos. Si el saldo
 cambió, la pantalla actualiza el importe y pide revisar la nueva liquidación.

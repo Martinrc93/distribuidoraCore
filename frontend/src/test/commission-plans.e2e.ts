@@ -165,12 +165,20 @@ test('la configuración de comisiones queda reservada a administradores', async 
   expect(state.requests).not.toContain(statementPath)
 })
 
+test('un enlace de liquidaciones con sellerId conserva el tipo Vendedor', async ({ page }) => {
+  await setup(page, true)
+  await page.goto(`/admin/settings/commissions/settlements?sellerId=${sellerId}`)
+  await expect(page.getByRole('combobox', { name: 'Comisiones de' })).toHaveValue('seller')
+  await expect(page.getByRole('combobox', { name: 'Vendedor', exact: true })).toHaveValue('Lucía Vendedora')
+})
+
 for (const width of [320, 1440]) {
   test(`el administrador confirma el pago y revisa cambios de saldo a ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 })
     const state = await setup(page, true, width === 320)
     await page.goto('/admin/settings/commissions')
     await page.getByRole('link', { name: 'Liquidación de comisiones' }).click()
+    await page.getByRole('combobox', { name: 'Comisiones de' }).selectOption('seller')
     await page.getByRole('combobox', { name: 'Vendedor', exact: true }).fill('Lucia')
     await page.getByRole('option', { name: 'Lucía Vendedora' }).click()
     const pay = page.getByRole('button', { name: 'Registrar pago al vendedor' })
@@ -199,9 +207,23 @@ for (const width of [320, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     const state = await setup(page, true, width === 320)
     await page.goto('/admin/settings/commissions/settlements')
-    await page.getByRole('combobox', { name: 'Comisiones de' }).selectOption('reseller')
-    await expect(page).toHaveURL(/type=reseller/)
-    await page.getByRole('combobox', { name: 'Revendedor', exact: true }).fill('Sur')
+    const type = page.getByRole('combobox', { name: 'Comisiones de' })
+    const reseller = page.getByRole('combobox', { name: 'Revendedor', exact: true })
+    await expect(type).toHaveValue('reseller')
+    const [typeBox, resellerBox, fromBox, toBox] = await Promise.all([
+      type.boundingBox(), reseller.boundingBox(),
+      page.getByRole('textbox', { name: 'Desde', exact: true }).boundingBox(),
+      page.getByRole('textbox', { name: 'Hasta', exact: true }).boundingBox(),
+    ])
+    expect(toBox!.y).toBeCloseTo(fromBox!.y)
+    if (width > 760) {
+      expect(resellerBox!.y).toBeCloseTo(typeBox!.y)
+      expect(fromBox!.y).toBeCloseTo(typeBox!.y)
+    } else {
+      expect(resellerBox!.y).toBeGreaterThan(typeBox!.y)
+      expect(fromBox!.y).toBeGreaterThan(resellerBox!.y)
+    }
+    await reseller.fill('Sur')
     await page.getByRole('option', { name: 'Distribuidora Sur' }).click()
     await expect(page.getByText('Kiosco Centro con un nombre comercial muy largo')).toBeVisible()
     expect(state.requests).toContain('/api/customers')
