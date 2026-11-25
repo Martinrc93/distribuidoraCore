@@ -36,3 +36,21 @@ Los pedidos a proveedores mantienen su numeración `PRV-…` independiente.
 V37 elimina el tope de cuatro dígitos del cliente sin reiniciar la secuencia ni
 renumerar clientes o pedidos existentes. Listado, ficha y generación de pedidos
 conservan los números completos, también cuando superan cuatro dígitos.
+
+## Numeración de ventas
+
+Desde V57, cada venta usa el mismo número visible que su pedido. Por ejemplo,
+el pedido `000100004` y su venta se identifican como `000100004` en listados,
+detalles, comprobantes y cuenta corriente. Los UUID internos de pedido y venta
+siguen siendo independientes; los vínculos con líneas, pagos y stock se conservan.
+
+La migración actualiza también las ventas existentes, incluidas las canceladas,
+y guarda su número anterior en `legacy_sale_number`. Buscar una venta acepta
+tanto el número compartido como su alias anterior y devuelve el número actual.
+La actualización es transaccional y conserva la unicidad, incluso si los números
+anteriores coinciden con los de otros pedidos.
+
+La confirmación usa el número ya asignado al pedido, sin consumir otro correlativo.
+Los reintentos con la misma clave devuelven ambos números originales. Cancelar,
+reactivar o editar conserva el número. La secuencia independiente incorporada
+en V55 ya no se utiliza para nuevas ventas. Los datos demo siguen la misma regla.

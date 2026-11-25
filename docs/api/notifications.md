@@ -8,6 +8,11 @@ los snapshots persistidos de la venta; no cambia el estado comercial.
 
 ## Solicitar envío
 
+`GET /api/orders/{orderId}/notifications/contact` devuelve `email` y `phone`
+del cliente del pedido, con la misma autorización y alcance que el envío.
+El dato faltante se puede ingresar para un envío o guardar desde el modal con
+`CUSTOMER_EDIT` mediante `PATCH /api/customers/{id}/contact`.
+
 `POST /api/orders/{orderId}/notifications` requiere `ORDER_NOTIFY` o
 `ADMIN_ALL` y ownership. La llamada crea una solicitud idempotente y encola su
 despacho. El envío ocurre de forma asíncrona.

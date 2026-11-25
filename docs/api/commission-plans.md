@@ -1,7 +1,8 @@
 # Configuración de comisiones
 
 En Administración → Configuración → Comisiones, un administrador puede guardar
-planes y asignar el mismo plan a varios vendedores y revendedores. La opción
+planes y asignar el mismo plan a varios vendedores y revendedores. Debajo del
+formulario se muestran los beneficiarios con un plan asignado. La opción
 «Sin comisión» quita la asignación elegida. V49 crea las tablas de configuración
 sin asignaciones iniciales; V53 agrega las de revendedores.
 
@@ -21,6 +22,7 @@ Todos los endpoints requieren `ADMIN_ALL`.
 | Leer plan | `GET /api/settings/commission-plans/{id}` | Plan con versión y reglas. |
 | Crear plan | `POST /api/settings/commission-plans` | Plan guardado con versión inicial 1. |
 | Editar plan | `PUT /api/settings/commission-plans/{id}` | Plan actualizado en una sola transacción. |
+| Listar planes asignados | `GET /api/settings/commission-plans/assignments?page=0&size=20` | Página con tipo (`SELLER` o `RESELLER`), ID, nombre y estado del beneficiario, e ID y nombre del plan. Ordenada por nombre. |
 | Consultar asignación | `GET /api/settings/commission-plans/assignments/{sellerId}` | `sellerId` y `planId`, que puede ser nulo. |
 | Cambiar asignación | `PUT /api/settings/commission-plans/assignments/{sellerId}` | Asignación actualizada. Enviar `planId: null` para quitar el plan. |
 | Consultar plan de un revendedor | `GET /api/settings/commission-plans/reseller-assignments/{customerId}` | `customerId` y `planId`, que puede ser nulo. |

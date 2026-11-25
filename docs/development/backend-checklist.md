@@ -1,6 +1,10 @@
+> **Documento histórico (línea base 2026-09-25):** consolidado y superado por [`current-state.md`](../architecture/current-state.md) y el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
+
 # Backend Development Checklist
 
 Estado actualizado: 2026-09-25
+
+Para correcciones y verificaciones posteriores a esta línea base, consultar el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
 
 ## Cómo Leerlo
 

@@ -2,8 +2,8 @@
 
 ## Requisitos y secretos
 
-Los scripts requieren PowerShell 7 y `pg_dump`, `pg_restore`, `createdb`,
-`dropdb` y `psql` de una versión PostgreSQL compatible con el servidor. Se puede
+Los scripts requieren PowerShell 7.2 o posterior y `pg_dump`, `pg_restore`,
+`createdb`, `dropdb` y `psql` de la misma versión principal del servidor. Se puede
 definir `PG_BIN` si los ejecutables no están en `PATH`.
 
 La clave se obtiene en este orden: variable `BACKUP_ENCRYPTION_KEY` (Base64 de
@@ -50,6 +50,11 @@ ejecución. El contexto de Task Scheduler no veía el almacén DPAPI existente;
 se materializó el mismo blob cifrado en el perfil de la tarea, sin regenerar la
 clave, con ACL limitada al usuario y SYSTEM.
 
+Para ejecutar con la sesión cerrada, configurar la misma tarea en el Programador
+de tareas con «Ejecutar tanto si el usuario inició sesión como si no». Usar una
+cuenta con acceso a las credenciales, a PostgreSQL y al destino externo. Probar
+el backup desde esa identidad antes de incorporarlo a la rotación.
+
 La ejecución programada de control terminó con código `0` a las 05:55. El
 backup local y su mirror en el directorio externo de OneDrive configurado
 pasaron HMAC y la prueba completa de restauración/tamper en una base descartable
@@ -80,9 +85,11 @@ lo que la bóveda está sincronizada en OneDrive. La contraseña maestra no se
 guardó en el repositorio ni junto a la bóveda; su custodia fuera de OneDrive
 queda a cargo del usuario.
 
-La retención deja el backup más reciente por cada uno de los dos días más
-recientes y un backup por mes durante los últimos doce meses. El directorio
-local no cubre pérdida del mismo equipo o disco.
+La retención conserva el backup más reciente por día durante siete días y
+uno por mes durante doce meses. Se aplica por nombre de base de datos a
+archivos generados con el nombre habitual. Los logs rotan después de 90 días.
+El backup local y la copia externa se publican tras completar la escritura y
+la verificación correspondiente.
 
 ## Prueba de restauración
 
@@ -97,10 +104,9 @@ solicitudes de notificación, y elimina esa base temporal al finalizar:
 La prueba también altera una copia del backup para verificar que un HMAC
 incorrecto se rechace antes de escribir en el destino.
 
-Durante la restauración, el archive se descifra en un temporal de usuario para
-permitir el acceso aleatorio requerido por `pg_restore`; el script lo elimina
-al finalizar. Mantener `%TEMP%` en un volumen cifrado y con ACL del usuario
-operativo.
+La restauración verifica el HMAC antes de descifrar el archivo en un
+directorio temporal privado del usuario. `pg_restore` aplica los cambios en
+una transacción y el script elimina el temporal al finalizar.
 
 ## Restauración operacional
 
@@ -114,13 +120,14 @@ destructivo para los objetos dentro de la base destino: requiere confirmación;
 ```
 
 Después de restaurar, ejecutar migraciones pendientes con el backend, comprobar
-`/actuator/health`, login, una consulta comercial y consistencia de stock, pagos
+`/actuator/health/readiness`, login, una consulta comercial y consistencia de stock, pagos
 y cuenta corriente antes de reabrir escrituras.
 
 ## Exposición operativa
 
-`/actuator/health` permanece público para probes de vida y readiness. El endpoint
-`/actuator/metrics/**` requiere autenticación; incluye métricas HTTP y métricas
+`/actuator/health/liveness` y `/actuator/health/readiness` son los probes
+públicos del backend y muestran solo el estado. El acceso al resto de Actuator
+requiere `ADMIN_ALL`. `/actuator/metrics/**` incluye métricas HTTP y métricas
 `app.outbox.*` (pendientes, procesados, errores, agotados y duración de lote).
 Los logs de consola usan ECS JSON y llevan `requestId` en MDC. Request IDs
 externos fuera del conjunto seguro o mayores de 120 caracteres se reemplazan.

@@ -30,8 +30,8 @@ flowchart LR
     ORD --> SAL
     ORD --> PAY
     SAL --> DOC
-    DOC -.-> NOTIF[Notification - pendiente]
-    NOTIF -.-> EXT[External providers - pendiente]
+    DOC --> NOTIF[Notificaciones y outbox]
+    NOTIF -.-> EXT[Proveedor externo configurado por instancia]
 
     ID --> DB[(PostgreSQL)]
     SEL --> DB
@@ -72,7 +72,7 @@ sequenceDiagram
     U->>F: Carga cliente y líneas
     U->>F: Confirma pedido
     F->>O: Confirmar pedido
-    O->>I: Registrar salida de stock
+    Note over O,I: La salida de stock se registra al preparar el pedido
     O->>S: Crear venta
     O->>P: Registrar pagos o deuda
     O->>A: Registrar auditoría
@@ -90,7 +90,9 @@ despliegue independiente, autonomía de equipo o aislamiento operativo.
 
 ## Alcance de esta arquitectura
 
-Incluye autenticación local, usuarios, vendedores, clientes, proveedores, catálogo,
-inventario de stock único por producto, pedidos, ventas, pagos, cuenta corriente, documentos,
-impresión, notificaciones y auditoría. Impuestos, ARCA, compras,
-reportes y portal de clientes quedan fuera del alcance inicial.
+Incluye autenticación local, usuarios/roles/permisos, vendedores, clientes,
+revendedores, zonas, proveedores, compras, gastos, catálogo, listas de precios,
+inventario de stock único por producto, mermas, pedidos, ventas, devoluciones,
+comisiones, pagos, cuenta corriente, reportes, documentos PDF, notificaciones
+y auditoría. Facturación fiscal (ARCA) y portal externo de clientes quedan fuera
+del alcance actual.

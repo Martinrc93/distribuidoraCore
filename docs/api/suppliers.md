@@ -33,6 +33,6 @@ Las compras y recepciones de mercadería siguen pendientes.
 
 ## Verificación de interfaz
 
-Desde `frontend`, `npx playwright test --config playwright.suppliers.config.ts`
+Desde `frontend`, `npm run test:mocked -- suppliers.e2e.ts`
 verifica alta, edición, opcionales, descarte, teclado y contenido largo a 320,
 640, 760 y 1280 px mediante API simulada, sin requerir backend o base de datos.

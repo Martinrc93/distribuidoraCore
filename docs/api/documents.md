@@ -1,9 +1,10 @@
 # Documentos imprimibles
 
-Todos los documentos se generan bajo demanda con OpenPDF, no se guardan y se
-devuelven como `application/pdf` con `Content-Disposition: attachment`. El
-frontend los imprime sin descargarlos (iframe oculto y diálogo de impresión) o los
-descarga, con el componente compartido `DocumentActions`.
+Los documentos se generan bajo demanda con OpenPDF y se devuelven como
+`application/pdf` con `Content-Disposition: attachment`. El backend termina de
+renderizar el PDF en un archivo temporal antes de enviar el contenido. Elimina el
+archivo al finalizar la respuesta, incluso si falla la descarga. El frontend
+permite imprimir o descargar con el componente compartido `DocumentActions`.
 
 ## Remito y ticket del pedido
 
@@ -11,11 +12,19 @@ descarga, con el componente compartido `DocumentActions`.
   `ORDER_DOCUMENT_EXPORT` o `ADMIN_ALL`, con el alcance del vendedor. Ver
   [permisos comerciales](commerce-permissions.md) para la actualización desde ORDER_CREATE.
 
-El encabezado del A4 y del ticket usa el nombre, la dirección y el teléfono vigentes en
-Configuración comercial → Datos del comercio. Los campos vacíos se omiten.
+El encabezado del A4 y del ticket usa el logo, nombre, dirección y teléfono vigentes en
+Administración → Configuración → Datos del comercio. El logo opcional aparece centrado
+arriba, manteniendo sus proporciones. Si no hay logo, se omite el espacio de la imagen.
+Los campos de contacto vacíos se omiten.
 `GET` y `PUT /api/settings/business-profile` requieren `ADMIN_ALL` y devuelven
 `name`, `address` y `phone`. Ambos muestran el vendedor asignado al pedido
 y la fecha de Buenos Aires en formato `dd/MM/aaaa`, sin hora.
+
+`GET /api/settings/business-logo` devuelve `{ "content": null }` sin logo o el PNG
+guardado en Base64 para usuarios autenticados. `PUT` recibe `{ "content": "<Base64>" }`
+con un PNG o JPG de hasta 512 KB y 2048 × 2048 píxeles. La API valida el archivo y lo
+guarda como PNG de hasta 384 píxeles por lado, sin deformarlo y conservando transparencia.
+`DELETE` lo quita y devuelve `204`. Guardar y quitar requiere `ADMIN_ALL`.
 
 Cada producto muestra la cantidad por precio unitario y el importe a la derecha.
 Si tiene descuento, muestra el porcentaje, el importe descontado y el «Importe
@@ -23,7 +32,8 @@ C/Desc». El resumen muestra la suma de cantidades, el subtotal bruto y los
 descuentos por producto. Debajo de «Descuentos» aparece el descuento general si
 corresponde. «Pagado» y «Pendiente» aparecen cuando hay un pago registrado.
 Los importes usan formato argentino con dos decimales. El A4 organiza los
-productos en columnas y repite sus encabezados en cada página. El ticket
+productos en columnas, repite sus encabezados en cada página e indica
+«Página X de Y» al pie. El ticket
 ajusta el alto del papel al contenido.
 
 ## Lista de precios
@@ -60,6 +70,8 @@ ajusta el alto del papel al contenido.
   a `total - paid`), y el saldo total pendiente.
 - `format=a4` (por defecto) o `ticket` (80 mm). Otro valor devuelve `400`; un cliente
   inexistente, `404`.
+- El documento admite hasta 5.000 ventas pendientes. Si la cuenta supera ese
+  límite, devuelve `400`. El formato ticket divide el contenido largo en páginas.
 
 ## Compras del cliente por período
 
@@ -68,6 +80,8 @@ ajusta el alto del papel al contenido.
 Requiere `REPORTS_VIEW` o `ADMIN_ALL`. El PDF A4 incluye el total y todo el
 detalle por pedido y producto del período autorizado. Usa el mismo alcance,
 fechas e importes que el [reporte de compras del cliente](customer-purchases.md).
+La exportación admite hasta 2.000 ventas y 25.000 filas de detalle. Si el período
+supera algún límite, devuelve `400` y solicita un rango más corto.
 
 Desde la Fase 9.2, el estado de deuda de un revendedor incluye todas las ventas a
 cargo de su cuenta y agrega la columna «Cliente» (cliente que recibió cada pedido);

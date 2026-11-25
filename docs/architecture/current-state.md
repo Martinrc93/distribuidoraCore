@@ -1,6 +1,6 @@
 # Estado Actual Del Programa
 
-Estado relevado: 2026-09-24.
+Estado relevado: 2026-11-25. El esquema llega a Flyway V65.
 
 Este documento usa Mermaid para mostrar cómo quedó el sistema después de los
 bloques implementados. Las líneas punteadas representan capacidades previstas
@@ -44,6 +44,9 @@ flowchart TD
     Document[Document<br/>PDF A4 y ticket 80 mm]
     Audit[Audit<br/>trazabilidad]
     Notification[Notification<br/>outbox, solicitudes, auditoría y reintentos]
+    Purchasing[Compras a proveedores]
+    Expense[Gastos]
+    Settings[Configuración y planes de comisión]
 
     Identity --> Seller
     Identity --> Customer
@@ -60,12 +63,13 @@ flowchart TD
     Order --> Document
     Sale --> Document
     Payment --> Customer
-    Document -.-> Notification
+    Document --> Notification
+    Purchasing --> Inventory
+    Settings --> Sale
 
     classDef done fill:#d9f7e8,stroke:#18794e,color:#123524
     classDef pending fill:#fff1cc,stroke:#9a6700,color:#4d3800
-    class Identity,Seller,Customer,Catalog,Inventory,Order,Sale,Payment,Document,Audit done
-    class Notification pending
+    class Identity,Seller,Customer,Catalog,Inventory,Order,Sale,Payment,Document,Audit,Notification,Purchasing,Expense,Settings done
 ```
 
 ## Confirmación Y Venta
@@ -153,25 +157,23 @@ flowchart TD
     class AdminOnly pending
 ```
 
-## Pendiente
+## Calidad Estática, Refactor Y Pendientes Post-Fases
 
-```mermaid
-flowchart LR
-    IdentityPending[Invitaciones,<br/>refresh y revocación]
-    SellerPending[CRUD completo de vendedores]
-    OrderPending[Edición de pedidos,<br/>devoluciones y FIFO]
-    NotificationPending[Outbox, email,<br/>WhatsApp y tickets]
-    OpsPending[CI, métricas,<br/>backups y restore]
-
-    IdentityPending -.-> Identity[Identity]
-    SellerPending -.-> Seller[Seller]
-    OrderPending -.-> Order[Order / Payment]
-    NotificationPending -.-> Notification[Notification]
-    OpsPending -.-> Platform[Operación]
-
-    classDef pending fill:#fff1cc,stroke:#9a6700,color:#4d3800
-    class IdentityPending,SellerPending,OrderPending,NotificationPending,OpsPending pending
-```
+- **Backend (`V65`, Java 21 / Spring Boot):** gates Maven en `verify` con
+  Surefire (`*Test`), Failsafe (`*IT`), Checkstyle, SpotBugs, JaCoCo y
+  ArchUnit (`ModuleBoundaryTest`). Zona horaria comercial centralizada en
+  `BusinessTime`/`TimeConfig`, resolución de actor en `CurrentUserAccess` y
+  servicios grandes descompuestos (`ReadQueryService` en servicios por
+  dominio, `OrderEditService`, `OrderCancellationService`, `SellerQueryService`).
+- **Frontend (React + TypeScript + Tailwind v4):** `Pagination` compartido,
+  `shared/format.ts` y `shared/dates.ts`, `queryKeys` jerárquicas con
+  invalidación por dominio, lazy loading de rutas, descomposición de
+  `OrderForm`/`PriceListsPage`/`ProductsPage` y retiro de pantallas legadas
+  (`PaymentsPage`, `InventoryPage`).
+- **Pendientes diferidos fuera de código:** credenciales externas de
+  webhooks WhatsApp/Email por entorno, definición funcional de `DOM-M1`
+  (notas de crédito en devoluciones de ventas pagadas) y auditoría previa en
+  producción antes de planificar una migración `V66`.
 
 ## Leyenda
 

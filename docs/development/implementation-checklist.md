@@ -1,6 +1,10 @@
+> **Documento histórico (línea base 2026-09-25):** consolidado y superado por [`current-state.md`](../architecture/current-state.md) y el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
+
 # Checklist de implementacion
 
 Estado de referencia: 2026-09-25.
+
+El avance de la auditoría de noviembre y los criterios pendientes se mantienen en el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
 
 Este documento separa el avance funcional del backend y del frontend. Una
 funcionalidad se marca como implementada solo cuando esta verificada en la capa
@@ -113,8 +117,7 @@ correspondiente. El detalle historico y los criterios de cierre se mantienen en:
 - [x] Asignacion de vendedor y lista de precios.
 - [x] Baja logica y reactivacion.
 - [x] Invitación/creación de usuarios, activación, bloqueo, desbloqueo y revocación de sesiones.
-- [x] Mostrar roles devueltos por API en modo de solo lectura.
-- [ ] Reasignación de roles y edición de permisos (API disponible; aplazado por decisión del usuario).
+- [x] Mostrar y editar roles y permisos desde `/admin/roles` y `/admin/users`.
 - [x] CRUD de vendedores y reasignación masiva de clientes/pedidos.
 - [ ] Detalle de cliente con ventas, pagos y cuenta corriente (falta consulta dedicada por cliente).
 

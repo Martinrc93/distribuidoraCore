@@ -1,7 +1,7 @@
 # Guía de estilos y patrones de interfaz
 
 Referencia obligatoria para crear, modificar o revisar interfaces del proyecto.
-Revisada contra el código actual el **2026-11-20**.
+Revisada contra el código actual el **2026-11-25**.
 
 ## Uso y mantenimiento
 
@@ -88,7 +88,7 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 | Variable CSS | Valor actual | Uso |
 | --- | --- | --- |
 | `--ink` | `#193a43` | Texto principal y sidebar |
-| `--muted` | `#667b7d` | Descripciones y texto secundario |
+| `--muted` | `#546a6a` | Descripciones y texto secundario |
 | `--line` | `#d7e0dc` | Bordes y separadores |
 | `--surface` | `#ffffff` | Paneles y controles |
 | `--surface-muted` | `#e8efeb` | Superficie secundaria y hover |
@@ -110,9 +110,13 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 - Título de página: `h1`, `clamp(28px, 4vw, 42px)`, altura de línea `1.05`.
   Título de panel: `h2`, `15px`; subtítulo: `h3`, `14px`.
   Descripciones: `13px`; controles y tablas: `12px`; etiquetas: `11px`.
-- Los importes monetarios usan negrita (`700`) sin cambiar su tamaño, color ni
-  formato. `DataTable` agrega `.currency-value` a las celdas con importes
-  formateados con `$`; `CurrencyText` destaca solo los importes dentro de ayudas,
+- Los importes monetarios, cantidades y porcentajes reutilizan
+  [`format.ts`](../../frontend/src/shared/format.ts) (`formatMoney`,
+  `formatNumber`, `formatDecimalInput`) y las fechas operativas utilizan
+  [`dates.ts`](../../frontend/src/shared/dates.ts) fijando la zona horaria
+  comercial `America/Argentina/Buenos_Aires`. Los importes monetarios usan
+  negrita (`700`) sin cambiar su tamaño, color ni formato. `DataTable` agrega
+  `.currency-value` a las celdas con importes formateados con `$`; `CurrencyText` destaca solo los importes dentro de ayudas,
   descripciones y mensajes. Los campos de precio, costo, pago, saldo anterior y
   límite de crédito usan `.currency-input`, también en móvil. Cantidades,
   porcentajes y referencias de transferencia conservan su estilo.
@@ -120,9 +124,10 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   de catálogo `10px`, badges tipo píldora `999px`. No uniformarlos arbitrariamente.
 - Reutilizar los espacios definidos por cada patrón: panel `20px`, formulario
   `14px`, acciones `8px`. No existe una escala de spacing tokenizada actualmente.
-- Foco global en botones, inputs, selects y enlaces: contorno de `3px solid
-  #bb8754`, separado `2px`. Los campos tienen además borde verde y halo al enfocar.
-  Extender el foco visible a cualquier nuevo control, incluido `textarea`.
+- Los controles interactivos, incluido `textarea`, usan un contorno de `3px`
+  separado `2px` cuando reciben foco visible. `--focus-ring` y
+  `--control-border` adaptan el contraste a cada tema. Los campos conservan
+  el borde verde y el halo al enfocar.
 
 ## Estructura de páginas, paneles y métricas
 
@@ -168,8 +173,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 
 ### Atajos de teclado de Operación
 
-- Administración → Configuración muestra el panel «Atajos de teclado» con las
-  siete secciones de Operación. Reutiliza `.form-grid`, `.field`, `.input` y
+- Administración → Configuración → Atajos de teclado muestra las secciones de
+  Operación, incluida «Liquidaciones». Reutiliza `.form-grid`, `.field`, `.input` y
   `Button`. La grilla pasa a una columna hasta `760px`.
 - Cada campo captura Ctrl, Alt o Meta con una letra o un número y admite Mayús
   como modificador adicional. Al asignar o quitar se guarda de inmediato por
@@ -386,8 +391,9 @@ período seleccionado, con un enlace al historial.
   cambio sin guardar el borde usa `--copper` y se muestra «Enter para guardar · Esc
   para descartar». Nunca se acepta un precio menor al costo: el error se muestra en
   la fila con `role="alert"` y `aria-invalid`. En la General se aplica el mismo
-  aviso de listas seguidoras. «Programar» abre un `FormModal` compacto con el
-  producto y la lista en el encabezado, y el precio y la fecha en una columna.
+  aviso de listas seguidoras. «Programar» abre [`SchedulePriceModal`](../../frontend/src/features/pricing/SchedulePriceModal.tsx)
+  (`FormModal` compacto con el producto y la lista en el encabezado, precio y
+  `OrderDateFilter` en formato `dd/mm/aaaa` en una columna, evitando `<input type="date">`).
   Si la fecha queda vacía, se aplica desde hoy. Cancelar o pulsar Escape con
   cambios sin guardar pide confirmar el descarte.
 - La tabla principal y la de historial muestran encabezados de `12px` con
@@ -591,7 +597,8 @@ Las filas de selección se adaptan al ancho y admiten nombres largos.
 ## Botones y acciones
 
 Usar [`Button`](../../frontend/src/shared/components/Button.tsx). Acepta atributos
-nativos, `variant` y `fullWidth`; `href` hace que renderice un enlace.
+nativos, `variant` y `fullWidth`. Con `href`, las rutas internas navegan dentro de
+la aplicación. Usar `external` para abrir otra instancia o salir de la aplicación.
 
 | Variante | Uso | Apariencia |
 | --- | --- | --- |
@@ -624,9 +631,8 @@ nativos, `variant` y `fullWidth`; `href` hace que renderice un enlace.
   abrirlo. Tab recorre sus acciones. Escape lo cierra y devuelve el foco al
   botón. Un clic fuera o la salida de foco también lo cierran. Al abrir un
   diálogo desde el menú, el foco vuelve a «Más acciones» al cerrar el diálogo.
-- `Button` no combina el `className` recibido con sus clases internas: no pasar
-  un `className` suponiendo que se conservará `.button`. Para ajustar un contexto,
-  usar un contenedor con selector acotado o mejorar explícitamente el componente.
+- `className` agrega clases al patrón base de `Button`. Usar ajustes acotados
+  al contexto que los necesita.
 
 ```tsx
 <div className="page-actions">
@@ -640,6 +646,11 @@ nativos, `variant` y `fullWidth`; `href` hace que renderice un enlace.
 ```
 
 ## Tablas, filtros y paginación
+
+Usar [`Pagination`](../../frontend/src/shared/components/Pagination.tsx)
+para paginar listados. El componente conserva el resumen y los botones
+Anterior y Siguiente. Indicar un nombre accesible específico si una vista
+tiene más de una paginación.
 
 «Nuevo pedido» muestra la ruta Operación / Pedidos y la acción «Cancelar».
 `.order-create-form` agrupa «Cliente y condiciones» y «Productos»
@@ -797,8 +808,7 @@ falta espacio. «Cancelar pedido» usa la variante `danger`. Las notas de
 preparación, revisión y stock histórico quedan debajo.
 El resultado de «Nuevo pedido» incluye «Enviar por WhatsApp» con el logo del
 canal y texto visible, junto a las acciones de consulta y descarga, para usuarios
-con `ORDER_NOTIFY` o `ADMIN_ALL`. Por ahora muestra un error accesible (`role="alert"`)
-indicando que el envío todavía no está implementado; no solicita ni registra envíos.
+con `ORDER_NOTIFY` o `ADMIN_ALL`, abriendo `OrderNotificationDialog` con canal `WHATSAPP`.
 Impresión, descargas y envío se agrupan bajo «Documentos del pedido», cerca del
 encabezado. «Enviar por email» y «Enviar por WhatsApp» abren un `FormModal`
 compacto con el contacto disponible y el formato del comprobante. Si falta el
@@ -938,10 +948,9 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   Celdas: `12px`, padding `15px 16px`, separadores y hover suave.
 - Identificador principal con `emphasis`; importes y cantidades con
   `align: 'right'`. Mostrar el estado con texto, no solo color.
-- Usar `render` para badges y acciones. Si se usa `onRowClick`, los controles
-  internos deben evitar propagar el click cuando ejecuten una acción distinta.
-- `onRowClick` hoy solo agrega click a un `tr`; no ofrece interacción equivalente
-  por teclado. Para navegación nueva, ofrecer un enlace o botón explícito.
+- Usar `render` para badges y acciones. `DataTable.onRowClick` está marcado
+  `@deprecated` porque agrega click solo al `<tr>` sin equivalente de teclado;
+  ofrecer siempre un enlace o botón explícito en la columna principal o en `Acciones`.
 - Cada celda recibe `data-label`: a `640px` o menos la tabla se transforma en
   tarjetas y utiliza ese atributo como etiqueta. Una tabla manual debe mantenerlo.
 - Agrupar búsqueda y filtros en `.toolbar`; input `.input.search-input` y
@@ -966,8 +975,11 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   entregadas» explicitan el alcance. El administrador conserva todos los estados.
   El select Saldo pendiente alterna todas las ventas y solo
   ventas con saldo impago (excluye canceladas). Se combinan los filtros y se
-  conservan en la URL; cada cambio vuelve a la primera página. A `640px` o menos
-  cada filtro principal ocupa una fila completa mediante utilidades locales
+  conservan en la URL; cada cambio vuelve a la primera página. La tabla usa `.compact-list-table.sales-list-table` para ajustar celdas en `1280px`
+  y el número de venta es un botón interactivo (`Ver venta {número}`) que abre
+  el detalle. El enlace «Artículos vendidos» conserva fechas y `returnTo` para
+  regresar con el filtro previo (avisando si el reporte omite filtros de lista).
+  A `640px` o menos cada filtro principal ocupa una fila completa mediante utilidades locales
   de Tailwind. Las fechas reutilizan `OrderDateFilter` y `OrderCalendar`, junto
   con `.orders-date-filters`, y forman dos columnas en móvil. Inician vacías,
   admiten límites abiertos y muestran errores para fechas o rangos inválidos.
@@ -982,9 +994,12 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   deudas autorizadas. Los saldos devueltos después de cobrar corresponden a las
   deudas del vendedor; el administrador conserva la vista completa del cliente.
 - En pedidos, la búsqueda en `.orders-toolbar` usa `14ch + 22px` y cada select
-  toma el ancho que necesita su opción más larga o su etiqueta. `.orders-date-filters`
+  toma el ancho que necesita su opción más larga o su etiqueta. `.orders-secondary-filters` agrupa los filtros secundarios (`Cobro`,
+  `Preparación`, `Cargado por`, `Revisión`); a `640px` o menos quedan ocultos
+  bajo `.orders-more-filters-toggle` («Más filtros (N)», abierto
+  automáticamente si hay algún filtro secundario activo en URL). `.orders-date-filters`
   agrupa dos campos de `120px` a la derecha, en la misma fila si hay espacio. A
-  `640px` o menos, la búsqueda y los selects ocupan filas completas y las fechas
+  `640px` o menos, la búsqueda y los selects principales ocupan filas completas y las fechas
   se distribuyen en dos columnas iguales. Los campos usan `dd/mm/aaaa`,
   labels visibles y errores asociados mediante `aria-describedby`.
   `OrderDateFilter` conserva el texto numérico y abre `OrderCalendar` en español al
@@ -1001,8 +1016,9 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   pedidos, el estado vacío ofrece «Ver todos los pedidos»: quita búsqueda,
   estado y ambas fechas, vuelve a la primera página y conserva los límites
   vacíos en la URL para que no se restablezcan al recargar.
-- `.pagination` contiene resumen y botones anterior/siguiente. Se compone en
-  cada pantalla: **no existe un componente compartido `Pagination`** actualmente.
+- `.pagination` contiene resumen y botones anterior/siguiente mediante el
+  componente compartido [`Pagination`](../../frontend/src/shared/components/Pagination.tsx)
+  (`<nav aria-label>`, botones `type="button"` y copy unificado).
   Deshabilitar los extremos y conservar filtros/página en la URL cuando corresponda.
 - No copiar anchos `nth-child` de otra tabla sin revisar columnas y permisos.
   Las variantes `.products-table-admin`/`.products-table-standard` son específicas.
@@ -1371,20 +1387,58 @@ descargar usan `DocumentActions` con el período completo. Cada pedido usa
 `details` y `summary` con foco visible para abrir el desglose con teclado.
 Las líneas usan `DataTable` y sus tarjetas compartidas hasta `640px`.
 
-### Configuración de comisiones
+### Índice de Configuración
 
-`ADMIN_ALL` puede abrir «Planes y asignaciones» y «Liquidación de revendedores»
-desde el panel «Comisiones» de Configuración comercial. La pantalla de planes reutiliza
-`DataTable` para los planes, `FormModal` y `useDiscardChanges` para editarlos
-y dos paneles de asignación con el mismo formulario: «Asignación a vendedores»
-con `SellerSelect` y «Asignación a revendedores» con `CustomerSelect`, ambos en
-modo selección y con todas las páginas de opciones. Cada formulario tiene nombre
-accesible (el título del panel) y su propio selector de plan, visible desde el
-inicio. El selector se deshabilita y explica qué falta si aún no se eligió un
-beneficiario o todavía no hay planes. Las reglas se agrupan con `fieldset` y usan la
-grilla habitual de campos, con una columna a `760px` o menos. La selección de
-marca, categoría y artículo reutiliza `SearchableSelect`.
+`ADMIN_ALL` abre Configuración en `/admin/settings`. El índice agrupa destinos
+en Comercio, Reglas comerciales y Este navegador. Cada enlace ocupa su fila y
+describe qué cambia. `.settings-group` alinea su título a la izquierda de las
+filas, y lo apila encima hasta `760px`. Las filas conservan sus estados de tema,
+foco visible y un mínimo de `60px` para puntero y tacto.
 
+- «Datos del comercio» (`/admin/settings/business-profile`) guarda nombre,
+  dirección y teléfono juntos. Los documentos de venta usan estos datos.
+- Contacto y Logo usan `SettingsDisclosure` en esta pantalla. Al entrar, ambas
+  secciones están plegadas. Los encabezados completos se activan con clic,
+  Enter o Espacio, y abrir una sección cierra la anterior. Plegar una sección
+  conserva el contenido en edición y deja visible el estado del guardado.
+- «Logo del comercio» en la misma pantalla tiene guardado independiente.
+  Admite PNG o JPG de hasta 512 KB y 2048 × 2048 píxeles, muestra una vista
+  previa antes de guardar y permite quitar o deshacer el cambio pendiente.
+  El selector de archivo es nativo y muestra el foco en «Seleccionar imagen».
+  El logo guardado reemplaza la marca predeterminada en la cabecera y el menú
+  móvil, y aparece centrado al inicio de los dos comprobantes de venta.
+- «Límite de crédito» (`/admin/settings/credit-limit`) muestra el estado de la
+  regla global. El importe aparece al activarla. Si se supera al confirmar un
+  pedido, se registra una advertencia y el pedido puede continuar.
+- «Atajos de teclado» (`/admin/settings/shortcuts`) indica el alcance local y
+  guarda cada asignación al instante en el navegador.
+- Los borradores de Comercio y Crédito se mantienen en memoria al navegar por
+  la aplicación durante la sesión. El índice indica «Sin guardar». Cada
+  formulario conserva sus campos al fallar un guardado y confirma el éxito.
+- Las pantallas de ajuste enfocan el encabezado al abrirse. «Volver a Configuración»
+  queda arriba a la derecha, alineado con el borde de las opciones. Hasta `760px`
+  pasa debajo del título y conserva la alineación derecha y su ancho de contenido.
+
+### Configuración de comisiones y liquidaciones
+
+`ADMIN_ALL` puede abrir «Planes de comisiones» desde Reglas comerciales. La pantalla de planes reutiliza
+`DataTable` para los planes y `FormModal` y `useDiscardChanges` para editarlos.
+Los tres paneles ocupan el mismo ancho dentro del contenido de la pantalla.
+«Asignar comisión» usa un solo formulario. El tipo de beneficiario alterna
+entre `SellerSelect` y `CustomerSelect` en modo selección y con todas las páginas
+de opciones. El tipo, el beneficiario, el plan y el guardado se alinean en una fila
+y se apilan hasta `760px`. El selector de plan indica qué falta mientras está
+deshabilitado. «Sin comisión» representa una asignación consultada sin plan o la
+opción de quitarlo. Los errores y confirmaciones aparecen junto al formulario.
+Debajo, «Planes asignados» usa `DataTable` y paginación para mostrar beneficiario,
+tipo y plan, con tarjetas separadas hasta `640px`. «Editar» lleva al mismo
+formulario. Cambiar de beneficiario con un borrador pide confirmación de descarte.
+Las reglas de un plan se agrupan
+con `fieldset` y usan la grilla de formularios habitual. La selección de marca,
+categoría y artículo reutiliza `SearchableSelect`.
+
+Operación → Liquidaciones (`/commission-settlements`) se puede abrir también
+desde «Planes de comisiones». La URL anterior redirige y conserva sus filtros.
 «Liquidación de comisiones» inicia en «Revendedores». La selección de
 «Comisiones de» se guarda en la URL como `type`. Un enlace anterior con
 `sellerId` y sin `type` abre «Vendedores». El tipo, el beneficiario
@@ -1416,14 +1470,6 @@ cambió, la pantalla actualiza el importe y pide revisar la nueva liquidación.
   cierre durante el guardado y conserva la selección si la API devuelve un error.
 - Roles muestra los permisos en dos columnas desde `761px` y en una en espacios
   más estrechos.
-- Configuración comercial usa la grilla `content-grid two-thirds` para Límite
-  de crédito y Comisiones. El límite indica su estado o si hay cambios sin guardar.
-  La casilla de activación y el importe se agrupan. El importe aparece cuando la
-  casilla está marcada.
-  «Guardar límite» conserva el ancho de su contenido.
-  «Datos del comercio» ocupa el ancho completo y reutiliza los campos del
-  formulario compartido. El nombre, la dirección y el teléfono se guardan juntos
-  y se usan al generar tickets de venta.
 - Auditoría muestra las operaciones y los resultados en español. Un identificador
   largo se recorta visualmente. El valor completo aparece al pasar el puntero
   o al desplegarlo con teclado o toque. La búsqueda acepta los códigos de
@@ -1436,11 +1482,10 @@ cambió, la pantalla actualiza el importe y pide revisar la nueva liquidación.
 | `.modal-backdrop .panel` | Patrón básico de `520px`; no incluye por sí solo límite de altura ni las tres secciones |
 | `.product-movements-dialog` | Movimientos del producto: ancho adaptable hasta `1100px` y altura limitada al viewport con scroll vertical. `.product-movements-table` muestra las cinco columnas sin scroll horizontal, con anchos proporcionales y texto completo adaptable, incluidas las referencias largas. Hasta `640px` conserva las tarjetas compartidas |
 | `.customer-modal` | Formulario de clientes de ancho adaptable hasta `1040px`, scroll interno y descarte mediante `ConfirmationDialog` |
-| `.price-status-dialog-*` | Confirmación de estado de listas: `480px`, radio `12px`, resumen del cambio, cierre y capa `35` |
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
 | `.price-list-pending`, `.price-products-table-follow` | Listas que siguen a la General: contador «N sin revisar» en la tarjeta (fondo de advertencia, `11px`) y tabla de cinco columnas con «Estado» (mínimo `880px`; en tarjetas hasta `640px`) |
 | `.price-lists-page .panel-header` | Hasta `640px` los controles del encabezado (filtros, confirmar pendientes) pasan a su propia fila |
-| `.compact-list-table` | Clientes, pedidos, stock y auditoría permiten ajustar el texto de las celdas. Las acciones pueden pasar a otra línea dentro de la misma celda. Hasta `640px` conservan la disposición compartida de tarjetas |
+| `.compact-list-table` | Clientes, pedidos, ventas (`.sales-list-table`), artículos vendidos, panel comercial, stock, detalle de pedido y auditoría ajustan celdas sin scroll horizontal en `1280px`. Las acciones pueden pasar a otra línea. Hasta `640px` conservan las tarjetas compartidas |
 | `.sale-detail-dialog` | Detalle de venta: hasta `1040px` sobre `760px`, padding `28px`, títulos de `20px` y tablas/datos de `14px`; hasta `760px` conserva el ancho y tipografía compactos. Altura limitada al viewport con scroll interno |
 | `.delivery-attempt-dialog` | Registro de entrega: diálogo nativo de hasta `720px`, encabezado y pie fijos, cuerpo con scroll y pagos con medio, importe y eliminación alineados. Número de transferencia dentro del mismo fondo. Hasta `640px`, los pagos se apilan y las acciones del pie comparten el ancho |
 
@@ -1513,6 +1558,12 @@ Esta variante no modifica las dimensiones ni el cierre de otros modales.
 - Usar `state="loading"` para mostrar un indicador de progreso y anunciarlo
   como estado. `state="error"` usa un símbolo de advertencia y anuncia el error.
   El reintento se pasa como `action`. El indicador respeta movimiento reducido.
+- [`RouteContent`](../../frontend/src/app/RouteContent.tsx) usa `EmptyState`
+  durante la carga de una ruta y `AppShell` actualiza `document.title` por ruta.
+  Al navegar desde `NavigationDrawer`, el foco se traslada a `<main>`; al
+  cerrar con Escape o el fondo, vuelve al disparador.
+- Todas las consultas en carga o error recuperable reutilizan `EmptyState`
+  con `state="loading"` o `state="error"`.
 
 ## Responsive y movimiento
 
@@ -1547,9 +1598,10 @@ Esta variante no modifica las dimensiones ni el cierre de otros modales.
 - [ ] Si cambió un patrón reutilizable, la guía se actualizó en el mismo cambio.
 
 Para código frontend ejecutar los checks pertinentes definidos en
-[`package.json`](../../frontend/package.json): `npm run build`, `npm test` y,
-cuando cambie un flujo completo o comportamiento responsive, las pruebas E2E
-relevantes. Ejecutarlos desde `frontend` y documentar qué se verificó.
+[`package.json`](../../frontend/package.json): `npm run build`, `npm run lint`,
+`npm run test:coverage`, `npm run test:navigation`, `npm run test:mocked` y,
+cuando cambie un flujo completo, `npm run test:e2e`. Ejecutarlos desde
+`frontend` y documentar qué se verificó.
 
 `npm run test:navigation` verifica el shell en doce anchos de `320px` a `1920px`,
 incluidos ambos lados de `1050px`, teclado, Escape, fondo, permisos, cambio de

@@ -1,168 +1,83 @@
 # Guía de API REST
 
-## Base
+## Base y autorización
 
-```text
-/api/v1
-```
+La API usa `/api`. Las instancias de desarrollo pueden anteponer
+`/a` o `/b` en el proxy. El cliente agrega `Authorization: Bearer <token>`
+a las operaciones autenticadas. El backend controla permisos y alcance de
+datos, incluso al volver a ejecutar un comando idempotente.
 
-La versión forma parte de la URL. Cambios incompatibles requieren una nueva
-versión.
+Los endpoints de sesión son `POST /api/auth/login`, `/refresh`, `/logout`
+y `/activate`. El refresh token se envía en el JSON de renovación o cierre
+de sesión. Login, renovación y activación tienen límites de frecuencia.
 
-## Recursos iniciales
+El frontend y la API comparten origen en Compose. Para clientes de otros
+orígenes, declarar una lista explícita en `CORS_ALLOWED_ORIGINS`.
 
-```text
-/auth
-/users
-/roles
-/permissions
-/sellers
-/customers
-/brands
-/categories
-/products
-/price-lists
-/inventory
-/inventory/movements
-/orders
-/sales
-/payments
-/customers/{id}/account
-/documents
-/notifications
-```
+## Recursos y comandos
 
-## Convenciones
+Los recursos usan JSON en `camelCase`. Las fechas de negocio usan
+`YYYY-MM-DD` y los timestamps, ISO 8601. El backend calcula importes
+a partir de precios, unidades, descuentos y reglas vigentes.
 
-- Recursos en plural.
-- JSON en `camelCase`.
-- Fechas en ISO-8601.
-- Timestamps expresados en UTC.
-- `GET` no cambia estado.
-- `POST` crea recursos o ejecuta comandos explícitos.
-- `PATCH` modifica recursos editables.
-- `DELETE` se reserva para recursos sin valor histórico; preferir desactivar.
-- El backend recalcula importes comerciales.
-- No se aceptan totales calculados únicamente por el frontend.
+| Operación | Endpoint |
+| --- | --- |
+| Consultar pedidos | `GET /api/orders` |
+| Confirmar un pedido | `POST /api/orders/confirm` |
+| Editar un pedido confirmado | `PUT /api/orders/{id}` |
+| Preparar un pedido | `POST /api/orders/{id}/prepare` |
+| Registrar un intento de entrega | `POST /api/orders/{id}/delivery-attempts` |
+| Cancelar o reactivar | `POST /api/orders/{id}/cancel` o `/reactivate` |
+| Cobrar cuenta corriente | `POST /api/customers/{id}/account-payments` o `/settlement` |
+| Descargar comprobante | `GET /api/orders/{id}/documents/a4` o `/ticket` |
+| Solicitar un envío | `POST /api/orders/{id}/notifications` |
 
-## Comandos de negocio
-
-Los cambios de estado importantes se expresan con endpoints explícitos:
-
-```text
-POST /api/v1/orders/confirmation
-POST /api/v1/orders/{id}/delivery
-POST /api/v1/orders/{id}/delivery-attempts
-POST /api/v1/sales/{id}/cancellation
-POST /api/v1/payments
-POST /api/v1/customers/{id}/account/payments
-POST /api/v1/documents/sales/{id}/render
-POST /api/v1/notifications/whatsapp
-```
-
-La confirmación de pedido crea el pedido persistido, venta, stock y pago/deuda
-en una sola operación transaccional. Debe soportar idempotency key.
-
-## Paginación
-
-Toda colección se pagina:
-
-```text
-GET /api/v1/products?page=0&size=20&sort=name,asc
-```
-
-Valores:
-
-```text
-page = 0
-size = 20
-maxSize = 100
-```
-
-La respuesta debe incluir metadata:
-
-```json
-{
-  "content": [],
-  "page": 0,
-  "size": 20,
-  "totalElements": 0,
-  "totalPages": 0,
-  "first": true,
-  "last": true
-}
-```
-
-## Filtros y orden
-
-Cada endpoint debe declarar explícitamente sus filtros y campos ordenables. No
-se aceptan nombres de columnas arbitrarios provenientes del cliente.
-
-Ejemplo:
-
-```text
-GET /api/v1/orders?status=CONFIRMED&customerId={id}&page=0&size=20
-```
-
-## Códigos HTTP
-
-| Código | Uso |
-|---|---|
-| `200` | Consulta o modificación con representación |
-| `201` | Creación de recurso |
-| `204` | Operación exitosa sin representación |
-| `400` | Request mal formado |
-| `401` | No autenticado |
-| `403` | Sin permiso |
-| `404` | Recurso inexistente |
-| `409` | Conflicto de estado, idempotencia o concurrencia |
-| `422` | Regla de negocio inválida |
-| `429` | Rate limit excedido |
-| `500` | Error inesperado |
-
-## Errores
-
-Formato estándar:
-
-```json
-{
-  "type": "https://api.example.com/problems/order-not-confirmable",
-  "title": "Order cannot be confirmed",
-  "status": 409,
-  "code": "ORDER_NOT_CONFIRMABLE",
-  "detail": "The order cannot be confirmed in its current state",
-  "instance": "/api/v1/orders/123",
-  "traceId": "...",
-  "fieldErrors": []
-}
-```
-
-No se exponen stack traces ni detalles internos de SQL.
+Confirmar un pedido registra venta y pagos o deuda en una transacción. El
+pedido queda pendiente de preparación. Prepararlo registra los movimientos de
+stock correspondientes. Las consultas y exportaciones no modifican el estado.
 
 ## Idempotencia
 
-Los comandos que pueden repetirse por reintentos de red deben aceptar
-`Idempotency-Key`:
+Los contratos de confirmación de pedido, alta de compra, gasto, merma y
+solicitud de notificación usan el campo JSON `idempotencyKey`. Ante un
+resultado de red incierto, conservar la clave y los datos originales al
+reintentar. El backend responde con un conflicto cuando una clave ya registrada
+se reutiliza con datos distintos en los comandos que verifican esa equivalencia.
 
-- Confirmación de pedido.
-- Registro de pago.
-- Cancelación.
-- Marcado de entrega.
-- Solicitud de WhatsApp.
+## Paginación
 
-Una misma key con distinto payload debe responder conflicto.
+Los listados paginados aceptan `page` desde cero y `size`. Los límites y
+filtros aplicables se documentan por recurso.
 
-## Seguridad
+```http
+GET /api/orders?page=0&size=20&search=&status=CONFIRMED
+```
 
-- Todos los endpoints requieren autenticación salvo login, activación y
-  recuperación.
-- La autorización se valida en backend mediante permisos.
-- CORS solo permite el frontend configurado.
-- No se envían tokens sensibles en URLs.
-- Los endpoints de Actuator no forman parte del API público.
+```json
+{"content":[],"page":0,"size":20,"totalElements":0,"totalPages":0}
+```
 
-## OpenAPI
+## Respuestas y errores
 
-La especificación OpenAPI debe generarse desde el backend y publicarse por
-ambiente solo cuando corresponda. Los ejemplos deben reflejar reglas reales de
-validación, paginación y errores.
+| Estado | Uso |
+| --- | --- |
+| `200`, `201`, `202`, `204` | Operación exitosa, creación, trabajo aceptado o respuesta sin contenido |
+| `400` | Solicitud inválida |
+| `401`, `403` | Sesión ausente o acción no autorizada |
+| `404` | Recurso inexistente o fuera del alcance visible |
+| `409` | Conflicto de estado o de idempotencia |
+| `429` | Límite de frecuencia excedido |
+| `500` | Error inesperado |
+
+Los errores de aplicación usan Problem Details con `status`, `title`,
+`detail`, `instance` y `code`. Los errores de validación pueden incluir
+`fieldErrors`, un objeto con un mensaje por campo. Usar `X-Request-Id` para
+correlacionar una respuesta con los logs.
+
+## OpenAPI y operación
+
+Swagger y OpenAPI se habilitan con el perfil `local` en `/swagger-ui.html` y
+`/v3/api-docs`. En el backend, `/actuator/health/liveness` y
+`/actuator/health/readiness` exponen el estado de los probes. Los demás
+endpoints de Actuator requieren `ADMIN_ALL`. El frontend devuelve `404`
+para estas rutas operativas y de documentación.

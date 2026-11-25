@@ -46,8 +46,7 @@
 - Antes de crear o modificar una interfaz, leer la [guía de estilos y patrones de interfaz](ui-style-guide.md). Es la referencia común para botones, tablas, formularios, modales, feedback y responsive; actualizarla cuando cambie un patrón reutilizable.
 - Organizar por feature.
 - Server state en TanStack Query.
-- Form state en React Hook Form.
-- Validación compartida conceptualmente con backend, sin confiar solo en Zod.
+- Form state local en React con validación explícita alineada con el backend.
 - No duplicar toda la API en Zustand u otro store.
 - Componentes compartidos sin dependencias de features concretas.
 - Estilos con Tailwind CSS 4: reutilizar los patrones semánticos con `@apply` y los tokens de la guía; conservar valores exactos y breakpoints. No habilitar Preflight sin revisar el impacto visual.

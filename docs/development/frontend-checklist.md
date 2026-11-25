@@ -1,6 +1,10 @@
+> **Documento histórico (línea base 2026-09-25):** consolidado y superado por [`current-state.md`](../architecture/current-state.md) y el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
+
 # Frontend Development Checklist
 
 Estado actualizado: 2026-09-25
+
+Para correcciones y verificaciones posteriores a esta línea base, consultar el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
 
 ## Cómo Leerlo
 
@@ -28,7 +32,7 @@ Estado actualizado: 2026-09-25
 - [x] Layout responsive desktop/mobile.
 - [x] Tablas transformadas a cards en mobile; listados con búsqueda/filtros y paginación conectados a parámetros de URL.
 - [x] Estados de carga y error para consultas principales.
-- [x] Componentes reutilizables de botones, paneles, badges y tablas; paginación compuesta por pantalla con estilos comunes.
+- [x] Componentes reutilizables de botones, paneles, badges, tablas y paginación (`Pagination`).
 - [x] Feedback de mutaciones con mensajes de éxito y errores accionables en flujos implementados.
 - [x] Confirmación explícita para bajas lógicas, cancelaciones y acciones irreversibles implementadas.
 - [x] Filtros y paginación persistidos en URL en clientes, pedidos, ventas, pagos, productos, inventario, depósitos, listas/precios/historial, descuentos, usuarios, vendedores y auditoría.
@@ -119,8 +123,7 @@ ya no están disponibles como pantalla; la API conserva esas capacidades.
 
 ## Administración De Usuarios
 
-- [x] Mostrar roles devueltos por API como etiquetas de solo lectura, conservando códigos desconocidos.
-- [ ] Reasignar roles y editar permisos (API disponible, funcionalidad aplazada por decisión del usuario).
+- [x] Mostrar y editar roles y permisos desde `/admin/roles` y `/admin/users`.
 
 ## Delivery, Documents Y Notifications
 
@@ -139,8 +142,7 @@ ya no están disponibles como pantalla; la API conserva esas capacidades.
 - [x] Frontend servido por Nginx en Compose.
 - [x] Proxy `/api` hacia backend.
 - [x] Tests unitarios de API client, formularios y flujos implementados.
-- [~] Contratos TypeScript alineados con flujos implementados; sin Zod.
-- [ ] Validación de formularios con React Hook Form + Zod según la arquitectura documentada.
+- [x] Contratos TypeScript y validación de formularios con componentes propios.
 - [x] E2E login -> crear cliente/producto con precio -> pedido -> confirmar -> ver pedido/venta.
 - [x] Diseño responsive actualizado; Playwright mobile comprueba navegación y ancho de documento.
 - [~] Errores/permisos cubiertos en pruebas de componente; falta auditoría visual completa.
@@ -153,7 +155,7 @@ ya no están disponibles como pantalla; la API conserva esas capacidades.
 4. [~] Completar ventas y cuenta corriente; cobros durante entrega y devolución con líneas disponibles, aún falta vista integral de estado de cuenta. La pantalla independiente de pagos está retirada.
 5. [~] Implementar entrega, cancelación, documentos y notificaciones; historial de intentos completado, dashboard global de outbox sigue pendiente.
 6. [x] Conectar vigencias/reglas de precio y flujos de inventario de stock único al frontend.
-7. [x] Mostrar rol actual en usuarios; conservar edición de roles/permisos como pendiente aplazado.
+7. [x] Mostrar el rol actual del usuario y administrar roles y permisos.
 8. [x] Tests Vitest de API client y flujos principales; E2E comercial desktop/mobile ejecutado.
 
 ## Criterio De Cierre Frontend

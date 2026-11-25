@@ -131,3 +131,13 @@ Sin embargo, la auditoría visual detectó **8 categorías de problemas** que af
 
 6. **Auditoría (`/admin/audit`, [AuditPage.tsx](../../frontend/src/features/admin/AuditPage.tsx))**:
    - **Mejoras**: Ampliar el input `"Filtrar eventos"` (`min-w-[260px]`), truncar visualmente los UUIDs de `Recurso` y `Request ID` con tooltip del valor completo, y traducir los códigos de `Operación` y `Resultado`.
+
+## 3. Implementación
+
+- **Autenticación y navegación.** Ingresar y Activar cuenta tienen controles de tema y tamaño de texto. Las contraseñas se pueden mostrar u ocultar. El correo de la sesión reemplaza el indicador estático de la barra superior.
+- **Operación.** Nuevo pedido usa dos columnas para sus condiciones y amplía el selector de producto. Pedidos compacta la fecha y la atribución y permite limpiar solo el rango. El detalle agrupa operaciones y documentos cerca del encabezado. Resumen agrupa las métricas por tipo y Dashboard incorpora escala vertical y marcadores de ventas.
+- **Listados y formato.** Clientes y Stock agrupan acciones secundarias en «Más acciones» y Auditoría permite expandir identificadores. La búsqueda tiene más espacio, se traducen los estados y eventos afectados y se unifican las etiquetas de fecha y los formatos de vigencia y saldo.
+- **Formularios y diálogos.** Se migraron los diálogos de ventas, movimientos, catálogo, usuarios, vendedores, zonas y proveedores. Compras limita el ancho de fecha y cantidad. Límite de crédito apila sus campos y Comisiones mantiene visible el selector de plan con ayuda.
+- **Hallazgos cotejados con la versión actual.** El menú ya distingue Resumen y Dashboard, y Pedidos ya tenía una acción para limpiar todos los filtros en el estado vacío. Gastos usa filtros por tipo y fechas y carece de un buscador de texto al que se pueda aplicar el ajuste de ancho.
+
+Los patrones de interacción y los detalles adaptativos se documentan en la [guía de estilos de interfaz](ui-style-guide.md).

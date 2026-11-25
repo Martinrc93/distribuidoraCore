@@ -1,8 +1,10 @@
 # Funcionalidades frontend pendientes por soporte/API
 
-Estado actualizado: 2026-10-07. Este documento distingue funciones ya conectadas,
+Estado actualizado: 2026-11-25. Este documento distingue funciones ya conectadas,
 funciones con comandos pero sin una lectura suficiente y operaciones que no son
 de usuario final. La interfaz no simula respuestas faltantes.
+
+Los cambios posteriores a esta línea base se registran en el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
 
 ## Nuevas capacidades conectadas al frontend
 
@@ -43,19 +45,19 @@ de usuario final. La interfaz no simula respuestas faltantes.
   la UI todavía limita la edición a pedidos confirmados sin descuentos y con una
   sola lista entre líneas. Falta diseñar cómo preservar y volver a resolver reglas
   automáticas al editar; el detalle tampoco expone una lista de precios de cabecera.
-- **Reasignación selectiva de clientes a un vendedor:** el comando acepta
-  `customerIds`, pero no existe filtro de clientes por `sellerId`. La UI sí puede
-  reasignar todos los clientes de un vendedor y opcionalmente sus pedidos
-  pendientes. Reasignar pedidos funciona con los IDs seleccionados de la primera
-  página cargada.
+- **Reasignación de clientes y pedidos por vendedor:** `/sellers` permite
+  reasignar toda la cartera de un vendedor a otro activo y pedidos `CONFIRMED`.
+  La selección parcial por checkbox sigue acotada a filtros generales sin
+  endpoint dedicado de clientes por `sellerId` con búsqueda separada.
 - **Dashboard de vendedor:** `/api/dashboard` requiere `ADMIN_ALL`; vendedores se
   dirigen al listado de pedidos, ya que no existe proyección de dashboard con
   alcance vendedor.
-## Capacidades soportadas que siguen pendientes o limitadas en frontend
+## Capacidades implementadas y límites vigentes en frontend
 
-- **Reasignación de roles y edición de permisos:** el backend ofrece estos
-  comandos, pero la UI solo muestra los roles actuales. La edición quedó aplazada
-  por decisión del usuario.
+- **Roles, permisos, compras, gastos, mermas y comisiones:** `/admin/roles`,
+  `/admin/users`, `/supplier-orders`, `/expenses`, `/shrinkages`,
+  `/admin/commission-plans` y `/commission-settlements` están conectados a sus
+  respectivos contratos REST.
 - **Ajustes para usuario solo con `STOCK_ADJUST`:** las lecturas de inventario y
   los permisos de página actuales limitan el acceso, por lo que esos usuarios no pueden abrir la
   pantalla frontend aunque el comando permita `STOCK_ADJUST`.
@@ -71,16 +73,9 @@ de usuario final. La interfaz no simula respuestas faltantes.
 
 ## Operación, no interfaz de usuario
 
-- Esta rama parte de `origin/main` `03586fd`; la implementación está en
-  `f92c408`. El [run 36073594320](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36073594320)
-  falló por una definición duplicada de `jwtAuthenticationFilter`, causada por
-  clases compiladas obsoletas. `.github/workflows/backend-postgres.yml` ahora
-  ejecuta `clean test` y escucha `main` en push y pull request. El [run
-  36103255055](https://github.com/Martinrc93/distribuidoraCore/actions/runs/36103255055)
-  pasó para el PR #1 a `main`, HEAD `9753eafe19fa5580164db6365bb112327d232898`.
-- Backups programados, copia externa y ArchUnit constan como verificados en
-  `backend-checklist.md`; repetirlos solo si el entorno o el código relevante
-  cambian.
+- El detalle del estado de CI, workflows (`backend-postgres.yml`,
+  `frontend-ci.yml`, `docker-build.yml`), cobertura y remediación se registra
+  en [`remediation-roadmap-2026-11-24.md`](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
 - Operar el proveedor webhook y sus secretos en el despliegue.
 
 ## Cobertura frontend aún incompleta

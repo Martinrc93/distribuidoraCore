@@ -3,87 +3,46 @@
 Los diagramas completos de arquitectura, navegación, estado, permisos y flujos
 funcionales están en [`frontend-diagrams.md`](./frontend-diagrams.md).
 
-## Stack
+## Stack y estructura
 
-Para implementar estilos y componentes, consultar primero la
-[guía de estilos y patrones de interfaz](../development/ui-style-guide.md).
-La implementación actual utiliza Tailwind CSS 4 mediante `@tailwindcss/vite`,
-patrones semánticos con `@apply` en `src/styles.css` y componentes propios en
-`src/shared/components`. Se conservan los valores del diseño y se omite Preflight.
-shadcn/ui en la lista siguiente pertenece al stack previsto y no está instalado. La estructura
-siguiente describe la organización propuesta; el CSS global actual es un archivo
-`src/styles.css`.
+La SPA usa React, TypeScript, Vite, React Router y TanStack Query. El cliente
+HTTP compartido agrega credenciales, rota el refresh token y traduce errores
+de la API. El frontend usa Tailwind CSS 4 y componentes propios. La
+[guía de estilos](../development/ui-style-guide.md) documenta los patrones.
 
-```text
-React + TypeScript + Vite
-React Router
-TanStack Query
-React Hook Form
-Zod
-Tailwind CSS + shadcn/ui
-fetch encapsulado
-Vitest + React Testing Library
-Playwright
-```
-
-## Estructura
-
-```text
-src/
-├── app/
-│   ├── config/
-│   ├── layouts/
-│   ├── providers/
-│   └── router/
-├── features/
-│   ├── auth/
-│   ├── users/
-│   ├── sellers/
-│   ├── customers/
-│   ├── catalog/
-│   ├── inventory/
-│   ├── orders/
-│   ├── sales/
-│   └── payments/
-├── shared/
-│   ├── api/
-│   ├── components/
-│   ├── forms/
-│   ├── permissions/
-│   ├── tables/
-│   ├── types/
-│   └── utils/
-├── main.tsx
-└── styles/
-```
-
-Cada feature puede contener `api`, `components`, `hooks`, `pages`, `schemas`,
-`types` y `queries`. Los componentes compartidos no deben importar detalles
-internos de una feature.
+| Ruta | Responsabilidad |
+| --- | --- |
+| `src/app` | Rutas, shell y límites de carga y error |
+| `src/features` | Pantallas y lógica de los dominios comerciales |
+| `src/shared/api` | Cliente HTTP, paginación, claves e invalidación de caché |
+| `src/shared/auth` | Lectura de permisos y datos de la sesión |
+| `src/shared/components` | Controles reutilizables |
+| `src/styles.css` | Tokens, estilos base, componentes y variantes responsive |
+| `src/test` | Pruebas de navegación y de flujos de negocio |
 
 ## Tipos de estado
 
 | Estado | Herramienta | Ejemplos |
-|---|---|---|
-| Server state | TanStack Query | productos, stock, pedidos, deuda |
-| Form state | React Hook Form | alta de cliente, pedido, pago |
-| Validación | Zod | requests, formularios y respuestas seleccionadas |
-| URL state | React Router | página, filtros, orden, búsqueda |
-| UI state | Estado local/Context acotado | sidebar, modal, preferencias |
-| Auth state | Context acotado + cliente HTTP | usuario actual y sesión |
+| --- | --- | --- |
+| Datos del servidor | TanStack Query | Productos, stock, pedidos, deuda |
+| Formularios | Estado local y validación de la aplicación | Alta de cliente, pedido, pago |
+| URL | React Router | Página, filtros y búsqueda |
+| Interfaz | Estado local, contexto o almacenamiento del navegador | Navegación, diálogos y preferencias |
+| Sesión | Cliente HTTP, almacenamiento de sesión y suscripción reactiva | Usuario actual, permisos y credenciales |
 
-No se copiarán todas las entidades del backend a un store global. Las
-mutaciones invalidan o actualizan las query keys afectadas.
+Las páginas comerciales se cargan bajo demanda. Las mutaciones invalidan las
+consultas afectadas. El cierre o vencimiento de la sesión cancela consultas,
+limpia la caché y redirige al login.
 
-## Pedido sin borrador persistido
+El navegador que admite Web Locks y BroadcastChannel comparte las rotaciones
+entre pestañas con la misma sesión. Las credenciales se guardan en
+`sessionStorage` con una clave por instancia.
 
-La pantalla de creación mantiene el pedido localmente hasta confirmar. El
-backend no recibe una operación de creación preliminar. La confirmación envía
-un comando completo y recibe el pedido confirmado, la venta y el resultado de
-pago.
+## Borrador de pedido
 
-La pantalla debe advertir antes de abandonar si existen cambios no guardados.
-El autosave persistente queda fuera del alcance inicial.
+El formulario permite guardar un borrador en el navegador, asociado al
+usuario y a la instancia. El backend recibe el pedido al confirmarlo. El
+comando confirmado devuelve pedido, venta y resultado de cobro.
 
 ## Permisos en la interfaz
 

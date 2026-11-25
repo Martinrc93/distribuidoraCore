@@ -12,6 +12,7 @@ no convierte a un rol personalizado en administrador.
 | CUSTOMER_VIEW | GET /api/customers/{id} y /{id}/orders | Ficha e historial autorizado. |
 | CUSTOMER_CREATE | POST /api/customers | Alta; sin alcance global, asignación automática al perfil propio. |
 | CUSTOMER_EDIT | PUT /api/customers/{id} | Datos de contacto; conservar lista no exige permiso para cambiarla. |
+| CUSTOMER_EDIT | PATCH /api/customers/{id}/contact | Actualiza únicamente el `email` o `phone` enviado. El teléfono se guarda en formato E.164. |
 | CUSTOMER_STATUS_CHANGE | PATCH /api/customers/{id}/status | Activar o desactivar un cliente asignado. |
 | CUSTOMER_PRICE_LIST_CHANGE | PATCH /api/customers/{id}/price-list | Asignar o quitar la lista predeterminada, sin exigir CUSTOMER_EDIT. |
 | ACCOUNT_SETTLE | POST /api/customers/{id}/account-payments/settlement | Pagos combinados parciales o liquidación FIFO de la deuda visible. |
@@ -83,11 +84,12 @@ siguen reservados a ADMIN_ALL.
 ## Revendedores (Fase 9.2)
 
 V52 agrega `kind` (`REGULAR` o `RESELLER`) y `reseller_id` a los clientes y el
-permiso `RESELLER_MANAGE`, otorgado a ADMIN y reservado a ese rol. Los endpoints
-exigen `ADMIN_ALL` y `RESELLER_MANAGE`; sin ellos devuelven `403`.
+permiso `RESELLER_MANAGE`, otorgado a ADMIN y reservado a ese rol. Las operaciones
+de la tabla exigen `ADMIN_ALL` y `RESELLER_MANAGE`. Sin ambos permisos devuelven `403`.
 
 | Operación | Contrato | Comportamiento |
 |---|---|---|
+| Crear revendedor | `POST /api/customers` con `businessName` y `"kind": "RESELLER"` | `201` con `id`. Crea la ficha comercial sin usuario. Omitir `kind` conserva el alta de cliente regular. |
 | Marcar o quitar la marca | `PATCH /api/customers/{id}/kind` con `{ "kind": "RESELLER" \| "REGULAR" }` | `204`. Repetir el valor actual no cambia nada. |
 | Asociar o desasociar | `PATCH /api/customers/{id}/reseller` con `{ "resellerId": "uuid" \| null }` | Devuelve `customerId`, `resellerId` y `pendingOrdersKept`. |
 | Preparar la asignación | `GET /api/customers/{id}/reseller-assignment` | `kind`, revendedor actual, `associatedCustomersCount` y hasta 20 pedidos sin entregar con su cuenta, más `pendingOrdersCount`. Desde V53 también `commissionPlan` (nombre o `null`) y `pendingCommissionCount`. |

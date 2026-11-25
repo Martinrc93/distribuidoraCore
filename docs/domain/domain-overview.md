@@ -49,7 +49,8 @@ erDiagram
 ## Invariantes
 
 - Una venta siempre nace de un pedido confirmado.
-- Confirmar crea venta y salida de stock dentro de la misma transacción.
+- Confirmar crea la venta y registra pagos o deuda. Preparar el pedido
+  registra la salida de stock y cambia la preparación de `PENDING` a `PREPARED`.
 - El stock puede ser negativo.
 - Los movimientos de stock son inmutables.
 - Una venta pagada no se cancela.
@@ -58,7 +59,7 @@ erDiagram
 - No se generan saldos a favor.
 - Los snapshots de pedido y venta no cambian por modificaciones futuras de
   listas de precios.
-- Los precios comerciales residen exclusivamente en `catalog.product_prices` por lista; el producto almacena únicamente su costo.
+- Los precios comerciales vigentes y programados residen en `catalog.product_price_history` (y compatibilidad temporal en `catalog.product_prices`) por lista; el producto almacena únicamente su costo.
 - El costo de un producto no puede superar el precio de ninguna lista activa sin actualizar dichos precios en la misma transacción.
 - Una venta parcialmente pagada puede entregarse.
 - Una lista de precios dada de baja no se usa en nuevos pedidos.
@@ -100,7 +101,7 @@ más antiguo. El límite global solo genera advertencias y no bloquea la venta.
 
 ## Estado del dominio
 
-Los impuestos, ARCA, compras, proveedores, reportes analíticos avanzados,
-portal de clientes y layouts configurables de impresión quedan fuera del
-alcance inicial. El dashboard operativo básico está implementado. El historial de costos ha sido
-eliminado del alcance funcional del sistema.
+Compras a proveedores, gastos, mermas, revendedores, comisiones y reportes
+operativos/analíticos están incorporados en el dominio actual. Facturación
+fiscal (ARCA), notas de crédito sobre ventas pagadas (`DOM-M1`, diferido) y
+portal de clientes permanecen fuera del alcance actual.

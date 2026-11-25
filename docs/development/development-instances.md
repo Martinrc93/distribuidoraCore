@@ -44,24 +44,28 @@ vuelve a la raíz `/` y selecciona el otro.
 
 La selección utiliza rutas relativas: funciona con `localhost`, un dominio
 propio o la URL de un túnel, sin compilar esa dirección dentro del frontend.
-Para usar el túnel Docker de este entorno, configura `NGROK_AUTHTOKEN` y
-`DEV_NGROK_URL` como variables de entorno, o en el archivo local
-`.env.development-tunnel.local` de la raíz:
+Para usar el túnel Docker, configura estas variables en el entorno o en
+`.env.development-tunnel.local` en la raíz.
 
 ```dotenv
 NGROK_AUTHTOKEN=your-ngrok-token
 DEV_NGROK_URL=https://your-domain.ngrok-free.dev
+JWT_SECRET=<secreto de al menos 32 caracteres para A>
+DEV_JWT_SECRET_B=<otro secreto de al menos 32 caracteres para B>
+DEV_ADMIN_PASSWORD=<contraseña personalizada de al menos 12 caracteres>
 ```
 
 Este archivo queda excluido de Git y del contexto de compilación Docker.
-Con las instancias arrancadas, inicia el túnel:
+Si las bases ya existen, cambia primero la contraseña del administrador en
+ambas instancias para que coincida con `DEV_ADMIN_PASSWORD`. Inicia el túnel con
+la versión actualizada de las imágenes.
 
 ```powershell
 .\dev-instances.cmd tunnel
 ```
 
 La URL configurada abre el selector; sus rutas `/a/` y `/b/` abren cada sistema
-en ese mismo dominio. El túnel apunta a `gateway:80` dentro de Docker, por lo que
+en ese mismo dominio. El túnel apunta a `gateway:8080` dentro de Docker, por lo que
 no depende del puerto publicado en Windows. Si el dominio ya está ocupado por
 otro túnel, detén ese túnel antes de usarlo aquí.
 
@@ -72,6 +76,9 @@ El comando `start` inicia solo las instancias; `tunnel` inicia ngrok de forma
 explícita. `stop` detiene las instancias y su túnel. Solo la entrada publica
 un puerto, por defecto en `127.0.0.1`; las bases de datos y los backends quedan
 dentro de las redes de Docker de este proyecto.
+
+`dev-instances.cmd prune` conserva la revisión seleccionada y la release
+reciente siguiente. Limpia únicamente el cache local de releases.
 
 ## Datos y sesiones
 

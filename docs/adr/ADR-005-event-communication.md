@@ -7,8 +7,8 @@ Accepted
 ## Context
 
 El flujo de confirmación necesita consistencia inmediata entre pedido, venta,
-stock, pagos y cuenta corriente. En cambio, la generación de documentos, email
-y WhatsApp son efectos secundarios que no deben hacer fallar una venta válida.
+pagos y cuenta corriente. La preparación posterior registra stock. El envío de
+documentos por email y WhatsApp se procesa de forma asíncrona.
 
 No existe inicialmente una necesidad de Kafka o RabbitMQ.
 
@@ -22,29 +22,23 @@ Confirmar un pedido será una única transacción local:
 ```text
 validar pedido
 → calcular precios y descuentos
-→ registrar salida de stock
 → crear venta
 → registrar pagos o deuda
-→ persistir pedido CONFIRMED
+→ persistir pedido CONFIRMED con preparación PENDING
 → registrar auditoría
 → guardar eventos outbox
 → commit
 ```
 
-La outbox se persistirá en la misma transacción y será procesada por un worker
-del monolito.
+La outbox se persiste en la transacción del comando que publica el evento. Un
+worker del monolito procesa los eventos pendientes y registra sus reintentos.
 
 Eventos iniciales:
 
 ```text
-OrderConfirmed
-SaleCreated
-SaleUpdated
-SaleCancelled
-StockChanged
-PaymentRegistered
-DocumentRequested
-WhatsAppDeliveryRequested
+ORDER_CONFIRMED
+NOTIFICATION_DELIVERY_REQUESTED
+USER_INVITATION_EMAIL_REQUESTED
 ```
 
 Los eventos deben incluir identificadores y datos necesarios para el consumidor,

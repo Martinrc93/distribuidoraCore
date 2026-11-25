@@ -110,6 +110,17 @@ solo `id`, `name`, `balance` y `status` con la misma definición de saldo y alca
 (`id`, `displayName`, `email`); sin él devuelve `404`. No es un catálogo global.
 Los formularios asignados usan esta lectura y el selector compartido bloqueado.
 
+## Perfiles comerciales
+
+`GET /api/sellers/profiles?page=0&size=20&search=&status=&kind=` lista perfiles
+por nombre y requiere `ADMIN_ALL`. Con `RESELLER_MANAGE` la misma página puede
+incluir vendedores y revendedores. `kind` admite `SELLER`, `RESELLER` o vacío.
+`search` busca por nombre o correo de usuario, y `status` permite filtrar por
+estado. Cada fila devuelve `id`, `displayName`, `kind`, `status`, `userId`, `email`
+y `assignedCustomersCount`. Para un revendedor, `userId` y `email` son nulos y el
+conteo corresponde a sus clientes asociados. `GET /api/sellers` conserva su
+contrato para los selectores de vendedores.
+
 ## Listado de pedidos por fecha
 
 ```http
@@ -290,12 +301,18 @@ imputación FIFO. Un usuario sin permiso recibe `403`.
 GET /api/sales?page=0&size=20&search=SAL-001&customerId=<uuid>&accountCustomerId=<uuid>&sellerId=<uuid>&pendingBalance=true&dateMin=2026-09-01&dateMax=2026-09-30
 ```
 
-`search` busca exclusivamente por número de venta, de forma parcial y sin
-distinguir mayúsculas. `customerId` y `sellerId` son UUID opcionales y filtran
+`search` busca por el número compartido de pedido y venta o por el número anterior
+de la venta (`legacy_sale_number`), de forma parcial y sin distinguir mayúsculas.
+No busca nombres de cliente ni vendedor. `customerId` y `sellerId` son UUID opcionales y filtran
 por identidad exacta. `customerId` es el cliente que recibió el pedido;
 `accountCustomerId`, la cuenta que debe la venta (un revendedor debe los pedidos
-de sus clientes). Cada fila incluye `customerId`, `accountCustomerId` y `account`. El vendedor es el del pedido; si no tiene uno asignado,
+de sus clientes). Cada fila incluye `customerId`, `accountCustomerId`, `account` y
+`seller` (nombre o «Sin asignar»). El vendedor es el del pedido; si no tiene uno asignado,
 se usa el vendedor del cliente. Los filtros se combinan entre sí.
+
+La columna «Vendedor / Revendedor» muestra `account` si la cuenta de la venta
+difiere del cliente; en caso contrario muestra `seller`. La celda «Cliente»
+conserva únicamente el nombre del cliente que recibió el pedido.
 
 Para vendedores, el listado incluye únicamente ventas con estado `DELIVERED`
 dentro de su alcance. La condición se aplica siempre en el servidor, antes de

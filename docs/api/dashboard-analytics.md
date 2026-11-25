@@ -79,7 +79,10 @@ por la cuenta que debe cada venta (Fase 9.2).
 ## Recording expenses
 
 `GET /api/expenses?page=0&size=20` returns the paginated expense history,
-newest first. `POST /api/expenses` creates an expense and returns it with status
+newest first. The optional `type`, `dateMin` and `dateMax` filters apply before
+counting and pagination. Dates use `yyyy-mm-dd` and include the whole selected
+day in `America/Argentina/Buenos_Aires`. Either date can be omitted.
+`POST /api/expenses` creates an expense and returns it with status
 `201`. Both endpoints require `ADMIN_ALL`.
 
 Send a unique UUID `idempotencyKey`, a positive ARS `amount` with up to two

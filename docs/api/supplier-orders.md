@@ -18,7 +18,7 @@ se pueden solicitar todos los productos activos, también los no asociados.
 
 ## Registrar una solicitud
 
-`POST /api/supplier-orders` devuelve `201` con `{id, number, total}`.
+`POST /api/supplier-orders` devuelve `201` con `{id, number, total, status}`.
 
 ```json
 {
@@ -66,19 +66,20 @@ si existe devuelve `order`, `items` y `available: true`. Cada item incluye
 productos y cantidades. Los productos inactivos impiden la copia. Cargar
 el anterior requiere confirmación si reemplazará productos del borrador.
 
-## Estados y stock (V40)
+## Estados y stock (V40 y V56)
 
 | Estado | Significado | Stock |
 |---|---|---|
-| `DRAFT` (Borrador) | Compra registrada sin confirmar | No lo mueve |
+| `PENDING` (Pendiente) | Compra registrada sin confirmar | No lo mueve |
 | `CONFIRMED` (Confirmada) | Mercadería ingresada | Suma las cantidades (`PURCHASE`) |
 | `CANCELLED` (Anulada) | No puede modificarse | Si estaba confirmada, descuenta (`PURCHASE_CANCELLATION`) |
 | `LEGACY` (Histórica) | Registrada antes de V40, cuando las compras no movían stock | Nunca lo mueve: editarla o anularla no cambia el stock (evita contar dos veces mercadería ya ajustada a mano) |
 
-- `POST /api/supplier-orders` acepta `confirm: true` para registrar y confirmar en
-  una sola transacción; sin ese campo queda `DRAFT`. La respuesta incluye `status`.
-  `confirm` forma parte de la huella de idempotencia.
-- `POST /api/supplier-orders/{id}/confirm`: solo `DRAFT` → `CONFIRMED`; registra un
+- V56 cambia los borradores existentes de `DRAFT` a `PENDING` sin mover stock.
+  `POST /api/supplier-orders` crea compras `PENDING`. Un alta nueva con
+  `confirm: true` devuelve `400`. Una repetición idéntica de un alta aceptada
+  antes de V56 devuelve la compra original.
+- `POST /api/supplier-orders/{id}/confirm`: solo `PENDING` → `CONFIRMED`; registra un
   movimiento `PURCHASE` por línea con referencia a la compra.
 - `PUT /api/supplier-orders/{id}` con `supplierId`, `orderDate` y `lines` (sin clave
   de idempotencia) reemplaza proveedor, fecha y líneas. En una compra `CONFIRMED`
@@ -120,8 +121,8 @@ sugerencia. Agrega productos activos con saldo menor o igual a cero. Si el
 proveedor tiene asociaciones, se limita a sus productos.
 
 La reposición guarda mediante el mismo `POST /api/supplier-orders`. Abrir el
-formulario prepara el borrador local. Guardar como borrador lo registra sin
-mover stock. Confirmar la compra ingresa las cantidades.
+formulario prepara el borrador local. Guardar registra la compra pendiente sin
+mover stock. Confirmar desde el detalle ingresa las cantidades.
 
 Errores: `400` por datos inválidos, `401` sin sesión, `403` sin `ADMIN_ALL`,
 `404` para proveedor/producto/pedido inexistente y `409` por reutilizar una clave

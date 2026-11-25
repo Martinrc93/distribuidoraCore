@@ -1,6 +1,10 @@
+> **Documento histórico (línea base 2026-09-25):** consolidado y superado por [`current-state.md`](../architecture/current-state.md) y el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
+
 # Estado De Funcionalidades Del Backend
 
 Estado relevado: 2026-09-25.
+
+Los cambios posteriores a esta línea base se registran en el [seguimiento de remediación](remediation-roadmap-2026-11-24.md#seguimiento-de-ejecución).
 
 Este documento resume el estado real del backend según los módulos, migraciones,
 controllers y tests existentes. `[x]` significa implementado y verificado;
@@ -61,7 +65,7 @@ controllers y tests existentes. `[x]` significa implementado y verificado;
 - [x] Listado paginado con búsqueda por nombre, alta y edición de proveedores.
 - [x] Nombre obligatorio; teléfono, mail y dirección opcionales con validación de formato y longitud.
 - [x] Acceso exclusivo `ADMIN_ALL`, persistencia Flyway y auditoría de altas y modificaciones.
-- [ ] Compras y recepciones vinculadas a proveedores.
+- [x] Compras y recepciones vinculadas a proveedores.
 
 ### Catálogo y pricing
 
