@@ -51,16 +51,21 @@ describe('Customer resellers', () => {
     sessionStorage.clear()
   })
 
-  it('identifies resellers and the account of associated customers, with actions reserved to administrators', async () => {
+  it('shows only customer names in the customer column, with reseller actions reserved to administrators', async () => {
     mockApi()
+    const user = userEvent.setup()
     renderPage(['ADMIN_ALL', 'RESELLER_MANAGE'])
     const resellerRow = (await screen.findByText('Distribuidora Sur', { selector: 'span' })).closest('tr')!
-    expect(within(resellerRow).getByText('Revendedor', { selector: '.badge, span' })).toBeInTheDocument()
+    expect(within(resellerRow).queryByText('Revendedor', { selector: '.badge, span' })).not.toBeInTheDocument()
+    await user.click(within(resellerRow).getByLabelText('Más acciones de Distribuidora Sur'))
     expect(within(resellerRow).getByRole('button', { name: 'Revendedor de Distribuidora Sur' })).toBeInTheDocument()
     const clientRow = screen.getByText('Kiosco Centro').closest('tr')!
-    expect(within(clientRow).getByText('Cuenta: Distribuidora Sur')).toBeInTheDocument()
+    expect(within(clientRow).queryByText('Cuenta: Distribuidora Sur')).not.toBeInTheDocument()
+    await user.click(within(clientRow).getByLabelText('Más acciones de Kiosco Centro'))
     expect(within(clientRow).getByRole('button', { name: 'Revendedor de Kiosco Centro' })).toBeInTheDocument()
-    expect(within(screen.getByText('Almacén Norte').closest('tr')!).getByRole('button', { name: 'Revendedor de Almacén Norte' })).toBeInTheDocument()
+    const regularRow = screen.getByText('Almacén Norte').closest('tr')!
+    await user.click(within(regularRow).getByLabelText('Más acciones de Almacén Norte'))
+    expect(within(regularRow).getByRole('button', { name: 'Revendedor de Almacén Norte' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Buscar por revendedor' })).toBeInTheDocument()
   })
 
@@ -76,6 +81,7 @@ describe('Customer resellers', () => {
     mockApi()
     renderPage(['ADMIN_ALL'])
     await screen.findByText('Kiosco Centro')
+    await userEvent.setup().click(await screen.findByLabelText('Más acciones de Kiosco Centro'))
     expect(screen.queryByRole('button', { name: /^Revendedor de/ })).not.toBeInTheDocument()
     cleanup()
     vi.restoreAllMocks()
@@ -100,6 +106,7 @@ describe('Customer resellers', () => {
             : call.method === 'PATCH' ? response(undefined, 204) : undefined)
     const user = userEvent.setup()
     renderPage(['ADMIN_ALL', 'RESELLER_MANAGE'])
+    await user.click(await screen.findByLabelText('Más acciones de Almacén Norte'))
     await user.click(await screen.findByRole('button', { name: 'Revendedor de Almacén Norte' }))
     let dialog = await screen.findByRole('dialog', { name: 'Revendedor de Almacén Norte' })
     await user.click(within(dialog).getByRole('radio', { name: 'Revendedor' }))
@@ -108,12 +115,14 @@ describe('Customer resellers', () => {
     await waitFor(() => expect(calls).toContainEqual({ path: '/api/customers/regular-1/kind', method: 'PATCH', body: { kind: 'RESELLER' } }))
     expect(await screen.findByText('Almacén Norte ahora es revendedor.')).toBeInTheDocument()
 
+    await user.click(await screen.findByLabelText('Más acciones de Kiosco Centro'))
     await user.click(screen.getByRole('button', { name: 'Revendedor de Kiosco Centro' }))
     dialog = await screen.findByRole('dialog', { name: 'Revendedor de Kiosco Centro' })
     expect(await within(dialog).findByRole('radio', { name: 'Revendedor' })).toBeDisabled()
     expect(within(dialog).getByText('Para marcarlo como revendedor, primero quitale su revendedor y guardá.')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
 
+    await user.click(await screen.findByLabelText('Más acciones de Distribuidora Sur'))
     await user.click(screen.getByRole('button', { name: 'Revendedor de Distribuidora Sur' }))
     dialog = await screen.findByRole('dialog', { name: 'Revendedor de Distribuidora Sur' })
     expect(await within(dialog).findByRole('radio', { name: 'Cliente' })).toBeDisabled()
@@ -122,6 +131,9 @@ describe('Customer resellers', () => {
 
     // The association changed meanwhile: the API conflict stays readable in the dialog.
     associated = 0
+    const resellerActions = screen.getByRole('button', { name: 'Más acciones de Distribuidora Sur' })
+    expect(resellerActions).toHaveFocus()
+    await user.click(resellerActions)
     await user.click(screen.getByRole('button', { name: 'Revendedor de Distribuidora Sur' }))
     dialog = await screen.findByRole('dialog', { name: 'Revendedor de Distribuidora Sur' })
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Cliente' })).toBeEnabled())
@@ -159,6 +171,7 @@ describe('Customer resellers', () => {
     const user = userEvent.setup()
     renderPage(['ADMIN_ALL', 'RESELLER_MANAGE'])
     const regularRow = (await screen.findByText('Almacén Norte')).closest('tr')!
+    await user.click(within(regularRow).getByLabelText('Más acciones de Almacén Norte'))
     await user.click(within(regularRow).getByRole('button', { name: 'Revendedor de Almacén Norte' }))
     const dialog = await screen.findByRole('dialog', { name: 'Revendedor de Almacén Norte' })
     expect(await within(dialog).findByText(/Solo cambian los pedidos nuevos/)).toBeInTheDocument()

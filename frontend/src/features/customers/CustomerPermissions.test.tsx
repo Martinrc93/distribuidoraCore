@@ -40,12 +40,12 @@ it('creates clients bound to the own seller without granting other actions', asy
   await screen.findByRole('status')
   expect(fetch).toHaveBeenCalledWith('/api/customers', expect.objectContaining({ method: 'POST', body: JSON.stringify({ businessName: 'Nuevo cliente', cuitId: null, email: null, phone: null, address: null, zone: null, sellerId: 'self' }) }))
   expect(fetch.mock.calls.some(([path]) => String(path).startsWith('/api/sellers'))).toBe(false)
-  expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Editar/ })).not.toBeInTheDocument()
 })
 
 it('edits contact data while preserving a read-only seller and price list', async () => {
   const user = userEvent.setup(); const fetch = mockFetch(); mount(['CUSTOMER_EDIT'])
-  await user.click(await screen.findByRole('button', { name: 'Editar' }))
+  await user.click(await screen.findByRole('button', { name: /^Editar/ }))
   expect(screen.getByRole('combobox', { name: 'Vendedor asignado' })).toBeDisabled()
   expect(screen.getByLabelText('Lista de precios predeterminada')).toBeDisabled()
   await user.clear(screen.getByLabelText('Mail')); await user.type(screen.getByLabelText('Mail'), 'updated@example.test')
@@ -56,6 +56,7 @@ it('edits contact data while preserving a read-only seller and price list', asyn
 
 it('changes the default list independently from contact editing', async () => {
   const user = userEvent.setup(); const fetch = mockFetch(); mount(['CUSTOMER_PRICE_LIST_CHANGE'])
+  await user.click(await screen.findByLabelText('Más acciones de ' + customer.name))
   await user.click(await screen.findByRole('button', { name: 'Cambiar lista' }))
   const modal = screen.getByRole('dialog', { name: `Lista de precios de ${customer.name}` })
   await user.selectOptions(within(modal).getByLabelText('Lista de precios predeterminada'), 'other')
@@ -67,6 +68,7 @@ it('changes the default list independently from contact editing', async () => {
 
 it('confirms status changes without granting editing or account collection', async () => {
   const user = userEvent.setup(); const fetch = mockFetch(); mount(['CUSTOMER_STATUS_CHANGE'])
+  await user.click(await screen.findByLabelText('Más acciones de ' + customer.name))
   await user.click(await screen.findByRole('button', { name: 'Desactivar cliente' }))
   expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar' }))
@@ -94,8 +96,10 @@ it('opens an authorized customer route and hides unauthorized statement actions'
 })
 
 it('offers statement export independently from customer details', async () => {
+  const user = userEvent.setup()
   mockFetch(); mount(['CUSTOMER_STATEMENT_EXPORT'])
-  expect(await screen.findByRole('button', { name: `Descargar estado de ${customer.name}` })).toBeInTheDocument()
+  await user.click(await screen.findByLabelText('Más acciones de ' + customer.name))
+  expect(await screen.findByRole('button', { name: 'Descargar estado de deuda' })).toBeInTheDocument()
   expect(screen.queryByRole('link', { name: /Ver cliente/ })).not.toBeInTheDocument()
 })
 

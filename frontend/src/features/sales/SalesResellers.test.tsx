@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +14,7 @@ function response(body: unknown, status = 200) {
 }
 
 const sale = { id: 'sale-1', number: 'SAL-1', customer: 'Kiosco Centro', customerId: 'client-1', accountCustomerId: 'reseller-1',
-  account: 'Distribuidora Sur', total: 100, paid: 0, balance: 100, status: 'DELIVERED', date: '2026-11-18T12:00:00Z' }
+  account: 'Distribuidora Sur', seller: 'Lucía', total: 100, paid: 0, balance: 100, status: 'DELIVERED', date: '2026-11-18T12:00:00Z' }
 const detail = {
   order: { id: 'order-1', number: '000300001', customer: 'Kiosco Centro', customerId: 'client-1', status: 'DELIVERED', total: 100,
     date: '2026-11-18T12:00:00Z', accountCustomerId: 'reseller-1', accountCustomer: 'Distribuidora Sur', accountKind: 'RESELLER' },
@@ -47,10 +47,15 @@ describe('Sales of resellers', () => {
 
   it('lists the debt of a reseller account and blocks returns of its sales', async () => {
     const paths = renderPage('/sales?accountCustomerId=reseller-1&pendingBalance=true')
-    expect(await screen.findByText('Cuenta: Distribuidora Sur')).toBeInTheDocument()
+    const row = await screen.findByRole('row', { name: /SAL-1/ })
+    expect(screen.getByRole('columnheader', { name: 'Vendedor / Revendedor' })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: 'Kiosco Centro' })).toHaveTextContent(/^Kiosco Centro$/)
+    expect(within(row).getByRole('cell', { name: 'Distribuidora Sur' })).toBeInTheDocument()
+    expect(within(row).queryByText('Lucía')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cuenta: Distribuidora Sur')).not.toBeInTheDocument()
     await waitFor(() => expect(paths.some(path => path.startsWith('/api/sales?') && path.includes('accountCustomerId=reseller-1'))).toBe(true))
     expect(screen.getByRole('status')).toHaveTextContent('Ventas a cargo de la cuenta de Distribuidora Sur')
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Ver venta' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Ver venta/ }))
     expect(await screen.findByText('Las ventas a cargo de un revendedor no admiten devoluciones.')).toBeInTheDocument()
     expect(screen.getByText('Distribuidora Sur (revendedor)')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Registrar devolución' })).not.toBeInTheDocument()

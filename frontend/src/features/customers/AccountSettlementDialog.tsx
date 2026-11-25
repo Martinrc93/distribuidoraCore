@@ -1,3 +1,4 @@
+import { invalidateDomains } from '../../shared/api/queryKeys'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { apiGet, apiPost, ApiError } from '../../shared/api/client'
@@ -47,11 +48,7 @@ export function AccountSettlementDialog({ customer, onClose, onSaved }: {
         })),
         ...(partial ? { partial: true } : {}),
       })
-      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
-        const key = String(queryKey[0])
-        return ['/api/customers', '/api/sales', '/api/orders', '/api/payments', '/api/dashboard', '/api/audit'].some(prefix => key.startsWith(prefix))
-          || ['customer-debts', 'sale-detail', 'dashboard'].includes(key)
-      } })
+      await invalidateDomains(queryClient, 'customers', 'sales', 'orders', 'reports')
       onSaved((balanceUnits - total) / 10000)
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {

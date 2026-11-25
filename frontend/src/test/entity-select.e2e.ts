@@ -8,7 +8,7 @@ test('customer and seller pickers share search, keyboard and cancellation across
   const lucia = { id: 'seller-1', userId: 'user-1', displayName: 'Lucía', email: 'lucia@example.test', status: 'ACTIVE', assignedCustomersCount: 2 }
   const martin = { ...lucia, id: 'seller-2', displayName: 'Martín', email: 'martin@example.test' }
   const paged = (content: unknown[], currentPage = 0, totalPages = 1) => ({ content, page: currentPage, size: 20, totalElements: content.length * totalPages, totalPages })
-  await page.route('**/api/**', async (route) => {
+  await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const url = new URL(route.request().url())
     const currentPage = Number(url.searchParams.get('page') || 0)
     let json: unknown = paged([])
@@ -18,6 +18,7 @@ test('customer and seller pickers share search, keyboard and cancellation across
     else if (url.pathname === '/api/customers/filter-options') json = { sellers: [{ id: lucia.id, name: lucia.displayName }, { id: martin.id, name: martin.displayName }] }
     else if (url.pathname === '/api/pricing/lists') json = paged([{ id: 'list-1', code: 'GENERAL', name: 'General', status: 'ACTIVE' }])
     else if (url.pathname === '/api/products') json = paged([{ id: 'product-1', name: 'Harina', status: 'ACTIVE' }])
+    else if (url.pathname === '/api/sellers/reassign-customers') json = { reassignedCustomersCount: 2, reassignedOrdersCount: 0 }
     else if (url.pathname.endsWith('/last-order')) json = { available: false }
     await route.fulfill({ json })
   })
@@ -32,11 +33,11 @@ test('customer and seller pickers share search, keyboard and cancellation across
     await input.press('ArrowDown')
     await input.press('Enter')
     await expect(input).toHaveAttribute('aria-expanded', 'false')
-    const confirmedName = await input.inputValue()
+    await expect(input).toHaveValue(name)
     await input.fill('no match')
     await expect(page.getByText('No se encontraron coincidencias.', { exact: true })).toBeVisible()
     await input.press('Escape')
-    await expect(input).toHaveValue(confirmedName)
+    await expect(input).toHaveValue(name)
     const box = await input.boundingBox()
     expect(box!.x).toBeGreaterThanOrEqual(0)
     expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
@@ -47,10 +48,16 @@ test('customer and seller pickers share search, keyboard and cancellation across
   await choose('Vendedor', 'LUCIA', 'Lucía')
   await page.screenshot({ path: testInfo.outputPath('order-entity-selects.png'), fullPage: true })
   await page.goto('/admin/sellers')
-  await page.getByRole('button', { name: 'Reasignar clientes', exact: true }).click()
+  const openReassignment = page.getByRole('button', { name: 'Reasignar clientes', exact: true })
+  await openReassignment.click()
   await choose('Vendedor de origen', 'LUCIA', 'Lucía')
   await choose('Vendedor de destino', 'MARTIN', 'Martín')
   await page.screenshot({ path: testInfo.outputPath('reassignment-entity-selects.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Continuar reasignación' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Confirmar reasignación de clientes' })
+  await confirm.getByRole('button', { name: 'Confirmar reasignación' }).click()
+  await expect(page.getByRole('status')).toContainText('2 clientes y 0 pedidos reasignados.')
+  await expect(openReassignment).toBeFocused()
   await page.goto('/customers')
   await choose('Buscar por vendedor', 'LUCIA', 'Lucía')
   await page.getByRole('button', { name: '+ Nuevo cliente', exact: true }).click()

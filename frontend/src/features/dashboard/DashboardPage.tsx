@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { apiGet } from '../../shared/api/client'
+import { displayDate, parseDate, todayInArgentina } from '../../shared/dates'
+import { formatMoney } from '../../shared/format'
 import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
@@ -30,17 +33,8 @@ export type DashboardData = {
   bySeller: Array<Metrics & { sellerId: string | null; seller: string }>
 }
 
-function parseDate(value: string) {
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value)
-  if (!match) return null
-  const [, day, month, year] = match
-  const iso = `${year}-${month}-${day}`
-  const date = new Date(`${iso}T00:00:00Z`)
-  return Number(year) > 0 && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso ? iso : null
-}
-
 function money(value: number) {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
+  return formatMoney(value, 2)
 }
 
 const columns: TableColumn[] = [
@@ -57,9 +51,7 @@ const columns: TableColumn[] = [
 export default function DashboardPage() {
   const [params, setParams] = useSearchParams()
   const [selectedSeller, setSelectedSeller] = useState<SellerOrderSelection | null>(null)
-  const [today] = useState(() => new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires',
-  }).format(new Date()))
+  const [today] = useState(() => displayDate(todayInArgentina()))
   const dateMin = params.get('dateMin') ?? today
   const dateMax = params.get('dateMax') ?? today
   const min = parseDate(dateMin)
@@ -68,7 +60,7 @@ export default function DashboardPage() {
   const dateError = !min || !max ? 'Completá ambas fechas con formato dd/mm/aaaa.'
     : reversed ? 'La fecha desde no puede ser posterior a la fecha hasta.' : ''
   const path = `/api/dashboard?dateMin=${min ?? ''}&dateMax=${max ?? ''}`
-  const query = useQuery({ queryKey: ['dashboard', min, max], queryFn: async ({ signal }) => parseDashboardData(await apiGet<unknown>(path, signal)), enabled: !dateError })
+  const query = useQuery({ queryKey: queryKeys.dashboard.summary(min, max), queryFn: async ({ signal }) => parseDashboardData(await apiGet<unknown>(path, signal)), enabled: !dateError })
 
   function setDate(key: string, value: string) {
     const next = new URLSearchParams(params)
@@ -113,18 +105,26 @@ export default function DashboardPage() {
     </Panel>
     </div>
     <PendingOrderReviews />
-    {!dateError && (query.isLoading ? <div role="status"><EmptyState title="Cargando resumen" description="Consultando pedidos y sus saldos." /></div>
-      : query.isError ? <EmptyState title="No se pudo cargar el resumen" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />
+    {!dateError && (query.isLoading ? <EmptyState state="loading" title="Cargando resumen" description="Consultando pedidos y sus saldos." />
+      : query.isError ? <EmptyState state="error" title="No se pudo cargar el resumen" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />
       : data && <>
-        <section className="stats-grid compact mt-[20px]" aria-label="Totales del período">
-          <StatCard label="Pedidos realizados" value={String(data.totals.performedOrders)} detail="Incluye pedidos cancelados" />
-          <StatCard label="Pedidos entregados" value={String(data.totals.deliveredOrders)} detail="Del conjunto de pedidos del período" />
-          <StatCard label="Total facturado" value={money(data.totals.totalBilled)} detail="Importe de ventas no canceladas" />
-          <StatCard label="Total pagado" value={money(data.totals.totalPaid)} detail="Cobros acumulados de esas ventas" />
-          <StatCard label="Por cobrar en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo pendiente de cobro de esas ventas" />
+        <section className="mt-[20px]" aria-label="Totales del período">
+          <h2>Pedidos</h2>
+          <div className="stats-grid dashboard-order-metrics">
+            <StatCard label="Pedidos realizados" value={String(data.totals.performedOrders)} detail="Incluye pedidos cancelados" />
+            <StatCard label="Pedidos entregados" value={String(data.totals.deliveredOrders)} detail="Del conjunto de pedidos del período" />
+          </div>
+          <h2>Facturación y cobros</h2>
+          <div className="stats-grid compact">
+            <StatCard label="Total facturado" value={money(data.totals.totalBilled)} detail="Importe de ventas no canceladas" />
+            <StatCard label="Total pagado" value={money(data.totals.totalPaid)} detail="Cobros acumulados de esas ventas" />
+            <StatCard label="Pagado en efectivo" value={money(data.totals.cashPaid)} detail="Cobros acumulados en efectivo" />
+            <StatCard label="Pagado en transferencia" value={money(data.totals.transferPaid)} detail="Cobros acumulados por transferencia" />
+            <StatCard label="Por cobrar en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo pendiente de cobro de esas ventas" />
+          </div>
         </section>
         <Panel title="Detalle por vendedor" description="Entregas, cobros y saldos reflejan el estado actual de los pedidos del período. No incluye deuda de otros períodos ni saldo anterior agregado al remito.">
-          <DataTable className="[&_th]:whitespace-normal" columns={sellerColumns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos en el período seleccionado.</p>} />
+          <DataTable className="compact-list-table [&_th]:whitespace-normal" columns={sellerColumns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos en el período seleccionado.</p>} />
         </Panel>
       </>)}
     {selectedSeller && !dateError && selectedSeller.dateMin === min && selectedSeller.dateMax === max && <SellerOrdersDialog selection={selectedSeller} onClose={() => setSelectedSeller(null)} />}

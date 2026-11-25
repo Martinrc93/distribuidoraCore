@@ -4,11 +4,11 @@ test('customer filters combine, persist and fit on mobile', async ({ page }, tes
   await page.addInitScript(() => sessionStorage.setItem('distribuidora.accessToken',
     `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`))
   const requests: URL[] = []
-  await page.route('**/api/**', async (route) => {
+  await page.route(url => url.pathname.startsWith('/api/'), async (route) => {
     const url = new URL(route.request().url())
     if (url.pathname === '/api/customers/filter-options') return route.fulfill({ json: { sellers: [{ id: 'seller-1', name: 'Lucía' }, { id: 'seller-2', name: 'Ana' }] } })
     if (url.pathname === '/api/customers') {
-      requests.push(url)
+      if (url.searchParams.get('kind') !== 'RESELLER') requests.push(url)
       const currentPage = Number(url.searchParams.get('page'))
       return route.fulfill({ json: { content: [{ id: `customer-${currentPage}`, name: `Almacén ${currentPage}`, seller: 'Lucía', balance: 100, status: url.searchParams.get('status') || 'ACTIVE' }], page: currentPage, size: 20, totalElements: 21, totalPages: 2 } })
     }

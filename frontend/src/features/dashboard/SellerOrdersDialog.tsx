@@ -1,10 +1,16 @@
+import { Pagination } from '../../shared/components/Pagination'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { apiGet, type ApiPage } from '../../shared/api/client'
 import { Button } from '../../shared/components/Button'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
+import { formatBusinessDate } from '../../shared/dates'
+import { trapDialogFocus } from '../../shared/dialogFocus'
+import { formatMoney } from '../../shared/format'
+import { lockBodyScroll } from '../../shared/lockBodyScroll'
 import { parseSellerOrders } from './dashboardResponses'
 
 export type SellerOrder = {
@@ -20,8 +26,8 @@ export type SellerOrder = {
 }
 
 export type SellerOrderSelection = { sellerId: string | null; seller: string; dateMin: string; dateMax: string }
-const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
-const date = (value: string | null) => value ? new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(value)) : '—'
+const money = (value: number) => formatMoney(value, 2)
+const date = (value: string | null) => formatBusinessDate(value)
 const periodDate = (value: string) => value.split('-').reverse().join('/')
 
 const columns: TableColumn[] = [
@@ -43,18 +49,17 @@ export function SellerOrdersDialog({ selection, onClose }: { selection: SellerOr
   if (selection.sellerId) params.set('sellerId', selection.sellerId)
   else params.set('unassigned', 'true')
   const path = `/api/dashboard/seller-orders?${params}`
-  const query = useQuery<ApiPage<SellerOrder>>({ queryKey: [path], queryFn: async ({ signal }) => parseSellerOrders(await apiGet<unknown>(path, signal)), retry: false })
+  const query = useQuery<ApiPage<SellerOrder>>({ queryKey: queryKeys.dashboard.sellerOrders(path), queryFn: async ({ signal }) => parseSellerOrders(await apiGet<unknown>(path, signal)), retry: false })
 
   useEffect(() => {
     const element = dialog.current!
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const releaseScroll = lockBodyScroll()
     element.showModal()
     element.querySelector<HTMLButtonElement>('[data-dialog-close]')?.focus()
     return () => {
       element.close()
-      document.body.style.overflow = previousOverflow
+      releaseScroll()
       if (trigger?.isConnected) trigger.focus({ preventScroll: true })
     }
   }, [])
@@ -68,7 +73,7 @@ export function SellerOrdersDialog({ selection, onClose }: { selection: SellerOr
 
   return createPortal(<dialog ref={dialog} className="confirmation-dialog w-[min(1100px,_calc(100vw_-_40px))] [@media(max-width:760px)]:w-[calc(100vw_-_28px)]"
     aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`}
-    onCancel={(event) => { event.preventDefault(); onClose() }}>
+    onCancel={(event) => { event.preventDefault(); onClose() }} onKeyDown={trapDialogFocus}>
     <header className="confirmation-dialog-header sticky top-0 z-10 bg-surface flex items-center justify-between gap-[14px]">
       <h2 id={`${id}-title`}>Pedidos entregados · {selection.seller}</h2>
       <Button type="button" variant="secondary" data-dialog-close onClick={onClose} aria-label="Cerrar detalle">Cerrar</Button>
@@ -76,14 +81,11 @@ export function SellerOrdersDialog({ selection, onClose }: { selection: SellerOr
     <div className="confirmation-dialog-body">
       <p id={`${id}-description`}>Pedidos creados del {periodDate(selection.dateMin)} al {periodDate(selection.dateMax)} que están entregados. Los cobros y la deuda corresponden al estado actual de cada pedido.</p>
       <div className="mt-[18px]" aria-busy={query.isFetching}>
-        {query.isLoading ? <div role="status"><EmptyState title="Cargando pedidos entregados" description="Consultando cobros y cuenta corriente." /></div>
-          : query.isError ? <div role="alert"><EmptyState title="No se pudieron cargar los pedidos" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} /></div>
+        {query.isLoading ? <EmptyState state="loading" title="Cargando pedidos entregados" description="Consultando cobros y cuenta corriente." />
+          : query.isError ? <EmptyState state="error" title="No se pudieron cargar los pedidos" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />
           : <>
             <DataTable columns={columns} rows={rows} emptyContent={<p className="table-empty-message">No hay pedidos entregados para este vendedor en el período seleccionado.</p>} />
-            <div className="pagination"><span>{query.data?.totalElements ?? 0} pedidos · Página {page + 1} de {Math.max(query.data?.totalPages ?? 0, 1)}</span><div>
-              <Button type="button" variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button>
-              <Button type="button" variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button>
-            </div></div>
+            <Pagination summary={<>{query.data?.totalElements ?? 0} pedidos · Página {page + 1} de {Math.max(query.data?.totalPages ?? 0, 1)}</>} onPrevious={() => setPage(page - 1)} onNext={() => setPage(page + 1)} previousDisabled={page === 0} nextDisabled={page + 1 >= (query.data?.totalPages ?? 0)} />
           </>}
       </div>
     </div>

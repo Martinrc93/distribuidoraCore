@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '../../shared/components/Button'
+import { todayInArgentina } from '../../shared/dates'
+import { trapDialogFocus } from '../../shared/dialogFocus'
 
 const weekdays = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
 const dayFormatter = new Intl.DateTimeFormat('es-AR', { dateStyle: 'full', timeZone: 'UTC' })
 const monthFormatter = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
 function todayDate() {
-  const parts = new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }).formatToParts(new Date())
-  const part = (type: string) => parts.find((value) => value.type === type)?.value
-  return new Date(`${part('year')}-${part('month')}-${part('day')}T12:00:00Z`)
+  return new Date(`${todayInArgentina()}T12:00:00Z`)
 }
 
 function numericDate(date: Date) {
@@ -38,12 +39,14 @@ type Props = {
 
 function positionCalendar(element: HTMLDialogElement, anchor: HTMLElement) {
   const rect = anchor.getBoundingClientRect()
-  const width = Math.min(292, window.innerWidth - 24)
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight
+  const width = Math.min(292, viewportWidth - 24)
   element.style.width = `${width}px`
   const height = element.getBoundingClientRect().height
-  element.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`
-  const top = rect.bottom + 6 + height <= window.innerHeight - 12 ? rect.bottom + 6 : rect.top - height - 6
-  element.style.top = `${Math.max(12, Math.min(top, window.innerHeight - height - 12))}px`
+  element.style.left = `${Math.max(12, Math.min(rect.left, viewportWidth - width - 12))}px`
+  const top = rect.bottom + 6 + height <= viewportHeight - 12 ? rect.bottom + 6 : rect.top - height - 6
+  element.style.top = `${Math.max(12, Math.min(top, viewportHeight - height - 12))}px`
 }
 
 export function OrderCalendar({ id, label, isoValue, anchor, onSelect, onDismiss }: Props) {
@@ -67,7 +70,7 @@ export function OrderCalendar({ id, label, isoValue, anchor, onSelect, onDismiss
     return date
   })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = dialog.current!
     const position = () => positionCalendar(element, anchor)
     element.showModal()
@@ -83,7 +86,7 @@ export function OrderCalendar({ id, label, isoValue, anchor, onSelect, onDismiss
     }
   }, [anchor])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (dialog.current) positionCalendar(dialog.current, anchor)
     if (focusRequested.current) {
       focusedDay.current?.focus()
@@ -110,9 +113,10 @@ export function OrderCalendar({ id, label, isoValue, anchor, onSelect, onDismiss
     onDismiss()
   }
 
-  return <dialog ref={dialog} className="orders-calendar-dialog" lang="es-AR" aria-modal="true"
+  return createPortal(<dialog ref={dialog} className="orders-calendar-dialog" lang="es-AR" aria-modal="true"
     aria-labelledby={`${id}-calendar-label ${id}-calendar-month`}
     onCancel={(event) => { event.preventDefault(); onDismiss() }}
+    onKeyDown={trapDialogFocus}
     onClick={(event) => {
       if (event.target !== event.currentTarget) return
       const rect = event.currentTarget.getBoundingClientRect()
@@ -140,5 +144,5 @@ export function OrderCalendar({ id, label, isoValue, anchor, onSelect, onDismiss
       <Button type="button" variant="link" onClick={() => select('')}>Limpiar</Button>
       <Button type="button" variant="secondary" onClick={onDismiss}>Cerrar</Button>
     </div>
-  </dialog>
+  </dialog>, document.body)
 }

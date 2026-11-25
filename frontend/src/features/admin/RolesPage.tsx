@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { apiGet, apiPut, ApiError, clearAccessToken } from '../../shared/api/client'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { hasAuthority } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
@@ -17,7 +18,7 @@ import { CreateRoleDialog } from './CreateRoleDialog'
 
 type Role = { id: string; code: string; description: string; permissions: string[]; requiredPermissions: string[]; assignedToCurrentUser: boolean }
 type UpdatedRole = Role & { currentSessionRevoked: boolean }
-const queryKey = ['/api/roles', 'permissions']
+const queryKey = queryKeys.users.permissions
 const roleName = (role: Role) => role.description || role.code
 const sameCodes = (left: string[], right: string[]) => left.length === right.length && left.every(code => right.includes(code))
 
@@ -97,7 +98,7 @@ export default function RolesPage() {
     if (role.currentSessionRevoked) {
       await client.cancelQueries()
       client.clear()
-      clearAccessToken()
+      clearAccessToken('rolePermissionsUpdated')
       navigate('/login', { replace: true, state: { rolePermissionsUpdated: true } })
       return
     }
@@ -110,15 +111,15 @@ export default function RolesPage() {
     <PageHeader eyebrow="Administración" title="Roles y permisos" description="Configurá qué acciones puede realizar cada rol." actions={<><Button type="button" disabled={!query.data || query.isError} onClick={() => { setFeedback(''); setCreating(true) }}>+ Crear rol</Button><Button type="button" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Actualizando...' : 'Actualizar roles'}</Button></>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     <Panel title="Roles existentes" description="Editar un rol cambia los permisos de todos sus usuarios.">
-      {query.isPending ? <p role="status">Cargando roles y permisos...</p> : query.isError ? <div role="alert"><p className="error-text">No se pudieron cargar los roles y permisos. {query.error.message}</p><Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button></div>
+      {query.isPending ? <EmptyState state="loading" title="Cargando roles y permisos..." description="Consultando los roles y permisos configurados." /> : query.isError ? <EmptyState state="error" title="No se pudieron cargar los roles y permisos." description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />
         : query.data.roles.length === 0 ? <EmptyState title="No hay roles para mostrar" description="Todavía no hay roles disponibles." />
-          : <DataTable className="roles-table" columns={[
+          : <DataTable className="roles-table [&_td]:whitespace-normal" columns={[
             { key: 'name', label: 'Rol', emphasis: true, render: (value, row) => <div className="grid gap-[6px]"><span>{value}</span><span><Badge>{row.code}</Badge></span>{row.assigned === 'true' && <span className="helper-text m-0">Tu rol actual</span>}</div> },
             { key: 'permissions', label: 'Permisos asignados', render: (_value, row) => {
               const role = query.data.roles.find(item => item.id === row.id)!
               return role.permissions.length ? <ul className="role-permissions-list">{role.permissions.map(code => <li key={code}>{query.data.permissions.find(permission => permission.code === code)?.description || code}</li>)}</ul> : 'Sin permisos asignados'
             } },
-            { key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions"><Button type="button" variant="secondary" aria-label={`Editar permisos de ${row.name}`} onClick={() => { setFeedback(''); setEditing(query.data.roles.find(role => role.id === row.id)) }}>Editar permisos</Button></div> },
+            { key: 'actions', label: 'Acciones', render: (_value, row) => <div className="table-row-actions"><Button type="button" variant="secondary" aria-label={`Editar permisos de ${row.name}`} onClick={() => { setFeedback(''); setEditing(query.data.roles.find(role => role.id === row.id)) }}>Editar permisos</Button></div> },
           ]} rows={query.data.roles.map(role => ({ id: role.id, code: role.code, name: roleName(role), assigned: String(role.assignedToCurrentUser) }))} />}
     </Panel>
     {creating && query.data && <CreateRoleDialog permissions={query.data.permissions} onClose={() => setCreating(false)} onSaved={async () => { await query.refetch(); setCreating(false); setFeedback('Rol personalizado creado. Podés asignarlo desde Usuarios.'); }} />}

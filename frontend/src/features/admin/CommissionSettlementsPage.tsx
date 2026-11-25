@@ -1,8 +1,10 @@
+import { Pagination } from '../../shared/components/Pagination'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiGet, apiPost, ApiError, type ApiPage } from '../../shared/api/client'
 import { apiGetAllPages } from '../../shared/api/pagination'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { Badge } from '../../shared/components/Badge'
 import { Button } from '../../shared/components/Button'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
@@ -12,8 +14,10 @@ import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySele
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { useUrlListState } from '../../shared/useUrlListState'
-import { businessTimeZone, displayDate, parseDate, presetRange, rangeError, todayInArgentina } from '../dashboard/dashboardDates'
+import { displayDate, formatBusinessDateShort, parseDate, presetRange, rangeError, todayInArgentina } from '../../shared/dates'
+import { formatMoney } from '../../shared/format'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
+import { commissionPlansPagePath } from './settingsPaths'
 
 type Seller = { id: string; displayName: string; status: string }
 type Reseller = { id: string; name: string; status: string }
@@ -29,8 +33,7 @@ type Settlement = { id: string; amount: string }
 
 const sellersPath = '/api/sellers?page=0&size=100'
 const resellersPath = '/api/customers?page=0&size=100&kind=RESELLER&status='
-const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 4 })
-const date = new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeZone: businessTimeZone })
+const money = (value: unknown) => formatMoney(value, 4)
 const beneficiaryLabels = {
   seller: { noun: 'vendedor', param: 'sellerId', api: 'sellers', list: 'la lista de vendedores' },
   reseller: { noun: 'revendedor', param: 'resellerId', api: 'resellers', list: 'la lista de revendedores' },
@@ -67,11 +70,11 @@ export default function CommissionSettlementsPage() {
   const dateError = rangeError(from, to, today)
   const path = `/api/commissions/${labels.api}/${encodeURIComponent(beneficiaryId)}`
   const query = new URLSearchParams({ dateMin: from ?? '', dateMax: to ?? '', page: String(page), size: String(pageSize) })
-  const sellers = useQuery({ queryKey: [sellersPath], queryFn: () => apiGetAllPages<Seller>(sellersPath), enabled: beneficiary === 'seller' })
-  const resellers = useQuery({ queryKey: [resellersPath], queryFn: () => apiGetAllPages<Reseller>(resellersPath), enabled: beneficiary === 'reseller' })
+  const sellers = useQuery({ queryKey: queryKeys.sellers.options('settlements'), queryFn: ({ signal }) => apiGetAllPages<Seller>(sellersPath, signal), enabled: beneficiary === 'seller' })
+  const resellers = useQuery({ queryKey: queryKeys.customers.resellers('settlements'), queryFn: ({ signal }) => apiGetAllPages<Reseller>(resellersPath, signal), enabled: beneficiary === 'reseller' })
   const choices = beneficiary === 'seller' ? sellers : resellers
   const statement = useQuery({
-    queryKey: ['commission-statement', path, query.toString()],
+    queryKey: queryKeys.commissions.statement(path, query.toString()),
     queryFn: ({ signal }) => apiGet<Statement>(`${path}?${query}`, signal),
     enabled: Boolean(beneficiaryId) && !dateError,
     retry: false,
@@ -95,15 +98,15 @@ export default function CommissionSettlementsPage() {
     try {
       const result = await apiPost<Settlement>(`${confirmation.path}/settlements`, { token: confirmation.pending.token })
       setConfirmation(undefined)
-      setFeedback(`Pago de ${money.format(Number(result.amount))} registrado para ${confirmation.name}.`)
-      await client.invalidateQueries({ queryKey: ['commission-statement', confirmation.path] })
+      setFeedback(`Pago de ${money(result.amount)} registrado para ${confirmation.name}.`)
+      await client.invalidateQueries({ queryKey: queryKeys.commissions.statement(confirmation.path) })
     } catch (cause) {
       const changed = cause instanceof ApiError && cause.status === 409
       setError(changed ? 'El saldo pendiente cambió. Revisá el nuevo importe antes de registrar el pago.'
         : cause instanceof Error ? cause.message : 'No se pudo registrar el pago.')
       if (changed) {
         setConfirmation(undefined)
-        await client.invalidateQueries({ queryKey: ['commission-statement', confirmation.path] })
+        await client.invalidateQueries({ queryKey: queryKeys.commissions.statement(confirmation.path) })
       }
     } finally {
       setSaving(false)
@@ -111,8 +114,8 @@ export default function CommissionSettlementsPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Administración" title="Liquidación de comisiones"
-      actions={<Button variant="secondary" href="/admin/settings/commissions">Volver a comisiones</Button>} />
+    <PageHeader eyebrow="Operación" title="Liquidación de comisiones"
+      actions={<Link className="button button-secondary" to={commissionPlansPagePath}>Planes de comisiones</Link>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && !confirmation && <p className="error-text" role="alert">{error}</p>}
     <div className="content-grid">
@@ -144,39 +147,33 @@ export default function CommissionSettlementsPage() {
           <Button variant="secondary" onClick={() => void choices.refetch()}>Reintentar</Button>
         </div>}
       </Panel>
-      {beneficiaryId && !dateError && statement.isPending && <Panel><div role="status">
-        <EmptyState title="Cargando comisiones" description={`Consultando los movimientos del ${labels.noun}.`} />
-      </div></Panel>}
-      {beneficiaryId && !dateError && statement.isError && <Panel><div role="alert">
-        <EmptyState title="No se pudieron cargar las comisiones" description={statement.error.message}
+      {beneficiaryId && !dateError && statement.isPending && <Panel>
+        <EmptyState state="loading" title="Cargando comisiones" description={`Consultando los movimientos del ${labels.noun}.`} />
+      </Panel>}
+      {beneficiaryId && !dateError && statement.isError && <Panel>
+        <EmptyState state="error" title="No se pudieron cargar las comisiones" description={statement.error.message}
           action={<Button variant="secondary" onClick={() => void statement.refetch()}>Reintentar</Button>} />
-      </div></Panel>}
+      </Panel>}
       {ready && <>
         <Panel title="Saldo pendiente" description={`Incluye todos los movimientos pendientes del ${labels.noun}. Las fechas filtran el historial.`}>
-          <p className="m-0 text-[25px] font-bold">{money.format(Number(ready.pending.amount))}</p>
+          <p className="m-0 text-[25px] font-bold">{money(ready.pending.amount)}</p>
           <p className="helper-text mb-[12px]">{movementCount(ready.pending.entryCount)} {ready.pending.entryCount === 1 ? 'pendiente' : 'pendientes'}</p>
           <Button disabled={saving || statement.isFetching || Number(ready.pending.amount) <= 0}
             onClick={() => { setError(''); setConfirmation({ name: ready.name, pending: ready.pending, path }) }}>Registrar pago al {labels.noun}</Button>
         </Panel>
-        <Panel title="Movimientos del período" description={`Total del período ${money.format(Number(ready.periodAmount))}`}>
+        <Panel title="Movimientos del período" description={`Total del período ${money(ready.periodAmount)}`}>
           <DataTable columns={columns} rows={ready.movements.content.map((movement) => ({
             id: movement.id, orderId: movement.orderId, order: movement.orderNumber, customer: movement.customer, product: movement.product,
-            date: date.format(new Date(movement.occurredAt)), type: movement.returned ? 'Devolución' : 'Entrega',
-            amount: money.format(Number(movement.amount)), paidAt: movement.paidAt ?? '',
-            payment: movement.paidAt ? `Liquidado el ${date.format(new Date(movement.paidAt))}` : 'Pendiente',
+            date: formatBusinessDateShort(movement.occurredAt), type: movement.returned ? 'Devolución' : 'Entrega',
+            amount: money(movement.amount), paidAt: movement.paidAt ?? '',
+            payment: movement.paidAt ? `Liquidado el ${formatBusinessDateShort(movement.paidAt)}` : 'Pendiente',
           }))} emptyContent={<p className="table-empty-message">No hay movimientos en esta página.</p>} />
-          {(ready.movements.totalElements > 0 || page > 0) && <div className="pagination" aria-label="Paginación de comisiones">
-            <span>Página {page + 1} · {movementCount(ready.movements.totalElements)}</span>
-            <div>
-              <Button variant="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</Button>
-              <Button variant="secondary" disabled={page + 1 >= ready.movements.totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button>
-            </div>
-          </div>}
+          {(ready.movements.totalElements > 0 || page > 0) && <Pagination label="Paginación de comisiones" summary={<>Página {page + 1} · {movementCount(ready.movements.totalElements)}</>} onPrevious={() => setPage(page - 1)} onNext={() => setPage(page + 1)} previousDisabled={page === 0} nextDisabled={page + 1 >= ready.movements.totalPages} />}
         </Panel>
       </>}
     </div>
     {confirmation && <ConfirmationDialog title="Confirmar pago de comisión"
-      description={`Confirmá que pagaste ${money.format(Number(confirmation.pending.amount))} a ${confirmation.name}. Movimientos incluidos: ${movementCount(confirmation.pending.entryCount)}.`}
+      description={`Confirmá que pagaste ${money(confirmation.pending.amount)} a ${confirmation.name}. Movimientos incluidos: ${movementCount(confirmation.pending.entryCount)}.`}
       confirmLabel="Registrar pago" confirmVariant="primary" pending={saving} error={error}
       onCancel={() => { setConfirmation(undefined); setError('') }} onConfirm={() => void settle()} />}
   </>

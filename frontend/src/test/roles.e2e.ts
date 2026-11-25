@@ -39,6 +39,48 @@ async function fits(page: Page) {
   expect(bounds!.height).toBeLessThanOrEqual(await page.evaluate(() => innerHeight))
 }
 
+test('keeps the user creation fields compact and preserves longer names', async ({ page }, info) => {
+  await setup(page)
+  const longRole = 'Representante comercial especial'
+  await page.route(url => url.pathname === '/api/roles', route => route.fulfill({ json: [
+    { code: 'SELLER', description: 'Vendedor', requiresSellerProfile: true },
+    { code: 'REPRESENTATIVE', description: longRole, requiresSellerProfile: true },
+  ] }))
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/admin/users')
+  await page.locator('.page-header').getByRole('button', { name: '+ Crear usuario' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Crear usuario' })
+  const email = dialog.getByRole('textbox', { name: 'Email del usuario' })
+  const role = dialog.getByRole('combobox', { name: 'Rol', exact: true })
+  const name = dialog.getByRole('textbox', { name: 'Nombre para mostrar' })
+  await expect(email).toBeFocused()
+  await role.selectOption('REPRESENTATIVE')
+  await expect(role).toHaveAttribute('title', longRole)
+  const fullName = 'María Fernanda Rodríguez'
+  await name.fill(fullName)
+  await expect(name).toHaveValue(fullName)
+  await page.evaluate(() => document.fonts.ready)
+
+  const measure = async () => (await Promise.all([email, role, name].map(field => field.boundingBox()))).map(box => box!)
+  const [emailDesktop, roleDesktop, nameDesktop] = await measure()
+  expect(emailDesktop.width).toBeGreaterThan(2 * nameDesktop.width)
+  expect(roleDesktop.width - nameDesktop.width).toBeCloseTo(16, 1)
+  expect(nameDesktop.width).toBeGreaterThan(155)
+  expect(nameDesktop.width).toBeLessThan(190)
+  expect(roleDesktop.y).toBe(nameDesktop.y)
+  expect(roleDesktop.x + roleDesktop.width).toBeLessThan(nameDesktop.x)
+  await page.screenshot({ path: info.outputPath('create-user-desktop.png') })
+
+  await page.setViewportSize({ width: 320, height: 720 })
+  const [emailMobile, roleMobile, nameMobile] = await measure()
+  expect(roleMobile.y).toBeGreaterThan(emailMobile.y + emailMobile.height)
+  expect(nameMobile.y).toBeGreaterThan(roleMobile.y + roleMobile.height)
+  expect(nameMobile.width).toBeCloseTo(nameDesktop.width, 1)
+  expect(await dialog.evaluate(element => element.scrollWidth)).toBeLessThanOrEqual((await dialog.boundingBox())!.width)
+  await page.screenshot({ path: info.outputPath('create-user-mobile.png') })
+})
+
 for (const width of [320, 390, 1280]) {
   test(`role editing, confirmation and discard work at ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 })

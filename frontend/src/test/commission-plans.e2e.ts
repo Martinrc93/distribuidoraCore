@@ -83,6 +83,13 @@ async function setup(page: Page, admin: boolean, dark = false) {
     if (pathname === path) return route.fulfill({ json: state.plan
       ? [{ id: planId, name: state.plan.name, ruleCount: state.plan.rules.length, sellerCount: state.assignment ? 1 : 0,
         resellerCount: state.resellerAssignment ? 1 : 0 }] : [] })
+    if (pathname === `${path}/assignments`) {
+      const content = [
+        ...(state.assignment ? [{ beneficiaryId: sellerId, type: 'SELLER', name: 'Lucía Vendedora', status: 'ACTIVE', planName: state.plan!.name }] : []),
+        ...(state.resellerAssignment ? [{ beneficiaryId: resellerId, type: 'RESELLER', name: 'Distribuidora Sur', status: 'ACTIVE', planName: state.plan!.name }] : []),
+      ]
+      return route.fulfill({ json: { content, totalElements: content.length, totalPages: content.length ? 1 : 0, page: 0, size: 20 } })
+    }
     if (pathname === `${path}/${planId}`) return route.fulfill({ json: state.plan })
     if (pathname === `${path}/assignments/${sellerId}`) {
       if (request.method() === 'PUT') {
@@ -100,9 +107,50 @@ async function setup(page: Page, admin: boolean, dark = false) {
 for (const width of [320, 390, 1440]) {
   test(`guarda un plan reutilizable y administra quién cobra comisión a ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 })
-    const state = await setup(page, true, width === 390)
+    const state = await setup(page, true, width !== 320)
     await page.goto('/admin/settings')
-    await page.getByRole('link', { name: 'Comisiones', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Configuración', exact: true })).toBeVisible()
+    const directory = page.getByRole('navigation', { name: 'Secciones de Configuración' })
+    const credit = directory.getByRole('link', { name: /^Límite de crédito/ })
+    await expect(credit).toContainText('Desactivado')
+    const rules = (await directory.getByRole('heading', { name: 'Reglas comerciales' }).boundingBox())!
+    const entry = (await credit.boundingBox())!
+    if (width > 760) expect(entry.x).toBeGreaterThan(rules.x)
+    else expect(entry.y).toBeGreaterThan(rules.y)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: info.outputPath(`configuracion-${width}.png`) })
+
+    await credit.press('Enter')
+    await expect(page).toHaveURL(/\/admin\/settings\/credit-limit$/)
+    await expect(page.getByRole('group', { name: 'Límite de crédito' })).toBeFocused()
+    const limit = page.getByRole('textbox', { name: 'Límite de crédito' })
+    await expect(limit).toHaveCount(0)
+    await page.getByRole('checkbox', { name: 'Activar límite global de crédito' }).check()
+    await expect(limit).toBeVisible()
+    await expect(page.getByText('Sin guardar', { exact: true })).toBeVisible()
+    await limit.fill('2500')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.getByRole('link', { name: 'Volver a Configuración' }).click()
+    await expect(credit).toContainText('Sin guardar')
+    await credit.click()
+    await expect(limit).toHaveValue('2500')
+    await page.getByRole('link', { name: 'Volver a Configuración' }).click()
+    await directory.getByRole('link', { name: /^Planes de comisiones/ }).click()
+    const editor = page.getByRole('form', { name: 'Asignar comisión' })
+    const beneficiaryType = editor.getByRole('combobox', { name: 'Tipo de beneficiario' })
+    const plan = editor.getByRole('combobox', { name: 'Plan de comisión', exact: true })
+    const assigned = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Planes asignados' }) })
+    await expect(plan).toBeDisabled()
+    await expect(plan.locator('option:checked')).toHaveText('Primero creá un plan')
+    await expect(assigned.getByText('Todavía no hay planes asignados.')).toBeVisible()
+    const plansPanel = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Planes de comisión', exact: true }) })
+    const assignmentPanel = page.locator('.panel').filter({ has: editor })
+    const planBounds = (await plansPanel.boundingBox())!
+    for (const panel of [assignmentPanel, assigned]) {
+      const bounds = (await panel.boundingBox())!
+      expect(bounds.x).toBeCloseTo(planBounds.x)
+      expect(bounds.width).toBeCloseTo(planBounds.width)
+    }
     const newPlan = page.getByRole('button', { name: '+ Nuevo plan' })
     await newPlan.click()
     const form = page.getByRole('dialog', { name: 'Nuevo plan de comisión' })
@@ -126,29 +174,57 @@ for (const width of [320, 390, 1440]) {
       { scope: 'BRAND', targetId: 'marca-1', kind: 'FIXED', value: '150.005' },
     ])
 
-    const sellers = page.getByRole('form', { name: 'Asignación a vendedores' })
-    const seller = sellers.getByRole('combobox', { name: 'Vendedor', exact: true })
+    const seller = editor.getByRole('combobox', { name: 'Vendedor', exact: true })
+    const save = editor.getByRole('button', { name: 'Guardar asignación' })
+    await expect(plan.locator('option:checked')).toHaveText('Seleccioná un vendedor')
+    await expect(save).toBeDisabled()
+    const [typeBox, sellerBox, planBox, saveBox] = await Promise.all([beneficiaryType.boundingBox(), seller.boundingBox(), plan.boundingBox(), save.boundingBox()])
+    if (width > 760) {
+      expect(sellerBox!.y).toBeCloseTo(typeBox!.y)
+      expect(planBox!.y).toBeCloseTo(sellerBox!.y)
+      expect(saveBox!.y).toBeCloseTo(sellerBox!.y)
+    } else {
+      expect(sellerBox!.y).toBeGreaterThan(typeBox!.y)
+      expect(planBox!.y).toBeGreaterThan(sellerBox!.y)
+      expect(saveBox!.y).toBeGreaterThan(planBox!.y)
+    }
+    await editor.screenshot({ path: info.outputPath(`asignar-comision-${width}.png`) })
     await seller.fill('Lucia')
     await page.getByRole('option', { name: 'Lucía Vendedora' }).click()
-    const plan = sellers.getByRole('combobox', { name: 'Plan del vendedor', exact: true })
     await expect(plan).toHaveValue('')
+    await expect(plan.locator('option:checked')).toHaveText('Sin comisión')
     await plan.selectOption(planId)
-    const save = sellers.getByRole('button', { name: 'Guardar asignación' })
     await save.click()
-    await expect(page.getByText('Asignación guardada.', { exact: true })).toBeVisible()
+    await expect(editor.getByText('Asignación guardada.', { exact: true })).toBeVisible()
     expect(state.assignment).toBe(planId)
+    await expect(assigned.getByText('Lucía Vendedora', { exact: true })).toBeVisible()
+
+    await beneficiaryType.selectOption('RESELLER')
+    await expect(seller).toHaveCount(0)
+    await editor.getByRole('combobox', { name: 'Revendedor', exact: true }).fill('Sur')
+    await page.getByRole('option', { name: 'Distribuidora Sur' }).click()
+    await plan.selectOption(planId)
+    await save.click()
+    await expect.poll(() => state.resellerAssignment).toBe(planId)
+    await expect(assigned.getByText('Distribuidora Sur', { exact: true })).toBeVisible()
+    await expect(assigned.getByText('Revendedor', { exact: true })).toBeVisible()
+    await expect(assigned.getByText('Vendedor', { exact: true })).toBeVisible()
+    await assigned.screenshot({ path: info.outputPath(`planes-asignados-${width}.png`) })
+
+    await assigned.getByRole('button', { name: 'Editar asignación de Lucía Vendedora' }).click()
+    await expect(beneficiaryType).toHaveValue('SELLER')
+    await expect(beneficiaryType).toBeFocused()
+    await expect(plan).toHaveValue(planId)
     await plan.selectOption('')
+    await beneficiaryType.selectOption('RESELLER')
+    await page.getByRole('dialog', { name: '¿Descartar los cambios?' }).getByRole('button', { name: 'Seguir editando' }).click()
+    await expect(beneficiaryType).toHaveValue('SELLER')
+    await expect(plan).toHaveValue('')
     await save.click()
     await expect.poll(() => state.assignment).toBeNull()
     await expect(save).toBeDisabled()
-
-    // Resellers are customers: their plan is assigned with the customer picker, in its own form.
-    const resellers = page.getByRole('form', { name: 'Asignación a revendedores' })
-    await resellers.getByRole('combobox', { name: 'Revendedor', exact: true }).fill('Sur')
-    await page.getByRole('option', { name: 'Distribuidora Sur' }).click()
-    await resellers.getByRole('combobox', { name: 'Plan del revendedor', exact: true }).selectOption(planId)
-    await resellers.getByRole('button', { name: 'Guardar asignación' }).click()
-    await expect.poll(() => state.resellerAssignment).toBe(planId)
+    await expect(assigned.getByText('Lucía Vendedora', { exact: true })).toHaveCount(0)
+    await expect(assigned.getByText('Distribuidora Sur', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Editar plan Comercial minorista' })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     expect(state.errors).toEqual([])
@@ -162,15 +238,23 @@ test('la configuración de comisiones queda reservada a administradores', async 
   expect(state.requests.some((request) => request.startsWith(path))).toBe(false)
   await page.goto('/admin/settings/commissions/settlements')
   await expect(page).toHaveURL(/\/orders$/)
+  await page.goto('/commission-settlements')
+  await expect(page).toHaveURL(/\/orders$/)
   expect(state.requests).not.toContain(statementPath)
 })
 
-test('un enlace de liquidaciones con sellerId conserva el tipo Vendedor', async ({ page }) => {
-  await setup(page, true)
-  await page.goto(`/admin/settings/commissions/settlements?sellerId=${sellerId}`)
-  await expect(page.getByRole('combobox', { name: 'Comisiones de' })).toHaveValue('seller')
-  await expect(page.getByRole('combobox', { name: 'Vendedor', exact: true })).toHaveValue('Lucía Vendedora')
-})
+for (const [type, beneficiaryFilter] of [
+  ['reseller', `type=reseller&resellerId=${resellerId}`],
+  ['seller', `sellerId=${sellerId}`],
+]) {
+  test(`un enlace anterior de liquidaciones conserva el beneficiario ${type} y el período`, async ({ page }) => {
+    await setup(page, true)
+    const filters = `${beneficiaryFilter}&dateMin=01%2F10%2F2025&dateMax=31%2F10%2F2025`
+    await page.goto(`/admin/settings/commissions/settlements?${filters}`)
+    await expect(page).toHaveURL((url) => url.pathname === '/commission-settlements' && url.search === `?${filters}`)
+    await expect(page.getByRole('combobox', { name: 'Comisiones de' })).toHaveValue(type)
+  })
+}
 
 for (const width of [320, 1440]) {
   test(`el administrador confirma el pago y revisa cambios de saldo a ${width}px`, async ({ page }, info) => {
@@ -206,7 +290,12 @@ for (const width of [320, 1440]) {
   test(`el administrador liquida las comisiones de un revendedor a ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 })
     const state = await setup(page, true, width === 320)
-    await page.goto('/admin/settings/commissions/settlements')
+    await page.goto('/admin/settings')
+    if (width <= 1050) await page.getByRole('button', { name: 'Abrir menú' }).click()
+    const navigation = page.getByRole('navigation', { name: 'Navegación principal' })
+    await navigation.getByRole('button', { name: 'Operación' }).click()
+    await navigation.getByRole('link', { name: 'Liquidaciones' }).click()
+    await expect(page).toHaveURL(/\/commission-settlements$/)
     const type = page.getByRole('combobox', { name: 'Comisiones de' })
     const reseller = page.getByRole('combobox', { name: 'Revendedor', exact: true })
     await expect(type).toHaveValue('reseller')

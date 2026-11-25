@@ -15,7 +15,7 @@ const filterOptions = {
   sellers: [{ id: 'seller-1', name: 'Ana' }, { id: 'seller-2', name: 'Lucía' }],
 }
 const sales = {
-  content: [{ id: 'sale-1', number: 'VEN-001', customer: 'Almacén Norte', total: 300, paid: 100, balance: 200, status: 'DELIVERED', date: '2026-09-24T10:00:00Z' }],
+  content: [{ id: 'sale-1', number: 'VEN-001', customer: 'Almacén Norte', customerId: 'customer-1', accountCustomerId: 'customer-1', account: 'Almacén Norte', seller: 'Lucía', total: 300, paid: 100, balance: 200, status: 'DELIVERED', date: '2026-09-24T10:00:00Z' }],
   page: 0, size: 20, totalElements: 21, totalPages: 2,
 }
 const emptySales = { content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }
@@ -36,10 +36,12 @@ describe('SalesPage', () => {
     renderSales()
     expect(await screen.findByText('VEN-001')).toBeInTheDocument()
     expect(within(screen.getByRole('table')).getByText('Almacén Norte')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Vendedor / Revendedor' })).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: /VEN-001/ })).getByRole('cell', { name: 'Lucía' })).toBeInTheDocument()
     expect(screen.getByText('Entregada')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(defaultPath, expect.anything())
-    expect(screen.getByLabelText('Fecha mín.')).toHaveValue('')
-    expect(screen.getByLabelText('Fecha máx.')).toHaveValue('')
+    expect(screen.getByLabelText('Desde')).toHaveValue('')
+    expect(screen.getByLabelText('Hasta')).toHaveValue('')
   })
 
   it.each([
@@ -62,8 +64,8 @@ describe('SalesPage', () => {
     expect(screen.getByLabelText('Buscar ventas')).toHaveAttribute('placeholder', 'Número de venta')
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Buscar por cliente' })).toHaveValue('Almacén Norte'))
     expect(screen.getByRole('combobox', { name: 'Buscar por vendedor' })).toHaveValue('Lucía')
-    expect(screen.getByLabelText('Fecha mín.')).toHaveValue('01/09/2026')
-    expect(screen.getByLabelText('Fecha máx.')).toHaveValue('30/09/2026')
+    expect(screen.getByLabelText('Desde')).toHaveValue('01/09/2026')
+    expect(screen.getByLabelText('Hasta')).toHaveValue('30/09/2026')
     await screen.findByText('VEN-001')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Saldo pendiente' }), 'true')
     const filteredPath = '/api/sales?page=0&size=20&search=VEN&customerId=customer-1&sellerId=seller-2&pendingBalance=true&dateMin=2026-09-01&dateMax=2026-09-30'
@@ -129,8 +131,8 @@ describe('SalesPage', () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => response(String(input) === '/api/sales/filter-options' ? filterOptions : emptySales))
     renderSales()
     await screen.findByText('No hay ventas para mostrar')
-    const min = screen.getByLabelText('Fecha mín.')
-    const max = screen.getByLabelText('Fecha máx.')
+    const min = screen.getByLabelText('Desde')
+    const max = screen.getByLabelText('Hasta')
     fireEvent.change(min, { target: { value: '31/09/2026' } })
     expect(screen.getByRole('alert')).toHaveTextContent('Las fechas deben ser válidas')
     expect(min).toHaveAttribute('aria-invalid', 'true')
@@ -175,8 +177,9 @@ describe('SalesPage', () => {
       return response({})
     })
     const queryClient = renderSales()
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
-    await user.click(await screen.findByRole('button', { name: 'Ver venta' }))
+    const stockQuery = ['/api/inventory?page=0']
+    queryClient.setQueryData(stockQuery, {})
+    await user.click(await screen.findByRole('button', { name: /^Ver venta/ }))
     expect(await screen.findByText('Harina')).toBeInTheDocument()
     await user.type(screen.getByLabelText('Motivo de la devolución'), 'Producto dañado')
     await user.type(screen.getByLabelText('Cantidad a devolver · Harina'), '1')
@@ -185,6 +188,69 @@ describe('SalesPage', () => {
       method: 'POST', body: JSON.stringify({ reason: 'Producto dañado', items: [{ saleItemId: 'line-1', quantity: 1 }] }),
     })))
     expect(await within(screen.getByRole('dialog')).findByRole('status')).toHaveTextContent(/stock actualizado/i)
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sale-detail', 'sale-1'] })
+    expect(queryClient.getQueryState(stockQuery)?.isInvalidated).toBe(true)
+    expect(fetchMock.mock.calls.filter(([input]) => input === '/api/sales/sale-1')).toHaveLength(2)
+  })
+
+  it('parses Argentine decimal comma in return quantities and rejects malformed decimals', async () => {
+    const user = userEvent.setup()
+    sessionStorage.setItem('distribuidora.accessToken', token(['ADMIN_ALL']))
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (path === '/api/sales/filter-options') return response(filterOptions)
+      if (path.startsWith('/api/sales?page=')) return response(sales)
+      if (path === '/api/sales/sale-1' && !init?.method) return response({
+        sale: { id: 'sale-1', number: 'VEN-001', status: 'DELIVERED' },
+        saleItems: [{ saleItemId: 'line-1', productId: 'product-1', productName: 'Harina', quantity: 2, returnedQuantity: 0, returnableQuantity: 2 }],
+      })
+      if (path === '/api/sales/sale-1/returns' && init?.method === 'POST') return response({ returnId: 'return-1' }, 201)
+      return response({})
+    })
+    renderSales()
+    await user.click(await screen.findByRole('button', { name: /^Ver venta/ }))
+    expect(await screen.findByText('Harina')).toBeInTheDocument()
+    const qty = screen.getByLabelText('Cantidad a devolver · Harina')
+    expect(qty).not.toHaveAttribute('min')
+    expect(qty).not.toHaveAttribute('step')
+    await user.type(screen.getByLabelText('Motivo de la devolución'), 'Envase abierto')
+    await user.type(qty, '0,3')
+    await user.click(screen.getByRole('button', { name: 'Registrar devolución' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/múltiplo de 0,5/i)
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/sales/sale-1/returns', expect.anything())
+
+    await user.clear(qty)
+    await user.type(qty, '1,5')
+    await user.click(screen.getByRole('button', { name: 'Registrar devolución' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/sales/sale-1/returns', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ reason: 'Envase abierto', items: [{ saleItemId: 'line-1', quantity: 1.5 }] }),
+    })))
+  })
+
+  it('passes valid period and returnTo context to SoldProducts and prompts before discarding return draft', async () => {
+    const user = userEvent.setup()
+    sessionStorage.setItem('distribuidora.accessToken', token(['ADMIN_ALL']))
+    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const path = String(input)
+      if (path === '/api/sales/filter-options') return response(filterOptions)
+      if (path.startsWith('/api/sales?page=')) return response(sales)
+      if (path === '/api/sales/sale-1') return response({
+        sale: { id: 'sale-1', number: 'VEN-001', status: 'DELIVERED' },
+        saleItems: [{ saleItemId: 'line-1', productId: 'product-1', productName: 'Harina', quantity: 2, returnedQuantity: 0, returnableQuantity: 2 }],
+      })
+      return response({})
+    })
+
+    renderSales('/sales?customerId=customer-1&dateMin=01%2F09%2F2026&dateMax=30%2F09%2F2026')
+    await screen.findByRole('button', { name: 'Abrir venta VEN-001' })
+    const reportLink = screen.getByRole('link', { name: 'Artículos vendidos' })
+    expect(reportLink).toHaveAttribute('href', expect.stringContaining('/sales/products?dateMin=01%2F09%2F2026&dateMax=30%2F09%2F2026'))
+    expect(reportLink).toHaveAttribute('href', expect.stringContaining('returnTo='))
+
+    await user.click(screen.getByRole('button', { name: 'Abrir venta VEN-001' }))
+    await user.type(await screen.findByLabelText('Motivo de la devolución'), 'Mercadería dañada')
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }))
+    const discard = await screen.findByRole('dialog', { name: '¿Descartar los cambios?' })
+    await user.click(within(discard).getByRole('button', { name: 'Descartar cambios' }))
+    expect(screen.queryByRole('dialog', { name: 'Detalle de venta' })).not.toBeInTheDocument()
   })
 })

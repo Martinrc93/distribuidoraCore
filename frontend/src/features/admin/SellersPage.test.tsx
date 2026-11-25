@@ -8,7 +8,7 @@ import { selectEntity } from '../../test/selectEntity'
 
 function token() { return `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature` }
 function response(body: unknown, status = 200) { return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response) }
-const sellers = { content: [{ id: 'seller-1', userId: 'user-1', displayName: 'Lucía', email: 'lucia@example.com', status: 'ACTIVE', assignedCustomersCount: 2 }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
+const sellers = { content: [{ id: 'seller-1', userId: 'user-1', displayName: 'Lucía', email: 'lucia@example.com', status: 'ACTIVE', assignedCustomersCount: 2, kind: 'SELLER' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const users = { content: [{ id: 'user-2', email: 'new@example.com', status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
 describe('SellersPage', () => {
@@ -18,7 +18,7 @@ describe('SellersPage', () => {
   it('creates a seller profile for a selected user', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
-      if (String(input).startsWith('/api/sellers?')) return response(sellers)
+      if (String(input).startsWith('/api/sellers/profiles?')) return response(sellers)
       if (String(input).startsWith('/api/users?')) return response(users)
       if (String(input) === '/api/sellers' && init?.method === 'POST') return response({ id: 'seller-2' }, 201)
       return response({})
@@ -26,7 +26,8 @@ describe('SellersPage', () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><SellersPage /></MemoryRouter></QueryClientProvider>)
 
     await user.click(await screen.findByRole('button', { name: /nuevo vendedor/i }))
-    await user.selectOptions(screen.getByLabelText('Usuario vinculado'), 'user-2')
+    expect(screen.getByRole('button', { name: /guardar vendedor/i })).toBeDisabled()
+    await user.selectOptions(screen.getByLabelText('Usuario vinculado'), await screen.findByRole('option', { name: 'new@example.com' }))
     await user.type(screen.getByLabelText('Nombre para mostrar'), 'Nuevo vendedor')
     await user.click(screen.getByRole('button', { name: /guardar vendedor/i }))
 
@@ -39,6 +40,7 @@ describe('SellersPage', () => {
   it('reassigns every customer and their pending orders with one confirmed request', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input).startsWith('/api/sellers/profiles?')) return response(sellers)
       if (String(input).startsWith('/api/sellers?')) return response({ ...sellers, content: [
         ...sellers.content,
         { id: 'seller-2', userId: 'user-2', displayName: 'Nuevo', email: 'new@example.com', status: 'ACTIVE', assignedCustomersCount: 0 },
@@ -54,7 +56,7 @@ describe('SellersPage', () => {
     await selectEntity(user, 'Vendedor de destino', 'Nuevo')
     await user.click(screen.getByLabelText('Reasignar pedidos pendientes'))
     await user.click(screen.getByRole('button', { name: /continuar reasignación/i }))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Confirmar reasignación de clientes' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /confirmar reasignación/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/sellers/reassign-customers', expect.objectContaining({

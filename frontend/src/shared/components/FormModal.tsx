@@ -1,3 +1,4 @@
+import { focusDialogContent, trapDialogFocus } from '../dialogFocus'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { lockBodyScroll } from '../lockBodyScroll'
@@ -15,7 +16,6 @@ type Props = {
   children: ReactNode
 } & ({ label: string; labelledBy?: never } | { label?: never; labelledBy: string })
 
-const focusable = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]'
 
 /**
  * Native modal dialog for forms and detailed views. It is rendered in the top layer, so it always opens
@@ -31,7 +31,7 @@ export function FormModal({ label, labelledBy, describedBy, className, size = 'd
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const releaseScroll = lockBodyScroll()
     element.showModal()
-    element.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus()
+    focusDialogContent(element)
     return () => {
       element.close()
       releaseScroll()
@@ -42,15 +42,7 @@ export function FormModal({ label, labelledBy, describedBy, className, size = 'd
   return createPortal(
     <dialog ref={dialog} className={dialogClassName} aria-label={label} aria-labelledby={labelledBy} aria-describedby={describedBy} aria-modal="true" aria-busy={busy}
       onCancel={(event) => { event.preventDefault(); if (!busy) onClose() }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Tab') return
-        const controls = event.currentTarget.querySelectorAll<HTMLElement>(focusable)
-        const first = controls[0]
-        const last = controls[controls.length - 1]
-        if (!first) event.preventDefault()
-        else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-      }}>
+      onKeyDown={trapDialogFocus}>
       {children}
     </dialog>,
     document.body,

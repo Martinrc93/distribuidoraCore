@@ -53,9 +53,18 @@ test('order date filters default to today, persist across pages and adapt to mob
   await page.keyboard.press('Tab')
   await expect(max).toBeFocused()
 
+  const moreFilters = page.getByRole('button', { name: /^Más filtros/ })
+  if (await moreFilters.isVisible()) {
+    await expect(moreFilters).toHaveAttribute('aria-expanded', 'false')
+    await moreFilters.click()
+    await expect(moreFilters).toHaveAttribute('aria-expanded', 'true')
+  }
   const statusBox = await page.getByLabel('Filtrar por estado').boundingBox()
   const minBox = await min.boundingBox()
-  if (testInfo.project.name.startsWith('desktop')) expect(minBox!.x).toBeGreaterThan(statusBox!.x + statusBox!.width)
+  if (minBox!.y > statusBox!.y + statusBox!.height) {
+    const toolbar = await page.locator('.orders-toolbar').boundingBox()
+    expect(minBox!.x).toBeCloseTo(toolbar!.x, 0)
+  }
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
   await page.screenshot({ path: testInfo.outputPath('orders-date-filters.png'), fullPage: true })
@@ -104,9 +113,14 @@ test('order date filters default to today, persist across pages and adapt to mob
   await expect(page.getByRole('alert')).toContainText('La fecha mínima no puede ser posterior')
   await min.fill('31/09/2026')
   await expect(page.getByRole('alert')).toContainText('Las fechas deben ser válidas')
-  await min.fill('')
-  await max.fill('')
+  await page.getByLabel('Filtrar por estado').selectOption('CONFIRMED')
+  const allDates = page.getByRole('button', { name: 'Todas las fechas' })
+  await allDates.click()
+  await expect(allDates).toBeFocused()
+  await expect(min).toHaveValue('')
+  await expect(max).toHaveValue('')
   await expect(page.getByText('PED-0', { exact: true })).toBeVisible()
   await expect.poll(() => requests.at(-1)?.searchParams.get('dateMax')).toBe('')
   expect(requests.at(-1)?.searchParams.get('dateMin')).toBe('')
+  expect(requests.at(-1)?.searchParams.get('status')).toBe('CONFIRMED')
 })

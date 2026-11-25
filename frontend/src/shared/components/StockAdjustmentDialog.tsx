@@ -1,6 +1,8 @@
+import { trapDialogFocus } from '../dialogFocus'
 import { useEffect, useId, useRef, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useDiscardChanges } from '../useDiscardChanges'
+import { formatNumber } from '../format'
 import { lockBodyScroll } from '../lockBodyScroll'
 import { Button } from './Button'
 
@@ -23,7 +25,7 @@ type Props = {
   onCancel: () => void
 }
 
-const units = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
+const units = { format: (value: number) => formatNumber(value, 2) }
 const parseQuantity = (value: string) => value.trim() ? Number(value.trim().replace(',', '.')) : NaN
 
 /** Validates the draft and builds the request body for `POST /api/inventory/{productId}/adjustments`. */
@@ -63,15 +65,7 @@ export function StockAdjustmentDialog({ title = 'Ajustar stock', productName, st
   }, [])
 
   return <>{createPortal(
-    <dialog ref={dialog} className="confirmation-dialog stock-adjustment-dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-product`} aria-busy={pending} onCancel={(event) => { event.preventDefault(); requestDiscard() }} onKeyDown={(event) => {
-      if (event.key !== 'Tab') return
-      const controls = event.currentTarget.querySelectorAll<HTMLElement>('input:not([disabled]), textarea:not([disabled]), button:not([disabled])')
-      const first = controls[0]
-      const last = controls[controls.length - 1]
-      if (!first) event.preventDefault()
-      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-    }}>
+    <dialog ref={dialog} className="confirmation-dialog stock-adjustment-dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-product`} aria-busy={pending} onCancel={(event) => { event.preventDefault(); requestDiscard() }} onKeyDown={trapDialogFocus}>
       <header className="confirmation-dialog-header">
         <h2 id={`${id}-title`}>{title}</h2>
         <p id={`${id}-product`} className="stock-adjustment-product">{productName}</p>

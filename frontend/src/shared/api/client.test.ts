@@ -3,6 +3,7 @@ import { apiGet, apiPatch, apiPost, apiPut, login } from './client'
 
 describe('HTTP mutation helpers', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
     sessionStorage.clear()
   })
@@ -32,6 +33,11 @@ describe('HTTP mutation helpers', () => {
   it('returns undefined for a 204 response', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }))
 
+    await expect(apiPost('/api/resource', {})).resolves.toBeUndefined()
+  })
+
+  it('returns undefined for an empty 200 response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }))
     await expect(apiPost('/api/resource', {})).resolves.toBeUndefined()
   })
 
@@ -123,6 +129,31 @@ describe('HTTP mutation helpers', () => {
     expect(refreshRequests).toBe(1)
   })
 
+  it('does not restore a session when logout happens during token rotation', async () => {
+    sessionStorage.setItem('distribuidora.accessToken', 'expired-access')
+    sessionStorage.setItem('distribuidora.refreshToken', 'refresh-1')
+    const { logout } = await import('./client')
+    let resolveRefresh!: (response: Response) => void
+    const response = new Promise<Response>(resolve => { resolveRefresh = resolve })
+    let markStarted!: () => void
+    const refreshStarted = new Promise<void>(resolve => { markStarted = resolve })
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      if (input === '/api/auth/refresh') { markStarted(); return response }
+      if (input === '/api/auth/logout') return new Response(null, { status: 204 })
+      return new Response('{}', { status: 401 })
+    })
+    const pending = expect(apiGet('/api/orders')).rejects.toMatchObject({ status: 401 })
+    await refreshStarted
+    await logout()
+    resolveRefresh(new Response(JSON.stringify({ accessToken: 'late-access', refreshToken: 'late-refresh' })))
+    await pending
+    expect(sessionStorage.getItem('distribuidora.accessToken')).toBeNull()
+    expect(sessionStorage.getItem('distribuidora.refreshToken')).toBeNull()
+    expect(fetch).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({
+      body: JSON.stringify({ refreshToken: 'late-refresh' }),
+    }))
+  })
+
   it('preserves validation metadata from a product price conflict', async () => {
     const affectedPriceLists = [{ priceListId: 'list-1', code: 'MAYORISTA', currentPrice: 120 }]
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
@@ -155,6 +186,7 @@ describe('HTTP mutation helpers', () => {
   })
 
   it('downloads authenticated PDF responses with the requested filename', async () => {
+    vi.useFakeTimers()
     sessionStorage.setItem('distribuidora.accessToken', 'access-1')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['pdf'], { type: 'application/pdf' }), { status: 200 }))
     const createObjectURL = vi.fn(() => 'blob:document')
@@ -172,6 +204,8 @@ describe('HTTP mutation helpers', () => {
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
     expect(click).toHaveBeenCalledOnce()
     expect(createElement.mock.results.find((result) => result.value instanceof HTMLAnchorElement)?.value.download).toBe('sale.pdf')
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1_000)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:document')
   })
 

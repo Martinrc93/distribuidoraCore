@@ -24,8 +24,8 @@ function renderDetail() {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Supplier order detail', () => {
-  it('confirms a draft after explaining that stock will increase', async () => {
-    let status = 'DRAFT'
+  it('confirms a pending purchase with Enter after explaining that stock will increase', async () => {
+    let status = 'PENDING'
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       if (String(input) === '/api/supplier-orders/order-1/confirm' && init?.method === 'POST') { status = 'CONFIRMED'; return json(detail(status)) }
       return json(detail(status))
@@ -33,11 +33,14 @@ describe('Supplier order detail', () => {
     const user = userEvent.setup()
     renderDetail()
 
-    expect(await screen.findByText('Borrador')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Confirmar compra' }))
+    expect(await screen.findByText('Pendiente')).toBeInTheDocument()
+    screen.getByRole('button', { name: 'Confirmar compra' }).focus()
+    await user.keyboard('{Enter}')
     const dialog = await screen.findByRole('dialog', { name: '¿Confirmar la compra PRV-00000003?' })
     expect(dialog).toHaveTextContent('se van a sumar al stock')
-    await user.click(within(dialog).getByRole('button', { name: 'Confirmar compra' }))
+    expect(within(dialog).getByRole('button', { name: 'Aceptar' })).toHaveFocus()
+    expect(fetch).not.toHaveBeenCalledWith('/api/supplier-orders/order-1/confirm', expect.objectContaining({ method: 'POST' }))
+    await user.keyboard('{Enter}')
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/supplier-orders/order-1/confirm', expect.objectContaining({ method: 'POST' })))
     expect(await screen.findByText('Compra PRV-00000003 confirmada: las cantidades se sumaron al stock.')).toBeInTheDocument()
     expect(await screen.findByText('Confirmada')).toBeInTheDocument()
@@ -52,13 +55,14 @@ describe('Supplier order detail', () => {
     await user.click(await screen.findByRole('button', { name: 'Anular compra' }))
     const dialog = await screen.findByRole('dialog', { name: '¿Anular la compra PRV-00000003?' })
     expect(dialog).toHaveTextContent('Se van a descontar del stock')
+    expect(within(dialog).getByRole('button', { name: 'Volver' })).toHaveFocus()
     await user.click(within(dialog).getByRole('button', { name: 'Anular compra' }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/supplier-orders/order-1/cancel', expect.objectContaining({ method: 'POST' })))
     expect(await screen.findByText('Compra PRV-00000003 anulada: se descontaron sus cantidades del stock.')).toBeInTheDocument()
   })
 
   it('edits quantities in half units and preserves the recorded unit cost', async () => {
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const path = String(input)
       if (path.startsWith('/api/suppliers')) return json(paged([supplier]))
       if (path.startsWith('/api/products')) return json(paged([product]))

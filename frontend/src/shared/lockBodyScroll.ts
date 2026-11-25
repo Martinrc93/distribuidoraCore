@@ -8,7 +8,10 @@ export function lockBodyScroll() {
     document.body.style.overflow = 'hidden'
   }
   activeLocks += 1
+  let released = false
   return () => {
+    if (released) return
+    released = true
     activeLocks -= 1
     if (activeLocks === 0) document.body.style.overflow = previousOverflow
   }

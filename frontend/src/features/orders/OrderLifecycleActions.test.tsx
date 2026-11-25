@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ function response(body?: unknown, status = 200) {
 function renderActions(authorities = ['ADMIN_ALL', 'SALE_DELIVER'], onChanged = vi.fn(), previousDebtAvailable = 0, saleBalance = 100) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sessionStorage.setItem('distribuidora.accessToken', token(authorities))
-  render(<QueryClientProvider client={queryClient}><MemoryRouter><OrderLifecycleActions orderId="order-1" orderNumber="PED-001" orderStatus="CONFIRMED" saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} onChanged={onChanged} /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter><OrderLifecycleActions orderId="order-1" orderNumber="PED-001" customerId="customer-1" orderStatus="CONFIRMED" saleBalance={saleBalance} previousDebtAvailable={previousDebtAvailable} onChanged={onChanged} /></MemoryRouter></QueryClientProvider>)
   return { queryClient, onChanged }
 }
 
@@ -21,7 +21,8 @@ describe('OrderLifecycleActions', () => {
     renderActions([permission])
     expect(Boolean(screen.queryByRole('button', { name: 'Cancelar pedido' }))).toBe(permission === 'ORDER_CANCEL')
     expect(Boolean(screen.queryByRole('button', { name: 'Descargar remito A4' }))).toBe(permission === 'ORDER_DOCUMENT_EXPORT')
-    expect(Boolean(screen.queryByRole('button', { name: 'Enviar por email o WhatsApp' }))).toBe(permission === 'ORDER_NOTIFY')
+    expect(Boolean(screen.queryByRole('button', { name: 'Enviar por email' }))).toBe(permission === 'ORDER_NOTIFY')
+    expect(Boolean(screen.queryByRole('button', { name: 'Enviar por WhatsApp' }))).toBe(permission === 'ORDER_NOTIFY')
   })
   afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks() })
   beforeEach(() => { sessionStorage.setItem('distribuidora.accessToken', token(['ADMIN_ALL', 'SALE_DELIVER'])) })
@@ -188,6 +189,7 @@ describe('OrderLifecycleActions', () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
       const path = String(input)
+      if (path === '/api/orders/order-1/notifications/contact') return response({ email: 'compras@example.test', phone: null })
       if (path === '/api/orders/order-1/notifications' && init?.method === 'POST') return response({ requestId: 'request-1', status: 'QUEUED' }, 201)
       if (path === '/api/orders/order-1/notifications/request-1') return response({ requestId: 'request-1', status: 'SENT', attemptCount: 1, requestedAt: '2026-09-24T10:00:00Z', sentAt: '2026-09-24T10:01:00Z', lastError: null })
       if (path.includes('/documents/')) return Promise.resolve(new Response(new Blob(['pdf'], { type: 'application/pdf' }), { status: 200 }))
@@ -196,13 +198,14 @@ describe('OrderLifecycleActions', () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:ticket') })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
-    renderActions()
+    renderActions(['ORDER_NOTIFY', 'ORDER_DOCUMENT_EXPORT'])
 
     await user.click(screen.getByRole('button', { name: /descargar ticket/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders/order-1/documents/ticket', expect.anything()))
-    await user.click(screen.getByRole('button', { name: /enviar por email o whatsapp/i }))
-    await user.selectOptions(screen.getByLabelText('Canal de envío'), 'WHATSAPP')
-    await user.type(screen.getByLabelText('Destinatario'), '+5491112345678')
+    await user.click(screen.getByRole('button', { name: 'Enviar por WhatsApp' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Cargar teléfono' })
+    expect(within(dialog).queryByRole('button', { name: 'Guardar en ficha' })).not.toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText('Teléfono de WhatsApp'), '+54 9 11 1234-5678')
     await user.selectOptions(screen.getByLabelText('Formato de comprobante'), 'TICKET')
     await user.click(screen.getByRole('button', { name: /solicitar envío/i }))
 
@@ -214,5 +217,37 @@ describe('OrderLifecycleActions', () => {
     })
     await user.click(screen.getByRole('button', { name: /consultar estado/i }))
     expect(await screen.findByText('Enviado')).toBeInTheDocument()
+  })
+
+  it('saves a missing email separately and preloads it on the next send', async () => {
+    const user = userEvent.setup()
+    let email: string | null = null
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/orders/order-1/notifications/contact') return response({ email, phone: '+5491112345678' })
+      if (String(input) === '/api/customers/customer-1/contact' && init?.method === 'PATCH') {
+        email = JSON.parse(String(init.body)).email
+        return response(undefined, 204)
+      }
+      return response({})
+    })
+    renderActions()
+
+    const sendEmail = screen.getByRole('button', { name: 'Enviar por email' })
+    await user.click(sendEmail)
+    const dialog = await screen.findByRole('dialog', { name: 'Cargar email' })
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar en ficha' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Ingrese un email válido.')
+    await user.type(within(dialog).getByLabelText('Email del cliente'), 'compras@example.test')
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar en ficha' }))
+    expect(await within(dialog).findByText('Contacto guardado en la ficha del cliente.')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/customers/customer-1/contact', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ email: 'compras@example.test' }),
+    }))
+    expect(fetchMock.mock.calls.some(([path]) => path === '/api/orders/order-1/notifications')).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Cerrar' }))
+    expect(sendEmail).toHaveFocus()
+    await user.click(sendEmail)
+    const sendDialog = await screen.findByRole('dialog', { name: 'Enviar por email' })
+    expect(within(sendDialog).getByLabelText('Email del cliente')).toHaveValue('compras@example.test')
   })
 })

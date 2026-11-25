@@ -1,4 +1,7 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { trapDialogFocus } from '../../shared/dialogFocus'
+import { lockBodyScroll } from '../../shared/lockBodyScroll'
 import { Button } from '../../shared/components/Button'
 
 type Props = {
@@ -15,15 +18,17 @@ export function PreviousOrderDiscountDialog({ orderNumber, orderDiscount, items,
 
   useEffect(() => {
     const element = dialog.current!
+    const releaseScroll = lockBodyScroll()
     element.showModal()
     element.querySelector<HTMLButtonElement>('[data-default-action]')?.focus()
     return () => {
       element.close()
-      anchor.focus({ preventScroll: true })
+      releaseScroll()
+      if (anchor.isConnected) anchor.focus({ preventScroll: true })
     }
   }, [anchor])
 
-  return <dialog ref={dialog} className="order-discount-dialog" aria-modal="true" aria-labelledby="previous-discount-title" aria-describedby="previous-discount-description" onCancel={(event) => { event.preventDefault(); onDismiss() }}>
+  return createPortal(<dialog ref={dialog} className="order-discount-dialog" aria-modal="true" aria-labelledby="previous-discount-title" aria-describedby="previous-discount-description" onCancel={(event) => { event.preventDefault(); onDismiss() }} onKeyDown={trapDialogFocus}>
     <h2 id="previous-discount-title">El pedido anterior tiene descuentos</h2>
     <p id="previous-discount-description">El pedido {orderNumber} incluye descuentos. ¿Querés copiarlos al nuevo pedido?</p>
     <ul>
@@ -35,5 +40,5 @@ export function PreviousOrderDiscountDialog({ orderNumber, orderDiscount, items,
       <Button data-default-action type="button" variant="secondary" onClick={() => onChoose(false)}>Cargar sin descuentos</Button>
       <Button type="button" onClick={() => onChoose(true)}>Copiar descuentos</Button>
     </div>
-  </dialog>
+  </dialog>, document.body)
 }

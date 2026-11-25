@@ -13,6 +13,7 @@ test.beforeEach(async ({ page }) => {
       { sellerId: null, seller: 'Sin asignar', performedOrders: 12, deliveredOrders: 6, totalBilled: 234567, totalPaid: 200000, cashPaid: 200000, transferPaid: 0, accountBalance: 34567 },
     ],
   } }))
+  await page.route('**/api/orders?*reviewPending=true', (route) => route.fulfill({ json: { content: [], page: 0, size: 5, totalElements: 0, totalPages: 0 } }))
   await page.route('**/api/dashboard/seller-orders?*', (route) => route.fulfill({ json: {
     content: [{ id: 'order-1', number: 'PED-001', customer: 'Almacén Norte', date: '2026-09-01T03:00:00Z', deliveredAt: '2026-09-03T03:00:00Z', total: 100, paid: 40, accountBalance: 60, payments: [{ method: 'CASH', amount: 20 }, { method: 'BANK_TRANSFER', amount: 20 }] }],
     page: 0, size: 20, totalElements: 1, totalPages: 1,

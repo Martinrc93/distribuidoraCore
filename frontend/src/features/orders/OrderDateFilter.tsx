@@ -38,7 +38,7 @@ export function OrderDateFilter({ id, label, value, isoValue, invalid, described
             event.preventDefault()
             openCalendar(event.currentTarget)
           }
-        }} aria-invalid={invalid} aria-describedby={describedBy} aria-haspopup="dialog" aria-expanded={open} />
+        }} aria-invalid={invalid} aria-describedby={describedBy} aria-haspopup="dialog" />
       <span className="orders-date-trigger">
         <Button type="button" variant="link" disabled={disabled} aria-label={`Abrir calendario: ${label}`} aria-haspopup="dialog" aria-expanded={open} onClick={(event) => openCalendar(event.currentTarget)}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

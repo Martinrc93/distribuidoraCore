@@ -141,7 +141,7 @@ for (const width of [1280, 390]) {
     await edit.click()
     const dialog = page.getByRole('dialog', { name: 'Programar precio' })
     const price = dialog.getByRole('textbox', { name: `Precio de ${products[0].name}` })
-    const date = dialog.getByLabel('Fecha de vigencia')
+    const date = dialog.getByRole('textbox', { name: 'Fecha de vigencia' })
     await expect(dialog.getByText(`${products[0].name} · Lista general`)).toBeVisible()
     await expect(price).toBeFocused()
     await expectInsideViewport(page, dialog)
@@ -153,11 +153,11 @@ for (const width of [1280, 390]) {
     await expect(dialog.getByRole('button', { name: 'Guardar precio' })).toBeInViewport()
     await page.screenshot({ path: testInfo.outputPath(`schedule-price-${width}.png`) })
 
-    await date.fill('2026-12-01')
+    await date.fill('01/12/2026')
     await page.keyboard.press('Escape')
     const discard = page.getByRole('dialog', { name: '¿Descartar los cambios?' })
     await discard.getByRole('button', { name: 'Seguir editando' }).click()
-    await expect(date).toHaveValue('2026-12-01')
+    await expect(date).toHaveValue('01/12/2026')
     await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
     await discard.getByRole('button', { name: 'Descartar cambios' }).click()
     await expect(dialog).toHaveCount(0)
@@ -189,7 +189,7 @@ for (const width of [1280, 680, 390]) {
     await trigger.click()
     const dialog = page.getByRole('dialog', { name: 'Historial de precios' })
     const close = dialog.getByRole('button', { name: 'Cerrar historial' })
-    const cancel = dialog.getByRole('button', { name: 'Cancelar precio del 2026-12-01' })
+    const cancel = dialog.getByRole('button', { name: 'Cancelar precio del 01/12/2026' })
     await expect(dialog).toHaveAccessibleDescription(`${product.name} · Lista general`)
     await expect(close).toBeFocused()
     await expect(cancel).toBeVisible()
@@ -206,7 +206,7 @@ for (const width of [1280, 680, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`price-history-${width}.png`) })
 
     await cancel.click()
-    const confirmation = page.getByRole('dialog', { name: '¿Cancelar el precio programado para 2026-12-01?' })
+    const confirmation = page.getByRole('dialog', { name: '¿Cancelar el precio programado para 01/12/2026?' })
     await expect(confirmation.getByRole('button', { name: 'Volver' })).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(cancel).toBeFocused()
@@ -236,7 +236,7 @@ for (const width of [1280, 390]) {
     } }))
     await page.route(/\/api\/pricing\/lists\/products\/.*\/followers/, (route) => route.fulfill({ json: [{ priceListId: 'list-4', code: 'LISTA_4', name: 'Lista 4' }] }))
     await page.goto('/price-lists')
-    await expect(page.getByRole('button', { name: '+ Nueva lista' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: '+ Nueva lista' })).toBeEnabled()
     await page.getByRole('tab', { name: /Lista 4/ }).click()
     await expect(page.getByRole('tab', { name: /Lista 4/ })).toContainText('2 sin revisar')
     await expect(page.getByRole('button', { name: 'Confirmar 2 sin revisar' })).toBeVisible()
@@ -295,10 +295,17 @@ test('downloads all lists or the selected full list independently of product fil
 
 test('prints the filtered price list without downloading it', async ({ page }) => {
   await mockApi(page)
+  await page.addInitScript(() => {
+    // Headless Chromium can download PDF blobs without invoking the print viewer.
+    const createObjectURL = URL.createObjectURL.bind(URL)
+    URL.createObjectURL = value => createObjectURL(value instanceof Blob && value.type === 'application/pdf'
+      ? new Blob(['<!doctype html><title>PDF preview</title>'], { type: 'text/html' }) : value)
+  })
+  const pdf = await page.pdf({ width: '3in', height: '3in' })
   let requested = ''
   await page.route(/\/api\/documents\/price-lists\//, (route) => {
     requested = route.request().url()
-    return route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4\n%%EOF\n') })
+    return route.fulfill({ status: 200, contentType: 'application/pdf', body: pdf })
   })
   await page.route(/\/api\/pricing\/lists\/list-1\/prices/, (route) => route.fulfill({ json: {
     content: [{ productId: products[0].id, name: products[0].name, price: 150.5, effectiveOn: '2026-11-01' }], page: 0, size: 20, totalElements: 1, totalPages: 1,
@@ -307,8 +314,149 @@ test('prints the filtered price list without downloading it', async ({ page }) =
   let downloaded = false
   page.on('download', () => { downloaded = true })
   await page.getByRole('button', { name: 'Imprimir lista' }).click()
-  await expect(page.locator('iframe[title="Documento para imprimir"]')).toHaveAttribute('src', /^blob:/)
+  const printFrame = page.locator('iframe[title="Documento para imprimir"]')
+  await expect(printFrame).toHaveAttribute('src', /^blob:/)
   await expect(page.getByRole('status')).toHaveText('Documento enviado a imprimir.')
   expect(new URL(requested).searchParams.get('categoryId')).toBe('category-1')
   expect(downloaded).toBe(false)
 })
+
+for (const width of [390, 1280]) {
+  test(`audited lists fit at ${width}px and disclose secondary actions by keyboard`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await mockApi(page)
+    if (width === 390) await page.addInitScript(() => localStorage.setItem('distribuidora.theme', 'dark'))
+    const name = 'Almacén con una razón social extensa y más de una sucursal'
+    const seller = 'Representante comercial con dos apellidos'
+    const requestId = '29354283-a251-49df-9875-a25eaf494976'
+    const paged = (content: object[]) => ({ content, page: 0, size: 20, totalElements: content.length, totalPages: 1 })
+    await page.route(url => url.pathname === '/api/products', route => route.fulfill({ json: paged([{ ...products[0], stock: -2 }]) }))
+    await page.route(url => url.pathname === '/api/inventory/product-1/movements', route => route.fulfill({ json: paged([
+      { id: 'movement-1', movementType: 'MANUAL_ADJUSTMENT', quantity: -2, reason: 'Recuento', date: '2026-09-30T12:00:00Z' },
+    ]) }))
+    await page.route(url => url.pathname === '/api/orders', route => route.fulfill({ json: paged([
+      { id: 'order-1', number: '000100001', customer: name, seller, total: 25000, status: 'CONFIRMED', date: '2026-09-30T12:00:00Z',
+        createdByAdmin: false, fulfillmentStatus: 'PENDING', reviewPending: true },
+    ]) }))
+    await page.route(url => url.pathname === '/api/customers', route => route.fulfill({ json: paged([
+      { id: 'customer-1', name, cuitId: '30-12345678-9', seller, status: 'ACTIVE', balance: 12 },
+    ]) }))
+    await page.route(url => url.pathname === '/api/audit', route => route.fulfill({ json: paged([
+      { id: 'event-1', actor: 'administracion@distribuidora.example.test', operation: 'LOGIN', result: 'SUCCESS',
+        resourceType: 'USER', resourceId: '9d626d3e-3540-4d74-a564-17d7f0ebd95b', correlationId: requestId, createdAt: '2026-09-30T12:00:00Z' },
+    ]) }))
+
+    async function expectTableFits() {
+      const table = page.locator('.compact-list-table')
+      await expect(table).toBeVisible()
+      expect(await table.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    }
+
+    await page.goto('/orders')
+    await expectTableFits()
+    await expect(page.locator('td[data-label="Estado"] .badge')).toHaveText('Confirmado')
+
+    await page.goto('/products')
+    await expectTableFits()
+    await expect(page.locator('td[data-label="Estado"]')).toHaveText('Activo')
+    const stockActions = page.getByLabel('Más acciones de ' + products[0].name)
+    await stockActions.press('Enter')
+    const movements = page.getByRole('button', { name: 'Ver movimientos de ' + products[0].name })
+    await movements.click()
+    const dialog = page.getByRole('dialog', { name: 'Movimientos de ' + products[0].name })
+    await expect(dialog.getByText('Ajuste manual')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(movements).toBeHidden()
+    await expect(stockActions).toBeFocused()
+
+    await page.goto('/customers')
+    await expectTableFits()
+    await expect(page.locator('td[data-label="Saldo"]')).toContainText('12,00')
+    const more = page.getByLabel('Más acciones de ' + name)
+    const menu = page.getByRole('group', { name: 'Acciones disponibles' })
+    const changeList = page.getByRole('button', { name: 'Cambiar lista', exact: true })
+    const row = page.getByRole('row').filter({ has: more })
+    await more.scrollIntoViewIfNeeded()
+    const closedHeight = (await row.boundingBox())!.height
+    await expect(changeList).toBeHidden()
+    await more.press('Enter')
+    await expect(changeList).toBeVisible()
+    await expectInsideViewport(page, menu)
+    expect((await row.boundingBox())!.height).toBe(closedHeight)
+    await page.keyboard.press('Tab')
+    await expect(changeList).toBeFocused()
+    await changeList.press('Escape')
+    await expect(changeList).toBeHidden()
+    await expect(more).toBeFocused()
+    await more.press('Space')
+    await expect(menu).toBeVisible()
+    await page.getByRole('textbox', { name: 'Buscar clientes' }).click()
+    await expect(menu).toBeHidden()
+
+    await page.goto('/admin/audit')
+    await expectTableFits()
+    await expect(page.getByText('Iniciar sesión')).toBeVisible()
+    const identifier = page.getByLabel('ID de solicitud: ' + requestId)
+    await expect(identifier).toHaveAttribute('title', requestId)
+    await identifier.press('Enter')
+    await expect(page.locator('.audit-identifier[open] code')).toHaveText(requestId)
+    await expectTableFits()
+  })
+}
+
+test('customer actions open above the row at 320px with large text', async ({ page }, info) => {
+  await page.setViewportSize({ width: 320, height: 760 })
+  await mockApi(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('distribuidora.theme', 'dark')
+    localStorage.setItem('distribuidora.text-size', 'large')
+  })
+  await page.route(url => url.pathname === '/api/customers', route => route.fulfill({ json: {
+    content: [{ id: 'customer-1', name: 'Revendedor', seller: 'Sin asignar', status: 'ACTIVE', balance: 0 }],
+    page: 0, size: 20, totalElements: 1, totalPages: 1,
+  } }))
+  await page.goto('/customers')
+  const label = 'Más acciones de Revendedor'
+  const trigger = page.getByRole('button', { name: label })
+  const menu = page.getByRole('group', { name: 'Acciones disponibles' })
+  await trigger.scrollIntoViewIfNeeded()
+  const triggerBox = (await trigger.boundingBox())!
+  await page.setViewportSize({ width: 320, height: Math.ceil(triggerBox.y + triggerBox.height + 24) })
+  await trigger.press('Enter')
+  await expect(menu).toBeVisible()
+  await expectInsideViewport(page, menu)
+  const menuBox = (await menu.boundingBox())!
+  expect(menuBox.y + menuBox.height).toBeLessThan((await trigger.boundingBox())!.y)
+  const download = menu.getByRole('button', { name: 'Descargar estado de deuda' })
+  await expect(download).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+  await page.screenshot({ path: info.outputPath('customer-actions.png') })
+  await page.route('**/api/documents/customers/customer-1/statement?*', route => route.fulfill({ status: 503, json: { detail: 'Documento temporalmente no disponible' } }))
+  await download.click()
+  await expect(menu.getByRole('alert')).toHaveText('Documento temporalmente no disponible')
+})
+
+for (const width of [320, 1280]) {
+  test(`order calendars fit inside the viewport with large text at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 600 })
+    await mockApi(page)
+    await page.addInitScript(() => localStorage.setItem('distribuidora.text-size', 'large'))
+    await page.goto('/orders?dateMin=2026-11-21&dateMax=2026-11-21')
+    await expect(page.locator('html')).toHaveAttribute('data-text-size', 'large')
+
+    for (const label of ['Desde', 'Hasta']) {
+      const trigger = page.getByRole('button', { name: `Abrir calendario: ${label}` })
+      await trigger.click()
+      const calendar = page.getByRole('dialog', { name: new RegExp(`Calendario: ${label}`) })
+      await expect(calendar).toBeVisible()
+      await expectInsideViewport(page, calendar)
+      await expect(calendar.getByRole('button', { name: 'Mes siguiente' })).toBeInViewport({ ratio: 1 })
+      const close = calendar.getByRole('button', { name: 'Cerrar' })
+      await expect(close).toBeInViewport({ ratio: 1 })
+      await close.click()
+      await expect(trigger).toBeFocused()
+    }
+  })
+}

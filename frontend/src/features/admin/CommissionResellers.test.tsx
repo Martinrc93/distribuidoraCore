@@ -59,12 +59,13 @@ describe('Reseller commissions', () => {
     const row = (await screen.findByText('Revendedores', { selector: 'span' })).closest('tr')!
     expect(within(row).getAllByRole('cell').map(cell => cell.textContent)).toContain('1')
     expect(screen.getByRole('columnheader', { name: 'Revendedores asignados' })).toBeInTheDocument()
+    const panel = screen.getByRole('form', { name: 'Asignar comisión' })
+    await user.selectOptions(within(panel).getByRole('combobox', { name: 'Tipo de beneficiario' }), 'RESELLER')
     expect(screen.getByText(/pedidos de sus clientes y compras propias/)).toBeInTheDocument()
 
     await selectEntity(user, 'Revendedor', 'Distribuidora Sur')
-    const plan = await screen.findByRole('combobox', { name: 'Plan del revendedor' })
+    const plan = await screen.findByRole('combobox', { name: 'Plan de comisión' })
     await user.selectOptions(plan, 'plan-1')
-    const panel = screen.getByRole('form', { name: 'Asignación a revendedores' })
     await user.click(within(panel).getByRole('button', { name: 'Guardar asignación' }))
     await waitFor(() => expect(calls).toContainEqual({ path: '/api/settings/commission-plans/reseller-assignments/reseller-1',
       method: 'PUT', body: { planId: 'plan-1', expectedPlanId: null } }))
@@ -83,7 +84,7 @@ describe('Reseller commissions', () => {
       ? response({ id: 'settlement-1', amount: '6.0000', entryCount: 1, paidAt: '2026-11-19T12:00:00Z' }, 201)
       : call.path.startsWith('/api/commissions/resellers/reseller-1?') ? response(statement) : undefined)
     const user = userEvent.setup()
-    renderWith(<CommissionSettlementsPage />, '/admin/settings/commissions/settlements')
+    renderWith(<CommissionSettlementsPage />, '/commission-settlements')
 
     expect(screen.getByRole('combobox', { name: 'Comisiones de' })).toHaveValue('reseller')
     expect(screen.queryByRole('combobox', { name: 'Vendedor' })).not.toBeInTheDocument()

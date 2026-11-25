@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -113,7 +113,7 @@ describe('PriceListsPage', () => {
     await user.click(await screen.findByRole('button', { name: /programar precio de harina/i }))
     await user.clear(screen.getByLabelText('Precio de Harina'))
     await user.type(screen.getByLabelText('Precio de Harina'), '180')
-    await user.type(screen.getByLabelText('Fecha de vigencia'), '2026-10-01')
+    fireEvent.change(screen.getByLabelText('Fecha de vigencia'), { target: { value: '01/10/2026' } })
     await user.click(screen.getByRole('button', { name: /guardar precio/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1', expect.objectContaining({
@@ -143,17 +143,17 @@ describe('PriceListsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /historial de precios de harina/i }))
     const historyDialog = within(screen.getByRole('dialog', { name: 'Historial de precios' }))
-    expect(await historyDialog.findByText('2026-10-01')).toBeInTheDocument()
+    expect(await historyDialog.findByText('01/10/2026')).toBeInTheDocument()
     expect(historyDialog.getByText('Programado')).toBeInTheDocument()
-    await user.click(historyDialog.getByRole('button', { name: 'Cancelar precio del 2026-10-01' }))
-    const confirmation = within(screen.getByRole('dialog', { name: '¿Cancelar el precio programado para 2026-10-01?' }))
+    await user.click(historyDialog.getByRole('button', { name: 'Cancelar precio del 01/10/2026' }))
+    const confirmation = within(screen.getByRole('dialog', { name: '¿Cancelar el precio programado para 01/10/2026?' }))
     expect(fetchMock).not.toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1/history/2026-10-01', expect.anything())
     await user.click(confirmation.getByRole('button', { name: 'Confirmar cancelación' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1/history/2026-10-01', expect.objectContaining({ method: 'DELETE' })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/pricing/lists/list-1/products/product-1/history?page=0&size=20'] })
-    expect(await historyDialog.findByRole('status')).toHaveTextContent('Precio programado para 2026-10-01 cancelado.')
-    expect(historyDialog.queryByRole('button', { name: 'Cancelar precio del 2026-10-01' })).not.toBeInTheDocument()
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['pricing', 'history', '/api/pricing/lists/list-1/products/product-1/history?page=0&size=20'] })
+    expect(await historyDialog.findByRole('status')).toHaveTextContent('Precio programado para 01/10/2026 cancelado.')
+    expect(historyDialog.queryByRole('button', { name: 'Cancelar precio del 01/10/2026' })).not.toBeInTheDocument()
   })
 
   it('pages through the selected product price history', async () => {
@@ -170,12 +170,12 @@ describe('PriceListsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /historial de precios de harina/i }))
     await screen.findByText(/Página 1 de 2/)
-    expect(screen.getAllByText('2026-09-24')).toHaveLength(2)
+    expect(screen.getAllByText('24/09/2026')).toHaveLength(2)
     await user.click(screen.getByRole('button', { name: 'Siguiente historial' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pricing/lists/list-1/products/product-1/history?page=1&size=20', expect.anything()))
     const historyDialog = within(screen.getByRole('dialog', { name: 'Historial de precios' }))
-    expect(await historyDialog.findByText('2026-10-01')).toBeInTheDocument()
+    expect(await historyDialog.findByText('01/10/2026')).toBeInTheDocument()
     expect(historyDialog.queryByRole('button', { name: /cancelar precio/i })).not.toBeInTheDocument()
     await user.click(historyDialog.getByRole('button', { name: 'Cerrar historial' }))
     await user.click(screen.getByRole('button', { name: /historial de precios de harina/i }))
@@ -368,5 +368,38 @@ describe('PriceListsPage', () => {
     })))
     await waitFor(() => expect(screen.getByLabelText('Precio de Azúcar en la lista')).toHaveFocus())
     expect(screen.queryByLabelText('Precio de Harina en la lista', { selector: 'input[disabled]' })).not.toBeInTheDocument()
+  })
+
+  it('prevents duplicate status confirmation submits and keeps dialog open while request is pending', async () => {
+    const user = userEvent.setup()
+    let resolvePatch!: () => void
+    let patchCalls = 0
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/pricing/lists?page=0&size=20' && !init?.method) return response(lists)
+      if (String(input) === '/api/pricing/lists/list-1/prices?page=0&size=20') return response(prices)
+      if (String(input) === '/api/pricing/lists/list-1/status' && init?.method === 'PATCH') {
+        patchCalls += 1
+        return new Promise<Response>((resolve) => {
+          resolvePatch = () => resolve({ ok: true, status: 204, json: () => Promise.resolve({}) } as Response)
+        })
+      }
+      return response({})
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /desactivar mayorista/i }))
+    const dialog = screen.getByRole('dialog', { name: 'Desactivar lista' })
+    const confirm = within(dialog).getByRole('button', { name: 'Desactivar lista' })
+    const cancel = within(dialog).getByRole('button', { name: 'Cancelar' })
+    await user.click(confirm)
+    expect(patchCalls).toBe(1)
+    expect(within(dialog).getByRole('button', { name: 'Desactivando...' })).toBeDisabled()
+    expect(cancel).toBeDisabled()
+
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog', { name: 'Desactivar lista' })).toBeInTheDocument()
+
+    resolvePatch()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Desactivar lista' })).not.toBeInTheDocument())
   })
 })

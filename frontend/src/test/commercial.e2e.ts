@@ -7,14 +7,27 @@ test('admin can create a customer, price a product, confirm an order and open it
   let productName = productDescription
 
   await page.goto('/login')
-  await page.keyboard.press('Tab')
+  await page.getByLabel('Email').focus()
   await expect(page.getByLabel('Email')).toBeFocused()
   const emailFocusOutline = await page.getByLabel('Email').evaluate((input) => getComputedStyle(input).outlineWidth)
   expect(Number.parseFloat(emailFocusOutline)).toBeGreaterThan(0)
   await page.getByLabel('Email').fill('playwright-admin@example.test')
-  await page.getByLabel('Contraseña').fill('Playwright-E2E-Password-2026!')
+  await page.getByLabel('Contraseña', { exact: true }).fill('Playwright-E2E-Password-2026!')
   await page.getByRole('button', { name: 'Ingresar' }).click()
-  await expect(page).toHaveURL(/\/orders$/)
+  await expect(page).toHaveURL(/\/dashboard$/)
+
+  const brandName = `Marca ${suffix}`
+  const categoryName = `Rubro ${suffix}`
+  await page.goto('/catalog')
+  await page.getByRole('button', { name: '+ Nueva marca', exact: true }).first().click()
+  await page.getByLabel('Nombre de marca').fill(brandName)
+  await page.getByRole('button', { name: 'Guardar marca' }).click()
+  await expect(page.getByText(brandName, { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Categorías' }).click()
+  await page.getByRole('button', { name: '+ Nueva categoría', exact: true }).first().click()
+  await page.getByLabel('Nombre de categoría').fill(categoryName)
+  await page.getByRole('button', { name: 'Guardar categoría' }).click()
+  await expect(page.getByText(categoryName, { exact: true })).toBeVisible()
 
   await page.goto('/customers')
   await page.getByRole('button', { name: '+ Nuevo cliente' }).first().click()
@@ -26,10 +39,9 @@ test('admin can create a customer, price a product, confirm an order and open it
   await page.getByRole('button', { name: '+ Nuevo producto' }).first().click()
   await page.getByLabel('Descripción', { exact: true }).fill(productDescription)
   const brand = page.getByRole('combobox', { name: 'Marca', exact: true })
-  await expect(brand.locator('option').nth(1)).toHaveAttribute('value', /.+/)
-  await brand.selectOption(await brand.locator('option').nth(1).getAttribute('value') ?? '')
+  await brand.selectOption({ label: brandName })
   productName = await page.getByLabel('Nombre', { exact: true }).textContent() ?? ''
-  await page.getByRole('combobox', { name: 'Categoría', exact: true }).selectOption({ label: 'Almacén' })
+  await page.getByRole('combobox', { name: 'Categoría', exact: true }).selectOption({ label: categoryName })
   await page.getByLabel('Costo').fill('5')
   const initialPrices = page.getByLabel(/^Precio para /)
   await expect(initialPrices.first()).toBeVisible()
@@ -42,12 +54,12 @@ test('admin can create a customer, price a product, confirm an order and open it
   expect(createdProductResponse.ok()).toBeTruthy()
   await expect(page.getByRole('status')).toContainText('Producto creado correctamente.')
 
-  await page.goto('/inventory')
+  await page.getByLabel('Buscar productos').fill(productName)
   await page.getByRole('button', { name: `Ajustar stock de ${productName}` }).click()
-  await page.getByLabel('Cantidad de ajuste').fill('10')
-  await page.getByLabel('Motivo').fill('Stock inicial E2E')
+  await page.getByLabel('Cantidad final', { exact: true }).fill('10')
+  await page.getByLabel('Motivo (opcional)').fill('Stock inicial E2E')
   await page.getByRole('button', { name: 'Confirmar ajuste' }).click()
-  await expect(page.getByRole('status')).toContainText('Ajuste de inventario registrado.')
+  await expect(page.getByText('Ajuste de stock registrado.')).toBeVisible()
 
   const productListResponse = page.waitForResponse((response) => response.url().includes('/api/products?page=0&size=100&includeStock=true') && response.request().method() === 'GET')
   await page.goto('/orders/new')
@@ -61,9 +73,6 @@ test('admin can create a customer, price a product, confirm an order and open it
   const list = page.getByLabel('Lista de precios')
   const generalOption = list.locator('option').filter({ hasText: 'GENERAL' }).first()
   await list.selectOption(await generalOption.getAttribute('value') ?? '')
-  const depot = page.getByLabel('Depósito para el pedido')
-  const centralOption = depot.locator('option').filter({ hasText: 'CENTRAL' }).first()
-  await depot.selectOption(await centralOption.getAttribute('value') ?? '')
   const productSelect = page.getByRole('combobox', { name: 'Producto', exact: true })
   await productSelect.fill(productName)
   await page.getByRole('option', { name: productName, exact: false }).click()
@@ -71,20 +80,26 @@ test('admin can create a customer, price a product, confirm an order and open it
 
   const orderResponse = page.waitForResponse((response) => response.url().endsWith('/api/orders/confirm') && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Confirmar pedido' }).click()
-  expect((await orderResponse).ok()).toBeTruthy()
+  const confirmedOrder = await orderResponse
+  expect(confirmedOrder.ok()).toBeTruthy()
+  const { saleNumber } = await confirmedOrder.json() as { saleNumber: string }
+  expect(saleNumber).toMatch(/^\d{9}$/)
   await expect(page.getByRole('heading', { name: customerName, exact: true })).toBeVisible()
   await expect(page.locator('.order-customer-header p')).toContainText(/Pedido \d{9}/)
   await page.getByRole('link', { name: 'Ver pedido' }).click()
   await expect(page.getByText(productName)).toBeVisible()
 
   await page.goto('/sales')
-  await page.getByLabel('Buscar ventas').fill(customerName)
+  await page.getByLabel('Buscar ventas').fill(saleNumber)
   await expect(page.getByText(customerName)).toBeVisible()
   await page.getByRole('button', { name: 'Ver venta' }).click()
-  await expect(page.getByRole('heading', { name: /Venta SAL-/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Venta (?:V-)?\d+$/ })).toBeVisible()
   await expect(page.getByText(productName)).toBeVisible()
 
   if (testInfo.project.name.startsWith('mobile')) {
+    const saleDetail = page.getByRole('dialog', { name: 'Detalle de venta' })
+    await saleDetail.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await expect(saleDetail).toHaveCount(0)
     await page.getByRole('button', { name: 'Abrir menú' }).click()
     await expect(page.getByRole('navigation', { name: 'Navegación principal' })).toBeVisible()
     const width = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }))

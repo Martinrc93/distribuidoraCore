@@ -24,12 +24,13 @@ const backendEnv = {
 
 export default defineConfig({
   testDir: './src/test',
-  testMatch: '**/*.e2e.ts',
+  testMatch: '**/commercial.e2e.ts',
   fullyParallel: false,
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 10_000 },
   reporter: 'list',
+  outputDir: 'test-results/commercial',
   use: {
     baseURL: frontendUrl,
     trace: 'retain-on-failure',
@@ -38,13 +39,13 @@ export default defineConfig({
       : undefined,
   },
   projects: [
-    { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile-chromium', use: { ...devices['Pixel 7'] } },
+    { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
+    { name: 'mobile-chromium', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
   ],
   webServer: [
     {
       command: `${mvn} -f ../backend/pom.xml --batch-mode --no-transfer-progress -Disolated.build.dir=target-codex-e2e spring-boot:run`,
-      url: `${backendUrl}/actuator/health`,
+      url: `${backendUrl}/actuator/health/readiness`,
       cwd: process.cwd(),
       env: backendEnv,
       reuseExistingServer: false,

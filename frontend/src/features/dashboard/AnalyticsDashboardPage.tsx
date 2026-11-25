@@ -1,5 +1,7 @@
 import { CurrencyText } from '../../shared/components/CurrencyText'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { useSearchParams } from 'react-router-dom'
 import { apiGet } from '../../shared/api/client'
 import { Badge } from '../../shared/components/Badge'
@@ -9,10 +11,12 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { StatCard } from '../../shared/components/StatCard'
-import { expenseColumns, expenseMoney, expenseRows, type Expense } from '../expenses/expenses'
+import { expenseColumns, expenseRows, type Expense } from '../expenses/expenses'
+import { orderStatusLabel } from '../orders/orderStatus'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 import { restockPurchasePath } from '../purchasing/supplierOrders'
-import { businessTimeZone, displayDate, parseDate, presetRange, rangeError, todayInArgentina } from './dashboardDates'
+import { displayDate, formatBusinessDate, formatBusinessDateTimeShort, parseDate, presetRange, rangeError, todayInArgentina } from '../../shared/dates'
+import { formatMoney, formatNumber } from '../../shared/format'
 import { parseDashboardReport } from './dashboardResponses'
 
 type Sales = { amount: number; orders: number }
@@ -35,11 +39,10 @@ export type DashboardReport = {
 }
 
 type Row = Record<string, string>
-const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
-const number = (value: number) => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(value)
+const money = (value: number) => formatMoney(value, 2)
+const number = (value: number) => formatNumber(value, 1)
 const debtShare = (balance: number, total: number) => total > 0 ? `${number(balance / total * 100)}%` : 'Sin deuda'
-const date = (value: string) => new Intl.DateTimeFormat('es-AR', { timeZone: businessTimeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value))
-const stateNames: Record<string, string> = { CONFIRMED: 'Confirmado', DELIVERED: 'Entregado', CANCELLED: 'Cancelado' }
+const date = (value: string) => formatBusinessDate(value)
 export function comparison(current: number, previous: number) {
   if (previous === 0) return current === 0 ? 'Sin variación' : 'Sin base de comparación'
   const change = (current - previous) / previous * 100
@@ -48,7 +51,7 @@ export function comparison(current: number, previous: number) {
 const orderColumns: TableColumn[] = [
   { key: 'number', label: 'Pedido', emphasis: true }, { key: 'customer', label: 'Cliente' }, { key: 'seller', label: 'Vendedor' },
   { key: 'date', label: 'Fecha' }, { key: 'total', label: 'Total', align: 'right' },
-  { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'DELIVERED' ? 'strong' : value === 'CANCELLED' ? 'muted' : 'soft'}>{stateNames[value] ?? value}</Badge> },
+  { key: 'status', label: 'Estado', render: (value) => <Badge tone={value === 'DELIVERED' ? 'strong' : value === 'CANCELLED' ? 'muted' : 'soft'}>{orderStatusLabel(value)}</Badge> },
   { key: 'action', label: 'Detalle', render: (_, row) => <Button variant="link" href={`/orders/${row.id}`} aria-label={`Abrir pedido ${row.number}`}>Ver detalle</Button> },
 ]
 const orderRows = (orders: Order[]): Row[] => orders.map((order) => ({ ...order, total: money(order.total), date: date(order.date) }))
@@ -56,19 +59,47 @@ const empty = (message: string) => <p className="m-0 py-[18px] text-[13px] text-
 const compactTable = '[&>.data-table]:min-w-0 [&>.data-table]:table-fixed [&_th]:whitespace-normal [&_td]:whitespace-normal [&_td]:[overflow-wrap:anywhere] [@media(min-width:641px)]:[&_th]:px-[10px] [@media(min-width:641px)]:[&_td]:px-[10px]'
 
 function SalesTrend({ points }: { points: TrendPoint[] }) {
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const [width, setWidth] = useState(800)
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const update = () => {
+      const next = Math.round(el.getBoundingClientRect().width)
+      if (next > 0) setWidth(next)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
   if (!points.some((point) => Number(point.amount) > 0)) return empty('No hay ventas registradas en este período.')
-  const max = Math.max(...points.map((point) => Number(point.amount)), 1)
-  const coordinates = points.map((point, index) => ({ x: points.length === 1 ? 400 : index / (points.length - 1) * 792 + 4, y: 172 - Number(point.amount) / max * 160 }))
+  const max = Math.max(...points.map((point) => point.amount))
+  const coordinates = points.map((point, index) => ({
+    x: points.length === 1 ? width / 2 : index / (points.length - 1) * (width - 8) + 4,
+    y: 172 - Number(point.amount) / max * 160,
+  }))
   const path = coordinates.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.y}`).join(' ')
   const tickIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
   return <figure className="m-0 min-w-0">
-    <div className="mb-[8px] flex justify-between text-[11px] text-muted"><span>Importe diario</span><span>Máximo <CurrencyText>{money(max)}</CurrencyText></span></div>
-    <svg className="block h-[180px] w-full" viewBox="0 0 800 180" preserveAspectRatio="none" role="img" aria-label={`Ventas diarias del ${displayDate(points[0].date)} al ${displayDate(points.at(-1)!.date)}. Máximo diario ${money(max)}.`}>
-      {[12, 92, 172].map((y) => <line key={y} x1="0" x2="800" y1={y} y2={y} className="stroke-line" vectorEffect="non-scaling-stroke" />)}
-      <path d={path} fill="none" className="stroke-accent" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-      {coordinates.length === 1 && <circle cx={coordinates[0].x} cy={coordinates[0].y} r="3" className="fill-accent" />}
-    </svg>
-    <div className="mt-[8px] flex justify-between gap-[8px] text-[11px] text-muted">{tickIndexes.map((index) => <span key={index}>{displayDate(points[index].date).slice(0, 5)}</span>)}</div>
+    <div className="grid grid-cols-[auto_minmax(0,_1fr)] gap-x-[8px] text-[11px] text-muted">
+      <div className="flex h-[180px] flex-col justify-between py-[4px] text-right" aria-hidden="true">
+        {[max, max / 2, 0].map((value) => <span key={value}>{money(value)}</span>)}
+      </div>
+      <svg ref={svgRef} className="block h-[180px] w-full" viewBox={`0 0 ${width} 180`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Ventas diarias del ${displayDate(points[0].date)} al ${displayDate(points.at(-1)!.date)}. Máximo diario ${money(max)}.`}>
+        {[12, 92, 172].map((y) => <line key={y} x1="0" x2={width} y1={y} y2={y} className="stroke-line" vectorEffect="non-scaling-stroke" />)}
+        <path d={path} fill="none" className="stroke-accent" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+        {coordinates.map(({ x, y }, index) => points[index].amount > 0 && <circle key={points[index].date} cx={x} cy={y} r="4" className="fill-accent stroke-accent" vectorEffect="non-scaling-stroke">
+          <title>{displayDate(points[index].date)} · {money(points[index].amount)}</title>
+        </circle>)}
+      </svg>
+      <div className="relative col-start-2 mt-[8px] h-[14px]" aria-hidden="true">
+        {tickIndexes.map((index) => <span className="absolute whitespace-nowrap" key={index} style={{
+          left: points.length === 1 ? '50%' : `${coordinates[index].x / width * 100}%`,
+          transform: points.length === 1 ? 'translateX(-50%)' : index === 0 ? undefined : index === points.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
+        }}>{displayDate(points[index].date).slice(0, 5)}</span>)}
+      </div>
+    </div>
     <figcaption className="mt-[12px] text-[12px] text-muted">Los días sin ventas se muestran en cero.</figcaption>
     <details className="mt-[12px] text-[12px]"><summary className="cursor-pointer rounded-[4px] py-[8px] focus-visible:outline-[3px] focus-visible:outline-[#bb8754] focus-visible:outline-offset-2">Ver datos del gráfico</summary>
       <DataTable className={compactTable} columns={[{ key: 'date', label: 'Fecha' }, { key: 'orders', label: 'Ventas', align: 'right' }, { key: 'amount', label: 'Importe', align: 'right' }]} rows={points.map((point) => ({ date: displayDate(point.date), orders: number(point.orders), amount: money(point.amount) }))} />
@@ -86,7 +117,7 @@ export default function AnalyticsDashboardPage() {
   const end = parseDate(dateMax)
   const error = rangeError(start, end, today)
   const path = `/api/dashboard/analytics?dateMin=${start ?? ''}&dateMax=${end ?? ''}`
-  const query = useQuery({ queryKey: ['dashboard', 'analytics', start, end], queryFn: async ({ signal }) => parseDashboardReport(await apiGet<unknown>(path, signal)), enabled: !error })
+  const query = useQuery({ queryKey: queryKeys.dashboard.analytics(start, end), queryFn: async ({ signal }) => parseDashboardReport(await apiGet<unknown>(path, signal)), enabled: !error })
   const data = query.data
   const topDebtors = data ? [...data.topDebtors].sort((a, b) => b.balance - a.balance).slice(0, 5) : []
   const topDebt = topDebtors.reduce((total, debtor) => total + debtor.balance, 0)
@@ -121,10 +152,10 @@ export default function AnalyticsDashboardPage() {
       </div>
       {error && <p id="analytics-date-error" className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
     </Panel>
-    {!error && query.isLoading && <div role="status"><EmptyState title="Cargando dashboard" description="Consultando indicadores y actividad comercial." /></div>}
-    {!error && query.isError && <div role="alert"><EmptyState title="No se pudo cargar el dashboard" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching}>Reintentar</Button>} /></div>}
+    {!error && query.isLoading && <EmptyState state="loading" title="Cargando dashboard" description="Consultando indicadores y actividad comercial." />}
+    {!error && query.isError && <EmptyState state="error" title="No se pudo cargar el dashboard" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching}>Reintentar</Button>} />}
     {!error && !query.isError && data && <>
-      <p className="m-0 text-[12px] text-muted">Comparación: {displayDate(data.previousDateMin)} al {displayDate(data.previousDateMax)}{end === today ? ', hasta la misma hora del último día' : ''}. Actualizado {new Intl.DateTimeFormat('es-AR', { timeZone: businessTimeZone, dateStyle: 'short', timeStyle: 'short' }).format(new Date(data.generatedAt))}.</p>
+      <p className="m-0 text-[12px] text-muted">Comparación: {displayDate(data.previousDateMin)} al {displayDate(data.previousDateMax)}{end === today ? ', hasta la misma hora del último día' : ''}. Actualizado {formatBusinessDateTimeShort(data.generatedAt)}</p>
       <section className="stats-grid mb-0" aria-label="Indicadores principales">
         <StatCard label="Ventas del período" value={money(data.sales.amount)} detail={`${number(data.sales.orders)} ventas · ${comparison(data.sales.amount, data.previousSales.amount)}`} />
         <StatCard label="Cobros del período" value={money(data.collections.amount)} detail={comparison(data.collections.amount, data.previousCollections.amount)} />
@@ -142,7 +173,7 @@ export default function AnalyticsDashboardPage() {
         </Panel>
       </div>
       <Panel title="Gastos del período"
-        description={`${expenseMoney.format(data.expenses.amount)} en ${number(data.expenses.count)} ${data.expenses.count === 1 ? 'gasto registrado' : 'gastos registrados'}. ${data.expenses.count > data.expenses.recent.length ? 'Se muestran los últimos cinco.' : ''}`.trim()}
+        description={`${money(data.expenses.amount)} en ${number(data.expenses.count)} ${data.expenses.count === 1 ? 'gasto registrado' : 'gastos registrados'}. ${data.expenses.count > data.expenses.recent.length ? 'Se muestran los últimos cinco.' : ''}`.trim()}
         action={<Button variant="link" href="/expenses">Ver gastos</Button>}>
         <DataTable className={compactTable} columns={expenseColumns} rows={expenseRows(data.expenses.recent)}
           emptyContent={empty('No hay gastos registrados en este período.')} />
@@ -171,7 +202,7 @@ export default function AnalyticsDashboardPage() {
             { key: 'stock', label: 'Stock', align: 'right' },
             { key: 'daily', label: 'Unidades/día', align: 'right' },
             { key: 'days', label: 'Cobertura', align: 'right' },
-          ]} rows={data.stockCoverage.map((item) => ({ id: item.id, name: item.name, stock: number(item.stock), daily: new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(item.dailyUnits), days: item.days === null ? 'Sin ventas' : `${number(item.days)} días` }))} emptyContent={empty('No hay productos activos para estimar cobertura.')} />
+          ]} rows={data.stockCoverage.map((item) => ({ id: item.id, name: item.name, stock: number(item.stock), daily: formatNumber(item.dailyUnits, 2), days: item.days === null ? 'Sin ventas' : `${number(item.days)} días` }))} emptyContent={empty('No hay productos activos para estimar cobertura.')} />
         </Panel>
         <Panel title="Productos más vendidos" description="Los cinco productos con más unidades vendidas en el período. Importes después de descuentos; no descuenta devoluciones de mercadería."
           action={<Button variant="link" href={`/sales/products?dateMin=${encodeURIComponent(dateMin)}&dateMax=${encodeURIComponent(dateMax)}`}>Artículos vendidos</Button>}>

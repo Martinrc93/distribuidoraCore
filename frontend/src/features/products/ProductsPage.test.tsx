@@ -346,4 +346,29 @@ describe('ProductsPage', () => {
     await user.selectOptions(screen.getByLabelText('Marca'), 'brand-3')
     expect(screen.getByLabelText('Nombre')).toHaveTextContent('Molino Sur Harina 1 kg')
   })
+
+  it('parses Argentine formatted cost and list prices when creating a product', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/products?page=0&size=20' && !init?.method) return response({ ...products, content: [] })
+      if (String(input) === '/api/products' && init?.method === 'POST') return response({ id: 'new-product' }, 201)
+      return catalogResponse(input)
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /nuevo producto/i }))
+    await user.type(screen.getByLabelText('Descripción'), 'Yerba')
+    await user.selectOptions(screen.getByLabelText('Categoría'), 'category-1')
+    await user.selectOptions(screen.getByLabelText('Marca'), 'brand-1')
+    await user.clear(screen.getByLabelText('Costo'))
+    await user.type(screen.getByLabelText('Costo'), '1.250,50')
+    await user.clear(screen.getByLabelText('Precio para MAYORISTA'))
+    await user.type(screen.getByLabelText('Precio para MAYORISTA'), '1.500,75')
+    await user.click(screen.getByRole('button', { name: /guardar producto/i }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/products', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ description: 'Yerba', cost: 1250.5, prices: [{ priceListId: 'list-1', price: 1500.75 }], categoryId: 'category-1', brandId: 'brand-1' }),
+    })))
+  })
 })

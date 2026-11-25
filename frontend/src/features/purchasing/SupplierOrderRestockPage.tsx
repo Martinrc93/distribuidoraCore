@@ -4,7 +4,7 @@ import { Button } from '../../shared/components/Button'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { SupplierOrderForm } from './SupplierOrderForm'
-import type { SupplierOrderResult } from './supplierOrders'
+import { purchaseSavedMessage, type SupplierOrderResult } from './supplierOrders'
 
 export default function SupplierOrderRestockPage() {
   const [params] = useSearchParams()
@@ -22,9 +22,7 @@ export default function SupplierOrderRestockPage() {
   return <>
     <PageHeader eyebrow="Compras" title="Reposición" />
     {saved ? <Panel title={`Compra ${saved.number}`}>
-      <p className="success-text" role="status">{saved.status === 'CONFIRMED'
-        ? 'Compra confirmada. Las cantidades se sumaron al stock.'
-        : 'Compra guardada como borrador.'}</p>
+      <p className="success-text" role="status">Compra {purchaseSavedMessage(saved.status)}</p>
       <div className="page-actions">
         <Button href={`/supplier-orders/${encodeURIComponent(saved.id)}`}>Ver compra</Button>
         <Button type="button" variant="secondary" onClick={close}>Volver a {sourceName}</Button>

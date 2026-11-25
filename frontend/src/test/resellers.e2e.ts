@@ -1,13 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const reseller = { id: 'r1', name: 'Distribuidora Sur con un nombre bastante largo', seller: 'Lucía', status: 'ACTIVE', balance: 1500, kind: 'RESELLER' }
+const sellerProfile = { id: 's1', userId: 'u1', displayName: 'Lucía', email: 'lucia@example.test', status: 'ACTIVE', assignedCustomersCount: 1, kind: 'SELLER' }
 
 async function setup(page: Page, dark: boolean) {
   await page.addInitScript(({ dark }) => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL', 'RESELLER_MANAGE'] }))}.signature`)
     if (dark) localStorage.setItem('distribuidora.theme', 'dark')
   }, { dark })
-  const state = { resellerId: null as string | null, patches: [] as unknown[], errors: [] as string[] }
+  const state = { resellerId: null as string | null, resellers: [reseller], patches: [] as unknown[], errors: [] as string[] }
   page.on('pageerror', error => state.errors.push(error.message))
   const client = () => ({ id: 'c1', name: 'Kiosco Centro', seller: 'Sin asignar', status: 'ACTIVE', balance: 0, kind: 'REGULAR',
     resellerId: state.resellerId, reseller: state.resellerId ? reseller.name : null })
@@ -20,7 +21,17 @@ async function setup(page: Page, dark: boolean) {
       return route.fulfill({ json: { customerId: 'c1', resellerId: body.resellerId, pendingOrdersKept: 2 } })
     }
     if (path === '/api/customers') {
-      const content = url.searchParams.get('kind') === 'RESELLER' ? [reseller] : [reseller, client()]
+      const search = url.searchParams.get('search')?.toLowerCase() ?? ''
+      const profiles = url.searchParams.get('kind') === 'RESELLER' ? state.resellers : [...state.resellers, client()]
+      const content = profiles.filter((profile) => profile.name.toLowerCase().includes(search))
+      return route.fulfill({ json: { content, totalElements: content.length, totalPages: 1 } })
+    }
+    if (path === '/api/sellers/profiles') {
+      const search = url.searchParams.get('search')?.toLowerCase() ?? ''
+      const kind = url.searchParams.get('kind')
+      const profiles = [sellerProfile, ...state.resellers.map((item) => ({ id: item.id, displayName: item.name,
+        email: null, status: item.status, kind: item.kind, assignedCustomersCount: 0 }))]
+      const content = profiles.filter((profile) => (!kind || profile.kind === kind) && profile.displayName.toLowerCase().includes(search))
       return route.fulfill({ json: { content, totalElements: content.length, totalPages: 1 } })
     }
     if (path === '/api/customers/filter-options') return route.fulfill({ json: { sellers: [] } })
@@ -39,10 +50,10 @@ for (const width of [320, 640, 760, 1050, 1280]) {
     await page.setViewportSize({ width, height: 900 })
     const state = await setup(page, width === 760 || width === 320)
     await page.goto('/customers')
-    await expect(page.getByText('Revendedor', { exact: true }).first()).toBeVisible()
     await expect(page.getByRole('combobox', { name: 'Buscar por revendedor' })).toBeVisible()
     await fitsViewport(page)
 
+    await page.getByLabel('Más acciones de Kiosco Centro').click()
     await page.getByRole('button', { name: 'Revendedor de Kiosco Centro' }).click()
     const dialog = page.getByRole('dialog', { name: 'Revendedor de Kiosco Centro' })
     await expect(dialog.getByText(/Solo cambian los pedidos nuevos/)).toBeVisible()
@@ -58,10 +69,12 @@ for (const width of [320, 640, 760, 1050, 1280]) {
 
     await dialog.getByRole('button', { name: 'Guardar cambios' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Revendedor asignado' })).toBeVisible()
-    await expect(page.getByText(`Cuenta: ${reseller.name}`)).toBeVisible()
     await expect(dialog).toBeHidden()
     await fitsViewport(page)
     await page.screenshot({ path: info.outputPath(`reseller-list-${width}.png`), fullPage: true })
+    await page.getByLabel('Más acciones de Kiosco Centro').click()
+    await page.getByRole('button', { name: 'Revendedor de Kiosco Centro' }).click()
+    await expect(dialog.getByRole('combobox', { name: 'Revendedor' })).toHaveValue(reseller.name)
     expect(state.patches).toEqual([{ resellerId: 'r1' }])
     expect(state.errors).toEqual([])
   })
@@ -71,6 +84,7 @@ test('closing the reseller dialog with Escape asks before discarding a change', 
   await page.setViewportSize({ width: 390, height: 844 })
   const state = await setup(page, false)
   await page.goto('/customers')
+  await page.getByLabel('Más acciones de Kiosco Centro').click()
   await page.getByRole('button', { name: 'Revendedor de Kiosco Centro' }).click()
   const dialog = page.getByRole('dialog', { name: 'Revendedor de Kiosco Centro' })
   await dialog.getByRole('combobox', { name: 'Revendedor' }).click()
@@ -78,5 +92,52 @@ test('closing the reseller dialog with Escape asks before discarding a change', 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog').last()).toContainText(/descartar|Descartar/)
   expect(state.patches).toEqual([])
+  expect(state.errors).toEqual([])
+})
+
+test('creates a reseller from New Seller even when user accounts cannot load', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 })
+  const state = await setup(page, false)
+  await page.route('**/api/users?*', (route) => route.fulfill({ status: 503, json: {} }))
+  await page.route('**/api/customers', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const { businessName } = route.request().postDataJSON()
+    state.resellers.push({ ...reseller, id: 'new-reseller', name: businessName, balance: 0 })
+    return route.fulfill({ status: 201, json: { id: 'new-reseller' } })
+  })
+  await page.goto('/admin/sellers')
+  const table = page.getByRole('table')
+  await expect(table.getByText(sellerProfile.displayName, { exact: true })).toBeVisible()
+  await expect(table.getByText(reseller.name, { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /nuevo vendedor/i }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Nuevo vendedor' })
+  const type = dialog.getByLabel('Tipo de perfil')
+  await expect(dialog.getByLabel('Usuario vinculado')).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Guardar vendedor' })).toBeDisabled()
+  await type.selectOption('RESELLER')
+  await expect(dialog.getByLabel('Usuario vinculado')).toHaveCount(0)
+  await dialog.getByLabel('Nombre del revendedor').fill('Distribuidora Norte')
+  await fitsViewport(page)
+
+  const request = page.waitForRequest((request) => request.method() === 'POST' && new URL(request.url()).pathname === '/api/customers')
+  await dialog.getByRole('button', { name: 'Guardar revendedor' }).click()
+  expect((await request).postDataJSON()).toEqual({ businessName: 'Distribuidora Norte', kind: 'RESELLER' })
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('status').filter({ hasText: 'Revendedor creado correctamente' })).toBeVisible()
+  await expect(page.getByLabel('Mostrar')).toHaveValue('')
+  const search = page.getByRole('textbox', { name: 'Buscar perfiles' })
+  await expect(search).toHaveValue('Distribuidora Norte')
+  const profile = page.getByRole('link', { name: 'Ver ficha de Distribuidora Norte' })
+  await expect(profile).toBeVisible()
+  await expect(profile).toHaveAttribute('href', /\/customers\/new-reseller$/)
+  await search.clear()
+  await expect(table.getByText(reseller.name, { exact: true })).toBeVisible()
+  await expect(table.getByText(sellerProfile.displayName, { exact: true })).toBeVisible()
+  await expect(table.getByText('Vendedor', { exact: true })).toBeVisible()
+  await expect(table.getByText('Revendedor', { exact: true })).toHaveCount(2)
+  await page.getByLabel('Mostrar').selectOption('resellers')
+  await expect(table.getByText(sellerProfile.displayName, { exact: true })).toHaveCount(0)
+  await expect(profile).toBeVisible()
+  await fitsViewport(page)
   expect(state.errors).toEqual([])
 })

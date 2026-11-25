@@ -64,7 +64,7 @@ describe('CustomersPage', () => {
   it('uses the current balance and settles mixed payments in one request', async () => {
     const user = userEvent.setup()
     let settled = false
-    const fetchMock = mockFetch((input, init) => {
+    const fetchMock = mockFetch((input) => {
       const path = String(input)
       if (path === '/api/customers/customer-1/account-balance') return response({ ...customers.content[0], balance: 1200 })
       if (path.endsWith('/settlement')) { settled = true; return response({ balanceAfter: 0 }, 201) }

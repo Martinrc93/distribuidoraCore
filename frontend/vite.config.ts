@@ -8,10 +8,10 @@ export default defineConfig(({ mode }) => ({
   ...(mode === 'instance-launcher' ? {
     build: { rollupOptions: { input: fileURLToPath(new URL('./instance-launcher.html', import.meta.url)) } },
   } : {}),
-  server: {
+  server: process.env.PLAYWRIGHT_MOCK_API === 'true' ? {} : {
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/actuator': 'http://localhost:8080',
+      '/api': { target: 'http://localhost:8080', changeOrigin: false },
+      '/actuator': { target: 'http://localhost:8080', changeOrigin: false },
     },
   },
 }))

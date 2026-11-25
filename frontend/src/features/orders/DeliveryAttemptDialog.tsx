@@ -1,4 +1,8 @@
+import { trapDialogFocus } from '../../shared/dialogFocus'
+import { formatDecimalInput, formatMoney } from '../../shared/format'
+import { lockBodyScroll } from '../../shared/lockBodyScroll'
 import { CurrencyText } from '../../shared/components/CurrencyText'
+import { createIdempotencyKey } from '../../shared/api/createIdempotencyKey'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../../shared/components/Button'
@@ -7,7 +11,7 @@ import { hasAuthority } from '../../shared/auth/permissions'
 export type DeliveryAttemptDraft = {
   result: 'DELIVERED' | 'FAILED'
   observation: string
-  payments: Array<{ method: 'CASH' | 'BANK_TRANSFER'; amount: string }>
+  payments: Array<{ id?: string; method: 'CASH' | 'BANK_TRANSFER'; amount: string }>
   transferReference: string
   includePreviousDebt: boolean
   previousDebtAmount: string
@@ -31,7 +35,7 @@ type Props = {
   collectionsNotice?: string
 }
 
-const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
+const money = (value: number) => formatMoney(value, 2)
 /** Collections on a reseller account are registered by an administrator only. */
 export function resellerCollectionsNotice(accountKind?: string | null) {
   return accountKind === 'RESELLER' && !hasAuthority('ADMIN_ALL') ? 'Los cobros de cuentas de revendedor los registra un administrador.' : undefined
@@ -42,7 +46,7 @@ export const deliveryAmount = (value: string) => /^\d+(?:[.,]\d{1,4})?$/.test(va
 function PaymentAmountField({ amount, disabled, describedBy, onChange }: { amount: string; disabled: boolean; describedBy: string; onChange: (amount: string) => void }) {
   const [editing, setEditing] = useState(false)
   const number = deliveryAmount(amount)
-  const display = Number.isFinite(number) ? new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(number) : amount
+  const display = Number.isFinite(number) ? formatDecimalInput(number) : amount
   return <label className="field delivery-attempt-amount"><span>Importe del pago</span><input className="input currency-input" type="text" inputMode="decimal" size={14} value={editing ? amount : display} aria-describedby={describedBy} disabled={disabled} onFocus={() => setEditing(true)} onBlur={() => setEditing(false)} onChange={event => onChange(event.target.value)} /></label>
 }
 
@@ -62,14 +66,13 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
   useEffect(() => {
     const element = dialog.current!
     const trigger = returnFocusId ? document.getElementById(returnFocusId) : document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const releaseScroll = lockBodyScroll()
     element.showModal()
     const firstField = result.current ?? element.querySelector<HTMLElement>('input, select, textarea, .delivery-attempt-add button')
     firstField?.focus()
     return () => {
       element.close()
-      document.body.style.overflow = previousOverflow
+      releaseScroll()
       if (trigger?.isConnected) trigger.focus({ preventScroll: true })
       else if (fallbackFocusId) document.getElementById(fallbackFocusId)?.focus({ preventScroll: true })
     }
@@ -80,19 +83,12 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
   }
 
   function fillPayment(amount: number) {
-    updatePayments([{ method: value.payments[0]?.method ?? 'CASH', amount: String(Number(amount.toFixed(4))).replace('.', ',') }])
+    updatePayments([{ id: value.payments[0]?.id, method: value.payments[0]?.method ?? 'CASH',
+      amount: String(Number(amount.toFixed(4))).replace('.', ',') }])
   }
 
   return createPortal(
-    <dialog ref={dialog} className="delivery-attempt-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-modal="true" aria-busy={pending} onCancel={event => { event.preventDefault(); if (!pending) onClose() }} onKeyDown={event => {
-      if (event.key !== 'Tab') return
-      const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')
-      const first = controls[0]
-      const last = controls[controls.length - 1]
-      if (!first) event.preventDefault()
-      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-    }}>
+    <dialog ref={dialog} className="delivery-attempt-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-modal="true" aria-busy={pending} onCancel={event => { event.preventDefault(); if (!pending) onClose() }} onKeyDown={trapDialogFocus}>
       <header className="delivery-attempt-header">
         <div><h2 id={`${id}-title`}>{mode === 'account' ? 'Pago de cuenta corriente' : mode === 'delivery' ? 'Confirmar entrega' : 'Registrar intento de entrega'}</h2><p id={`${id}-description`}>{mode === 'account' ? 'Cliente' : 'Pedido'} <strong>{mode === 'account' ? customerName : orderNumber}</strong></p></div>
         <button className="delivery-attempt-close" type="button" aria-label={mode === 'account' ? 'Cerrar pago de cuenta corriente' : 'Cerrar registro de entrega'} onClick={onClose} disabled={pending}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
@@ -103,7 +99,7 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
             {mode === 'attempt' && <label className="field"><span>Resultado de entrega</span><select ref={result} className="select" value={value.result} onChange={event => onChange({ ...value, result: event.target.value as DeliveryAttemptDraft['result'], observation: '', ...(event.target.value === 'FAILED' ? { payments: [], transferReference: '', includePreviousDebt: false, previousDebtAmount: '' } : {}) })} disabled={pending}><option value="DELIVERED">Entregado</option><option value="FAILED">No entregado</option></select></label>}
             {value.result === 'FAILED' && <label className="field"><span>Observación</span><textarea className="input textarea" aria-label="Observación" value={value.observation} onChange={event => onChange({ ...value, observation: event.target.value })} aria-describedby={`${id}-observation-help`} aria-required="true" aria-invalid={Boolean(error) && !value.observation.trim()} maxLength={2000} disabled={pending} /></label>}
           </div>
-          {value.result === 'FAILED' && <p className="helper-text" id={`${id}-observation-help`}>Indica el motivo por el que no se pudo entregar el pedido.</p>}
+          {value.result === 'FAILED' && <p className="helper-text" id={`${id}-observation-help`}>Indicá el motivo por el que no se pudo entregar el pedido.</p>}
           {value.result === 'DELIVERED' && collectionsNotice ? <p className="delivery-attempt-empty">{collectionsNotice}</p> : value.result === 'DELIVERED' ? <section className="delivery-attempt-collections" aria-labelledby={`${id}-collections-title`}>
             <div className="delivery-attempt-collections-header"><h3 id={`${id}-collections-title`}>Pago</h3><div className="delivery-attempt-balance"><span>{mode === 'account' ? 'Saldo de cuenta corriente' : 'Saldo pendiente de esta venta'}</span><strong><CurrencyText>{money(saleBalance)}</CurrencyText></strong></div></div>
             {(previousDebtAvailable > 0 || value.includePreviousDebt) && <div className="delivery-attempt-previous">
@@ -113,7 +109,7 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
             {value.payments.length === 0 && saleBalance <= 0 && <p className="delivery-attempt-empty">{mode === 'account' ? 'El cliente no tiene saldo pendiente.' : 'Esta venta no tiene saldo pendiente.'}</p>}
             <div className="delivery-attempt-payments">
               {value.payments.length === 0 && <div className="delivery-attempt-quick-pay"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => fillPayment(totalDue)}>Pagar total</Button></div>}
-              {value.payments.map((payment, index) => <div className="delivery-attempt-payment" key={index}>
+              {value.payments.map((payment, index) => <div className="delivery-attempt-payment" key={payment.id ?? index}>
                 <label className="field delivery-attempt-method"><span>Medio de pago</span><select className="select" value={payment.method} disabled={pending} onChange={event => updatePayments(value.payments.map((item, itemIndex) => itemIndex === index ? { ...item, method: event.target.value as typeof payment.method } : item))}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>
                 <div className="delivery-attempt-amount-actions">
                   <PaymentAmountField amount={payment.amount} disabled={pending} describedBy={`${id}-payment-help`} onChange={amount => updatePayments(value.payments.map((item, itemIndex) => itemIndex === index ? { ...item, amount } : item))} />
@@ -124,7 +120,7 @@ export function DeliveryAttemptDialog({ orderNumber, saleBalance, previousDebtAv
               </div>)}
               {saleBalance > 0 && selectedPrevious > 0 && <div className="delivery-attempt-quick-pay"><Button type="button" variant="link" disabled={pending} onClick={() => fillPayment(saleBalance)}>Pagar solo esta venta</Button></div>}
             </div>
-            <div className="delivery-attempt-add"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => updatePayments([...value.payments, { method: 'CASH', amount: '' }])}>Agregar pago</Button></div>
+            <div className="delivery-attempt-add"><Button type="button" variant="secondary" disabled={pending || totalDue <= 0} onClick={() => updatePayments([...value.payments, { id: createIdempotencyKey(), method: 'CASH', amount: '' }])}>Agregar pago</Button></div>
             <p className="helper-text" id={`${id}-payment-help`}>{mode === 'account' ? 'Podés pagar el total o una parte. El pago se aplica primero a las deudas más antiguas.' : 'El pago se aplica primero a esta venta y luego a la deuda anterior seleccionada.'}</p>
             <dl className="delivery-attempt-summary" aria-live="polite"><div><dt>Total a pagar</dt><dd><CurrencyText>{money(totalDue)}</CurrencyText></dd></div><div><dt>Saldo después del pago</dt><dd className={collected > totalDue ? 'text-danger' : ''}><CurrencyText>{money(totalDue - collected)}</CurrencyText></dd></div></dl>
           </section> : <p className="delivery-attempt-empty">Los intentos no entregados se registran sin pagos.</p>}

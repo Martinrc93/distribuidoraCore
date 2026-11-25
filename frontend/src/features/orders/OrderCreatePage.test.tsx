@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import OrderCreatePage from './OrderCreatePage'
 import { selectEntity } from '../../test/selectEntity'
 
-function token(authorities: string[]) {
-  return `header.${btoa(JSON.stringify({ authorities }))}.signature`
+function token(authorities: string[], sub?: string) {
+  return `header.${btoa(JSON.stringify({ authorities, sub }))}.signature`
 }
 
 function response(body: unknown, status = 200) {
@@ -25,9 +25,9 @@ const sellers = { content: [
 const products = { content: [{ id: 'product-1', name: 'Harina', presentation: 'Bolsa', status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const lists = { content: [{ id: 'list-1', code: 'MAYORISTA', name: 'Mayorista', status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 
-function renderPage(authorities = ['ORDER_CREATE']) {
+function renderPage(authorities = ['ORDER_CREATE'], userId?: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  sessionStorage.setItem('distribuidora.accessToken', token(authorities))
+  sessionStorage.setItem('distribuidora.accessToken', token(authorities, userId))
   render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/orders/new']}><Routes><Route path="/orders/new" element={<OrderCreatePage />} /><Route path="/orders" element={<h1>Listado de pedidos</h1>} /></Routes></MemoryRouter></QueryClientProvider>)
   return queryClient
 }
@@ -171,6 +171,7 @@ describe('OrderCreatePage', () => {
     const add = screen.getByRole('button', { name: 'Agregar producto' })
     await user.click(add)
     expect(input).toHaveValue('Pro')
+    expect(input).toHaveAttribute('aria-expanded', 'false')
     expect(add).toBeDisabled()
     await user.click(input)
     expect(input).toHaveValue('Pro')
@@ -277,6 +278,57 @@ describe('OrderCreatePage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('resumes a saved draft for the same user and clears it after successful confirmation', async () => {
+    const user = userEvent.setup()
+    const authorities = ['ADMIN_ALL', 'ORDER_CREATE']
+    const requests: unknown[] = []
+    vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) !== '/api/orders/confirm') return catalogResponse(input)
+      requests.push(JSON.parse(String(init?.body)))
+      if (requests.length === 1) return response({ detail: 'Error temporal' }, 500)
+      return response({ orderId: 'order-saved', orderNumber: 'PED-GUARDADO', saleNumber: 'VEN-1', total: 270.9, paid: 0, balance: 270.9 })
+    })
+    renderPage(authorities, 'draft-owner')
+    await selectEntity(user, 'Cliente', 'Almacén Norte')
+    await selectEntity(user, 'Producto', /^Harina$/)
+    await findPrice('150,5')
+    await user.click(screen.getByRole('button', { name: 'Agregar producto' }))
+    fireEvent.change(screen.getByLabelText('Cantidad de Harina'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('Descuento general (%)'), { target: { value: '10' } })
+    await user.click(screen.getByRole('button', { name: 'Guardar borrador' }))
+    expect(screen.getByText('Borrador guardado en este navegador.')).toBeInTheDocument()
+    expect(requests).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.getByRole('heading', { name: 'Listado de pedidos' })).toBeInTheDocument()
+
+    cleanup()
+    renderPage(authorities, 'other-user')
+    expect(await screen.findByLabelText('Cliente')).toHaveValue('Seleccionar cliente...')
+    expect(screen.queryByLabelText('Cantidad de Harina')).not.toBeInTheDocument()
+
+    cleanup()
+    renderPage(authorities, 'draft-owner')
+    expect(await screen.findByLabelText('Cliente')).toHaveValue('Almacén Norte')
+    expect(screen.getByLabelText('Cantidad de Harina')).toHaveValue('2')
+    expect(screen.getByLabelText('Descuento general (%)')).toHaveValue('10')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+    await screen.findByRole('button', { name: 'Reintentar confirmación' })
+
+    cleanup()
+    renderPage(authorities, 'draft-owner')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+    await screen.findByText(/Pedido PED-GUARDADO/)
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toEqual(requests[0])
+
+    cleanup()
+    renderPage(authorities, 'draft-owner')
+    expect(await screen.findByLabelText('Cliente')).toHaveValue('Seleccionar cliente...')
+    expect(screen.getByRole('button', { name: 'Guardar borrador' })).toBeDisabled()
+  })
+
   it('preserves a draft on dismissal and navigates only after confirming discard', async () => {
     const user = userEvent.setup()
     vi.spyOn(global, 'fetch').mockImplementation(catalogResponse)
@@ -306,8 +358,8 @@ describe('OrderCreatePage', () => {
     const user = userEvent.setup()
     vi.spyOn(global, 'fetch').mockImplementation((input) => {
       const path = String(input)
-      if (path === '/api/customers?page=0&size=20') return response({ ...customers, totalPages: 2 })
-      if (path === '/api/customers?page=1&size=20') return response({ ...customers, content: [{ ...customers.content[0], id: 'late-customer', name: 'Cliente posterior', sellerId: 'late-seller' }], page: 1, totalPages: 2 })
+      if (path === '/api/customers?page=0&size=100') return response({ ...customers, totalPages: 2 })
+      if (path === '/api/customers?page=1&size=100') return response({ ...customers, content: [{ ...customers.content[0], id: 'late-customer', name: 'Cliente posterior', sellerId: 'late-seller' }], page: 1, totalPages: 2 })
       if (path === '/api/sellers?page=0&size=100') return response({ ...sellers, totalPages: 2 })
       if (path === '/api/sellers?page=1&size=100') return response({ ...sellers, content: [{ ...sellers.content[0], id: 'late-seller', displayName: 'Vendedor posterior' }], page: 1, totalPages: 2 })
       return catalogResponse(input)
@@ -326,7 +378,7 @@ describe('OrderCreatePage', () => {
   const originalDialogMethods = dialogMethods.map((method) => Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, method))
   afterEach(() => {
     vi.useRealTimers()
-    cleanup(); sessionStorage.clear()
+    cleanup(); sessionStorage.clear(); localStorage.clear()
     dialogMethods.forEach((method, index) => {
       const descriptor = originalDialogMethods[index]
       if (descriptor) Object.defineProperty(HTMLDialogElement.prototype, method, descriptor)
@@ -711,6 +763,44 @@ describe('OrderCreatePage', () => {
     expect(screen.getByText(/saldo pendiente/i)).toBeInTheDocument()
   })
 
+  it.each(['ORDER_NOTIFY', 'ADMIN_ALL', 'ORDER_CREATE'])('opens WhatsApp notification only with %s permission and sends on confirmation', async (permission) => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/orders/confirm' && init?.method === 'POST') return response({
+        orderId: 'order-1', saleId: 'sale-1', orderNumber: 'PED-001', saleNumber: 'VEN-001', total: 150.5, paid: 0, balance: 150.5,
+      }, 201)
+      if (String(input) === '/api/orders/order-1/notifications/contact') {
+        return response({ email: null, phone: '+5491112345678' })
+      }
+      if (String(input) === '/api/orders/order-1/notifications' && init?.method === 'POST') {
+        return response({ requestId: 'notification-1', status: 'PENDING' }, 202)
+      }
+      return catalogResponse(input)
+    })
+    renderPage(['ORDER_CREATE', permission])
+    expect(screen.queryByRole('button', { name: 'Enviar por WhatsApp' })).not.toBeInTheDocument()
+    await selectEntity(user, 'Cliente', 'Almacén Norte')
+    await selectEntity(user, 'Producto', /^Harina$/)
+    await findPrice('150,5')
+    await user.click(screen.getByRole('button', { name: 'Agregar producto' }))
+    await user.click(screen.getByRole('button', { name: /confirmar pedido/i }))
+    await screen.findByText(/Pedido PED-001/)
+    if (permission === 'ORDER_CREATE') {
+      expect(screen.queryByRole('button', { name: 'Enviar por WhatsApp' })).not.toBeInTheDocument()
+      return
+    }
+    const button = screen.getByRole('button', { name: 'Enviar por WhatsApp' })
+    expect(button.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    button.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('dialog', { name: 'Enviar por WhatsApp' })).toBeInTheDocument()
+    expect(await screen.findByLabelText('Teléfono de WhatsApp')).toHaveValue('+5491112345678')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/orders/order-1/notifications', expect.anything())
+    await user.click(screen.getByRole('button', { name: 'Solicitar envío' }))
+    expect(await screen.findByText('Envío por WhatsApp solicitado.')).toBeInTheDocument()
+  })
+
   it('retries a failed confirmation with the exact same idempotency key and payload', async () => {
     const user = userEvent.setup()
     let attempts = 0
@@ -906,7 +996,7 @@ describe('OrderCreatePage', () => {
       return catalogResponse(input)
     })
     renderPage()
-    const customer = await screen.findByLabelText('Cliente')
+    await screen.findByLabelText('Cliente')
     expect(screen.getByLabelText('Lista de precios')).toHaveValue('')
     await selectEntity(user, 'Cliente', 'Almacén Norte')
     expect(screen.getByLabelText('Lista de precios')).toHaveValue('general')
@@ -1074,10 +1164,15 @@ describe('OrderCreatePage', () => {
     expect(screen.queryByLabelText('Cantidad de Harina')).not.toBeInTheDocument()
   })
 
-  it('adds a line with Enter and confirms only after two more presses in the product search', async () => {
+  it.each(['quantity', 'add button'].flatMap((control) => ['open', 'placeholder', 'closed'].map((menu) => ({ control, menu }))))('confirms with double Enter after adding via $control with the menu $menu', async ({ control, menu }) => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
       if (String(input) === '/api/orders/confirm') return response({ orderId: 'new-order', saleId: 'sale-1', orderNumber: 'PED-TECLADO', saleNumber: 'VEN-1', total: 451.5, paid: 0, balance: 451.5 })
+      if (String(input).startsWith('/api/products')) return response({ ...products, content: [
+        ...products.content,
+        { id: 'product-2', name: 'Harina integral', status: 'ACTIVE' },
+        { id: 'product-3', name: 'Arroz', status: 'ACTIVE' },
+      ] })
       return catalogResponse(input)
     })
     const submissions = () => fetchMock.mock.calls.filter(([input, init]) => String(input) === '/api/orders/confirm' && init?.method === 'POST')
@@ -1093,15 +1188,24 @@ describe('OrderCreatePage', () => {
     const quantity = screen.getByLabelText('Cantidad')
     await waitFor(() => expect(quantity).toHaveFocus())
     await findPrice('150,5')
-    await user.keyboard('3{Enter}')
-    expect(await screen.findByRole('cell', { name: /Harina/ })).toBeInTheDocument()
-    await waitFor(() => expect(product).toHaveFocus())
-    await user.click(product)
-    expect(product).toHaveAttribute('aria-expanded', 'true')
-    await user.keyboard('{Enter}{Enter}')
-    expect(submissions()).toHaveLength(0)
-    await user.keyboard('{Escape}')
+    await user.keyboard('3')
+    if (control === 'add button') {
+      await user.tab()
+      expect(screen.getByRole('button', { name: 'Agregar producto' })).toHaveFocus()
+    }
     await user.keyboard('{Enter}')
+    expect(await screen.findByRole('cell', { name: /Harina/ })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(product).toHaveFocus()
+      expect(product).toHaveAttribute('aria-expanded', 'true')
+    })
+    expect(product).toHaveValue('harina')
+    expect(screen.getByRole('option', { name: 'Harina integral' })).toBeVisible()
+    expect(screen.queryByRole('option', { name: /^(Harina|Arroz)$/ })).not.toBeInTheDocument()
+    if (menu === 'closed') await user.keyboard('{Escape}')
+    if (menu === 'placeholder') await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+    expect(submissions()).toHaveLength(0)
     fireEvent.keyDown(product, { key: 'Enter', repeat: true })
     expect(submissions()).toHaveLength(0)
     await user.keyboard('{Enter}')

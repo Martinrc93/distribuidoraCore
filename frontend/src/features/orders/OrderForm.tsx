@@ -2,21 +2,29 @@ import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { apiGet, apiPost, apiPut, ApiError, type ApiPage } from '../../shared/api/client'
-import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
+import { apiGet, apiPost, apiPut, ApiError } from '../../shared/api/client'
+import { instanceStorageKey } from '../../shared/appBase'
+import { createIdempotencyKey } from '../../shared/api/createIdempotencyKey'
+import { invalidateDomains, queryKeys } from '../../shared/api/queryKeys'
+import { getCurrentUserId, hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
-import { DataTable, type TableColumn } from '../../shared/components/DataTable'
-import { DocumentActions } from '../../shared/components/DocumentActions'
+import { type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySelect'
-import { SearchableSelect } from '../../shared/components/SearchableSelect'
+import { type SearchableSelectHandle } from '../../shared/components/SearchableSelect'
 import { apiGetAllPages } from '../../shared/api/pagination'
+import { displayDate, parseDate, todayInArgentina } from '../../shared/dates'
+import { formatMoney, formatNumber } from '../../shared/format'
 import { loadOrderPrices } from './orderPrice'
+import { readOrderDraft, type CollectionDraft, type DraftLine, type OrderDraft } from './orderDraft'
 import { PreviousOrderDiscountDialog } from './PreviousOrderDiscountDialog'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 import { OrderDateFilter } from './OrderDateFilter'
+import { OrderConfirmationSummary, type ConfirmationResponse } from './OrderConfirmationSummary'
+import { OrderProductPicker } from './OrderProductPicker'
+import { OrderCheckoutSummary } from './OrderCheckoutSummary'
 
 type Customer = { id: string; name: string; sellerId?: string | null; seller?: string | null; priceListId?: string | null; balance?: number; kind?: string | null; resellerId?: string | null; reseller?: string | null }
 type Product = { id: string; name: string; status?: string; stock?: number }
@@ -24,7 +32,6 @@ type PreviousOrderItem = { productId: string; productName: string; status: strin
 type PreviousOrder = { available: boolean; orderId?: string; orderNumber?: string; orderDiscountPercent?: number; items?: PreviousOrderItem[] }
 type PriceList = { id: string; code: string; name: string; status: string }
 type Seller = { id: string; displayName: string; email: string }
-type DraftLine = { productId: string; quantity: string; lineDiscountPercent: string; unitPriceOverride: string }
 export type EditableOrder = {
   order: { id: string; number: string; customerId: string; customer: string; seller?: string; customerBalance: number; orderDiscountPercent?: number; previousBalanceAmount?: number; accountCustomerId?: string; accountCustomer?: string }
   items: Array<{ productId: string; productName: string; quantity: number; unitPrice: number; lineDiscountPercent: number; priceListId: string }>
@@ -43,34 +50,20 @@ type ConfirmationRequest = {
   previousDebtPayments?: CollectionPayment[]
 }
 type CollectionPayment = { method: 'CASH' | 'BANK_TRANSFER'; amount: number; transferReference?: string }
-type CollectionDraft = { method: 'CASH' | 'BANK_TRANSFER'; amount: string; reference: string }
+const emptyPayment: CollectionDraft = { method: 'CASH', amount: '', reference: '' }
 /** Parses an es-AR amount; empty means 0, invalid means NaN. */
 const collectionAmount = (value: string) => !value.trim() ? 0 : /^\d+(?:[.,]\d{1,4})?$/.test(value.trim()) ? Number(value.trim().replace(',', '.')) : NaN
 const collectionPayment = (draft: CollectionDraft, amount: number): CollectionPayment => ({
   method: draft.method, amount, ...(draft.method === 'BANK_TRANSFER' && draft.reference.trim() ? { transferReference: draft.reference.trim() } : {}),
 })
-type ConfirmationResponse = {
-  orderId: string
-  saleId: string
-  orderNumber: string
-  saleNumber: string
-  total: number
-  paid: number
-  balance: number
-  previousBalanceAmount?: number
-  collectionTotal?: number
-  creditLimitWarning?: { creditLimit: number; projectedBalance: number; exceededBy: number } | null
-}
-
-const CUSTOMER_KEY = ['/api/customers?page=0&size=20']
-const stockUnits = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
-const PRODUCT_KEY = ['order-create-products', '/api/products?page=0&size=100&includeStock=true']
-const PRICE_LIST_KEY = ['/api/pricing/lists?page=0&size=20']
-const SELLER_KEY = ['/api/sellers?page=0&size=100']
+const CUSTOMER_PATH = '/api/customers?page=0&size=100'
+const PRODUCT_PATH = '/api/products?page=0&size=100&includeStock=true'
+const PRICE_LIST_PATH = '/api/pricing/lists?page=0&size=100'
+const SELLER_PATH = '/api/sellers?page=0&size=100'
 const DOUBLE_ENTER_WINDOW_MS = 700
 
 function money(value: number) {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
+  return formatMoney(value, 2)
 }
 
 function quantityValue(value: string) {
@@ -78,16 +71,11 @@ function quantityValue(value: string) {
 }
 
 function currentOrderDate() {
-  return new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+  return displayDate(todayInArgentina())
 }
 
 function parseOrderDate(value: string) {
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value)
-  if (!match) return null
-  const [, day, month, year] = match
-  const iso = `${year}-${month}-${day}`
-  const date = new Date(`${iso}T00:00:00Z`)
-  return Number(year) > 0 && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso ? iso : null
+  return parseDate(value)
 }
 
 function validQuantity(value: string) {
@@ -105,20 +93,6 @@ function message(cause: unknown) {
   return cause instanceof Error ? cause.message : 'No se pudo confirmar el pedido.'
 }
 
-function newKey() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-async function loadPriceLists() {
-  const first = await apiGet<ApiPage<PriceList>>('/api/pricing/lists?page=0&size=20')
-  const lists = [...first.content]
-  for (let page = 1; page < first.totalPages; page += 1) {
-    const next = await apiGet<ApiPage<PriceList>>(`/api/pricing/lists?page=${page}&size=20`)
-    lists.push(...next.content)
-  }
-  return { ...first, content: lists }
-}
-
 export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -127,37 +101,47 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const canDiscount = hasPermission('ORDER_DISCOUNT')
   // Sellers may pick another active list when their role has ORDER_PRICE_LIST_CHANGE.
   const canChangeList = isAdmin || hasAuthority('ORDER_PRICE_LIST_CHANGE')
+  const userId = getCurrentUserId()
+  const draftStorageKey = !editOrder && userId ? instanceStorageKey(`distribuidora.order-draft.v1.${userId}`) : undefined
+  const [savedDraft, setSavedDraft] = useState(() => readOrderDraft(draftStorageKey))
+  const savedFields = savedDraft?.fields
   const [initialOrderDate] = useState(currentOrderDate)
-  const [orderDate, setOrderDate] = useState(initialOrderDate)
+  const [orderDate, setOrderDate] = useState(savedFields?.orderDate ?? initialOrderDate)
   const parsedOrderDate = parseOrderDate(orderDate)
   const invalidOrderDate = !editOrder && !parsedOrderDate
-  const customersQuery = useQuery({ queryKey: CUSTOMER_KEY, queryFn: () => apiGetAllPages<Customer>('/api/customers?page=0&size=20'), enabled: !editOrder })
-  const productsQuery = useQuery({ queryKey: PRODUCT_KEY, queryFn: () => apiGetAllPages<Product>('/api/products?page=0&size=100&includeStock=true') })
-  const listsQuery = useQuery({ queryKey: ['order-create-price-lists', ...PRICE_LIST_KEY], queryFn: loadPriceLists })
-  const sellersQuery = useQuery({ queryKey: SELLER_KEY, queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin && !editOrder })
+  const customersQuery = useQuery({ queryKey: queryKeys.customers.orderOptions, queryFn: ({ signal }) => apiGetAllPages<Customer>(CUSTOMER_PATH, signal), enabled: !editOrder })
+  const productsQuery = useQuery({ queryKey: queryKeys.products.allOptions('order-create'), queryFn: ({ signal }) => apiGetAllPages<Product>(PRODUCT_PATH, signal) })
+  const listsQuery = useQuery({ queryKey: queryKeys.pricing.listOptions('order-create'), queryFn: ({ signal }) => apiGetAllPages<PriceList>(PRICE_LIST_PATH, signal) })
+  const sellersQuery = useQuery({ queryKey: queryKeys.sellers.options('order-create'), queryFn: ({ signal }) => apiGetAllPages<Seller>(SELLER_PATH, signal), enabled: isAdmin && !editOrder })
   const customers: Customer[] = editOrder ? [{ id: editOrder.order.customerId, name: editOrder.order.customer, seller: editOrder.order.seller, balance: editOrder.order.customerBalance,
     ...(editOrder.order.accountCustomerId && editOrder.order.accountCustomerId !== editOrder.order.customerId ? { resellerId: editOrder.order.accountCustomerId, reseller: editOrder.order.accountCustomer } : {}) }] : customersQuery.data?.content ?? []
   const [importedProducts, setImportedProducts] = useState<Product[]>(() => editOrder?.items.map((item) => ({ id: item.productId, name: item.productName })) ?? [])
   const products = [...new Map([...importedProducts, ...(productsQuery.data?.content ?? [])].map((product) => [product.id, product])).values()]
   const activeLists = (listsQuery.data?.content ?? []).filter((list) => list.status === 'ACTIVE')
-  const [customerId, setCustomerId] = useState(editOrder?.order.customerId ?? '')
-  const [sellerId, setSellerId] = useState('')
-  const [explicitListId, setExplicitListId] = useState(editOrder?.items[0]?.priceListId ?? '')
-  const [lines, setLines] = useState<DraftLine[]>(() => editOrder?.items.map((item) => ({ productId: item.productId, quantity: String(item.quantity), lineDiscountPercent: String(item.lineDiscountPercent ?? 0), unitPriceOverride: String(item.unitPrice) })) ?? [])
-  const [selectedProductId, setSelectedProductId] = useState('')
-  const [selectedProductQuantity, setSelectedProductQuantity] = useState('1')
-  const [selectedProductDiscount, setSelectedProductDiscount] = useState('0')
-  const [orderDiscountPercent, setOrderDiscountPercent] = useState(String(editOrder?.order.orderDiscountPercent ?? 0))
-  const [selectedProductPriceOverride, setSelectedProductPriceOverride] = useState<string | undefined>()
+  const [customerId, setCustomerId] = useState(editOrder?.order.customerId ?? savedFields?.customerId ?? '')
+  const [sellerId, setSellerId] = useState(isAdmin ? savedFields?.sellerId ?? '' : '')
+  const [explicitListId, setExplicitListId] = useState(editOrder?.items[0]?.priceListId ?? (canChangeList ? savedFields?.explicitListId ?? '' : ''))
+  const [lines, setLines] = useState<DraftLine[]>(() => {
+    if (editOrder) return editOrder.items.map((item) => ({ productId: item.productId, quantity: String(item.quantity), lineDiscountPercent: String(item.lineDiscountPercent ?? 0), unitPriceOverride: String(item.unitPrice) }))
+    return (savedFields?.lines ?? []).map((line) => ({ ...line, lineDiscountPercent: canDiscount ? line.lineDiscountPercent : '0', unitPriceOverride: canOverride ? line.unitPriceOverride : '' }))
+  })
+  const [selectedProductId, setSelectedProductId] = useState(savedFields?.selectedProductId ?? '')
+  const [selectedProductQuantity, setSelectedProductQuantity] = useState(savedFields?.selectedProductQuantity ?? '1')
+  const [selectedProductDiscount, setSelectedProductDiscount] = useState(canDiscount ? savedFields?.selectedProductDiscount ?? '0' : '0')
+  const [orderDiscountPercent, setOrderDiscountPercent] = useState(String(editOrder?.order.orderDiscountPercent ?? (canDiscount ? savedFields?.orderDiscountPercent ?? 0 : 0)))
+  const [selectedProductPriceOverride, setSelectedProductPriceOverride] = useState(canOverride ? savedFields?.selectedProductPriceOverride : undefined)
   const [attempt, setAttempt] = useState<ConfirmationRequest | undefined>()
   const [responseData, setResponseData] = useState<ConfirmationResponse | undefined>()
   const [error, setError] = useState('')
+  const [notifyWhatsApp, setNotifyWhatsApp] = useState(false)
+  const [notificationRequested, setNotificationRequested] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [previousBalanceInput, setPreviousBalanceInput] = useState(editOrder?.order.previousBalanceAmount ? String(editOrder.order.previousBalanceAmount).replace('.', ',') : '')
-  const [selectedPreviousBalance, setSelectedPreviousBalance] = useState(editOrder?.order.previousBalanceAmount ?? 0)
+  const [previousBalanceInput, setPreviousBalanceInput] = useState(editOrder?.order.previousBalanceAmount ? String(editOrder.order.previousBalanceAmount).replace('.', ',') : savedFields?.previousBalanceInput ?? '')
+  const [selectedPreviousBalance, setSelectedPreviousBalance] = useState(editOrder?.order.previousBalanceAmount ?? savedFields?.selectedPreviousBalance ?? 0)
   const [editChanged, setEditChanged] = useState(false)
   const [previousBalanceError, setPreviousBalanceError] = useState('')
   const [discountPrompt, setDiscountPrompt] = useState<{ order: PreviousOrder; anchor: HTMLElement }>()
+  const [draftSaveError, setDraftSaveError] = useState('')
   const customer = customers.find((item) => item.id === customerId)
   const customerBalance = Number(customer?.balance ?? 0)
   // A reseller owes its customers' orders: the debt, the balance and any collection belong to its account.
@@ -165,30 +149,30 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const resellerName = customer?.reseller ?? ''
   const canCollect = isAdmin || (!resellerId && customer?.kind !== 'RESELLER')
   const resellerBalanceQuery = useQuery({
-    queryKey: [`/api/customers/${resellerId}/account-balance`],
-    queryFn: () => apiGet<{ balance: number }>(`/api/customers/${resellerId}/account-balance`),
+    queryKey: queryKeys.customers.accountBalance(resellerId),
+    queryFn: ({ signal }) => apiGet<{ balance: number }>(`/api/customers/${resellerId}/account-balance`, signal),
     enabled: Boolean(resellerId) && isAdmin && !editOrder,
   })
   const accountBalance = resellerId ? Number((editOrder ? customer?.balance : resellerBalanceQuery.data?.balance) ?? 0) : customerBalance
   // Optional collection at confirmation: this order and older debts are paid separately.
-  const [orderPayment, setOrderPayment] = useState<CollectionDraft>({ method: 'CASH', amount: '', reference: '' })
-  const [debtPayment, setDebtPayment] = useState<CollectionDraft>({ method: 'CASH', amount: '', reference: '' })
-  const orderPaid = collectionAmount(orderPayment.amount)
-  const debtPaid = collectionAmount(debtPayment.amount)
+  const [orderPayment, setOrderPayment] = useState(savedFields?.orderPayment ?? emptyPayment)
+  const [debtPayment, setDebtPayment] = useState(savedFields?.debtPayment ?? emptyPayment)
+  const orderPaid = canCollect ? collectionAmount(orderPayment.amount) : 0
+  const debtPaid = canCollect ? collectionAmount(debtPayment.amount) : 0
   const defaultListId = customer ? customer.priceListId || activeLists.find((list) => list.code === 'GENERAL')?.id || '' : ''
   const resolvedListId = (editOrder || canChangeList ? explicitListId : '') || defaultListId
   const selectedList = activeLists.find((list) => list.id === resolvedListId)
   const previousOrderQuery = useQuery({
-    queryKey: ['order-create-previous-order', customerId],
+    queryKey: queryKeys.orders.previousOrder(customerId),
     queryFn: ({ signal }) => apiGet<PreviousOrder>(`/api/customers/${encodeURIComponent(customerId)}/last-order`, signal),
-    enabled: Boolean(customerId) && (!editOrder || isAdmin),
+    enabled: Boolean(customer) && (!editOrder || isAdmin),
     retry: false,
   })
   const priceProductIds = products.filter((product) => product.status === 'ACTIVE' || lines.some((line) => line.productId === product.id)).map((product) => product.id).sort()
   const pricesQuery = useQuery({
-    queryKey: ['order-price-batch', customerId, resolvedListId, priceProductIds, editOrder?.order.id ?? null],
+    queryKey: queryKeys.pricing.batch(customerId, resolvedListId, priceProductIds, editOrder?.order.id ?? null),
     queryFn: ({ signal }) => loadOrderPrices(customerId, resolvedListId, priceProductIds, signal, editOrder?.order.id),
-    enabled: Boolean(customerId && selectedList && priceProductIds.length),
+    enabled: Boolean(customer && selectedList && priceProductIds.length),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -239,9 +223,16 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     { key: 'price', label: 'Precio unitario', align: 'right', render: (value, row) => editOrder && canOverride && row.kind !== 'BALANCE' ? <input className="input currency-input" aria-label={`Precio unitario de ${row.name}`} type="text" inputMode="decimal" value={lines.find((line) => line.productId === row.id)?.unitPriceOverride || String(pricesById.get(row.id)?.unitPrice ?? '').replace('.', ',')} onChange={(event) => updateLine(row.id, 'unitPriceOverride', event.target.value)} disabled={submitting} /> : value },
     { key: 'discount', label: 'Descuento (%)', render: (value, row) => row.kind === 'BALANCE' ? value : canDiscount ? <input className="input order-compact-input" size={4} aria-label={`Descuento de ${row.name}`} type="text" inputMode="decimal" disabled={submitting} value={value} onChange={(event) => updateLine(row.id, 'lineDiscountPercent', event.target.value)} /> : `${value}%` },
     { key: 'subtotal', label: 'Subtotal', align: 'right', emphasis: true },
-    { key: 'remove', label: '', align: 'right', render: (_value, row) => <Button variant="danger" type="button" aria-label={`Quitar ${row.name}`} title={`Quitar ${row.name}`} disabled={submitting} onClick={() => removeLine(row.id)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" /></svg></Button> },
+    { key: 'remove', label: 'Acciones', align: 'right', render: (_value, row) => <Button variant={editOrder ? 'danger' : 'secondary'} type="button" aria-label={`Quitar ${row.name}`} title={`Quitar ${row.name}`} disabled={submitting} onClick={() => removeLine(row.id)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={editOrder ? 'M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6' : 'm6 6 12 12M18 6 6 18'} /></svg></Button> },
   ]
-  const hasUnsavedDraft = editOrder ? editChanged : Boolean(customerId || sellerId || explicitListId || lines.length || selectedProductId || orderDiscountPercent !== '0' || previousBalanceInput || orderDate !== initialOrderDate)
+  const draftFields: OrderDraft['fields'] = {
+    orderDate, customerId, sellerId, explicitListId, lines, selectedProductId, selectedProductQuantity,
+    selectedProductDiscount, selectedProductPriceOverride, orderDiscountPercent, previousBalanceInput,
+    selectedPreviousBalance, orderPayment, debtPayment,
+  }
+  const draftIsSaved = Boolean(savedDraft && JSON.stringify(savedDraft.fields) === JSON.stringify(draftFields))
+  const hasNewDraft = Boolean(customerId || sellerId || explicitListId || lines.length || selectedProductId || orderDiscountPercent !== '0' || previousBalanceInput || orderDate !== initialOrderDate)
+  const hasUnsavedDraft = editOrder ? editChanged : savedDraft ? !draftIsSaved : hasNewDraft
   const { requestDiscard, discardDialog } = useDiscardChanges({
     hasChanges: hasUnsavedDraft && !responseData,
     onDiscard: () => onCancel ? onCancel() : navigate('/orders'),
@@ -253,6 +244,30 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     setEditChanged(true)
     setAttempt(undefined)
     setError('')
+  }
+
+  function changeOrderDiscount(value: string) {
+    draftChanged()
+    setOrderDiscountPercent(value)
+  }
+
+  function stepOrderDiscount(step: 1 | -1) {
+    if (invalidOrderDiscount) return
+    const next = Math.min(100, Math.max(0, orderDiscountValue + step))
+    if (next === orderDiscountValue) return
+    changeOrderDiscount(String(Number(next.toFixed(4))).replace('.', ','))
+  }
+
+  function saveDraft() {
+    if (!draftStorageKey || !hasUnsavedDraft || submitting) return
+    const draft = { idempotencyKey: attempt?.idempotencyKey ?? createIdempotencyKey(), fields: draftFields }
+    try {
+      localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+      setSavedDraft(draft)
+      setDraftSaveError('')
+    } catch {
+      setDraftSaveError('No se pudo guardar el borrador en este navegador. Podés reintentar.')
+    }
   }
 
   function selectPriceList(value: string) {
@@ -338,7 +353,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   }
 
   // Keyboard loading: choose a product → quantity → Enter adds it and returns to the product search.
-  const productPicker = useRef<HTMLDivElement>(null)
+  const productSearch = useRef<SearchableSelectHandle>(null)
   const quantityInput = useRef<HTMLInputElement>(null)
   const focusQuantityAfterSelect = useRef(false)
   const lastProductEnter = useRef<number | null>(null)
@@ -349,17 +364,17 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     quantityInput.current?.focus()
     quantityInput.current?.select()
   }, [selectedProductId])
-  function focusProductSearch() {
+  function focusProductSearch(open = false) {
     // Selecting a customer remounts the product search with the new customer's price list.
-    window.setTimeout(() => productPicker.current?.querySelector<HTMLInputElement>('input[role="combobox"]:enabled')?.focus(), 0)
+    window.setTimeout(() => productSearch.current?.focus({ open }), 0)
   }
   function addFromKeyboard(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    if (addProduct()) focusProductSearch()
+    if (addProduct()) focusProductSearch(!editOrder)
   }
 
-  function handleProductPickerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  function handleProductPickerKeyDown(event: KeyboardEvent<HTMLElement>) {
     const input = event.target
     if (event.defaultPrevented || event.key !== 'Enter' || event.nativeEvent.isComposing ||
         !(input instanceof HTMLInputElement) || input.getAttribute('role') !== 'combobox') {
@@ -401,7 +416,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
 
   function buildPayload(): ConfirmationRequest | undefined {
     if (invalidOrderDate) { setError('Ingresá una fecha válida con formato dd/mm/aaaa.'); return undefined }
-    if (!customerId) { setError('Seleccioná un cliente.'); return undefined }
+    if (!customer) { setError('Seleccioná un cliente disponible.'); return undefined }
     if (!resolvedListId) { setError('Seleccioná una lista de precios.'); return undefined }
     if (!selectedList) { setError('La lista asignada no está disponible. Seleccioná una lista activa.'); return undefined }
     if (lines.length === 0) { setError('Agregá al menos un producto al pedido.'); return undefined }
@@ -431,7 +446,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     }
     const payments = !editOrder && canCollect && orderPaid > 0 ? [collectionPayment(orderPayment, orderPaid)] : []
     const previousDebtPayments = !editOrder && canCollect && debtPaid > 0 ? [collectionPayment(debtPayment, debtPaid)] : []
-    return { idempotencyKey: newKey(), customerId, ...(!editOrder ? { orderDate: parsedOrderDate! } : {}), ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments, ...(previousDebtPayments.length ? { previousDebtPayments } : {}) }
+    return { idempotencyKey: (draftIsSaved && savedDraft?.idempotencyKey) || createIdempotencyKey(), customerId, ...(!editOrder ? { orderDate: parsedOrderDate! } : {}), ...(isAdmin ? { sellerId: sellerId || null } : {}), priceListId: resolvedListId, lines: payloadLines, orderDiscountPercent: discount, ...(selectedPreviousBalance > 0 ? { previousBalanceAmount: selectedPreviousBalance } : {}), payments, ...(previousDebtPayments.length ? { previousDebtPayments } : {}) }
   }
 
   async function confirm(event: FormEvent) {
@@ -445,30 +460,21 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     try {
       if (editOrder) {
         await apiPut(`/api/orders/${editOrder.order.id}`, { priceListId: payload.priceListId, lines: payload.lines, orderDiscountPercent: payload.orderDiscountPercent, previousBalanceAmount: selectedPreviousBalance })
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['/api/orders'] }),
-          queryClient.invalidateQueries({ queryKey: ['/api/sales'] }),
-          queryClient.invalidateQueries({ queryKey: CUSTOMER_KEY }),
-          queryClient.invalidateQueries({ predicate: ({ queryKey }) => ['/api/orders', '/api/products'].some(prefix => String(queryKey[0]).startsWith(prefix)) || queryKey[0] === 'order-reviews' }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-          queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('/api/inventory') }),
-        ])
+        await invalidateDomains(queryClient, 'orders', 'sales', 'customers', 'stock', 'reports')
         await onSaved?.()
         return
       }
       const result = await apiPost<ConfirmationResponse>('/api/orders/confirm', payload)
       setResponseData(result)
       setAttempt(undefined)
-      await Promise.all([
-        queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/orders') || queryKey[0] === 'order-reviews' }),
-        queryClient.invalidateQueries({ queryKey: ['/api/orders'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/sales'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/payments'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({
-          predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('/api/inventory'),
-        }),
-      ])
+      if (draftStorageKey && savedDraft && readOrderDraft(draftStorageKey)?.idempotencyKey === savedDraft.idempotencyKey) {
+        try {
+          localStorage.removeItem(draftStorageKey)
+        } catch {
+          // The order is already confirmed. Retrying an unchanged saved draft uses the same key.
+        }
+      }
+      await invalidateDomains(queryClient, 'orders', 'sales', 'customers', 'stock', 'reports')
     } catch (cause) {
       setError(editOrder && cause instanceof ApiError && cause.status === 403 ? 'Tu usuario no tiene permiso para editar este pedido.' : message(cause))
     } finally {
@@ -476,108 +482,210 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
     }
   }
 
-  if (responseData) return <>
-    <div className="order-customer-header"><PageHeader eyebrow="Pedido confirmado" title={customer?.name ?? 'Pedido confirmado'} description={`Pedido ${responseData.orderNumber} · El pedido y la venta quedaron registrados.`} /></div>
-    <Panel title="Resultado de la confirmación">
-      <dl className="confirmation-result"><dt>Venta</dt><dd>{responseData.saleNumber}</dd><dt>Total</dt><dd><CurrencyText>{money(responseData.total)}</CurrencyText></dd><dt>Cobrado</dt><dd><CurrencyText>{money(responseData.paid)}</CurrencyText></dd><dt>Saldo pendiente</dt><dd><CurrencyText>{money(responseData.balance)}</CurrencyText></dd></dl>
-      {Number(responseData.previousBalanceAmount ?? 0) > 0 && <dl className="confirmation-result"><dt>Saldo anterior para entrega</dt><dd><CurrencyText>{money(responseData.previousBalanceAmount!)}</CurrencyText></dd><dt>Total a cobrar con la entrega</dt><dd><CurrencyText>{money(responseData.collectionTotal ?? responseData.total + responseData.previousBalanceAmount!)}</CurrencyText></dd></dl>}
-      {responseData.creditLimitWarning && <p className="warning-text" role="status">El saldo proyectado <CurrencyText>{money(responseData.creditLimitWarning.projectedBalance)}</CurrencyText> supera el límite de crédito <CurrencyText>{money(responseData.creditLimitWarning.creditLimit)}</CurrencyText> por <CurrencyText>{money(responseData.creditLimitWarning.exceededBy)}</CurrencyText>.</p>}
-      <div className="page-actions">
-        <Button href={`/orders/${responseData.orderId}`}>Ver pedido</Button>
-        <Button variant="secondary" onClick={() => navigate('/orders')}>Volver a pedidos</Button>
-        {hasPermission('ORDER_DOCUMENT_EXPORT') && <DocumentActions
-          path={`/api/orders/${responseData.orderId}/documents/a4`}
-          filename={`${responseData.orderNumber}-a4.pdf`}
-          downloadLabel="Descargar PDF"
-        />}
-      </div>
-    </Panel>
-  </>
+  if (responseData) return <OrderConfirmationSummary
+    customerName={customer?.name}
+    customerId={customer?.id}
+    responseData={responseData}
+    notifyWhatsApp={notifyWhatsApp}
+    notificationRequested={notificationRequested}
+    onOpenNotify={() => setNotifyWhatsApp(true)}
+    onCloseNotify={() => setNotifyWhatsApp(false)}
+    onNotificationRequested={() => { setNotifyWhatsApp(false); setNotificationRequested(true) }}
+    onBackToOrders={() => navigate('/orders')}
+  />
 
-  const readError = (!editOrder ? customersQuery.error : null) ?? productsQuery.error ?? listsQuery.error ?? (isAdmin && !editOrder ? sellersQuery.error : null)
+  const failedQueries = [productsQuery, listsQuery, ...(!editOrder ? [customersQuery] : []),
+    ...(isAdmin && !editOrder ? [sellersQuery] : [])].filter(query => query.isError)
+  const readError = failedQueries[0]?.error
   const readLoading = (!editOrder && customersQuery.isLoading) || productsQuery.isLoading || listsQuery.isLoading || (isAdmin && !editOrder && sellersQuery.isLoading)
 
+  const cancel = <Button variant="secondary" type="button" onClick={requestDiscard} disabled={submitting}>Cancelar</Button>
+  const previousOrderAction = <div className="order-previous-action"><Button type="button" variant="secondary" onClick={loadPreviousOrder} disabled={!customerId || !selectedList || previousOrderQuery.isFetching || previousOrderQuery.isError || !previousOrderQuery.data?.available || submitting} title={!customerId ? 'Seleccioná un cliente para consultar su último pedido.' : previousOrderQuery.isFetching ? 'Consultando el último pedido del cliente.' : previousOrderQuery.isError ? 'No se pudo consultar el pedido anterior.' : !previousOrderQuery.data?.available ? 'Este cliente no tiene pedidos anteriores.' : 'Reemplazar los productos del borrador con los del último pedido del cliente.'}>Cargar pedido anterior</Button></div>
+  const customerField = <CustomerSelect mode="selection" label="Cliente" options={customers} value={customerId} onChange={selectCustomer} required autoFocus={!editOrder} disabled={submitting || Boolean(editOrder)} />
+  const sellerField = editOrder ? <SellerSelect mode="selection" label="Vendedor" options={[{ id: 'locked-seller', name: editOrder.order.seller ?? 'Sin asignar' }]} value="locked-seller" onChange={() => {}} disabled /> : isAdmin
+    ? <SellerSelect mode="selection" label="Vendedor" options={(sellersQuery.data?.content ?? []).map((seller) => ({ id: seller.id, name: seller.displayName }))} value={sellerId} onChange={(value) => { draftChanged(); setSellerId(value) }} emptyLabel="Del cliente" disabled={submitting} />
+    : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>
+  const priceListField = <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" aria-invalid={Boolean(customerId && resolvedListId && !selectedList)} aria-describedby={customerId && resolvedListId && !selectedList ? 'order-price-list-error' : undefined} value={resolvedListId} onChange={(event) => selectPriceList(event.target.value)} required disabled={submitting || !canChangeList}><option value="">Seleccionar lista...</option>{resolvedListId && !selectedList && <option value={resolvedListId} disabled>Lista asignada no disponible</option>}{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select>{customerId && resolvedListId && !selectedList && <span id="order-price-list-error" className="error-text">{canChangeList ? 'Seleccioná una lista activa para continuar.' : 'La lista asignada no está disponible. Solicitá su revisión a un administrador.'}</span>}</label>
+  const conditions = <>
+    {discountPrompt && <PreviousOrderDiscountDialog orderNumber={discountPrompt.order.orderNumber ?? ''} orderDiscount={Number(discountPrompt.order.orderDiscountPercent ?? 0)} items={discountPrompt.order.items ?? []} anchor={discountPrompt.anchor} onDismiss={() => setDiscountPrompt(undefined)} onChoose={(copyDiscounts) => { applyPreviousOrder(discountPrompt.order, copyDiscounts); setDiscountPrompt(undefined) }} />}
+    {editOrder ? <div className="order-customer-grid">
+      {customerField}
+      {sellerField}
+      {priceListField}
+      {previousOrderAction}
+    </div> : <div className="order-customer-grid order-create-conditions">
+      <div className="w-full [@media(min-width:761px)]:w-[calc(35ch_+_44px)]">{customerField}</div>
+      <div className="w-full [@media(min-width:761px)]:w-[calc(10ch_+_46px)] [@media(min-width:761px)]:shrink-0">
+        <OrderDateFilter id="order-date" label="Fecha del pedido" value={orderDate} isoValue={parsedOrderDate ?? ''} invalid={invalidOrderDate} describedBy={invalidOrderDate ? 'order-date-error' : undefined} required disabled={submitting} onChange={(value) => { draftChanged(); setOrderDate(value) }} />
+        {invalidOrderDate && <p id="order-date-error" className="error-text mt-[6px]" role="alert">Ingresá una fecha válida con formato dd/mm/aaaa.</p>}
+      </div>
+      <div className="w-full [@media(min-width:761px)]:w-[calc(20ch_+_44px)] [@media(min-width:761px)]:min-w-[min(100%,_112px)]">{sellerField}</div>
+      <div className="w-full [@media(min-width:761px)]:w-[calc(30ch_+_40px)]">{priceListField}</div>
+    </div>}
+    {resellerId && <p className="helper-text">Cuenta: <strong>{resellerName}</strong> (revendedor). El pedido queda a nombre del cliente y la deuda se carga a esa cuenta corriente.</p>}
+    {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
+  </>
+  const productsEditor = <OrderProductPicker
+    isEdit={Boolean(editOrder)}
+    canDiscount={canDiscount}
+    canOverride={canOverride}
+    customerId={customerId}
+    hasSelectedList={Boolean(selectedList)}
+    submitting={submitting}
+    products={products}
+    productsById={productsById}
+    lines={lines}
+    lineColumns={lineColumns}
+    lineRows={lineRows}
+    invalidQuantityLines={invalidQuantityLines}
+    selectedProductId={selectedProductId}
+    selectedProductQuantity={selectedProductQuantity}
+    selectedProductDiscount={selectedProductDiscount}
+    selectedProductPriceOverride={selectedProductPriceOverride}
+    selectedPriceQuery={selectedPriceQuery}
+    invalidSelectedQuantity={invalidSelectedQuantity}
+    productSearchRef={productSearch}
+    quantityInputRef={quantityInput}
+    onSelectProduct={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError(''); focusQuantityAfterSelect.current = Boolean(value) }}
+    onChangeQuantity={setSelectedProductQuantity}
+    onChangeDiscount={setSelectedProductDiscount}
+    onChangePriceOverride={setSelectedProductPriceOverride}
+    onAddButtonClick={(event) => { if (addProduct()) focusProductSearch(!editOrder && event.detail === 0) }}
+    onAddFromKeyboard={addFromKeyboard}
+    onPickerKeyDown={editOrder ? undefined : handleProductPickerKeyDown}
+    onBlurPicker={() => { lastProductEnter.current = null }}
+    onPointerDownPicker={() => { lastProductEnter.current = null }}
+  />
+  const accountAndCollection = <>
+    {customer && resellerId && isAdmin && <section className="order-account" aria-labelledby="order-account-title">
+      <div className="order-account-balance"><h3 id="order-account-title">Cuenta corriente de {resellerName}</h3><span>Saldo actual</span><strong>{resellerBalanceQuery.isError ? 'No disponible' : <CurrencyText>{money(accountBalance)}</CurrencyText>}</strong></div>
+      <p className="helper-text">El remito del cliente no incluye saldo anterior: la deuda es del revendedor.</p>
+    </section>}
+    {customer && !resellerId && <section className="order-account" aria-labelledby="order-account-title">
+      <div className="order-account-balance"><h3 id="order-account-title">Cuenta corriente</h3><span>Saldo actual</span><strong><CurrencyText>{money(customerBalance)}</CurrencyText></strong></div>
+      <div className="order-account-controls">
+        <label className="field"><span>Importe para el remito</span><input className="input currency-input" type="text" inputMode="decimal" value={previousBalanceInput} placeholder="0,00" aria-invalid={Boolean(previousBalanceError)} aria-describedby={previousBalanceError ? 'order-account-error' : undefined} onChange={(event) => { draftChanged(); setPreviousBalanceInput(event.target.value); setPreviousBalanceError('') }} disabled={customerBalance <= 0 || submitting} /></label>
+        <Button type="button" variant="secondary" onClick={() => includePreviousBalance()} disabled={customerBalance <= 0 || submitting || !previousBalanceInput.trim()}>{selectedPreviousBalance > 0 ? 'Actualizar importe' : 'Agregar importe'}</Button>
+        <Button type="button" variant="link" onClick={() => includePreviousBalance(String(customerBalance))} disabled={customerBalance <= 0 || submitting}>Agregar saldo total</Button>
+      </div>
+      {previousBalanceError && <p className="error-text" id="order-account-error" role="alert"><CurrencyText>{previousBalanceError}</CurrencyText></p>}
+    </section>}
+    {customer && !editOrder && !canCollect && <p className="helper-text">Los cobros de cuentas de revendedor los registra un administrador.</p>}
+    {customer && !editOrder && canCollect && <section className="order-collection" aria-labelledby="order-collection-title">
+      <h3 id="order-collection-title">Cobro al confirmar (opcional)</h3>
+      <p className="helper-text">El pago de este pedido y el de la deuda anterior se registran por separado. Lo que no se cobre queda en la cuenta corriente.</p>
+      {([
+        ['order', 'Pago de este pedido', orderPayment, setOrderPayment, previewTotal, 'Cobrar el total del pedido', 'Se aplica solo a este pedido.'],
+        ...(accountBalance > 0 ? [['debt', 'Pago de deuda anterior', debtPayment, setDebtPayment, accountBalance, 'Cobrar toda la deuda', resellerId ? `Deuda anterior de ${resellerName}: ${money(accountBalance)}. Se aplica a las deudas más antiguas de su cuenta, nunca a este pedido.` : `Deuda anterior: ${money(accountBalance)}. Se aplica a las deudas más antiguas, nunca a este pedido.`]] : []),
+      ] as Array<[string, string, CollectionDraft, (value: CollectionDraft) => void, number, string, string]>).map(([key, title, draft, setDraft, max, fillLabel, help]) => <fieldset className="order-collection-row" key={key} disabled={submitting}>
+        <legend>{title}</legend>
+        <label className="field"><span>Medio de pago</span><select className="select" aria-label={`Medio: ${title}`} value={draft.method} onChange={(event) => { draftChanged(); setDraft({ ...draft, method: event.target.value as CollectionDraft['method'] }) }}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>
+        <label className="field"><span>Importe</span><input className="input currency-input" type="text" inputMode="decimal" aria-label={`Importe: ${title}`} placeholder="0,00" value={draft.amount} onChange={(event) => { draftChanged(); setDraft({ ...draft, amount: event.target.value }) }} /></label>
+        {draft.method === 'BANK_TRANSFER' && <label className="field"><span>Nº de transferencia</span><input className="input" aria-label={`Número de transferencia: ${title}`} maxLength={100} value={draft.reference} onChange={(event) => { draftChanged(); setDraft({ ...draft, reference: event.target.value }) }} /></label>}
+        <Button type="button" variant="link" disabled={max <= 0} onClick={() => { draftChanged(); setDraft({ ...draft, amount: String(Number(max.toFixed(4))).replace('.', ',') }) }}>{fillLabel}</Button>
+        <p className="helper-text order-collection-help"><CurrencyText>{help}</CurrencyText></p>
+      </fieldset>)}
+      {(orderPaid > 0 || debtPaid > 0) && Number.isFinite(orderPaid) && Number.isFinite(debtPaid) && <dl className="order-collection-summary" aria-live="polite">
+        <div><dt>Cobrado ahora</dt><dd><CurrencyText>{money(orderPaid + debtPaid)}</CurrencyText></dd></div>
+        <div><dt>Queda de este pedido en cuenta corriente</dt><dd><CurrencyText>{money(Math.max(0, previewTotal - orderPaid))}</CurrencyText></dd></div>
+      </dl>}
+    </section>}
+  </>
+  const confirmDisabled = submitting || (!editOrder && (!customer || !selectedList)) || invalidOrderDate || invalidOrderDiscount || invalidQuantityLines.length > 0 || resolutions.some((resolution) => resolution.isLoading) || lines.length === 0
+  const confirmLabel = editOrder ? (submitting ? 'Guardando...' : 'Guardar cambios') : (submitting ? 'Confirmando...' : attempt ? 'Reintentar confirmación' : 'Confirmar pedido')
+  const units = lines.reduce((sum, line) => sum + (validQuantity(line.quantity) ? quantityValue(line.quantity) : 0), 0)
+
   return <>
-    <PageHeader eyebrow="Operación" title={editOrder ? 'Editar pedido' : 'Nuevo pedido'} description={editOrder?.order.number} actions={<Button variant="secondary" type="button" onClick={requestDiscard} disabled={submitting}>Cancelar</Button>} />
+    {editOrder ? <PageHeader eyebrow="Operación" title="Editar pedido" description={editOrder.order.number} actions={cancel} />
+      : <header className="order-create-header">
+        <nav aria-label="Ruta de navegación" className="order-create-breadcrumb">
+          <span>Operación</span><span aria-hidden="true"> / </span><Link to="/orders" onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+            event.preventDefault()
+            requestDiscard()
+          }}>Pedidos</Link>
+        </nav>
+        <div className="page-header">
+          <h1>Nuevo pedido</h1>
+          {cancel}
+        </div>
+      </header>}
     {discardDialog}
-    {readLoading ? <Panel><EmptyState title="Cargando datos del pedido" description={isAdmin ? 'Consultando clientes, productos, vendedores y listas activas.' : 'Consultando clientes, productos y listas activas.'} /></Panel>
-      : readError ? <Panel><EmptyState title="No se pudo preparar el pedido" description={readError.message} action={isAdmin && sellersQuery.isError && readError === sellersQuery.error ? <Button variant="secondary" onClick={() => sellersQuery.refetch()}>Reintentar vendedores</Button> : undefined} /></Panel>
-        : <form className="order-form" onSubmit={confirm}>
-          {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-          <Panel title="Datos del pedido" action={!editOrder ? <div className="order-form-date"><OrderDateFilter id="order-date" label="Fecha del pedido" value={orderDate} isoValue={parsedOrderDate ?? ''} invalid={invalidOrderDate} describedBy={invalidOrderDate ? 'order-date-error' : undefined} required disabled={submitting} onChange={(value) => { draftChanged(); setOrderDate(value) }} /></div> : undefined}>
-            {invalidOrderDate && <p id="order-date-error" className="error-text" role="alert">Ingresá una fecha válida con formato dd/mm/aaaa.</p>}
-            {discountPrompt && <PreviousOrderDiscountDialog orderNumber={discountPrompt.order.orderNumber ?? ''} orderDiscount={Number(discountPrompt.order.orderDiscountPercent ?? 0)} items={discountPrompt.order.items ?? []} anchor={discountPrompt.anchor} onDismiss={() => setDiscountPrompt(undefined)} onChoose={(copyDiscounts) => { applyPreviousOrder(discountPrompt.order, copyDiscounts); setDiscountPrompt(undefined) }} />}
-            <div className="order-customer-grid">
-              <CustomerSelect mode="selection" label="Cliente" options={customers} value={customerId} onChange={selectCustomer} required autoFocus={!editOrder} disabled={submitting || Boolean(editOrder)} />
-              {editOrder ? <SellerSelect mode="selection" label="Vendedor" options={[{ id: 'locked-seller', name: editOrder.order.seller ?? 'Sin asignar' }]} value="locked-seller" onChange={() => {}} disabled /> : isAdmin
-                ? <SellerSelect mode="selection" label="Vendedor" options={(sellersQuery.data?.content ?? []).map((seller) => ({ id: seller.id, name: seller.displayName }))} value={sellerId} onChange={(value) => { draftChanged(); setSellerId(value) }} emptyLabel="Usar vendedor del cliente" disabled={submitting} />
-                : <div className="field"><span>Vendedor</span><span className="read-only-field" aria-label="Vendedor">{customer?.seller || 'Seleccioná un cliente'}</span></div>}
-              <label className="field"><span>Lista de precios</span><select className="select" aria-label="Lista de precios" aria-invalid={Boolean(customerId && resolvedListId && !selectedList)} aria-describedby={customerId && resolvedListId && !selectedList ? 'order-price-list-error' : undefined} value={resolvedListId} onChange={(event) => selectPriceList(event.target.value)} required disabled={submitting || !canChangeList}><option value="">Seleccionar lista...</option>{resolvedListId && !selectedList && <option value={resolvedListId} disabled>Lista asignada no disponible</option>}{activeLists.map((list) => <option value={list.id} key={list.id}>{list.code} · {list.name}</option>)}</select>{customerId && resolvedListId && !selectedList && <span id="order-price-list-error" className="error-text">{canChangeList ? 'Seleccioná una lista activa para continuar.' : 'La lista asignada no está disponible. Solicitá su revisión a un administrador.'}</span>}</label>
-              <div className="order-previous-action"><Button type="button" variant="secondary" onClick={loadPreviousOrder} disabled={!customerId || !selectedList || previousOrderQuery.isFetching || previousOrderQuery.isError || !previousOrderQuery.data?.available || submitting} title={!customerId ? 'Seleccioná un cliente para consultar su último pedido.' : previousOrderQuery.isFetching ? 'Consultando el último pedido del cliente.' : previousOrderQuery.isError ? 'No se pudo consultar el pedido anterior.' : !previousOrderQuery.data?.available ? 'Este cliente no tiene pedidos anteriores.' : 'Reemplazar los productos del borrador con los del último pedido del cliente.'}>Cargar pedido anterior</Button></div>
+    {readLoading ? <Panel><EmptyState state="loading" title="Cargando datos del pedido" description={isAdmin ? 'Consultando clientes, productos, vendedores y listas activas.' : 'Consultando clientes, productos y listas activas.'} /></Panel>
+      : readError ? <Panel><EmptyState state="error" title="No se pudo preparar el pedido" description={readError.message} action={<Button type="button" variant="secondary" onClick={() => failedQueries.forEach(query => void query.refetch())}>
+        {failedQueries.length === 1 && sellersQuery.isError ? 'Reintentar vendedores' : 'Reintentar'}
+      </Button>} /></Panel>
+        : <form className={`order-form${editOrder ? '' : ' order-create-form'}`} onSubmit={confirm}>
+          {error && <p className="error-text order-form-error" role="alert"><CurrencyText>{error}</CurrencyText></p>}
+          {editOrder ? <Panel title="Datos del pedido">
+            {conditions}
+            {productsEditor}
+            {accountAndCollection}
+            <OrderCheckoutSummary
+              isEdit
+              canDiscount={canDiscount}
+              submitting={submitting}
+              orderDiscountPercent={orderDiscountPercent}
+              orderDiscountValue={orderDiscountValue}
+              invalidOrderDiscount={invalidOrderDiscount}
+              invalidQuantityCount={invalidQuantityLines.length}
+              previewSubtotal={previewSubtotal}
+              previewDiscount={previewDiscount}
+              previewTotal={previewTotal}
+              selectedPreviousBalance={selectedPreviousBalance}
+              confirmDisabled={confirmDisabled}
+              confirmLabel={confirmLabel}
+              hasUnsavedDraft={hasUnsavedDraft}
+              draftIsSaved={draftIsSaved}
+              draftSaveError={draftSaveError}
+              onChangeOrderDiscount={changeOrderDiscount}
+              onStepOrderDiscount={stepOrderDiscount}
+              onSaveDraft={saveDraft}
+            />
+          </Panel> : <div className="order-create-layout">
+            <div className="order-create-main">
+              <section className="panel order-create-panel" aria-labelledby="order-conditions-title">
+                <div className="panel-header">
+                  <h2 id="order-conditions-title">Cliente y condiciones</h2>
+                  {previousOrderAction}
+                </div>
+                {conditions}
+              </section>
+              <section className="panel order-create-panel" aria-labelledby="order-products-title">
+                <div className="panel-header">
+                  <h2 id="order-products-title">Productos</h2>
+                </div>
+                {productsEditor}
+                <p className="order-create-line-count">
+                  {lines.length} {lines.length === 1 ? 'producto' : 'productos'}
+                  {invalidQuantityLines.length === 0 && ` · ${formatNumber(units, 2)} ${units === 1 ? 'unidad' : 'unidades'}`}
+                </p>
+              </section>
+              {accountAndCollection}
             </div>
-            {resellerId && <p className="helper-text">Cuenta: <strong>{resellerName}</strong> (revendedor). El pedido queda a nombre del cliente y la deuda se carga a esa cuenta corriente.</p>}
-            {previousOrderQuery.isError && <div className="page-actions"><p className="error-text" role="alert">No se pudo consultar el pedido anterior.</p><Button type="button" variant="secondary" onClick={() => previousOrderQuery.refetch()}>Reintentar pedido anterior</Button></div>}
-            <div ref={productPicker} className={`product-picker order-product-picker${canDiscount ? ' order-product-picker-discount' : ''}`}
-              onKeyDown={editOrder ? undefined : handleProductPickerKeyDown} onBlur={() => { lastProductEnter.current = null }}
-              onPointerDown={() => { lastProductEnter.current = null }}>
-              <SearchableSelect key={customerId} label="Producto" className="order-product-choice" fullWidth preserveSearch allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" options={products.filter((item) => item.status === 'ACTIVE' && !lines.some((line) => line.productId === item.id)).map((item) => ({ id: item.id, name: item.name, ...(item.stock !== undefined ? { detail: `Stock: ${stockUnits.format(Number(item.stock))}` } : {}) }))} value={selectedProductId} onChange={(value) => { setSelectedProductId(value); setSelectedProductQuantity('1'); setSelectedProductDiscount('0'); setSelectedProductPriceOverride(undefined); setError(''); focusQuantityAfterSelect.current = Boolean(value) }} disabled={!customerId || !selectedList || submitting} />
-              {canOverride
-                ? <label className="field"><span>Precio</span><input className="input currency-input" aria-label="Precio" aria-busy={selectedPriceQuery.isFetching} placeholder={selectedProductId && selectedPriceQuery.isFetching ? 'Consultando...' : selectedProductId && selectedPriceQuery.isError ? 'No disponible' : '—'} type="text" inputMode="decimal" value={selectedProductPriceOverride ?? (selectedProductId && selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '')} onChange={(event) => setSelectedProductPriceOverride(event.target.value)} disabled={submitting || !customerId || !selectedList || !selectedProductId || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data} /></label>
-                : <div className="field"><span>Precio</span><span className="read-only-field currency-input" aria-label="Precio" aria-live="polite" aria-busy={selectedPriceQuery.isFetching}>{!selectedProductId ? '—' : selectedPriceQuery.isFetching ? 'Consultando...' : selectedPriceQuery.isError ? 'No disponible' : selectedPriceQuery.data ? String(selectedPriceQuery.data.unitPrice).replace('.', ',') : '—'}</span></div>}
-              <label className="field"><span>Cantidad</span><input ref={quantityInput} onKeyDown={addFromKeyboard} className="input order-compact-input" size={4} type="text" inputMode="decimal" aria-invalid={invalidSelectedQuantity} aria-describedby={invalidSelectedQuantity ? 'order-selected-quantity-error' : undefined} value={selectedProductQuantity} onChange={(event) => setSelectedProductQuantity(event.target.value)} disabled={!selectedProductId || submitting} /></label>
-              {canDiscount && <label className="field"><span>Descuento</span><input onKeyDown={addFromKeyboard} className="input order-compact-input" size={4} type="text" inputMode="decimal" value={selectedProductDiscount} onChange={(event) => setSelectedProductDiscount(event.target.value)} disabled={!selectedProductId || submitting} /></label>}
-              <Button type="button" variant="secondary" onClick={() => { if (addProduct()) focusProductSearch() }} disabled={submitting || !customerId || !selectedList || !selectedProductId || invalidSelectedQuantity || selectedPriceQuery.isFetching || selectedPriceQuery.isError || !selectedPriceQuery.data}>Agregar producto</Button>
-              {selectedProductId && productsById.get(selectedProductId)?.stock !== undefined && <p className="order-product-choice helper-text m-0" aria-live="polite">Stock disponible: {stockUnits.format(Number(productsById.get(selectedProductId)?.stock))}{Number(productsById.get(selectedProductId)?.stock) <= 0 ? ' · sin stock (el pedido puede dejarlo negativo)' : ''}</p>}
-              {invalidSelectedQuantity && <p id="order-selected-quantity-error" className="error-text" role="alert">La cantidad debe ser positiva y múltiplo de 0,5.</p>}
-              {selectedProductId && selectedPriceQuery.isError && <p className="order-product-choice error-text" role="alert">No se pudo consultar el precio de la lista. {selectedPriceQuery.error?.message} <Button type="button" variant="link" onClick={() => selectedPriceQuery.refetch()}>Reintentar precio</Button></p>}
-            </div>
-            <DataTable className="order-lines order-lines-table" columns={lineColumns} rows={lineRows} emptyContent={<p className="table-empty-message">Elegí un producto para consultar su precio en la lista seleccionada.</p>} />
-            {invalidQuantityLines.map((line) => <p key={line.productId} id={`order-quantity-${line.productId}-error`} className="error-text" role="alert">La cantidad de {productsById.get(line.productId)?.name ?? 'el producto'} debe ser positiva y múltiplo de 0,5.</p>)}
-            {customer && resellerId && isAdmin && <section className="order-account" aria-labelledby="order-account-title">
-              <div className="order-account-balance"><h3 id="order-account-title">Cuenta corriente de {resellerName}</h3><span>Saldo actual</span><strong>{resellerBalanceQuery.isError ? 'No disponible' : <CurrencyText>{money(accountBalance)}</CurrencyText>}</strong></div>
-              <p className="helper-text">El remito del cliente no incluye saldo anterior: la deuda es del revendedor.</p>
-            </section>}
-            {customer && !resellerId && <section className="order-account" aria-labelledby="order-account-title">
-              <div className="order-account-balance"><h3 id="order-account-title">Cuenta corriente</h3><span>Saldo actual</span><strong><CurrencyText>{money(customerBalance)}</CurrencyText></strong></div>
-              <div className="order-account-controls">
-                <label className="field"><span>Importe para el remito</span><input className="input currency-input" type="text" inputMode="decimal" value={previousBalanceInput} placeholder="0,00" aria-invalid={Boolean(previousBalanceError)} aria-describedby={previousBalanceError ? 'order-account-error' : undefined} onChange={(event) => { draftChanged(); setPreviousBalanceInput(event.target.value); setPreviousBalanceError('') }} disabled={customerBalance <= 0 || submitting} /></label>
-                <Button type="button" variant="secondary" onClick={() => includePreviousBalance()} disabled={customerBalance <= 0 || submitting || !previousBalanceInput.trim()}>{selectedPreviousBalance > 0 ? 'Actualizar importe' : 'Agregar importe'}</Button>
-                <Button type="button" variant="link" onClick={() => includePreviousBalance(String(customerBalance))} disabled={customerBalance <= 0 || submitting}>Agregar saldo total</Button>
-              </div>
-              {previousBalanceError && <p className="error-text" id="order-account-error" role="alert"><CurrencyText>{previousBalanceError}</CurrencyText></p>}
-            </section>}
-            {customer && !editOrder && !canCollect && <p className="helper-text">Los cobros de cuentas de revendedor los registra un administrador.</p>}
-            {customer && !editOrder && canCollect && <section className="order-collection" aria-labelledby="order-collection-title">
-              <h3 id="order-collection-title">Cobro al confirmar (opcional)</h3>
-              <p className="helper-text">El pago de este pedido y el de la deuda anterior se registran por separado. Lo que no se cobre queda en la cuenta corriente.</p>
-              {([
-                ['order', 'Pago de este pedido', orderPayment, setOrderPayment, previewTotal, 'Cobrar el total del pedido', 'Se aplica solo a este pedido.'],
-                ...(accountBalance > 0 ? [['debt', 'Pago de deuda anterior', debtPayment, setDebtPayment, accountBalance, 'Cobrar toda la deuda', resellerId ? `Deuda anterior de ${resellerName}: ${money(accountBalance)}. Se aplica a las deudas más antiguas de su cuenta, nunca a este pedido.` : `Deuda anterior: ${money(accountBalance)}. Se aplica a las deudas más antiguas, nunca a este pedido.`]] : []),
-              ] as Array<[string, string, CollectionDraft, (value: CollectionDraft) => void, number, string, string]>).map(([key, title, draft, setDraft, max, fillLabel, help]) => <fieldset className="order-collection-row" key={key} disabled={submitting}>
-                <legend>{title}</legend>
-                <label className="field"><span>Medio de pago</span><select className="select" aria-label={`Medio: ${title}`} value={draft.method} onChange={(event) => { draftChanged(); setDraft({ ...draft, method: event.target.value as CollectionDraft['method'] }) }}><option value="CASH">Efectivo</option><option value="BANK_TRANSFER">Transferencia</option></select></label>
-                <label className="field"><span>Importe</span><input className="input currency-input" type="text" inputMode="decimal" aria-label={`Importe: ${title}`} placeholder="0,00" value={draft.amount} onChange={(event) => { draftChanged(); setDraft({ ...draft, amount: event.target.value }) }} /></label>
-                {draft.method === 'BANK_TRANSFER' && <label className="field"><span>Nº de transferencia</span><input className="input" aria-label={`Número de transferencia: ${title}`} maxLength={100} value={draft.reference} onChange={(event) => { draftChanged(); setDraft({ ...draft, reference: event.target.value }) }} /></label>}
-                <Button type="button" variant="link" disabled={max <= 0} onClick={() => { draftChanged(); setDraft({ ...draft, amount: String(Number(max.toFixed(4))).replace('.', ',') }) }}>{fillLabel}</Button>
-                <p className="helper-text order-collection-help"><CurrencyText>{help}</CurrencyText></p>
-              </fieldset>)}
-              {(orderPaid > 0 || debtPaid > 0) && Number.isFinite(orderPaid) && Number.isFinite(debtPaid) && <dl className="order-collection-summary" aria-live="polite">
-                <div><dt>Cobrado ahora</dt><dd><CurrencyText>{money(orderPaid + debtPaid)}</CurrencyText></dd></div>
-                <div><dt>Queda de este pedido en cuenta corriente</dt><dd><CurrencyText>{money(Math.max(0, previewTotal - orderPaid))}</CurrencyText></dd></div>
-              </dl>}
-            </section>}
-            <div className={`order-checkout${canDiscount ? '' : ' order-checkout-standard'}`}>
-              {canDiscount && <div className="order-checkout-discount">
-                <label className="field"><span>Descuento general</span><span className="order-discount-input"><input className="input" type="text" inputMode="decimal" aria-label="Descuento general (%)" disabled={submitting} aria-invalid={invalidOrderDiscount} aria-describedby={invalidOrderDiscount ? 'order-discount-error' : 'order-discount-hint'} value={orderDiscountPercent} onChange={(event) => { draftChanged(); setOrderDiscountPercent(event.target.value) }} /><span aria-hidden="true">%</span></span></label>
-                {invalidOrderDiscount ? <p id="order-discount-error" className="error-text" role="alert">Ingresá un descuento entre 0 y 100%.</p> : <p id="order-discount-hint" className="helper-text">De 0 a 100% sobre el subtotal.</p>}
-              </div>}
-              <dl className="order-totals"><dt>Subtotal</dt><dd><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewSubtotal)}</CurrencyText></dd>{(canDiscount || Boolean(editOrder)) && <><dt>Descuento general</dt><dd className={previewDiscount > 0 ? 'order-discount-value' : undefined}>{previewDiscount > 0 ? '− ' : ''}<CurrencyText>{money(previewDiscount)}</CurrencyText></dd></>}{selectedPreviousBalance > 0 && <><dt>Total del pedido</dt><dd><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewTotal)}</CurrencyText></dd><dt>Saldo anterior</dt><dd><CurrencyText>{money(selectedPreviousBalance)}</CurrencyText></dd></>}</dl>
-              <div className="order-checkout-actions">
-                <dl className="order-checkout-total"><dt>{selectedPreviousBalance > 0 ? 'Total a cobrar' : 'Total estimado'}</dt><dd className="total-value"><CurrencyText>{invalidQuantityLines.length ? '—' : money(previewTotal + selectedPreviousBalance)}</CurrencyText></dd></dl>
-                <Button type="submit" fullWidth disabled={submitting || invalidOrderDate || invalidOrderDiscount || invalidQuantityLines.length > 0 || resolutions.some((resolution) => resolution.isLoading) || lines.length === 0}>{editOrder ? submitting ? 'Guardando...' : 'Guardar cambios' : submitting ? 'Confirmando...' : attempt ? 'Reintentar confirmación' : 'Confirmar pedido'}</Button>
-              </div>
-            </div>
-          </Panel>
+            <OrderCheckoutSummary
+              isEdit={false}
+              canDiscount={canDiscount}
+              submitting={submitting}
+              orderDiscountPercent={orderDiscountPercent}
+              orderDiscountValue={orderDiscountValue}
+              invalidOrderDiscount={invalidOrderDiscount}
+              invalidQuantityCount={invalidQuantityLines.length}
+              previewSubtotal={previewSubtotal}
+              previewDiscount={previewDiscount}
+              previewTotal={previewTotal}
+              selectedPreviousBalance={selectedPreviousBalance}
+              confirmDisabled={confirmDisabled}
+              confirmLabel={confirmLabel}
+              draftStorageKey={draftStorageKey}
+              hasUnsavedDraft={hasUnsavedDraft}
+              draftIsSaved={draftIsSaved}
+              draftSaveError={draftSaveError}
+              onChangeOrderDiscount={changeOrderDiscount}
+              onStepOrderDiscount={stepOrderDiscount}
+              onSaveDraft={saveDraft}
+            />
+          </div>}
         </form>}
   </>
 }

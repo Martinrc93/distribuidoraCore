@@ -1,3 +1,4 @@
+import { Pagination } from '../../shared/components/Pagination'
 import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -6,11 +7,14 @@ import { apiGet, apiPatch, apiPost, apiPut, ApiError, type ApiPage } from '../..
 import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge, type BadgeTone } from '../../shared/components/Badge'
+import { SecondaryRowActions } from '../../shared/components/SecondaryRowActions'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { CustomerSelect, SellerSelect } from '../../shared/components/EntitySelect'
+import { invalidateDomains, queryKeys } from '../../shared/api/queryKeys'
+import { formatMoney } from '../../shared/format'
 import { apiGetAllPages } from '../../shared/api/pagination'
 import { useUrlListState } from '../../shared/useUrlListState'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
@@ -27,7 +31,7 @@ type PriceList = { id: string; code: string; name: string; status: string }
 type Zone = { id: string; name: string }
 
 function money(value: unknown) {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value ?? 0))
+  return formatMoney(value, 2)
 }
 
 function errorMessage(cause: unknown, fallback: string) {
@@ -63,6 +67,7 @@ function CustomerForm({
   zonesError,
   onRetryZones,
   priceLists,
+  priceListsLoading,
   priceListsError,
   onRetryPriceLists,
   onDone,
@@ -79,6 +84,7 @@ function CustomerForm({
   zonesError: boolean
   onRetryZones: () => void
   priceLists: PriceList[]
+  priceListsLoading: boolean
   priceListsError: boolean
   onRetryPriceLists: () => void
   onDone: () => void
@@ -98,6 +104,8 @@ function CustomerForm({
   const [priceListId, setPriceListId] = useState(initial?.priceListId ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const saveDisabled = saving || sellersLoading || sellersError || (!isAdmin && !sellers.length)
+    || (canChangeList && (priceListsLoading || priceListsError))
   useEffect(() => {
     setBusinessName(initial?.name ?? '')
     setCuitId(initial?.cuitId ?? '')
@@ -123,18 +131,18 @@ function CustomerForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (saving || sellersLoading || sellersError || (!isAdmin && !sellers.length)) return
+    if (saveDisabled) return
     setSaving(true)
     setError('')
     try {
       const body = { businessName, cuitId: cuitId.trim() || null, email: email.trim() || null, phone: phone.trim() || null, address: address.trim() || null, zone: zone.trim() || null, sellerId: (isAdmin ? sellerId : sellers[0]?.id) || undefined, ...(initial || priceListId ? { priceListId: priceListId || null } : {}) }
       if (initial) await apiPut(`/api/customers/${initial.id}`, body)
       else await apiPost('/api/customers', body)
-      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') || queryKey[0] === '/api/customers/filter-options' })
+      await invalidateDomains(queryClient, 'customers', 'orders', 'sales', 'reports')
       onSuccess(initial ? 'Cliente actualizado correctamente.' : 'Cliente creado correctamente.')
       onDone()
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') })
+      if (cause instanceof ApiError && cause.status === 404) await invalidateDomains(queryClient, 'customers', 'orders', 'sales', 'reports')
       setError(errorMessage(cause, 'No se pudo guardar el cliente.'))
     } finally {
       setSaving(false)
@@ -149,12 +157,28 @@ function CustomerForm({
       <label className="field"><span>Mail</span><input disabled={saving} className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
       <label className="field"><span>Celular</span><input disabled={saving} className="input" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
       <label className="field"><span>Dirección</span><input disabled={saving} className="input" value={address} onChange={(event) => setAddress(event.target.value)} /></label>
-      <label className="field"><span>Zona</span><select className="select" aria-label="Zona" value={zone} onChange={(event) => setZone(event.target.value)} disabled={saving || zonesLoading || zonesError}><option value="">Sin zona asignada</option>{initial?.zone && !zones.some((item) => item.name === initial.zone) && <option value={initial.zone}>{initial.zone}</option>}{zones.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}</select>{zonesError && <span className="error-text">No se pudieron cargar las zonas. <Button variant="link" type="button" onClick={onRetryZones}>Reintentar</Button></span>}</label>
+      <div className="field">
+        <label htmlFor="customer-zone">Zona</label>
+        <select id="customer-zone" className="select" value={zone} onChange={(event) => setZone(event.target.value)} disabled={saving || zonesLoading || zonesError}>
+          <option value="">{zonesLoading ? 'Cargando zonas…' : 'Sin zona asignada'}</option>
+          {initial?.zone && !zones.some((item) => item.name === initial.zone) && <option value={initial.zone}>{initial.zone}</option>}
+          {zones.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}
+        </select>
+        {zonesError && <span className="error-text">No se pudieron cargar las zonas. <Button variant="link" type="button" onClick={onRetryZones}>Reintentar</Button></span>}
+      </div>
       <SellerSelect mode="selection" label="Vendedor asignado" options={sellers.map((seller) => ({ id: seller.id, name: `${seller.displayName} (${seller.email})` }))} value={isAdmin ? sellerId : sellers[0]?.id ?? ''} onChange={setSellerId} emptyLabel="Sin asignar" loading={sellersLoading} disabled={saving || sellersError || !isAdmin} />
       {sellersError && <p className="error-text col-span-full" role="alert">No se pudo cargar la asignación de vendedor. <Button variant="link" type="button" onClick={onRetrySellers}>Reintentar asignación</Button></p>}
-      <label className="field"><span>Lista de precios predeterminada</span><select className="select" aria-label="Lista de precios predeterminada" value={priceListId} onChange={(event) => setPriceListId(event.target.value)} disabled={saving || priceListsError || !canChangeList}><option value="">Sin lista asignada</option>{initial?.priceListId && !priceLists.some(list => list.id === initial.priceListId) && <option value={initial.priceListId}>Lista asignada (sin cambios)</option>}{priceLists.filter((list) => list.status === 'ACTIVE' || list.id === initial?.priceListId).map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}{list.status !== 'ACTIVE' ? ' (inactiva)' : ''}</option>)}</select>{priceListsError && <span className="error-text">No se pudieron cargar las listas. <Button variant="link" type="button" onClick={onRetryPriceLists}>Reintentar</Button></span>}</label>
+      <div className="field">
+        <label htmlFor="customer-default-price-list">Lista de precios predeterminada</label>
+        <select id="customer-default-price-list" className="select" value={priceListId} onChange={(event) => setPriceListId(event.target.value)} disabled={saving || priceListsLoading || priceListsError || !canChangeList}>
+          <option value="">{priceListsLoading ? 'Cargando listas…' : 'Sin lista asignada'}</option>
+          {initial?.priceListId && !priceLists.some(list => list.id === initial.priceListId) && <option value={initial.priceListId}>Lista asignada (sin cambios)</option>}
+          {priceLists.filter((list) => list.status === 'ACTIVE' || list.id === initial?.priceListId).map((list) => <option value={list.id} key={list.id}>{list.code} - {list.name}{list.status !== 'ACTIVE' ? ' (inactiva)' : ''}</option>)}
+        </select>
+        {canChangeList && priceListsError && <span className="error-text">No se pudieron cargar las listas. <Button variant="link" type="button" onClick={onRetryPriceLists}>Reintentar</Button></span>}
+      </div>
       {error && <p className="error-text col-span-full" role="alert"><CurrencyText>{error}</CurrencyText></p>}
-      <div className="page-actions customer-form-actions">{initial && hasPermission('CUSTOMER_STATUS_CHANGE') && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}<div className="customer-form-actions-right"><Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saving || sellersLoading || sellersError || (!isAdmin && !sellers.length) || (canChangeList && priceListsError)}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></div>
+      <div className="page-actions customer-form-actions">{initial && hasPermission('CUSTOMER_STATUS_CHANGE') && <Button variant="secondary" type="button" onClick={() => onChangeStatus(initial)} disabled={saving}>{initial.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}<div className="customer-form-actions-right"><Button variant="secondary" type="button" onClick={requestClose} disabled={saving}>Cancelar</Button><Button type="submit" disabled={saveDisabled}>{saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Guardar cliente'}</Button></div></div>
     </form>
   </Panel></FormModal>
   {discardDialog}
@@ -180,18 +204,20 @@ export default function CustomersPage() {
   const hasBalance = getFilter('hasBalance') === 'true'
   const status = getFilter('status') || 'ACTIVE'
   const resellerFilter = isAdmin ? getFilter('resellerId') : ''
-  const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&sellerId=${encodeURIComponent(sellerId)}&hasBalance=${hasBalance}&status=${encodeURIComponent(status === 'ALL' ? '' : status)}${resellerFilter ? `&resellerId=${encodeURIComponent(resellerFilter)}` : ''}`
-  const query = useQuery({ queryKey: [customerPath], queryFn: () => apiGet<ApiPage<Customer>>(customerPath) })
-  const optionsQuery = useQuery({ queryKey: ['/api/customers/filter-options'], queryFn: () => apiGet<{ sellers: Array<{ id: string; name: string }> }>('/api/customers/filter-options'), enabled: isAdmin })
-  const resellersPath = '/api/customers?page=0&size=100&kind=RESELLER&status='
-  const resellersQuery = useQuery({ queryKey: [resellersPath], queryFn: () => apiGetAllPages<Customer>(resellersPath), enabled: isAdmin })
-  const sellersQuery = useQuery({ queryKey: ['/api/sellers?page=0&size=100'], queryFn: () => apiGetAllPages<Seller>('/api/sellers?page=0&size=100'), enabled: isAdmin })
-  const assignmentQuery = useQuery({ queryKey: ['/api/customers/assignment-context'], queryFn: () => apiGet<Seller>('/api/customers/assignment-context'), enabled: !isAdmin && (canCreate || canEdit), retry: false })
-  const zonesQuery = useQuery({ queryKey: ['/api/zones'], queryFn: () => apiGet<Zone[]>('/api/zones'), enabled: canCreate || canEdit })
-  const priceListOptionsPath = '/api/pricing/lists?page=0&size=100'
-  const listsQuery = useQuery({ queryKey: [priceListOptionsPath, 'customer-options'], queryFn: () => apiGetAllPages<PriceList>(priceListOptionsPath), enabled: canCreate || canEdit || canList })
   const [formCustomer, setFormCustomer] = useState<Customer | undefined>()
   const [showForm, setShowForm] = useState(false)
+  const [listCustomer, setListCustomer] = useState<Customer>()
+  const formOpen = (showForm && canCreate) || (Boolean(formCustomer) && canEdit)
+  const customerPath = `/api/customers?page=${page}&size=${pageSize}&search=${encodeURIComponent(search.trim())}&sellerId=${encodeURIComponent(sellerId)}&hasBalance=${hasBalance}&status=${encodeURIComponent(status === 'ALL' ? '' : status)}${resellerFilter ? `&resellerId=${encodeURIComponent(resellerFilter)}` : ''}`
+  const query = useQuery({ queryKey: queryKeys.customers.list(customerPath), queryFn: ({ signal }) => apiGet<ApiPage<Customer>>(customerPath, signal) })
+  const optionsQuery = useQuery({ queryKey: queryKeys.customers.filterOptions, queryFn: ({ signal }) => apiGet<{ sellers: Array<{ id: string; name: string }> }>('/api/customers/filter-options', signal), enabled: isAdmin })
+  const resellersPath = '/api/customers?page=0&size=100&kind=RESELLER&status='
+  const resellersQuery = useQuery({ queryKey: queryKeys.customers.resellers('all'), queryFn: ({ signal }) => apiGetAllPages<Customer>(resellersPath, signal), enabled: isAdmin })
+  const sellersQuery = useQuery({ queryKey: queryKeys.sellers.options('customers'), queryFn: ({ signal }) => apiGetAllPages<Seller>('/api/sellers?page=0&size=100', signal), enabled: isAdmin && formOpen })
+  const assignmentQuery = useQuery({ queryKey: queryKeys.customers.assignmentContext, queryFn: ({ signal }) => apiGet<Seller>('/api/customers/assignment-context', signal), enabled: !isAdmin && formOpen, retry: false })
+  const zonesQuery = useQuery({ queryKey: queryKeys.zones.all, queryFn: ({ signal }) => apiGet<Zone[]>('/api/zones', signal), enabled: formOpen })
+  const priceListOptionsPath = '/api/pricing/lists?page=0&size=100'
+  const listsQuery = useQuery({ queryKey: queryKeys.pricing.listOptions('customers'), queryFn: ({ signal }) => apiGetAllPages<PriceList>(priceListOptionsPath, signal), enabled: canList && (formOpen || Boolean(listCustomer)) })
   const [actionError, setActionError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [actionSaving, setActionSaving] = useState(false)
@@ -203,7 +229,6 @@ export default function CustomersPage() {
       setStatusFocusId('')
     }
   }, [statusCustomer, statusFocusId])
-  const [listCustomer, setListCustomer] = useState<Customer>()
   const [resellerCustomer, setResellerCustomer] = useState<Customer>()
   const [settlementCustomer, setSettlementCustomer] = useState<Customer>()
   const [loadingSettlement, setLoadingSettlement] = useState('')
@@ -223,7 +248,7 @@ export default function CustomersPage() {
   }
 
   async function invalidate() {
-    await queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/customers?') || queryKey[0] === '/api/customers/filter-options' })
+    await invalidateDomains(queryClient, 'customers', 'orders', 'sales', 'reports')
   }
 
 
@@ -235,7 +260,7 @@ export default function CustomersPage() {
       const status = statusCustomer.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
       await apiPatch(`/api/customers/${statusCustomer.id}/status`, { status })
       await invalidate()
-      setStatusFocusId(`customer-status-${statusCustomer.id}`)
+      setStatusFocusId(`customer-actions-${statusCustomer.id}`)
       setStatusCustomer(undefined)
       setFormCustomer(undefined)
       setFeedback(status === 'ACTIVE' ? 'Cliente activado correctamente.' : 'Cliente desactivado correctamente.')
@@ -257,25 +282,35 @@ export default function CustomersPage() {
     status: customer.status,
     priceListId: customer.priceListId ?? '',
     kind: customer.kind ?? 'REGULAR',
-    reseller: customer.reseller ?? '',
   }))
   const columns: TableColumn[] = [
-    { key: 'name', label: 'Cliente', emphasis: true, render: (value, row) => <div className="min-w-0"><span>{value}</span>{row.kind === 'RESELLER' && <> <Badge>Revendedor</Badge></>}{row.reseller && <span className="block text-[11px] font-normal text-muted">Cuenta: {row.reseller}</span>}</div> },
+    { key: 'name', label: 'Cliente', emphasis: true, render: (value) => <span>{value}</span> },
     { key: 'cuitId', label: 'CUIT' },
     { key: 'seller', label: 'Vendedor' },
     { key: 'balance', label: 'Saldo', align: 'right' },
     { key: 'status', label: 'Estado', render: (value) => <StatusBadge value={value} /> },
   ]
   const findCustomer = (id: string) => query.data?.content.find(customer => customer.id === id)
-  if (canView || canEdit || canStatus || canSettle || canList || canExport || canManageResellers) columns.push({ key: 'actions', label: '', render: (_value, row) => <div className="table-row-actions">{canView && <Button variant="secondary" href={`/customers/${row.id}?returnTo=${encodeURIComponent(location.pathname + location.search)}`} aria-label={`Ver cliente ${row.name}`}>Ver cliente</Button>}{canSettle && row.hasDebt && (row.kind !== 'RESELLER' || isAdmin) && <Button id={`settle-account-${row.id}`} variant="secondary" aria-label={`Registrar pago de ${row.name}`} disabled={Boolean(loadingSettlement)} onClick={() => openSettlement(row.id)}>{loadingSettlement === row.id ? 'Consultando saldo...' : 'Registrar pago'}</Button>}{canEdit && <Button variant="link" onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button>}{canList && <Button variant="link" onClick={() => setListCustomer(query.data?.content.find(customer => customer.id === row.id))}>Cambiar lista</Button>}{canManageResellers && <Button variant="link" aria-label={`Revendedor de ${row.name}`} onClick={() => { setFeedback(''); setResellerCustomer(findCustomer(row.id)) }}>Revendedor</Button>}{canStatus && <Button id={`customer-status-${row.id}`} variant="link" onClick={() => { setActionError(''); setStatusCustomer(query.data?.content.find(customer => customer.id === row.id)) }}>{row.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}{canExport && <DocumentActions path={`/api/documents/customers/${row.id}/statement?format=a4`} filename={`estado-deuda-${row.name}.pdf`} printLabel={`Imprimir estado de ${row.name}`} downloadLabel={`Descargar estado de ${row.name}`} />}</div> })
+  if (canView || canEdit || canStatus || canSettle || canList || canExport || canManageResellers) columns.push(
+    { key: 'actions', label: 'Acciones', render: (_value, row) => <div className="table-row-actions">
+      {canView && <Button variant="secondary" href={`/customers/${row.id}?returnTo=${encodeURIComponent(location.pathname + location.search)}`} aria-label={`Ver cliente ${row.name}`}>Ver cliente</Button>}
+      {canSettle && row.hasDebt && (row.kind !== 'RESELLER' || isAdmin) && <Button id={`settle-account-${row.id}`} variant="secondary" aria-label={`Registrar pago de ${row.name}`} disabled={Boolean(loadingSettlement)} onClick={() => openSettlement(row.id)}>{loadingSettlement === row.id ? 'Consultando saldo...' : 'Registrar pago'}</Button>}
+      {canEdit && <Button variant="link" aria-label={`Editar ${row.name}`} onClick={() => { setFormCustomer(query.data?.content.find((customer) => customer.id === row.id)); setShowForm(false) }}>Editar</Button>}
+      {(canList || canManageResellers || canStatus || canExport) && <SecondaryRowActions triggerId={`customer-actions-${row.id}`} label={'Más acciones de ' + row.name}>
+        {canList && <Button variant="link" onClick={() => setListCustomer(query.data?.content.find(customer => customer.id === row.id))}>Cambiar lista</Button>}
+        {canManageResellers && <Button variant="link" aria-label={`Revendedor de ${row.name}`} onClick={() => { setFeedback(''); setResellerCustomer(findCustomer(row.id)) }}>Revendedor</Button>}
+        {canStatus && <Button variant={row.status === 'INACTIVE' ? 'link' : 'danger'} onClick={() => { setActionError(''); setStatusCustomer(query.data?.content.find(customer => customer.id === row.id)) }}>{row.status === 'INACTIVE' ? 'Activar cliente' : 'Desactivar cliente'}</Button>}
+        {canExport && <DocumentActions path={`/api/documents/customers/${row.id}/statement?format=a4`} filename={`estado-deuda-${row.name}.pdf`} printLabel="Imprimir estado de deuda" downloadLabel="Descargar estado de deuda" />}
+      </SecondaryRowActions>}
+    </div> })
 
   return <>
     <PageHeader eyebrow="Operación" title="Clientes" description={isAdmin ? 'Gestioná clientes, vendedor, lista de precios y cuenta corriente.' : 'Consultá únicamente los clientes asignados a tu vendedor.'} actions={canCreate ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {actionError && <p className="error-text" role="alert"><CurrencyText>{actionError}</CurrencyText></p>}
     {loadingSettlement && <p className="helper-text" role="status">Consultando el saldo actual del cliente…</p>}
-    {canSettle && settlementCustomer && <AccountSettlementDialog customer={settlementCustomer} onClose={() => setSettlementCustomer(undefined)} onSaved={(remaining) => { setSettlementCustomer(undefined); setFeedback(remaining > 0 ? `Pago registrado. Saldo pendiente: ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(remaining)}.` : isAdmin ? 'Cuenta corriente saldada correctamente.' : 'Deuda asignada saldada correctamente.') }} />}
-    {((showForm && canCreate) || (formCustomer && canEdit)) && <CustomerForm initial={formCustomer} sellers={isAdmin ? sellersQuery.data?.content ?? [] : assignmentQuery.data ? [assignmentQuery.data] : []} sellersLoading={isAdmin ? sellersQuery.isLoading : assignmentQuery.isPending} sellersError={isAdmin ? sellersQuery.isError : assignmentQuery.isError} onRetrySellers={() => { void (isAdmin ? sellersQuery.refetch() : assignmentQuery.refetch()) }} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} />}
+    {canSettle && settlementCustomer && <AccountSettlementDialog customer={settlementCustomer} onClose={() => setSettlementCustomer(undefined)} onSaved={(remaining) => { setSettlementCustomer(undefined); setFeedback(remaining > 0 ? `Pago registrado. Saldo pendiente: ${formatMoney(remaining, 2)}.` : isAdmin ? 'Cuenta corriente saldada correctamente.' : 'Deuda asignada saldada correctamente.') }} />}
+    {formOpen && <CustomerForm initial={formCustomer} sellers={isAdmin ? sellersQuery.data?.content ?? [] : assignmentQuery.data ? [assignmentQuery.data] : []} sellersLoading={isAdmin ? sellersQuery.isLoading : assignmentQuery.isPending} sellersError={isAdmin ? sellersQuery.isError : assignmentQuery.isError} onRetrySellers={() => { void (isAdmin ? sellersQuery.refetch() : assignmentQuery.refetch()) }} zones={zonesQuery.data ?? []} zonesLoading={zonesQuery.isLoading} zonesError={zonesQuery.isError} onRetryZones={() => zonesQuery.refetch()} priceLists={listsQuery.data?.content ?? []} priceListsLoading={listsQuery.isLoading} priceListsError={listsQuery.isError} onRetryPriceLists={() => listsQuery.refetch()} onSuccess={setFeedback} onDone={() => { setShowForm(false); setFormCustomer(undefined) }} onChangeStatus={(customer) => { setActionError(''); setStatusCustomer(customer) }} />}
     {resellerCustomer && canManageResellers && <CustomerResellerDialog customer={resellerCustomer} onClose={() => setResellerCustomer(undefined)} onSaved={async (message) => { await invalidate(); setResellerCustomer(undefined); setFeedback(message) }} />}
     {listCustomer && canList && <CustomerPriceListDialog customer={listCustomer} lists={listsQuery.data?.content ?? []} loading={listsQuery.isPending} failed={listsQuery.isError} retry={() => void listsQuery.refetch()} onClose={() => setListCustomer(undefined)} onSaved={async () => { await invalidate(); setListCustomer(undefined); setFeedback('Lista de precios actualizada.') }} />}
     <Panel><div className="toolbar">
@@ -287,7 +322,7 @@ export default function CustomersPage() {
     </div>
       {isAdmin && optionsQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los vendedores del filtro. <Button variant="link" type="button" onClick={() => optionsQuery.refetch()}>Reintentar filtro</Button></p>}
       {isAdmin && resellersQuery.isError && <p className="error-text" role="alert">No se pudieron cargar los revendedores del filtro. <Button variant="link" type="button" onClick={() => resellersQuery.refetch()}>Reintentar revendedores</Button></p>}
-      {query.isLoading ? <EmptyState title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay clientes para mostrar" description="No se encontraron clientes con los filtros seleccionados." /> : <><DataTable columns={columns} rows={rows} /><div className="pagination"><span>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</span><div><Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button><Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= (query.data?.totalPages ?? 0)}>Siguiente</Button></div></div></>}
+      {query.isLoading ? <EmptyState state="loading" title="Cargando clientes" description="Consultando clientes a través de la API." /> : query.isError ? <EmptyState state="error" title="No se pudieron cargar los clientes" description={query.error.message} /> : rows.length === 0 ? <EmptyState title="No hay clientes para mostrar" description="No se encontraron clientes con los filtros seleccionados." /> : <><DataTable className="compact-list-table customers-list-table" columns={columns} rows={rows} /><Pagination summary={<>Página {page + 1} · {query.data?.totalElements ?? 0} clientes</>} onPrevious={() => setPage(page - 1)} onNext={() => setPage(page + 1)} previousDisabled={page === 0} nextDisabled={page + 1 >= (query.data?.totalPages ?? 0)} /></>}
     </Panel>
     {isAdmin && sellersQuery.isError && (showForm || formCustomer) && <p className="error-text" role="alert">No se pudieron cargar los vendedores. <Button variant="link" type="button" onClick={() => sellersQuery.refetch()}>Reintentar</Button></p>}
     {statusCustomer && canStatus && <ConfirmationDialog title={`¿Querés ${statusCustomer.status === 'ACTIVE' ? 'desactivar' : 'activar'} a ${statusCustomer.name}?`} description="Los pedidos y movimientos históricos se conservan." confirmLabel="Confirmar" confirmVariant={statusCustomer.status === 'ACTIVE' ? 'danger' : 'primary'} pending={actionSaving} error={actionError} onCancel={() => setStatusCustomer(undefined)} onConfirm={() => void changeStatus()} />}

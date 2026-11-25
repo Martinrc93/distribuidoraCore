@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { instanceStorageKey } from '../shared/appBase'
 import { getCurrentUserId } from '../shared/auth/permissions'
+import { commissionSettlementsPath } from '../features/admin/settingsPaths'
 
 export const operationLinks = [
   ['Resumen', '/dashboard', true],
@@ -10,6 +11,7 @@ export const operationLinks = [
   ['Compras', '/supplier-orders', true],
   ['Clientes', '/customers'],
   ['Gastos', '/expenses', true],
+  ['Liquidaciones', commissionSettlementsPath, true],
 ] as const
 
 type OperationPath = typeof operationLinks[number][1]

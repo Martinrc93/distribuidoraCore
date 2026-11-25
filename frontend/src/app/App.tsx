@@ -1,48 +1,69 @@
 import AppShell from './AppShell'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { lazy, useEffect, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { getAccessToken, login } from '../shared/api/client'
+import { getAccessToken, getLoginNotice, login, subscribeAuthChange } from '../shared/api/client'
 import { hasAuthority, hasPermission } from '../shared/auth/permissions'
 import { Button } from '../shared/components/Button'
+import { AuthPageLayout } from '../shared/components/AuthPageLayout'
+import { PasswordField } from '../shared/components/PasswordField'
 import { EmptyState } from '../shared/components/EmptyState'
 import { PageHeader } from '../shared/components/PageHeader'
 import { Panel } from '../shared/components/Panel'
-import DashboardPage from '../features/dashboard/DashboardPage'
-import CustomersPage from '../features/customers/CustomersPage'
-import ExpensesPage from '../features/expenses/ExpensesPage'
-import SuppliersPage from '../features/suppliers/SuppliersPage'
-import SupplierOrdersPage from '../features/purchasing/SupplierOrdersPage'
-import SupplierOrderCreatePage from '../features/purchasing/SupplierOrderCreatePage'
-import SupplierOrderDetailPage from '../features/purchasing/SupplierOrderDetailPage'
-import SupplierOrderRestockPage from '../features/purchasing/SupplierOrderRestockPage'
-import CustomerDetailPage from '../features/customers/CustomerDetailPage'
-import CustomerPurchasesPage from '../features/customers/CustomerPurchasesPage'
-import ProductsPage from '../features/products/ProductsPage'
-import ShrinkagesPage from '../features/inventory/ShrinkagesPage'
-import PriceListsPage from '../features/pricing/PriceListsPage'
-import CatalogAdminPage from '../features/catalog/CatalogAdminPage'
-import OrderCreatePage from '../features/orders/OrderCreatePage'
-import OrdersPage from '../features/orders/OrdersPage'
-import OrderDetailPage from '../features/orders/OrderDetailPage'
-import SalesPage from '../features/sales/SalesPage'
-import SoldProductsPage from '../features/sales/SoldProductsPage'
-import SellersPage from '../features/admin/SellersPage'
-import CreditLimitPage from '../features/admin/CreditLimitPage'
-import CommissionPlansPage from '../features/admin/CommissionPlansPage'
-import CommissionSettlementsPage from '../features/admin/CommissionSettlementsPage'
-import { ActivateUserPage, UsersPage } from '../features/admin/UsersPage'
-import AuditPage from '../features/admin/AuditPage'
-import ZonesPage from '../features/admin/ZonesPage'
-import AnalyticsDashboardPage from '../features/dashboard/AnalyticsDashboardPage'
-import RolesPage from '../features/admin/RolesPage'
+import { businessProfilePath, commissionPlansPagePath, commissionSettlementsPath, creditLimitPath, operationShortcutsPath, settingsPath } from '../features/admin/settingsPaths'
+import { RouteContent } from './RouteContent'
+
+const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'))
+const CustomersPage = lazy(() => import('../features/customers/CustomersPage'))
+const ExpensesPage = lazy(() => import('../features/expenses/ExpensesPage'))
+const SuppliersPage = lazy(() => import('../features/suppliers/SuppliersPage'))
+const SupplierOrdersPage = lazy(() => import('../features/purchasing/SupplierOrdersPage'))
+const SupplierOrderCreatePage = lazy(() => import('../features/purchasing/SupplierOrderCreatePage'))
+const SupplierOrderDetailPage = lazy(() => import('../features/purchasing/SupplierOrderDetailPage'))
+const SupplierOrderRestockPage = lazy(() => import('../features/purchasing/SupplierOrderRestockPage'))
+const CustomerDetailPage = lazy(() => import('../features/customers/CustomerDetailPage'))
+const CustomerPurchasesPage = lazy(() => import('../features/customers/CustomerPurchasesPage'))
+const ProductsPage = lazy(() => import('../features/products/ProductsPage'))
+const ShrinkagesPage = lazy(() => import('../features/inventory/ShrinkagesPage'))
+const PriceListsPage = lazy(() => import('../features/pricing/PriceListsPage'))
+const CatalogAdminPage = lazy(() => import('../features/catalog/CatalogAdminPage'))
+const OrderCreatePage = lazy(() => import('../features/orders/OrderCreatePage'))
+const OrdersPage = lazy(() => import('../features/orders/OrdersPage'))
+const OrderDetailPage = lazy(() => import('../features/orders/OrderDetailPage'))
+const SalesPage = lazy(() => import('../features/sales/SalesPage'))
+const SoldProductsPage = lazy(() => import('../features/sales/SoldProductsPage'))
+const SellersPage = lazy(() => import('../features/admin/SellersPage'))
+const SettingsPage = lazy(() => import('../features/admin/SettingsPage'))
+const BusinessProfilePage = lazy(() => import('../features/admin/BusinessProfilePage'))
+const CreditLimitPage = lazy(() => import('../features/admin/CreditLimitPage'))
+const OperationShortcutsPage = lazy(() => import('../features/admin/OperationShortcutsPage'))
+const CommissionPlansPage = lazy(() => import('../features/admin/CommissionPlansPage'))
+const CommissionSettlementsPage = lazy(() => import('../features/admin/CommissionSettlementsPage'))
+const AuditPage = lazy(() => import('../features/admin/AuditPage'))
+const ZonesPage = lazy(() => import('../features/admin/ZonesPage'))
+const AnalyticsDashboardPage = lazy(() => import('../features/dashboard/AnalyticsDashboardPage'))
+const RolesPage = lazy(() => import('../features/admin/RolesPage'))
+const ActivateUserPage = lazy(() => import('../features/admin/UsersPage').then(module => ({ default: module.ActivateUserPage })))
+const UsersPage = lazy(() => import('../features/admin/UsersPage').then(module => ({ default: module.UsersPage })))
 
 function RequireAuth() {
-  return getAccessToken() ? <Outlet /> : <Navigate to="/login" replace />
+  const token = useSyncExternalStore(subscribeAuthChange, getAccessToken)
+  const queryClient = useQueryClient()
+  useEffect(() => subscribeAuthChange(() => {
+    if (getAccessToken()) return
+    void queryClient.cancelQueries()
+    queryClient.clear()
+  }), [queryClient])
+  return token ? <Outlet /> : <Navigate to="/login" replace />
 }
 
 function RequireAdmin({ children }: { children: ReactNode }) {
   return hasAuthority('ADMIN_ALL') ? children : <Navigate to="/orders" replace />
+}
+
+function LegacyCommissionSettlements() {
+  const { search, hash } = useLocation()
+  return <Navigate to={{ pathname: commissionSettlementsPath, search, hash }} replace />
 }
 
 function RequireCustomerView() {
@@ -82,7 +103,24 @@ function LoginPage() {
     }
   }
 
-  return <main className="login-page"><Panel title="Ingresar" description="Usá un usuario creado en la base de datos.">{(location.state?.rolePermissionsUpdated === true || location.state?.userRoleUpdated === true) && <p className="success-text" role="status">{location.state?.userRoleUpdated ? 'El rol de tu usuario se actualizó. Volvé a ingresar para continuar.' : 'Los permisos de tu rol se guardaron. Volvé a ingresar para continuar con los permisos actualizados.'}</p>}<form className="login-form" onSubmit={submit}><label className="field"><span>Email</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label className="field"><span>Contraseña</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error-text" role="alert">{error}</p>}<Button fullWidth disabled={submitting}>{submitting ? 'Ingresando...' : 'Ingresar'}</Button></form></Panel></main>
+  const roleUpdated = location.state?.userRoleUpdated === true || getLoginNotice() === 'userRoleUpdated'
+  const permissionsUpdated = location.state?.rolePermissionsUpdated === true || getLoginNotice() === 'rolePermissionsUpdated'
+  return <AuthPageLayout>
+    <Panel title="Ingresar" description="Usá un usuario creado en la base de datos.">
+      {(roleUpdated || permissionsUpdated) && <p className="success-text" role="status">
+        {roleUpdated ? 'El rol de tu usuario se actualizó. Volvé a ingresar para continuar.' : 'Los permisos de tu rol se guardaron. Volvé a ingresar para continuar con los permisos actualizados.'}
+      </p>}
+      <form className="login-form" onSubmit={submit}>
+        <label className="field">
+          <span>Email</span>
+          <input className="input" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
+        </label>
+        <PasswordField label="Contraseña" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+        {error && <p className="error-text" role="alert">{error}</p>}
+        <Button fullWidth disabled={submitting}>{submitting ? 'Ingresando...' : 'Ingresar'}</Button>
+      </form>
+    </Panel>
+  </AuthPageLayout>
 }
 
 function PlaceholderPage({ title, description }: { title: string; description: string }) {
@@ -93,7 +131,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/activate" element={<ActivateUserPage />} />
+      <Route path="/activate" element={<RouteContent><ActivateUserPage /></RouteContent>} />
       <Route element={<RequireAuth />}>
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -111,6 +149,7 @@ export default function App() {
         <Route path="/supplier-orders/:orderId" element={<RequireAdmin><SupplierOrderDetailPage /></RequireAdmin>} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/expenses" element={<RequireAdmin><ExpensesPage /></RequireAdmin>} />
+        <Route path={commissionSettlementsPath} element={<RequireAdmin><CommissionSettlementsPage /></RequireAdmin>} />
         <Route path="/suppliers" element={<RequireAdmin><SuppliersPage /></RequireAdmin>} />
         <Route path="/customers/:customerId" element={<RequireCustomerView />} />
         <Route path="/customers/:customerId/purchases" element={<RequireReportsView back="/customers"><CustomerPurchasesPage /></RequireReportsView>} />
@@ -121,11 +160,14 @@ export default function App() {
         <Route path="/payments" element={<Navigate to="/orders" replace />} />
         <Route path="/admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         <Route path="/admin/roles" element={<RequireAdmin><RolesPage /></RequireAdmin>} />
-        <Route path="/admin/sellers" element={<SellersPage />} />
+        <Route path="/admin/sellers" element={<RequireAdmin><SellersPage /></RequireAdmin>} />
         <Route path="/admin/zones" element={<RequireAdmin><ZonesPage /></RequireAdmin>} />
-        <Route path="/admin/settings" element={<RequireAdmin><CreditLimitPage /></RequireAdmin>} />
-        <Route path="/admin/settings/commissions" element={<RequireAdmin><CommissionPlansPage /></RequireAdmin>} />
-        <Route path="/admin/settings/commissions/settlements" element={<RequireAdmin><CommissionSettlementsPage /></RequireAdmin>} />
+        <Route path={settingsPath} element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
+        <Route path={businessProfilePath} element={<RequireAdmin><BusinessProfilePage /></RequireAdmin>} />
+        <Route path={creditLimitPath} element={<RequireAdmin><CreditLimitPage /></RequireAdmin>} />
+        <Route path={commissionPlansPagePath} element={<RequireAdmin><CommissionPlansPage /></RequireAdmin>} />
+        <Route path={operationShortcutsPath} element={<RequireAdmin><OperationShortcutsPage /></RequireAdmin>} />
+        <Route path={`${commissionPlansPagePath}/settlements`} element={<RequireAdmin><LegacyCommissionSettlements /></RequireAdmin>} />
         <Route path="/admin/audit" element={<RequireAdmin><AuditPage /></RequireAdmin>} />
         <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." />} />
       </Route>

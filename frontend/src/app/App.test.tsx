@@ -1,9 +1,12 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, configure, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { businessLogoEndpoint } from '../shared/businessLogo'
 import App from './App'
+
+configure({ asyncUtilTimeout: 5_000 })
 
 function response(body: unknown) {
   return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
@@ -34,12 +37,12 @@ describe('App shell', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows the primary navigation and dashboard content', () => {
+  it('shows the primary navigation and dashboard content', async () => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL'] }))}.signature`)
     renderApp('/dashboard')
 
     expect(screen.getByRole('navigation', { name: /navegación principal/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /resumen operativo/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /resumen operativo/i })).toBeInTheDocument()
   })
 
   it.each([
@@ -83,6 +86,23 @@ describe('App shell', () => {
 
     expect(screen.getByRole('heading', { name: 'Ingresar' })).toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: /navegación principal/i })).not.toBeInTheDocument()
+  })
+
+  it('exposes display controls and toggles password visibility without submitting login', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(global, 'fetch')
+    renderApp('/login')
+
+    expect(screen.getByRole('button', { name: 'Agrandar el texto' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cambiar a modo oscuro' })).toBeInTheDocument()
+    const password = screen.getByLabelText('Contraseña', { selector: 'input' })
+    await user.type(password, 'contraseña-de-prueba')
+    await user.click(screen.getByRole('button', { name: 'Mostrar contraseña' }))
+    expect(password).toHaveAttribute('type', 'text')
+    await user.click(screen.getByRole('button', { name: 'Ocultar contraseña' }))
+    expect(password).toHaveAttribute('type', 'password')
+    expect(password).toHaveValue('contraseña-de-prueba')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('hides expenses and blocks direct access for sellers', async () => {
@@ -155,17 +175,21 @@ describe('App shell', () => {
 
   it('opens the assigned customer list for sellers without loading administration data', async () => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ORDER_CREATE'] }))}.signature`)
-    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [{ id: 'own-customer', name: 'Assigned customer', seller: 'Current seller', balance: 0, status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }))
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => String(input) === businessLogoEndpoint
+      ? response({ content: null })
+      : response({ content: [{ id: 'own-customer', name: 'Assigned customer', seller: 'Current seller', balance: 0, status: 'ACTIVE' }], page: 0, size: 20, totalElements: 1, totalPages: 1 }))
     renderApp('/customers')
     expect(await screen.findByRole('heading', { name: 'Clientes' })).toBeInTheDocument()
     expect(await screen.findByText('Assigned customer')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Clientes' })).toHaveClass('active')
     expect(screen.queryByRole('button', { name: '+ Nuevo cliente' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Ver cliente Assigned customer' })).not.toBeInTheDocument()
-    expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith('/api/customers?'))).toBe(true)
+    const requests = fetchMock.mock.calls.map(([input]) => String(input))
+    expect(requests).toContain(businessLogoEndpoint)
+    expect(requests.filter((path) => path !== businessLogoEndpoint).every((path) => path.startsWith('/api/customers?'))).toBe(true)
   })
 
-  it.each(['/dashboard', '/admin/users', '/admin/zones', '/admin/audit', '/admin/roles', '/customers/customer-1', '/products', '/products/shrinkages', '/catalog', '/price-lists', '/suppliers', '/supplier-orders', '/supplier-orders/new', '/supplier-orders/order-1', '/supplier-orders/restock?productId=p1'])('keeps %s restricted to administrators', async (route) => {
+  it.each(['/dashboard', '/admin/users', '/admin/roles', '/admin/sellers', '/admin/zones', '/admin/audit', '/customers/customer-1', '/products', '/products/shrinkages', '/catalog', '/price-lists', '/suppliers', '/supplier-orders', '/supplier-orders/new', '/supplier-orders/order-1', '/supplier-orders/restock?productId=p1'])('keeps %s restricted to administrators', async (route) => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['SELLER'] }))}.signature`)
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }))
     renderApp(route)
@@ -173,11 +197,12 @@ describe('App shell', () => {
     expect(await screen.findByRole('heading', { name: 'Pedidos' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Roles y permisos' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Vendedores' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
     for (const name of ['Stock', 'Marcas y categorías', 'Listas de precios']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
-    expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/users', '/api/zones', '/api/audit', '/api/customers', '/api/products', '/api/inventory', '/api/brands', '/api/categories', '/api/pricing', '/api/suppliers', '/api/supplier-orders'].some((path) => String(input).split('?')[0].startsWith(path)))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => ['/api/dashboard', '/api/users', '/api/sellers', '/api/zones', '/api/audit', '/api/customers', '/api/products', '/api/inventory', '/api/brands', '/api/categories', '/api/pricing', '/api/suppliers', '/api/supplier-orders'].some((path) => String(input).split('?')[0].startsWith(path)))).toBe(false)
   })
 
   it('hides administrative navigation when the session has no readable admin authority', () => {

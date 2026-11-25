@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AnalyticsDashboardPage, { comparison } from './AnalyticsDashboardPage'
 import { analyticsReport as report } from '../../test/fixtures/analyticsDashboard'
-import { presetRange, rangeError, todayInArgentina } from './dashboardDates'
+import { presetRange, rangeError, todayInArgentina } from '../../shared/dates'
 
 function renderDashboard(entry = '/analytics?dateMin=01%2F09%2F2026&dateMax=30%2F09%2F2026') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

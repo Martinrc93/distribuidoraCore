@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../../shared/components/Button'
+import { instanceStorageKey } from '../../shared/appBase'
 
-const storageKey = 'distribuidora.orders.navigation'
+const storageKey = instanceStorageKey('distribuidora.orders.navigation')
 
 /** Orders visible in the list (current page and filters), so the detail can move between them. */
 export type OrderNavigation = { ids: string[]; numbers: string[]; returnTo: string }

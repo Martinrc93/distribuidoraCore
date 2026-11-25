@@ -61,7 +61,7 @@ describe('SuppliersPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo guardar el proveedor.')
     expect(screen.getByLabelText('Nombre')).toHaveValue('North supplier changed')
     await user.click(screen.getByRole('button', { name: 'Cancelar' }))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '¿Descartar los cambios?' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Seguir editando' }))
     expect(screen.getByLabelText('Nombre')).toHaveValue('North supplier changed')
     await user.click(screen.getByRole('button', { name: 'Cancelar' }))

@@ -1,3 +1,5 @@
+import { createIdempotencyKey } from '../../shared/api/createIdempotencyKey'
+import { invalidateDomains, queryKeys } from '../../shared/api/queryKeys'
 import { CurrencyText } from '../../shared/components/CurrencyText'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,13 +12,14 @@ import { SupplierSelect } from '../../shared/components/EntitySelect'
 import { Panel } from '../../shared/components/Panel'
 import { SearchableSelect } from '../../shared/components/SearchableSelect'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
-import { displayDate, parseDate, todayInArgentina } from '../dashboard/dashboardDates'
+import { displayDate, parseDate, todayInArgentina } from '../../shared/dates'
+import { formatNumber } from '../../shared/format'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
-import { decimal, isHalfUnit, purchaseProductsKey, suggestedRestockQuantity, supplierOrdersKey, suppliersOptionsKey, type PreviousSupplierOrder, type PurchaseProduct, type Supplier, type SupplierOrderDetail, type SupplierOrderResult } from './supplierOrders'
+import { decimal, isHalfUnit, purchaseProductsKey, suggestedRestockQuantity, suppliersOptionsKey, type PreviousSupplierOrder, type PurchaseProduct, type Supplier, type SupplierOrderDetail, type SupplierOrderResult } from './supplierOrders'
 
 type DraftLine = { productId: string; name: string; quantity: string; unitCost?: string }
 type RestockProduct = PurchaseProduct & { stock: number; suppliers: Supplier[] }
-type Payload = { supplierId: string; orderDate: string; lines: Array<{ productId: string; quantity: number; unitCost?: number }>; idempotencyKey: string; confirm: boolean }
+type Payload = { supplierId: string; orderDate: string; lines: Array<{ productId: string; quantity: number; unitCost?: number }>; idempotencyKey: string }
 
 function formatDraftCost(cost?: number | null) {
   return cost == null ? undefined : String(cost).replace('.', ',')
@@ -28,8 +31,8 @@ function invalidUnitCost(value: string) {
 }
 
 /**
- * Creates a purchase (as draft or confirmed) or edits an existing one when `initial` is given.
- * Confirming adds the quantities to stock; editing a confirmed purchase moves stock by the difference.
+ * Creates a pending purchase or edits an existing one when `initial` is given.
+ * Editing a confirmed purchase moves stock by the difference.
  */
 type Props = { onClose: () => void; onSaved: (result: SupplierOrderResult) => void } & (
   { initial?: SupplierOrderDetail; restockProductId?: never } | { initial?: never; restockProductId: string }
@@ -38,12 +41,11 @@ type Props = { onClose: () => void; onSaved: (result: SupplierOrderResult) => vo
 export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId }: Props) {
   const queryClient = useQueryClient()
   const formRef = useRef<HTMLFormElement>(null)
-  const confirmIntent = useRef(false)
   const editing = Boolean(initial)
   const title = initial ? `Editar compra ${initial.order.number}` : 'Nueva compra'
   const initialStatus = initial?.order.status
-  const suppliers = useQuery({ queryKey: suppliersOptionsKey, queryFn: () => apiGetAllPages<Supplier>('/api/suppliers?page=0&size=100'), retry: false })
-  const products = useQuery({ queryKey: purchaseProductsKey, queryFn: () => apiGetAllPages<PurchaseProduct>('/api/products?page=0&size=100&includeStock=true'), retry: false })
+  const suppliers = useQuery({ queryKey: suppliersOptionsKey, queryFn: ({ signal }) => apiGetAllPages<Supplier>('/api/suppliers?page=0&size=100', signal), retry: false })
+  const products = useQuery({ queryKey: purchaseProductsKey, queryFn: ({ signal }) => apiGetAllPages<PurchaseProduct>('/api/products?page=0&size=100&includeStock=true', signal), retry: false })
   const [supplierId, setSupplierId] = useState(initial?.order.supplierId ?? '')
   const [orderDate, setOrderDate] = useState(() => displayDate(initial?.order.date ?? todayInArgentina()))
   const [lines, setLines] = useState<DraftLine[]>(() => (initial?.items ?? []).map((item) => ({
@@ -57,7 +59,7 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
   const [loadingPrevious, setLoadingPrevious] = useState(false)
   const [replacement, setReplacement] = useState<PreviousSupplierOrder>()
   const [attempt, setAttempt] = useState<Payload>()
-  const previous = useQuery({ queryKey: ['supplier-orders-last', supplierId], queryFn: ({ signal }) => apiGet<PreviousSupplierOrder>(`/api/supplier-orders/supplier/${supplierId}/last-order`, signal), enabled: Boolean(supplierId), retry: false })
+  const previous = useQuery({ queryKey: queryKeys.purchasing.last(supplierId), queryFn: ({ signal }) => apiGet<PreviousSupplierOrder>(`/api/supplier-orders/supplier/${supplierId}/last-order`, signal), enabled: Boolean(supplierId), retry: false })
   const busy = saving || loadingPrevious
   const waitingForRestock = Boolean(restockProductId && restockProduct === undefined)
   const activeProducts = (products.data?.content ?? []).filter((product) => product.status === 'ACTIVE')
@@ -164,12 +166,10 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
     if (invalidCost) {
       setError(`Ingresa un costo unitario válido para ${invalidCost.name}, igual o mayor a cero y con hasta cuatro decimales.`); return
     }
-    const confirm = !editing && confirmIntent.current
-    const sameAttempt = attempt && attempt.confirm === confirm
-    const payload = sameAttempt ? attempt : {
+    const payload = attempt ?? {
       supplierId, orderDate: isoDate,
       lines: lines.map((line) => ({ productId: line.productId, quantity: decimal(line.quantity), unitCost: line.unitCost?.trim() ? decimal(line.unitCost) : undefined })),
-      idempotencyKey: crypto.randomUUID(), confirm,
+      idempotencyKey: createIdempotencyKey(),
     }
     setAttempt(payload)
     setSaving(true)
@@ -185,15 +185,7 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
         })
           .then((detail) => ({ id: detail.order.id, number: detail.order.number, total: detail.order.total, status: detail.order.status }))
         : await apiPost<SupplierOrderResult>('/api/supplier-orders', payload)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: supplierOrdersKey }),
-        queryClient.invalidateQueries({ queryKey: ['supplier-orders-last', supplierId] }),
-        queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
-          const key = String(queryKey[0])
-          return key.startsWith('/api/products') || key.startsWith('/api/inventory')
-            || key === 'dashboard' || key === 'order-create-products'
-        } }),
-      ])
+      await invalidateDomains(queryClient, 'purchasing', 'stock', 'reports')
       onSaved(result)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo registrar la compra.') }
     finally { setSaving(false) }
@@ -214,27 +206,27 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
   }
 
   return <>
-    <Panel title={initial || restockProductId ? title : 'Datos de la compra'} description={!initial ? 'Guardala como borrador o confirmala: al confirmar, las cantidades se suman al stock.' : initialStatus === 'CONFIRMED' ? 'La compra está confirmada: al guardar, el stock se ajusta por la diferencia de cantidades.' : initialStatus === 'LEGACY' ? 'Compra registrada antes de que las compras movieran stock: editarla no cambia el stock.' : 'Borrador: los cambios no mueven stock hasta confirmar la compra.'}>
+    <Panel title={initial || restockProductId ? title : 'Datos de la compra'} description={!initial ? 'La compra quedará pendiente. Las cantidades se sumarán al stock al confirmarla.' : initialStatus === 'CONFIRMED' ? 'La compra está confirmada: al guardar, el stock se ajusta por la diferencia de cantidades.' : initialStatus === 'LEGACY' ? 'Compra registrada antes de que las compras movieran stock: editarla no cambia el stock.' : 'Las cantidades se sumarán al stock al confirmar la compra.'}>
       {restockProduct && <p className="helper-text mb-[18px] [overflow-wrap:anywhere]">
-        Stock de {restockProduct.name} al abrir: {new Intl.NumberFormat('es-AR').format(restockProduct.stock)}.
+        Stock de {restockProduct.name} al abrir: {formatNumber(restockProduct.stock)}.
       </p>}
       <form ref={formRef} onSubmit={submit} aria-label={title} aria-busy={busy}>
         <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0">
           <div className="form-grid items-end mb-[18px]">
             <SupplierSelect mode="selection" label="Proveedor" options={suppliers.data?.content ?? []} value={supplierId} onChange={(id) => { setSupplierId(id); setProductId(''); changed() }} loading={suppliers.isLoading} disabled={suppliers.isError} required />
-            <OrderDateFilter id="supplier-order-date" label="Fecha de la compra" value={orderDate} isoValue={isoDate ?? ''} invalid={Boolean(orderDate && !isoDate)} required disabled={busy} onChange={(value) => { setOrderDate(value); changed() }} />
+            <div className="w-full max-w-[200px]"><OrderDateFilter id="supplier-order-date" label="Fecha de la compra" value={orderDate} isoValue={isoDate ?? ''} invalid={Boolean(orderDate && !isoDate)} required disabled={busy} onChange={(value) => { setOrderDate(value); changed() }} /></div>
           </div>
           {suppliers.isError && <p className="error-text" role="alert">No se pudieron cargar los proveedores. <Button type="button" variant="link" onClick={() => void suppliers.refetch()}>Reintentar proveedores</Button></p>}
           {restockProduct && restockProduct.suppliers.length > 1 && <p className="helper-text [overflow-wrap:anywhere]">
             Proveedores asociados a {restockProduct.name}: {restockProduct.suppliers.map((supplier) => supplier.name).join(', ')}.
           </p>}
           <div className="page-actions mb-[18px]"><Button type="button" variant="secondary" disabled={!supplierId || previous.isFetching || previous.isError || !previous.data?.available} onClick={() => void loadPrevious()}>{loadingPrevious ? 'Cargando compra...' : 'Cargar compra anterior'}</Button><Button type="button" variant="secondary" disabled={!supplierId || products.isLoading || !restockCandidates.length} title={supplierId && !products.isLoading && !restockCandidates.length ? 'No hay productos sin stock para agregar.' : undefined} onClick={addRestock}>{`Agregar productos sin stock${supplierId && restockCandidates.length ? ` (${restockCandidates.length})` : ''}`}</Button></div>
-          {supplierId && previous.isFetching && <p className="helper-text" role="status">Consultando el última compra a este proveedor...</p>}
+          {supplierId && previous.isFetching && <p className="helper-text" role="status">Consultando la última compra a este proveedor...</p>}
           {supplierId && previous.isError && <p className="error-text" role="alert">No se pudo consultar la compra anterior. <Button type="button" variant="link" onClick={() => void previous.refetch()}>Reintentar compra anterior</Button></p>}
           {supplierId && previous.isSuccess && !previous.data?.available && <p className="helper-text">Este proveedor no tiene compras anteriores.</p>}
-          <div className="product-picker">
+          <div className="product-picker [@media(min-width:761px)]:grid-cols-[minmax(0,_1fr)_140px_auto]">
             <SearchableSelect label="Producto" options={activeProducts.filter((product) => !lines.some((line) => line.productId === product.id))} value={productId} onChange={(id) => { setProductId(id); setError('') }} allLabel="Seleccionar producto..." unavailableLabel="Producto no disponible" loadingLabel="Cargando productos…" loading={products.isLoading} disabled={!supplierId || products.isError} fullWidth />
-            <label className="field"><span>Cantidad</span><input className="input" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
+            <label className="field w-full max-w-[140px]"><span>Cantidad</span><input className="input" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
             <Button type="button" variant="secondary" disabled={!productId} onClick={addProduct}>Agregar producto</Button>
           </div>
           {products.isError && <p className="error-text" role="alert">No se pudieron cargar los productos. <Button type="button" variant="link" onClick={() => void products.refetch()}>Reintentar productos</Button></p>}
@@ -252,12 +244,7 @@ export function SupplierOrderForm({ onClose, onSaved, initial, restockProductId 
         {error && <p className="error-text" role="alert"><CurrencyText>{error}</CurrencyText></p>}
         <div className="page-actions mt-[18px]">
           <Button type="button" variant="secondary" disabled={busy} onClick={requestDiscard}>Cancelar</Button>
-          {editing
-            ? <Button type="submit" disabled={busy || suppliers.isLoading || suppliers.isError || !supplierId || !lines.length || !isoDate}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
-            : <>
-              <Button type="submit" variant="secondary" onClick={() => { confirmIntent.current = false }} disabled={busy || suppliers.isLoading || suppliers.isError || !supplierId || !lines.length || !isoDate}>{saving && !confirmIntent.current ? 'Guardando...' : 'Guardar borrador'}</Button>
-              <Button type="submit" onClick={() => { confirmIntent.current = true }} disabled={busy || suppliers.isLoading || suppliers.isError || !supplierId || !lines.length || !isoDate}>{saving && confirmIntent.current ? 'Confirmando...' : 'Confirmar compra'}</Button>
-            </>}
+          <Button type="submit" disabled={busy || suppliers.isLoading || suppliers.isError || !supplierId || !lines.length || !isoDate}>{saving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Guardar compra'}</Button>
         </div>
       </form>
     </Panel>

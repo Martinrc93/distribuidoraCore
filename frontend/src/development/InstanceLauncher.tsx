@@ -12,7 +12,7 @@ export function InstanceLauncher() {
     <div className="instance-launcher-options">
       {['A', 'B'].map((instance) => <Panel key={instance} title={`Sistema ${instance}`}>
         <p className="instance-launcher-description">Accede al sistema {instance} para trabajar con sus datos.</p>
-        <Button href={`/${instance.toLowerCase()}/`} fullWidth>Abrir sistema {instance}</Button>
+        <Button href={`/${instance.toLowerCase()}/`} external fullWidth>Abrir sistema {instance}</Button>
       </Panel>)}
     </div>
   </main>

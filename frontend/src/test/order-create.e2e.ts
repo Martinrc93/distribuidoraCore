@@ -89,18 +89,17 @@ test('price tables show product names without a product code column', async ({ p
   await expect(table.getByRole('columnheader', { includeHidden: true })).toHaveCount(4)
   await expect(table.getByRole('columnheader', { name: 'SKU', includeHidden: true })).toHaveCount(0)
   await expect(table.getByRole('button', { name: 'Programar precio de Producto Demo 001' })).toBeVisible()
+  await expect(table.getByText('30/09/2026', { exact: true })).toBeVisible()
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
-  if (testInfo.project.name.startsWith('desktop')) {
-    expect(await table.getByRole('button', { name: 'Ver historial de precios de Producto Demo 001' }).evaluate((button) => {
-      const box = button.getBoundingClientRect()
-      return Boolean(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('button'))
-    })).toBe(true)
+  if ((page.viewportSize()?.width ?? 0) > 760) {
+    await table.getByRole('button', { name: 'Ver historial de precios de Producto Demo 001' }).click({ trial: true })
   }
   await page.screenshot({ path: testInfo.outputPath('product-prices.png'), fullPage: true })
 })
 
 test('previous orders are disabled without history and admins choose whether to copy discounts', async ({ page }, testInfo) => {
+  const isDesktop = (page.viewportSize()?.width ?? 0) > 1050
   await page.addInitScript(() => {
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL', 'ORDER_CREATE'] }))}.signature`)
   })
@@ -146,11 +145,9 @@ test('previous orders are disabled without history and admins choose whether to 
   await page.getByRole('option', { name: 'Cliente con historial', exact: true }).click()
   await expect(productSearch).toBeFocused()
   await expect(load).toBeEnabled()
-  if (testInfo.project.name.startsWith('desktop')) {
-    const boxes = await Promise.all([page.getByRole('combobox', { name: 'Cliente', exact: true }), page.getByLabel('Vendedor', { exact: true }), page.getByLabel('Lista de precios', { exact: true }), load].map((element) => element.boundingBox()))
-    const bottom = boxes[0]!.y + boxes[0]!.height
-    for (const box of boxes) expect(Math.abs(box!.y + box!.height - bottom)).toBeLessThanOrEqual(1)
-    expect(boxes[3]!.x).toBeGreaterThan(boxes[2]!.x)
+  if (isDesktop) {
+    const [customer, previous] = await Promise.all([customerSearch.boundingBox(), load.boundingBox()])
+    expect(previous!.y).toBeLessThan(customer!.y)
   }
   await load.click()
   const dialog = page.getByRole('dialog', { name: 'El pedido anterior tiene descuentos' })
@@ -190,8 +187,9 @@ test('previous orders are disabled without history and admins choose whether to 
 })
 
 test('new orders select the customer list and confirm without collecting payment', async ({ page }, testInfo) => {
+  const isDesktop = (page.viewportSize()?.width ?? 0) > 1050
   await page.addInitScript(() => {
-    const token = `header.${btoa(JSON.stringify({ authorities: ['ADMIN_ALL', 'ORDER_CREATE'] }))}.signature`
+    const token = `header.${btoa(JSON.stringify({ sub: 'order-creator', authorities: ['ADMIN_ALL', 'ORDER_CREATE'] }))}.signature`
     sessionStorage.setItem('distribuidora.accessToken', token)
   })
   let confirmed: Record<string, unknown> | undefined
@@ -231,6 +229,44 @@ test('new orders select the customer list and confirm without collecting payment
   const orderDate = page.getByLabel('Fecha del pedido', { exact: true })
   const today = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
   await expect(orderDate).toHaveValue(today)
+  await expect(page.getByText('Borrador', { exact: true })).toHaveCount(0)
+  await page.evaluate(() => document.fonts.ready)
+  const fields = [
+    page.getByRole('combobox', { name: 'Cliente', exact: true }),
+    orderDate,
+    page.getByRole('combobox', { name: 'Vendedor', exact: true }),
+    page.getByLabel('Lista de precios', { exact: true }),
+  ]
+  await expect(fields[2]).toHaveValue('Del cliente')
+  const measureFields = async () => (await Promise.all(fields.map((field) => field.boundingBox()))).map((box) => box!)
+  const boxes = await measureFields()
+  const [customerBox, dateBox, sellerBox, priceListBox] = boxes
+  expect(await page.locator('.order-create-conditions .field').evaluateAll(fields => fields.map(field => getComputedStyle(field).rowGap)))
+    .toEqual(['4px', '4px', '4px', '4px'])
+  expect(customerBox.width).toBeGreaterThan(priceListBox.width)
+  expect(priceListBox.width).toBeGreaterThan(sellerBox.width)
+  expect(dateBox.width).toBeGreaterThan(105)
+  expect(dateBox.width).toBeLessThan(135)
+  if ((page.viewportSize()?.width ?? 0) > 760) {
+    const expectSingleRow = (fields: Awaited<ReturnType<typeof measureFields>>, gap: number) => {
+      fields.slice(1).forEach((field, index) => {
+        const previous = fields[index]
+        expect(field.y).toBe(fields[0].y)
+        expect(field.x - (previous.x + previous.width)).toBeCloseTo(gap, 1)
+      })
+    }
+    expectSingleRow(boxes, 8)
+    await page.getByRole('button', { name: 'Agrandar el texto' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-text-size', 'large')
+    const largeBoxes = await measureFields()
+    expectSingleRow(largeBoxes, 9)
+    expect(largeBoxes[1].width / dateBox.width).toBeCloseTo(1.125, 2)
+    await page.getByRole('button', { name: 'Usar texto de tamaño normal' }).click()
+  } else {
+    expect(dateBox.y).toBeGreaterThan(customerBox.y + customerBox.height)
+    expect(sellerBox.y).toBeGreaterThan(dateBox.y + dateBox.height)
+    expect(priceListBox.y).toBeGreaterThan(sellerBox.y + sellerBox.height)
+  }
   await orderDate.click()
   const calendar = page.getByRole('dialog')
   await expect(calendar).toBeVisible()
@@ -268,7 +304,7 @@ test('new orders select the customer list and confirm without collecting payment
   await productOption.click()
   await expect(page.getByLabel('Precio', { exact: true })).toHaveAttribute('placeholder', 'Consultando...')
   await expect(page.getByRole('button', { name: 'Agregar producto', exact: true })).toBeDisabled()
-  if (testInfo.project.name.startsWith('desktop')) {
+  if (isDesktop) {
     const boxes = await Promise.all([
       page.getByRole('combobox', { name: 'Producto', exact: true }),
       page.getByLabel('Precio', { exact: true }),
@@ -276,8 +312,11 @@ test('new orders select the customer list and confirm without collecting payment
       page.getByLabel('Descuento', { exact: true }),
       page.getByRole('button', { name: 'Agregar producto', exact: true }),
     ].map((control) => control.boundingBox()))
-    const bottom = boxes[0]!.y + boxes[0]!.height
-    for (const box of boxes) expect(Math.abs(box!.y + box!.height - bottom)).toBeLessThanOrEqual(1)
+    const [product, price, ...remaining] = boxes.map(box => box!)
+    expect(price.y).toBeGreaterThan(product.y + product.height)
+    expect(product.width).toBeGreaterThan(400)
+    const bottom = price.y + price.height
+    for (const box of remaining) expect(Math.abs(box.y + box.height - bottom)).toBeLessThanOrEqual(1)
   }
   await page.screenshot({ path: testInfo.outputPath('price-loading.png'), fullPage: true })
   releasePrice()
@@ -297,7 +336,7 @@ test('new orders select the customer list and confirm without collecting payment
     expect(width).toBeLessThanOrEqual(60)
     expect(width).toBeGreaterThan(40)
   }
-  if (testInfo.project.name.startsWith('desktop')) {
+  if (isDesktop) {
     const controls = [
       page.getByRole('combobox', { name: 'Producto', exact: true }),
       page.getByLabel('Precio', { exact: true }),
@@ -306,8 +345,11 @@ test('new orders select the customer list and confirm without collecting payment
       page.getByRole('button', { name: 'Agregar producto', exact: true }),
     ]
     const boxes = await Promise.all(controls.map((control) => control.boundingBox()))
-    const bottom = boxes[0]!.y + boxes[0]!.height
-    for (const box of boxes) expect(Math.abs(box!.y + box!.height - bottom)).toBeLessThanOrEqual(1)
+    const [product, price, ...remaining] = boxes.map(box => box!)
+    expect(price.y).toBeGreaterThan(product.y + product.height)
+    expect(product.width).toBeGreaterThan(400)
+    const bottom = price.y + price.height
+    for (const box of remaining) expect(Math.abs(box.y + box.height - bottom)).toBeLessThanOrEqual(1)
   }
   await page.screenshot({ path: testInfo.outputPath('selected-product.png'), fullPage: true })
   await page.getByRole('button', { name: 'Agregar producto' }).click()
@@ -328,7 +370,7 @@ test('new orders select the customer list and confirm without collecting payment
   const removeBox = (await removeButton.boundingBox())!
   expect(removeBox.width).toBe(38)
   expect(removeBox.height).toBe(38)
-  if (testInfo.project.name.startsWith('desktop')) {
+  if (isDesktop) {
     const controls = [
       page.locator('.order-line-product'),
       page.getByLabel('Cantidad de Harina'),
@@ -343,7 +385,28 @@ test('new orders select the customer list and confirm without collecting payment
     for (let index = 1; index < boxes.length; index += 1) expect(boxes[index]!.x).toBeGreaterThan(boxes[index - 1]!.x)
   }
   await expect(page.locator('.total-value')).toContainText('225,00')
-  await page.getByLabel('Descuento general (%)', { exact: true }).fill('10')
+  const discount = page.getByLabel('Descuento general (%)', { exact: true })
+  const increase = page.getByRole('button', { name: 'Aumentar descuento general' })
+  const decrease = page.getByRole('button', { name: 'Disminuir descuento general' })
+  await expect(decrease).toBeDisabled()
+  const [discountBox, upBox, downBox] = await Promise.all([discount.boundingBox(), increase.boundingBox(), decrease.boundingBox()])
+  expect(upBox!.x + upBox!.width).toBeLessThan(discountBox!.x)
+  expect(downBox!.x).toBe(upBox!.x)
+  expect(downBox!.y).toBeGreaterThan(upBox!.y)
+  await discount.fill('9,0001')
+  await discount.click()
+  expect(await discount.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([0, 6])
+  await increase.click()
+  await expect(discount).toHaveValue('10,0001')
+  await decrease.click()
+  await expect(discount).toHaveValue('9,0001')
+  await discount.fill('99,5')
+  await increase.click()
+  await expect(discount).toHaveValue('100')
+  await expect(increase).toBeDisabled()
+  await discount.press('ArrowDown')
+  await expect(discount).toHaveValue('99')
+  await discount.fill('10')
   await expect(page.locator('.total-value')).toContainText('202,50')
   await expect(page.locator('.order-account-balance')).toContainText('1.000,00')
   expect((await page.locator('.order-account').boundingBox())!.y).toBeGreaterThan((await page.locator('.order-lines').boundingBox())!.y)
@@ -362,6 +425,18 @@ test('new orders select the customer list and confirm without collecting payment
   await expect(page.getByText('El importe queda pendiente en la cuenta corriente del cliente.')).toHaveCount(0)
   const totalBox = (await page.locator('.order-checkout-total').boundingBox())!
   const confirmBox = (await page.getByRole('button', { name: 'Confirmar pedido', exact: true }).boundingBox())!
+  const conditionsBox = (await page.getByRole('region', { name: 'Cliente y condiciones' }).boundingBox())!
+  const productsBox = (await page.getByRole('region', { name: 'Productos' }).boundingBox())!
+  const summaryBox = (await page.getByRole('complementary', { name: 'Resumen del pedido' }).boundingBox())!
+  expect(productsBox.y).toBeGreaterThan(conditionsBox.y + conditionsBox.height)
+  if (isDesktop) {
+    expect(Math.abs(conditionsBox.y - summaryBox.y)).toBeLessThanOrEqual(1)
+    expect(summaryBox.x).toBeGreaterThan(productsBox.x + productsBox.width)
+  } else {
+    expect(Math.abs(conditionsBox.x - summaryBox.x)).toBeLessThanOrEqual(1)
+    expect(summaryBox.y).toBeGreaterThan(productsBox.y + productsBox.height)
+  }
+  await expect(page.getByText('1 producto · 2 unidades')).toBeVisible()
   expect(Math.abs(confirmBox.x - totalBox.x)).toBeLessThanOrEqual(1)
   expect(Math.abs(confirmBox.width - totalBox.width)).toBeLessThanOrEqual(1)
   expect(confirmBox.y - (totalBox.y + totalBox.height)).toBeLessThanOrEqual(15)
@@ -369,6 +444,13 @@ test('new orders select the customer list and confirm without collecting payment
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
   await page.screenshot({ path: testInfo.outputPath('new-order.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Cambiar a modo oscuro' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.screenshot({ path: testInfo.outputPath('new-order-dark.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Guardar borrador' }).click()
+  await expect(page.getByText('Borrador guardado en este navegador.')).toBeVisible()
+  expect(confirmed).toBeUndefined()
   await productInput.focus()
   await page.keyboard.press('Enter')
   expect(confirmed).toBeUndefined()

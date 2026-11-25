@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { apiGet, apiPost, apiPut, ApiError } from '../../shared/api/client'
 import { apiGetAllPages } from '../../shared/api/pagination'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { Button } from '../../shared/components/Button'
 import { FormModal } from '../../shared/components/FormModal'
 import { Panel } from '../../shared/components/Panel'
@@ -23,8 +24,8 @@ const productsPath = '/api/products?page=0&size=100&includeStock=false'
 function RuleTarget({ rule, busy, onChange }: { rule: RuleDraft; busy: boolean; onChange: (id: string) => void }) {
   const path = rule.scope === 'BRAND' ? '/api/brands' : rule.scope === 'CATEGORY' ? '/api/categories' : productsPath
   const options = useQuery({
-    queryKey: ['commission-rule-options', path],
-    queryFn: async () => path === productsPath ? (await apiGetAllPages<Option>(path)).content : apiGet<Option[]>(path),
+    queryKey: queryKeys.commissions.ruleOptions(path),
+    queryFn: async ({ signal }) => path === productsPath ? (await apiGetAllPages<Option>(path, signal)).content : apiGet<Option[]>(path, signal),
   })
 
   return <div className="min-w-0">

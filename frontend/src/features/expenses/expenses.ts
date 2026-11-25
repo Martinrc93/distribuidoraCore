@@ -1,11 +1,12 @@
 import type { TableColumn } from '../../shared/components/DataTable'
-import { businessTimeZone } from '../dashboard/dashboardDates'
+import { formatBusinessDateTimeShort } from '../../shared/dates'
+import { formatMoney } from '../../shared/format'
 
 export const expenseTypes = {
   PETTY_CASH: 'Caja chica',
-  OTHER: 'Otros',
-  SERVICES: 'Servicios',
   FUEL: 'Combustible',
+  SERVICES: 'Servicios',
+  OTHER: 'Otros',
 }
 
 export type Expense = {
@@ -16,8 +17,7 @@ export type Expense = {
   createdAt: string
 }
 
-export const expenseMoney = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' })
-const expenseDate = new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimeZone })
+export const expenseMoney = { format: (value: unknown) => formatMoney(value, 2) }
 
 export const expenseColumns: TableColumn[] = [
   { key: 'date', label: 'Fecha de carga' },
@@ -26,12 +26,16 @@ export const expenseColumns: TableColumn[] = [
   { key: 'observation', label: 'Observación' },
 ]
 
-export function expenseRows(entries: Expense[]) {
-  return entries.map((entry) => ({
+export function expenseRow(entry: Expense) {
+  return {
     id: entry.id,
-    date: expenseDate.format(new Date(entry.createdAt)),
+    date: formatBusinessDateTimeShort(entry.createdAt),
     type: expenseTypes[entry.type],
     amount: expenseMoney.format(entry.amount),
     observation: entry.observation ?? '—',
-  }))
+  }
+}
+
+export function expenseRows(entries: Expense[]) {
+  return entries.map(expenseRow)
 }

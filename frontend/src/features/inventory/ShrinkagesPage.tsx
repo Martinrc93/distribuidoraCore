@@ -1,4 +1,6 @@
+import { Pagination } from '../../shared/components/Pagination'
 import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { useSearchParams } from 'react-router-dom'
 import { apiGet, type ApiPage } from '../../shared/api/client'
 import { Button } from '../../shared/components/Button'
@@ -7,14 +9,14 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { useUrlListState } from '../../shared/useUrlListState'
-import { businessTimeZone, parseDate } from '../dashboard/dashboardDates'
+import { formatBusinessDateTime, parseDate } from '../../shared/dates'
+import { formatNumber } from '../../shared/format'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 
 type Entry = { id: string; product: string; date: string; quantity: number; reason: string }
 type Report = { totalQuantity: number; movements: ApiPage<Entry> }
 
-const dateTime = new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short', timeZone: businessTimeZone })
-const units = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
+const units = { format: (value: number) => formatNumber(value, 2) }
 const columns: TableColumn[] = [
   { key: 'date', label: 'Día y horario' },
   { key: 'product', label: 'Producto', emphasis: true, render: (value) => <span className="[overflow-wrap:anywhere]">{value}</span> },
@@ -39,7 +41,7 @@ export default function ShrinkagesPage() {
   if (to) queryParams.set('dateMax', to)
   const path = `/api/inventory/shrinkages?${queryParams}`
   const report = useQuery({
-    queryKey: [path], queryFn: ({ signal }) => apiGet<Report>(path, signal), enabled: !dateError, retry: false,
+    queryKey: queryKeys.inventory.shrinkages(path), queryFn: ({ signal }) => apiGet<Report>(path, signal), enabled: !dateError, retry: false,
   })
   const totalMovements = report.data?.movements.totalElements ?? 0
   const stockSearch = params.get('stockSearch') ?? ''
@@ -66,24 +68,16 @@ export default function ShrinkagesPage() {
         <Button type="button" variant="secondary" disabled={!dateMin && !dateMax} onClick={clearDates}>Todas las fechas</Button>
       </div>
       {dateError && <p id="shrinkages-date-error" className="error-text" role="alert">{dateError}</p>}
-      {!dateError && report.isLoading && <div role="status"><EmptyState title="Cargando mermas" description="Consultando movimientos de stock." /></div>}
-      {!dateError && report.isError && <div role="alert">
-        <EmptyState title="No se pudo cargar el reporte" description={report.error.message}
-          action={<Button variant="secondary" onClick={() => void report.refetch()}>Reintentar</Button>} />
-      </div>}
+      {!dateError && report.isLoading && <EmptyState state="loading" title="Cargando mermas" description="Consultando movimientos de stock." />}
+      {!dateError && report.isError && <EmptyState state="error" title="No se pudo cargar el reporte" description={report.error.message}
+        action={<Button variant="secondary" onClick={() => void report.refetch()}>Reintentar</Button>} />}
       {!dateError && !report.isError && report.data && <>
         <p className="helper-text mb-[14px]">Cantidad perdida en el período: <strong>{units.format(report.data.totalQuantity)}</strong></p>
         <DataTable columns={columns} rows={report.data.movements.content.map((entry) => ({
-          id: entry.id, product: entry.product, date: dateTime.format(new Date(entry.date)),
+          id: entry.id, product: entry.product, date: formatBusinessDateTime(entry.date),
           quantity: units.format(entry.quantity), reason: entry.reason,
         }))} emptyContent={<p className="table-empty-message">No hay mermas en el período seleccionado.</p>} />
-        <div className="pagination">
-          <span>Página {page + 1} · {totalMovements} {totalMovements === 1 ? 'merma' : 'mermas'}</span>
-          <div>
-            <Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page === 0}>Anterior</Button>
-            <Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page + 1 >= report.data.movements.totalPages}>Siguiente</Button>
-          </div>
-        </div>
+        <Pagination summary={<>Página {page + 1} · {totalMovements} {totalMovements === 1 ? 'merma' : 'mermas'}</>} onPrevious={() => setPage(page - 1)} onNext={() => setPage(page + 1)} previousDisabled={page === 0} nextDisabled={page + 1 >= report.data.movements.totalPages} />
       </>}
     </Panel>
   </>

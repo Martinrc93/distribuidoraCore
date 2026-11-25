@@ -1,3 +1,4 @@
+import { invalidateDomains } from '../../shared/api/queryKeys'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { apiPost } from '../../shared/api/client'
@@ -28,11 +29,7 @@ export function OrderOperationalActions({ order, onSaved }: { order: OrderOperat
     setError('')
     try {
       await apiPost(`/api/orders/${order.id}/${action}`, {})
-      await client.invalidateQueries({ predicate: ({ queryKey }) => {
-        const key = String(queryKey[0])
-        return ['/api/orders', '/api/products', '/api/inventory', '/api/dashboard'].some(prefix => key.startsWith(prefix))
-          || ['dashboard', 'dashboard-analytics', 'order-reviews'].includes(key)
-      } })
+      await invalidateDomains(client, 'orders', 'stock', 'reports')
       const message = action === 'prepare' ? `Pedido ${order.number} preparado.` : `Revisión del pedido ${order.number} confirmada.`
       setAction(undefined)
       setFeedback(message)

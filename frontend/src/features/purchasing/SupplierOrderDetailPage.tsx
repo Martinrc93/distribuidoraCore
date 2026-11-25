@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { apiGet, apiPost } from '../../shared/api/client'
+import { invalidateDomains, queryKeys } from '../../shared/api/queryKeys'
 import { Badge } from '../../shared/components/Badge'
 import { Button } from '../../shared/components/Button'
 import { ConfirmationDialog } from '../../shared/components/ConfirmationDialog'
@@ -10,15 +11,15 @@ import { DocumentActions } from '../../shared/components/DocumentActions'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import { displayDate } from '../dashboard/dashboardDates'
+import { displayDate } from '../../shared/dates'
 import { SupplierOrderForm } from './SupplierOrderForm'
-import { purchaseStatusLabel, purchaseStatusTone, supplierOrdersKey, type SupplierOrderDetail } from './supplierOrders'
+import { purchaseStatusLabel, purchaseStatusTone, type SupplierOrderDetail } from './supplierOrders'
 
 type PendingAction = 'confirm' | 'cancel'
 
 const statusHelp = {
   LEGACY: 'Compra registrada antes de que las compras movieran stock. Editarla o anularla no cambia el stock.',
-  DRAFT: 'Borrador: todavía no movió stock. Al confirmarla, las cantidades se suman al stock.',
+  PENDING: 'Las cantidades se sumarán al stock al confirmar la compra.',
   CONFIRMED: 'Confirmada: sus cantidades ya se sumaron al stock. Si la editás se ajusta la diferencia; si la anulás, se descuenta.',
   CANCELLED: 'Anulada: no puede modificarse.',
 } as const
@@ -32,18 +33,21 @@ export default function SupplierOrderDetailPage() {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
-  const query = useQuery({ queryKey: [...supplierOrdersKey, orderId], queryFn: ({ signal }) => apiGet<SupplierOrderDetail>(`/api/supplier-orders/${orderId}`, signal), retry: false })
+  const query = useQuery({ queryKey: queryKeys.purchasing.detail(orderId), queryFn: ({ signal }) => apiGet<SupplierOrderDetail>(`/api/supplier-orders/${orderId}`, signal), retry: false })
   const back = `/supplier-orders${params.toString() ? `?${params}` : ''}`
-  if (query.isLoading) return <div role="status"><EmptyState title="Cargando compra" description="Consultando la solicitud al proveedor." /></div>
-  if (query.isError || !query.data) return <div role="alert"><EmptyState title="No se pudo cargar la compra" description={query.error?.message ?? 'Compra no disponible.'} action={<><Button variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button><Button variant="link" href={back}>Volver a compras</Button></>} /></div>
+  if (query.isLoading) return <>
+    <PageHeader eyebrow="Operación" title="Compra" actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
+    <Panel><EmptyState state="loading" title="Cargando compra" description="Consultando la solicitud al proveedor." /></Panel>
+  </>
+  if (query.isError || !query.data) return <>
+    <PageHeader eyebrow="Operación" title="Compra" actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
+    <Panel><EmptyState state="error" title="No se pudo cargar la compra" description={query.error?.message ?? 'Compra no disponible.'} action={<Button variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} /></Panel>
+  </>
   const { order, items } = query.data
   const status = order.status ?? 'LEGACY'
 
   async function refresh() {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: supplierOrdersKey }),
-      queryClient.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith('/api/products') || String(queryKey[0]).startsWith('/api/inventory') }),
-    ])
+    await invalidateDomains(queryClient, 'purchasing', 'stock', 'reports')
   }
 
   async function runAction() {
@@ -75,7 +79,7 @@ export default function SupplierOrderDetailPage() {
           <div className="flex min-w-0 flex-wrap items-start gap-[8px] [&>.button]:flex-none">
             <DocumentActions key={order.id} path={`/api/supplier-orders/${encodeURIComponent(order.id)}/documents/a4`}
               filename={`compra-${order.number}.pdf`} downloadLabel="Descargar PDF" />
-            {status === 'DRAFT' && <Button onClick={() => { setError(''); setAction('confirm') }}>Confirmar compra</Button>}
+            {status === 'PENDING' && <Button onClick={() => { setError(''); setAction('confirm') }}>Confirmar compra</Button>}
             {status !== 'CANCELLED' && <Button variant="secondary" onClick={() => { setFeedback(''); setEditing(true) }}>Editar compra</Button>}
           </div>
           {status !== 'CANCELLED' && <div className="ml-auto flex">
@@ -91,8 +95,9 @@ export default function SupplierOrderDetailPage() {
         ? 'Las cantidades de todos los productos se van a sumar al stock. Después vas a poder editarla o anularla con movimientos compensatorios.'
         : status === 'CONFIRMED' ? 'Se van a descontar del stock las cantidades de la compra. La compra queda anulada y no se puede modificar.'
           : 'La compra queda anulada y no se puede modificar. No cambia el stock.'}
-      confirmLabel={action === 'confirm' ? 'Confirmar compra' : 'Anular compra'}
+      confirmLabel={action === 'confirm' ? 'Aceptar' : 'Anular compra'}
       confirmVariant={action === 'confirm' ? 'primary' : 'danger'}
+      initialFocus={action === 'confirm' ? 'confirm' : 'cancel'}
       cancelLabel="Volver" pendingLabel={action === 'confirm' ? 'Confirmando...' : 'Anulando...'}
       pending={pending} error={error}
       onCancel={() => setAction(undefined)} onConfirm={() => void runAction()}

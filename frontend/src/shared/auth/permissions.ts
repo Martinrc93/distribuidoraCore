@@ -2,6 +2,7 @@ import { getAccessToken } from '../api/client'
 
 type JwtPayload = {
   authorities?: unknown
+  email?: unknown
   sub?: unknown
 }
 
@@ -15,11 +16,17 @@ function getPayload(): JwtPayload | undefined {
 
     const base64 = payload.replaceAll('-', '+').replaceAll('_', '/')
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-    const decoded = JSON.parse(atob(padded)) as JwtPayload
+    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
+    const decoded = JSON.parse(new TextDecoder().decode(bytes)) as JwtPayload
     return decoded
   } catch {
     return undefined
   }
+}
+
+export function getCurrentUserEmail(): string | undefined {
+  const email = getPayload()?.email
+  return typeof email === 'string' && email ? email : undefined
 }
 
 export function getAuthorities(): string[] {

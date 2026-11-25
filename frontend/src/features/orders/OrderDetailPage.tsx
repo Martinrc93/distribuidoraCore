@@ -3,6 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { apiGet } from '../../shared/api/client'
+import { queryKeys } from '../../shared/api/queryKeys'
+import { formatMoney as money, formatNumber } from '../../shared/format'
+import { formatBusinessDateTime as date } from '../../shared/dates'
 import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
 import { Button } from '../../shared/components/Button'
 import { Badge } from '../../shared/components/Badge'
@@ -28,16 +31,14 @@ type OrderDetail = {
 }
 type Row = Record<string, string>
 
-const money = (value: unknown) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(Number(value ?? 0))
-const date = (value: string) => new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 const paymentName: Record<string, string> = { CASH: 'Efectivo', BANK_TRANSFER: 'Transferencia', CUSTOMER_ACCOUNT: 'Cuenta corriente' }
 
 export default function OrderDetailPage() {
   const { orderId = '' } = useParams()
   const queryClient = useQueryClient()
   const isAdmin = hasAuthority('ADMIN_ALL')
-  const queryKey = [`/api/orders/${orderId}`]
-  const query = useQuery({ queryKey, queryFn: () => apiGet<OrderDetail>(`/api/orders/${orderId}`), enabled: Boolean(orderId) })
+  const queryKey = queryKeys.orders.detail(orderId)
+  const query = useQuery({ queryKey, queryFn: ({ signal }) => apiGet<OrderDetail>(`/api/orders/${orderId}`, signal), enabled: Boolean(orderId) })
   const [params, setParams] = useSearchParams()
   const editing = params.get('edit') === 'true'
   const [feedback, setFeedback] = useState('')
@@ -50,8 +51,8 @@ export default function OrderDetailPage() {
     setParams(next, { replace: true })
   }
 
-  if (query.isLoading) return <><PageHeader eyebrow="Operación" title="Pedido" description="Consultando pedido, venta y cobros." /><Panel><EmptyState title="Cargando pedido" description="Consultando snapshots comerciales." /></Panel></>
-  if (query.isError || !query.data) return <><PageHeader eyebrow="Operación" title="Pedido" description="No se pudo abrir el detalle." /><Panel><EmptyState title="No se pudo cargar el pedido" description={query.error?.message ?? 'Revisá el número o el acceso al pedido.'} action={<Button variant="secondary" href="/orders">Volver a pedidos</Button>} /></Panel></>
+  if (query.isLoading) return <><PageHeader eyebrow="Operación" title="Pedido" description="Consultando pedido, venta y cobros." /><Panel><EmptyState state="loading" title="Cargando pedido" description="Consultando snapshots comerciales." /></Panel></>
+  if (query.isError || !query.data) return <><PageHeader eyebrow="Operación" title="Pedido" description="No se pudo abrir el detalle." /><Panel><EmptyState state="error" title="No se pudo cargar el pedido" description={query.error?.message ?? 'Revisá el número o el acceso al pedido.'} action={<Button variant="secondary" href="/orders">Volver a pedidos</Button>} /></Panel></>
 
   const { order, items, sale, payments, deliveryAttempts = [] } = query.data
   const commonListId = items[0]?.priceListId
@@ -59,7 +60,6 @@ export default function OrderDetailPage() {
   const canEdit = hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && sale.status === 'CONFIRMED' && samePriceList
   // A reseller owes the orders of its customers: the account differs from the customer that receives the order.
   const resellerAccount = Boolean(order.accountCustomerId && order.accountCustomerId !== order.customerId)
-
   const previousBalance = Number(order.previousBalanceAmount ?? 0)
   const includesPreviousBalance = previousBalance > 0
   const total = includesPreviousBalance ? order.collectionTotal ?? Number(order.total) + previousBalance : order.total
@@ -112,16 +112,20 @@ export default function OrderDetailPage() {
     </div>
     <OrderNavigator orderId={orderId} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
-    <Panel title="Preparación y revisión"><div id="order-operations" tabIndex={-1} className="page-actions">
-      {order.status !== 'CANCELLED' && <Badge tone={order.fulfillmentStatus === 'PREPARED' ? 'strong' : 'soft'}>{order.fulfillmentStatus === 'PREPARED' ? 'Preparado' : 'A preparar'}</Badge>}
-      {isAdmin && <OrderReviewBadge pending={order.reviewPending} />}
+    <OrderLifecycleActions orderId={order.id} orderNumber={order.number} customerId={order.customerId} orderStatus={order.status} saleBalance={sale.balance}
+      previousDebtAvailable={sale.previousDebtAvailable} accountKind={order.accountKind} onChanged={() => { void query.refetch() }}
+      statusBadges={<>
+        {order.status !== 'CANCELLED' && <Badge tone={order.fulfillmentStatus === 'PREPARED' ? 'strong' : 'soft'}>{order.fulfillmentStatus === 'PREPARED' ? 'Preparado' : 'A preparar'}</Badge>}
+        {isAdmin && <OrderReviewBadge pending={order.reviewPending} />}
+      </>}
+      notes={<>
+        {order.legacyFulfillment && <p className="helper-text">Pedido histórico: el stock ya se descontó al confirmar.</p>}
+        {order.preparedAt && <p className="helper-text">Preparado el {date(order.preparedAt)}.</p>}
+        {order.reviewedAt && <p className="helper-text">Revisión administrativa confirmada el {date(order.reviewedAt)}.</p>}
+      </>}>
       <OrderOperationalActions order={order} onSaved={setFeedback} />
-    </div>
-      {order.legacyFulfillment && <p className="helper-text">Pedido histórico: el stock ya se descontó al confirmar.</p>}
-      {order.preparedAt && <p className="helper-text">Preparado el {date(order.preparedAt)}.</p>}
-      {order.reviewedAt && <p className="helper-text">Revisión administrativa confirmada el {date(order.reviewedAt)}.</p>}
-    </Panel>
-    <>
+    </OrderLifecycleActions>
+    <div className="content-grid">
       <Panel title="Productos del pedido"><DataTable columns={itemColumns} rows={itemRows} /></Panel>
       {deliveryAttempts.some((attempt) => attempt.result === 'FAILED') && <Panel title="Intentos de entrega">
         <DataTable
@@ -135,11 +139,11 @@ export default function OrderDetailPage() {
         />
       </Panel>}
       <div className="content-grid two-thirds items-start">
-        <Panel title="Pagos registrados">{paymentRows.length ? <DataTable columns={paymentColumns} rows={paymentRows} /> : <EmptyState title="Todavía no hay pagos" description={resellerAccount ? `El saldo permanece en la cuenta corriente de ${order.accountCustomer}.` : 'El saldo permanece en la cuenta corriente del cliente.'} />}</Panel>
+        <Panel title="Pagos registrados">{paymentRows.length ? <DataTable className="compact-list-table min-w-0" columns={paymentColumns} rows={paymentRows} /> : <EmptyState compact title="Todavía no hay pagos" description={resellerAccount ? `El saldo permanece en la cuenta corriente de ${order.accountCustomer}.` : 'El saldo permanece en la cuenta corriente del cliente.'} />}</Panel>
         <Panel title="Detalle del pedido" description={resellerAccount ? `Titular de la deuda: ${order.accountCustomer} (revendedor)` : undefined}>
           <dl className="order-totals m-0 max-w-none">
             <dt>Subtotal</dt><dd><CurrencyText>{money(order.subtotal)}</CurrencyText></dd>
-            <dt>Descuento general</dt><dd>{Number(order.orderDiscountPercent ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })}%</dd>
+            <dt>Descuento general</dt><dd>{formatNumber(order.orderDiscountPercent ?? 0, 4)}%</dd>
             <dt>Descuento total</dt><dd><CurrencyText>{money(order.discount ? -order.discount : 0)}</CurrencyText></dd>
             {includesPreviousBalance && <><dt>Saldo anterior de cuenta corriente</dt><dd><CurrencyText>{money(previousBalance)}</CurrencyText></dd></>}
             <dt className="total-label">{includesPreviousBalance ? 'Total a cobrar' : 'Total'}</dt>
@@ -147,7 +151,6 @@ export default function OrderDetailPage() {
           </dl>
         </Panel>
       </div>
-      <OrderLifecycleActions orderId={order.id} orderNumber={order.number} orderStatus={order.status} saleBalance={sale.balance} previousDebtAvailable={sale.previousDebtAvailable} accountKind={order.accountKind} onChanged={() => { void query.refetch() }} />
-    </>
+    </div>
   </>
 }

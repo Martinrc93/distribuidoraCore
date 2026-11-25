@@ -19,7 +19,7 @@ for (const width of [320, 640, 1280]) {
         settled = true
         return route.fulfill({ status: 201, json: { balanceAfter: 0 } })
       }
-      if (path === '/api/customers/customer-1') return route.fulfill({ json: customer })
+      if (path === '/api/customers/customer-1/account-balance') return route.fulfill({ json: customer })
       if (path === '/api/customers/filter-options') return route.fulfill({ json: { sellers: [] } })
       if (path === '/api/zones') return route.fulfill({ json: [] })
       return route.fulfill({ json: { content: path === '/api/customers' && !settled ? [customer] : [], page: 0, size: 20, totalElements: settled ? 0 : 1, totalPages: 1 } })

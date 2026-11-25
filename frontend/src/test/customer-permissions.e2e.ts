@@ -5,14 +5,14 @@ async function setup(page: Page, permission: string, dark: boolean, failAssignme
     sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ authorities: [permission] }))}.signature`)
     if (dark) localStorage.setItem('distribuidora.theme', 'dark')
   }, { permission, dark })
-  const state = { created: undefined as Record<string, unknown> | undefined, list: undefined as Record<string, unknown> | undefined, payment: undefined as Record<string, unknown> | undefined, balance: 30, status: 'ACTIVE', assignmentAttempts: 0, paths: [] as string[], errors: [] as string[] }
+  const state = { created: undefined as Record<string, unknown> | undefined, list: undefined as Record<string, unknown> | undefined, payment: undefined as Record<string, unknown> | undefined, balance: 30, status: 'ACTIVE', assignmentAvailable: !failAssignment, paths: [] as string[], errors: [] as string[] }
   page.on('pageerror', error => state.errors.push(error.message))
   const customer = () => ({ id: 'c1', name: 'Cliente asignado con un nombre largo', seller: 'Lucía', sellerId: 'self', priceListId: state.list ? 'other' : 'general', status: state.status, balance: state.balance })
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const path = new URL(route.request().url()).pathname; state.paths.push(path)
     const request = route.request(); const method = request.method()
     if (path === '/api/customers/assignment-context') {
-      if (failAssignment && ++state.assignmentAttempts === 1) return route.fulfill({ status: 503, json: { detail: 'Configuración no disponible' } })
+      if (!state.assignmentAvailable) return route.fulfill({ status: 503, json: { detail: 'Configuración no disponible' } })
       return route.fulfill({ json: { id: 'self', displayName: 'Lucía', email: 'self@example.test' } })
     }
     if (path === '/api/customers/c1/account-balance') return route.fulfill({ json: customer() })
@@ -39,6 +39,7 @@ test('status confirmation restores focus when the customer leaves the active fil
   await page.setViewportSize({ width: 390, height: 844 })
   const state = await setup(page, 'CUSTOMER_STATUS_CHANGE', true)
   await page.goto('/customers')
+  await page.getByLabel('Más acciones de Cliente asignado con un nombre largo').click()
   await page.getByRole('button', { name: 'Desactivar cliente', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /desactivar a Cliente/ })
   await expect(dialog.getByRole('button', { name: 'Volver' })).toBeFocused()
@@ -64,6 +65,7 @@ for (const width of [320, 390, 1280]) {
     await dialog.getByLabel('Razón social').fill('Nuevo cliente asignado')
     if (width === 320) {
       await expect(dialog.getByRole('button', { name: 'Guardar cliente' })).toBeDisabled()
+      state.assignmentAvailable = true
       await dialog.getByRole('button', { name: 'Reintentar asignación' }).click()
     }
     await expect(dialog.getByRole('button', { name: 'Guardar cliente' })).toBeEnabled()
@@ -104,7 +106,9 @@ for (const width of [320, 390, 1280]) {
 
   test(`independent default price list selection at ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 }); const state = await setup(page, 'CUSTOMER_PRICE_LIST_CHANGE', width === 390)
-    await page.goto('/customers'); await page.getByRole('button', { name: 'Cambiar lista', exact: true }).click()
+    await page.goto('/customers')
+    await page.getByLabel('Más acciones de Cliente asignado con un nombre largo').click()
+    await page.getByRole('button', { name: 'Cambiar lista', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: /Lista de precios de Cliente/ })
     await dialog.getByLabel('Lista de precios predeterminada').selectOption('other')
     await fits(page); await page.screenshot({ path: info.outputPath(`list-${width}.png`), fullPage: true })

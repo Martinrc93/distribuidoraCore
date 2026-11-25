@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { apiPost, ApiError } from '../../shared/api/client'
+import { formatMoney } from '../../shared/format'
 import type { DeliveryAttemptDraft } from './DeliveryAttemptDialog'
 import { deliveryAmount } from './DeliveryAttemptDialog'
 
 type Props = { orderId: string; saleBalance: number; previousDebtAvailable?: number; onSaved: (result: DeliveryAttemptDraft['result']) => void }
 const emptyDraft = (): DeliveryAttemptDraft => ({ result: 'DELIVERED', observation: '', payments: [], transferReference: '', includePreviousDebt: false, previousDebtAmount: '' })
-const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(value)
+const money = (value: number) => formatMoney(value, 2)
 
 export function useOrderDelivery({ orderId, saleBalance, previousDebtAvailable = 0, onSaved }: Props) {
   const queryClient = useQueryClient()
@@ -40,15 +41,11 @@ export function useOrderDelivery({ orderId, saleBalance, previousDebtAvailable =
         ...(transferReference.trim() ? { transferReference: transferReference.trim() } : {}),
         ...(previousDebtAmount > 0 ? { previousDebtAmount } : {}),
       })
-      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => {
-        const key = String(queryKey[0])
-        return ['/api/orders', '/api/sales', '/api/payments', '/api/customers', '/api/dashboard', '/api/products', '/api/inventory'].some(prefix => key.startsWith(prefix))
-          || ['sale-detail', 'customer-debts', 'dashboard', 'dashboard-analytics', 'order-reviews'].includes(key)
-      } })
+      await invalidateDomains(queryClient, 'orders', 'sales', 'customers', 'stock', 'reports')
       onSaved(result)
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
-        await queryClient.invalidateQueries({ queryKey: [`/api/orders/${orderId}`] })
+        await queryClient.invalidateQueries({ queryKey: queryKeys.orders.detail(orderId) })
       }
       setError(cause instanceof ApiError && cause.status === 403 ? 'Tu usuario no tiene permiso para realizar esta acción.'
         : cause instanceof ApiError && cause.status === 404 ? 'El pedido ya no está disponible.'
@@ -58,3 +55,4 @@ export function useOrderDelivery({ orderId, saleBalance, previousDebtAvailable =
 
   return { draft, changeDraft, error, clearError: () => setError(''), pending, submit, reset }
 }
+import { invalidateDomains, queryKeys } from '../../shared/api/queryKeys'

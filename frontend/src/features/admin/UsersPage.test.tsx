@@ -95,7 +95,7 @@ describe('UsersPage', () => {
   it('confirms block/unblock and session revocation commands', async () => {
     const user = userEvent.setup()
     let status = 'ACTIVE'
-    const fetchMock = mockFetch((input, init) => {
+    const fetchMock = mockFetch((input) => {
       if (String(input).startsWith('/api/users?')) return response({ ...users, content: [{ ...users.content[0], status }] })
       if (String(input) === '/api/users/user-1/block') { status = 'BLOCKED'; return response(undefined, 204) }
       if (String(input) === '/api/users/user-1/unblock') { status = 'ACTIVE'; return response(undefined, 204) }

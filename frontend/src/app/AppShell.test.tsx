@@ -27,6 +27,7 @@ describe('Responsive navigation', () => {
   afterEach(() => {
     cleanup()
     sessionStorage.clear()
+    localStorage.clear()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -97,6 +98,26 @@ describe('Responsive navigation', () => {
     }
     expect(screen.queryByText('Catálogo')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Pedidos' })).toBeInTheDocument()
+  })
+
+  it('uses only the signed-in account shortcuts and checks the destination permission', async () => {
+    mockViewport(false)
+    localStorage.setItem('distribuidora.operation-shortcuts:seller', JSON.stringify({
+      '/sales': 'Alt+Shift+V',
+      '/supplier-orders': 'Alt+Shift+C',
+    }))
+    localStorage.setItem('distribuidora.operation-shortcuts:other-user', JSON.stringify({ '/customers': 'Alt+Shift+L' }))
+    sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ sub: 'seller', authorities: ['SELLER'] }))}.signature`)
+    renderShell()
+
+    const user = userEvent.setup()
+    await user.keyboard('{Alt>}{Shift>}c{/Shift}{/Alt}')
+    await user.keyboard('{Alt>}{Shift>}l{/Shift}{/Alt}')
+    expect(screen.getByRole('link', { name: 'Pedidos' })).toHaveAttribute('aria-current', 'page')
+
+    await user.keyboard('{Alt>}{Shift>}v{/Shift}{/Alt}')
+    expect(screen.getByRole('link', { name: 'Ventas' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('main')).toHaveFocus()
   })
 
   it('expands groups independently using pointer, Enter and Space', async () => {

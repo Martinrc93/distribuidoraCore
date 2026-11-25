@@ -189,7 +189,7 @@ describe('OrderDetailPage', () => {
       method: 'PUT',
       body: JSON.stringify({ priceListId: 'list-1', lines: [{ productId: 'product-1', quantity: 3, lineDiscountPercent: 0, unitPriceOverride: 150 }], orderDiscountPercent: 0, previousBalanceAmount: 0 }),
     })))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/orders/order-1'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['orders', 'detail', 'order-1'] })
   })
 
   it('uses the creation form with locked customer and seller and preserves saved prices and discounts', async () => {

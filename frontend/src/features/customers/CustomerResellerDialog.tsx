@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { apiGet, apiPatch, ApiError } from '../../shared/api/client'
+import { queryKeys } from '../../shared/api/queryKeys'
+import { formatMoney } from '../../shared/format'
 import { apiGetAllPages } from '../../shared/api/pagination'
 import { Button } from '../../shared/components/Button'
 import { CurrencyText } from '../../shared/components/CurrencyText'
@@ -18,7 +20,7 @@ type Assignment = {
 }
 type Kind = 'REGULAR' | 'RESELLER'
 
-const money = (value: unknown) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 2 }).format(Number(value ?? 0))
+const money = (value: unknown) => formatMoney(value, 2)
 
 /**
  * Administrative reseller settings of a customer: whether it is a reseller, or which reseller owes its new orders.
@@ -30,8 +32,8 @@ export function CustomerResellerDialog({ customer, onClose, onSaved }: {
   const id = useId()
   const assignmentPath = `/api/customers/${customer.id}/reseller-assignment`
   const resellersPath = '/api/customers?page=0&size=100&kind=RESELLER&status=ACTIVE'
-  const assignmentQuery = useQuery({ queryKey: [assignmentPath], queryFn: () => apiGet<Assignment>(assignmentPath) })
-  const resellersQuery = useQuery({ queryKey: [resellersPath], queryFn: () => apiGetAllPages<Customer>(resellersPath) })
+  const assignmentQuery = useQuery({ queryKey: queryKeys.customers.resellerAssignment(customer.id), queryFn: ({ signal }) => apiGet<Assignment>(assignmentPath, signal) })
+  const resellersQuery = useQuery({ queryKey: queryKeys.customers.resellers('active'), queryFn: ({ signal }) => apiGetAllPages<Customer>(resellersPath, signal) })
   const currentKind: Kind = (assignmentQuery.data?.kind ?? customer.kind) === 'RESELLER' ? 'RESELLER' : 'REGULAR'
   const currentReseller = assignmentQuery.data?.resellerId ?? ''
   const [kind, setKind] = useState<Kind>(customer.kind === 'RESELLER' ? 'RESELLER' : 'REGULAR')

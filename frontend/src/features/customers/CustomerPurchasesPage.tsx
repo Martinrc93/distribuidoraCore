@@ -1,5 +1,7 @@
+import { Pagination } from '../../shared/components/Pagination'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '../../shared/api/queryKeys'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { apiGet, ApiError, type ApiPage } from '../../shared/api/client'
 import { hasPermission } from '../../shared/auth/permissions'
@@ -11,7 +13,8 @@ import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
 import { useUrlListState } from '../../shared/useUrlListState'
-import { businessTimeZone, displayDate, parseDate, presetRange, rangeError, todayInArgentina } from '../dashboard/dashboardDates'
+import { displayDate, formatBusinessDateMedium, parseDate, presetRange, rangeError, todayInArgentina } from '../../shared/dates'
+import { formatMoney, formatNumber } from '../../shared/format'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 
 type Item = { id: string; product: string; soldUnits: number; returnedUnits: number; netUnits: number; amount: number }
@@ -24,9 +27,8 @@ type Report = {
   purchases: ApiPage<Purchase>
 }
 
-const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 4 })
-const units = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 })
-const date = new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeZone: businessTimeZone })
+const money = { format: (value: number) => formatMoney(value, 4) }
+const units = { format: (value: number) => formatNumber(value, 4) }
 const itemColumns: TableColumn[] = [
   { key: 'product', label: 'Producto', emphasis: true, render: (value) => <span className="[overflow-wrap:anywhere]">{value}</span> },
   { key: 'sold', label: 'Vendidas', align: 'right' },
@@ -41,7 +43,7 @@ function PurchaseDetails({ purchase }: { purchase: Purchase }) {
     <summary className="cursor-pointer rounded-[5px] p-[12px] text-[13px] leading-[1.7] [overflow-wrap:anywhere] focus-visible:outline-[3px] focus-visible:outline-[#bb8754]">
       <strong className="mr-[8px]">Pedido {purchase.orderNumber}</strong>
       <span className="mr-[8px]">Venta {purchase.saleNumber}</span>
-      <span className="mr-[8px] whitespace-nowrap text-muted">{date.format(new Date(purchase.date))}</span>
+      <span className="mr-[8px] whitespace-nowrap text-muted">{formatBusinessDateMedium(purchase.date)}</span>
       <strong className="mr-[8px]">{money.format(purchase.amount)}</strong>
       <Badge tone={delivered ? 'strong' : 'soft'}>{delivered ? 'Entregada' : 'Confirmada'}</Badge>
     </summary>
@@ -74,7 +76,7 @@ export default function CustomerPurchasesPage() {
   const path = `/api/reports/customers/${id}/purchases?${dateParams}&page=${page}&size=${pageSize}`
   const documentPath = `/api/documents/customers/${id}/purchases?${dateParams}`
   const report = useQuery({
-    queryKey: ['customer-purchases', path], queryFn: ({ signal }) => apiGet<Report>(path, signal),
+    queryKey: queryKeys.customers.purchases(path), queryFn: ({ signal }) => apiGet<Report>(path, signal),
     enabled: Boolean(customerId) && !error, retry: false,
   })
   const customerFilters = new URLSearchParams(params.get('customerFilters') ?? '')
@@ -109,12 +111,12 @@ export default function CustomerPurchasesPage() {
         </div>
         {error && <p id="customer-purchases-date-error" className="error-text mt-[12px] mb-0" role="alert">{error}</p>}
       </Panel>
-      {!error && report.isLoading && <Panel><div role="status"><EmptyState title="Cargando compras" description="Consultando las ventas del cliente." /></div></Panel>}
-      {!error && report.isError && <Panel><div role="alert">
-        <EmptyState title={unavailable ? 'Cliente no disponible' : 'No se pudo cargar el reporte'}
+      {!error && report.isLoading && <Panel><EmptyState state="loading" title="Cargando compras" description="Consultando las ventas del cliente." /></Panel>}
+      {!error && report.isError && <Panel>
+        <EmptyState state="error" title={unavailable ? 'Cliente no disponible' : 'No se pudo cargar el reporte'}
           description={unavailable ? 'El cliente no existe o está fuera de tu alcance.' : report.error.message}
           action={!unavailable && <Button variant="secondary" onClick={() => void report.refetch()}>Reintentar</Button>} />
-      </div></Panel>}
+      </Panel>}
       {!error && !report.isError && summary && purchases && <>
         <Panel title="Total comprado">
           <p className="m-0 text-[25px] font-bold">{money.format(summary.totalAmount)}</p>
@@ -132,13 +134,7 @@ export default function CustomerPurchasesPage() {
             {purchases.content.map((sale) => <PurchaseDetails key={sale.id} purchase={sale} />)}
           </div> : <EmptyState title="No hay compras para mostrar"
             description={summary.salesCount === 0 ? 'Este cliente no tiene ventas visibles en el período seleccionado.' : 'Esta página no contiene ventas.'} />}
-          {(purchases.totalElements > 0 || page > 0) && <div className="pagination" aria-label="Paginación de compras">
-            <span>Página {page + 1} · {purchases.totalElements} {purchases.totalElements === 1 ? 'venta' : 'ventas'}</span>
-            <div>
-              <Button variant="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</Button>
-              <Button variant="secondary" disabled={page + 1 >= purchases.totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button>
-            </div>
-          </div>}
+          {(purchases.totalElements > 0 || page > 0) && <Pagination label="Paginación de compras" summary={<>Página {page + 1} · {purchases.totalElements} {purchases.totalElements === 1 ? 'venta' : 'ventas'}</>} onPrevious={() => setPage(page - 1)} onNext={() => setPage(page + 1)} previousDisabled={page === 0} nextDisabled={page + 1 >= purchases.totalPages} />}
         </Panel>
       </>}
     </div>

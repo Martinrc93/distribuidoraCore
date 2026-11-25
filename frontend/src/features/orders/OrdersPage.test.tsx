@@ -26,7 +26,7 @@ function mockOrders() {
 }
 
 describe('OrdersPage', () => {
-  it('combines fulfillment and review filters and removes the seller marker only after admin review', async () => {
+  it('combines fulfillment and review filters and allows review without creator or review markers', async () => {
     const user = userEvent.setup()
     let reviewed = false
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input, init) => {
@@ -34,7 +34,9 @@ describe('OrdersPage', () => {
       return response({ content: reviewed ? [] : [{ id: 'o1', number: 'PED-REVIEW', customer: 'Almacén Norte', seller: 'Lucía', total: 10, status: 'CONFIRMED', date: '2026-11-16T12:00:00Z', fulfillmentStatus: 'PENDING', reviewPending: true, createdByAdmin: false }], page: 0, size: 20, totalElements: reviewed ? 0 : 1, totalPages: 1 })
     })
     renderOrders('/orders?dateMin=&dateMax=&fulfillment=PENDING&review=PENDING&createdBy=SELLER', ['ADMIN_ALL'])
-    expect(await screen.findByText('Vendedor · Pendiente de revisión')).toBeInTheDocument()
+    const row = await screen.findByRole('row', { name: /PED-REVIEW/ })
+    expect(row).not.toHaveTextContent('Cargado por:')
+    expect(screen.queryByText('Vendedor · Pendiente de revisión')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Preparar pedido PED-REVIEW' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Pasar a entregado pedido PED-REVIEW' })).toBeEnabled()
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('&createdBy=SELLER&fulfillmentStatus=PENDING&reviewPending=true'), expect.anything())
@@ -86,7 +88,7 @@ describe('OrdersPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Entrega del pedido PED-001 registrada.')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Pasar a entregado pedido PED-001' })).not.toBeInTheDocument()
-    expect(screen.getByText('DELIVERED')).toBeInTheDocument()
+    expect(screen.getByText('Entregado', { selector: '.badge' })).toBeInTheDocument()
     const listPath = '/api/orders?page=1&size=20&search=PED&status=&dateMin=2026-09-01&dateMax=2026-09-30'
     expect(fetchMock.mock.calls.filter(([input]) => input === listPath)).toHaveLength(2)
     expect(screen.getByLabelText('Buscar pedidos')).toHaveValue('PED')
@@ -330,7 +332,7 @@ describe('OrdersPage', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('dateMin=2024-02-29&dateMax=2026-09-30'), expect.anything()))
   })
 
-  it('filters paid undelivered orders and by creator, shows who loaded them and moves between rows with arrows', async () => {
+  it('filters paid undelivered orders and by creator without showing creator metadata and moves between rows with arrows', async () => {
     const user = userEvent.setup()
     sessionStorage.clear()
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(() => response({
@@ -343,10 +345,12 @@ describe('OrdersPage', () => {
     renderOrders('/orders?dateMin=&dateMax=', ['ADMIN_ALL'])
 
     const first = await screen.findByRole('row', { name: /PED-001/ })
-    expect(first).toHaveTextContent('Administrador')
+    expect(first).not.toHaveTextContent('Cargado por:')
+    expect(first).not.toHaveTextContent('Administrador')
     expect(within(first).getByText('Pagado')).toBeInTheDocument()
     const second = screen.getByRole('row', { name: /PED-002/ })
-    expect(second).toHaveTextContent('Vendedor')
+    expect(second).not.toHaveTextContent('Cargado por:')
+    expect(within(second).queryByText('Vendedor', { exact: true })).not.toBeInTheDocument()
     expect(within(second).queryByText('Pagado')).not.toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('Filtrar por cobro'), 'UNDELIVERED')
@@ -369,5 +373,18 @@ describe('OrdersPage', () => {
     expect(screen.queryByLabelText('Filtrar por quién cargó el pedido')).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Cargado por' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Filtrar por cobro')).toBeInTheDocument()
+  })
+
+  it('toggles secondary mobile filters and shows active filter count', async () => {
+    const user = userEvent.setup()
+    mockOrders()
+    renderOrders('/orders?status=CONFIRMED&paid=UNDELIVERED')
+    await screen.findByText('PED-001')
+    const toggle = screen.getByRole('button', { name: 'Más filtros (2)' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
   })
 })

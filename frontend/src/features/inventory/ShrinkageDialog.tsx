@@ -1,20 +1,13 @@
 import { useId, useRef, useState, type FormEvent } from 'react'
 import { apiPost, ApiError } from '../../shared/api/client'
+import { createIdempotencyKey } from '../../shared/api/createIdempotencyKey'
 import { Button } from '../../shared/components/Button'
 import { FormModal } from '../../shared/components/FormModal'
 import { Panel } from '../../shared/components/Panel'
+import { formatNumber } from '../../shared/format'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 
-const units = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
-
-function newMovementId() {
-  if (crypto.randomUUID) return crypto.randomUUID()
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  bytes[6] = (bytes[6] & 0x0f) | 0x40
-  bytes[8] = (bytes[8] & 0x3f) | 0x80
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-')
-}
+const units = { format: (value: number) => formatNumber(value, 2) }
 
 type Props = {
   product: { id: string; name: string; stock?: number }
@@ -47,7 +40,7 @@ export function ShrinkageDialog({ product, onClose, onSaved }: Props) {
     setSaving(true)
     setError('')
     try {
-      attempt.current ??= newMovementId()
+      attempt.current ??= createIdempotencyKey()
       await apiPost(`/api/inventory/${product.id}/shrinkages`, {
         idempotencyKey: attempt.current, quantity: amount, reason: description,
       })
@@ -80,14 +73,14 @@ export function ShrinkageDialog({ product, onClose, onSaved }: Props) {
             <div className="field">
               <label htmlFor={`${id}-quantity`}>Cantidad perdida</label>
               <input id={`${id}-quantity`} className="input" inputMode="decimal" required disabled={saving}
-                value={quantity} onChange={(event) => { setQuantity(event.target.value); setError('') }}
+                value={quantity} onChange={(event) => { setQuantity(event.target.value); attempt.current = undefined; setError('') }}
                 aria-describedby={`${id}-help`} />
               <p id={`${id}-help`} className="helper-text">Ingresá una cantidad positiva en múltiplos de 0,5.</p>
             </div>
             <div className="field">
               <label htmlFor={`${id}-reason`}>Motivo (obligatorio)</label>
               <textarea id={`${id}-reason`} className="input textarea" required maxLength={500} disabled={saving}
-                value={reason} onChange={(event) => { setReason(event.target.value); setError('') }} />
+                value={reason} onChange={(event) => { setReason(event.target.value); attempt.current = undefined; setError('') }} />
             </div>
           </div>
           {projectedStock !== null && projectedStock < 0 && <p className="warning-text stock-adjustment-feedback" role="status">El saldo estimado quedará negativo ({units.format(projectedStock)}).</p>}

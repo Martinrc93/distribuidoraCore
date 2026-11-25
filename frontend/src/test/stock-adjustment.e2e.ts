@@ -128,6 +128,7 @@ for (const width of [320, 390, 1440]) {
       } })
     })
     await page.goto('/products?stock=POSITIVE')
+    await page.getByLabel('Más acciones de ' + name).press('Enter')
     await page.getByRole('button', { name: `Registrar merma de ${name}` }).click()
     const dialog = page.getByRole('dialog', { name: 'Registrar merma', exact: true })
     const quantity = dialog.getByLabel('Cantidad perdida')

@@ -36,7 +36,21 @@ export class ApiError extends Error {
 
 const TOKEN_KEY = instanceStorageKey('distribuidora.accessToken')
 const REFRESH_TOKEN_KEY = instanceStorageKey('distribuidora.refreshToken')
-let refreshInFlight: Promise<string> | undefined
+const rotationScope = instanceStorageKey('distribuidora.refresh-rotation')
+const authListeners = new Set<() => void>()
+let authGeneration = 0
+let refreshInFlight: { generation: number; promise: Promise<string> } | undefined
+
+type Rotation = { type: 'rotated'; fingerprint: string; tokens: LoginResponse }
+type RotationMessage = Rotation | { type: 'synchronize'; fingerprint: string }
+let rotationChannel: BroadcastChannel | undefined
+let lastRotation: Rotation | undefined
+let loginNotice: 'rolePermissionsUpdated' | 'userRoleUpdated' | undefined
+
+export function subscribeAuthChange(listener: () => void) {
+  authListeners.add(listener)
+  return () => { authListeners.delete(listener) }
+}
 
 export function getAccessToken() {
   return sessionStorage.getItem(TOKEN_KEY)
@@ -50,14 +64,24 @@ function storeTokens(result: LoginResponse) {
   sessionStorage.setItem(TOKEN_KEY, result.accessToken)
   if (result.refreshToken) sessionStorage.setItem(REFRESH_TOKEN_KEY, result.refreshToken)
   else sessionStorage.removeItem(REFRESH_TOKEN_KEY)
+  authListeners.forEach(listener => listener())
 }
 
-export function clearAccessToken() {
+export function getLoginNotice() {
+  return loginNotice
+}
+
+export function clearAccessToken(notice?: typeof loginNotice) {
+  authGeneration++
+  loginNotice = notice
+  lastRotation = undefined
   sessionStorage.removeItem(TOKEN_KEY)
   sessionStorage.removeItem(REFRESH_TOKEN_KEY)
+  authListeners.forEach(listener => listener())
 }
 
 export async function login(email: string, password: string) {
+  const generation = ++authGeneration
   let response: Response
   try {
     response = await fetch(appPath('/api/auth/login'), {
@@ -72,58 +96,156 @@ export async function login(email: string, password: string) {
   if (response.status >= 500) throw new Error('El servidor no está disponible. Intenta nuevamente en unos momentos.')
   if (!response.ok) throw await apiErrorFromResponse(response, 'No se pudo iniciar sesión. Intenta nuevamente.')
   const result = await response.json() as LoginResponse
+  if (generation !== authGeneration) {
+    if (result.refreshToken) void revokeRefreshToken(result.refreshToken).catch(() => undefined)
+    throw expiredSession()
+  }
+  lastRotation = undefined
+  loginNotice = undefined
   storeTokens(result)
   return result
 }
 
-async function refreshAccessToken(): Promise<string> {
-  if (refreshInFlight) return refreshInFlight
+function expiredSession() {
+  return new ApiError(401, 'Sesión expirada', 'Sesión expirada')
+}
+
+async function refreshFingerprint(token: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function refreshChannel() {
+  if (!rotationChannel && typeof window.BroadcastChannel === 'function' && navigator.locks && crypto.subtle) {
+    rotationChannel = new BroadcastChannel(rotationScope)
+    rotationChannel.onmessage = ({ data }: MessageEvent<RotationMessage>) => {
+      if (data?.type === 'synchronize') {
+        if (lastRotation?.fingerprint === data.fingerprint) rotationChannel?.postMessage(lastRotation)
+      } else if (data?.type === 'rotated' && data.tokens?.accessToken && data.tokens.refreshToken) {
+        const token = getRefreshToken()
+        const generation = authGeneration
+        if (!token) return
+        void refreshFingerprint(token).then(fingerprint => {
+          if (fingerprint === data.fingerprint && token === getRefreshToken() && generation === authGeneration) {
+            storeTokens(data.tokens)
+          }
+        }).catch(() => undefined)
+      }
+    }
+  }
+  return rotationChannel
+}
+
+function waitForPeerRotation(channel: BroadcastChannel, fingerprint: string, refreshToken: string) {
+  return new Promise<string | null>(resolve => {
+    const unsubscribe = subscribeAuthChange(() => {
+      if (getRefreshToken() !== refreshToken) finish(getAccessToken())
+    })
+    const timeout = window.setTimeout(() => finish(null), 2_000)
+    function finish(value: string | null) {
+      unsubscribe()
+      window.clearTimeout(timeout)
+      resolve(value)
+    }
+    if (getRefreshToken() !== refreshToken) finish(getAccessToken())
+    else channel.postMessage({ type: 'synchronize', fingerprint } satisfies RotationMessage)
+  })
+}
+
+function markRotation(marker: string) {
+  const now = Date.now()
+  for (let index = localStorage.length - 1; index >= 0; index--) {
+    const key = localStorage.key(index)
+    if (key?.startsWith(rotationScope + ':') && Number(localStorage.getItem(key)) < now) localStorage.removeItem(key)
+  }
+  localStorage.setItem(marker, String(now + 7 * 86_400_000))
+}
+
+async function refreshAccessToken(generation: number): Promise<string> {
+  if (refreshInFlight?.generation === generation) return refreshInFlight.promise
 
   const refreshToken = getRefreshToken()
   if (!refreshToken) {
     clearAccessToken()
-    throw new ApiError(401, 'Sesión expirada', 'Sesión expirada')
+    throw expiredSession()
   }
 
-  refreshInFlight = (async () => {
+  async function rotate(token: string): Promise<LoginResponse> {
     const response = await fetch(appPath('/api/auth/refresh'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify({ refreshToken: token }),
     })
     if (!response.ok) {
-      clearAccessToken()
+      if (generation === authGeneration && (response.status === 401 || response.status === 403)) clearAccessToken()
       throw await apiErrorFromResponse(response, 'Sesión expirada')
     }
-    const result = await response.json() as LoginResponse
-    if (!result.accessToken || !result.refreshToken) {
+    const result = await response.json().catch(() => null) as LoginResponse | null
+    if (generation !== authGeneration) {
+      if (result?.refreshToken) void revokeRefreshToken(result.refreshToken).catch(() => undefined)
+      throw expiredSession()
+    }
+    if (!result?.accessToken || !result.refreshToken) {
       clearAccessToken()
-      throw new ApiError(401, 'La API no devolvió credenciales renovadas', 'Sesión expirada')
+      throw expiredSession()
     }
     storeTokens(result)
-    return result.accessToken
+    return result
+  }
+
+  const promise = (async () => {
+    const channel = refreshChannel()
+    if (!channel) return (await rotate(refreshToken)).accessToken
+    const fingerprint = await refreshFingerprint(refreshToken)
+    const marker = rotationScope + ':' + fingerprint
+    return navigator.locks.request(marker, async () => {
+      if (generation !== authGeneration) throw expiredSession()
+      if (getRefreshToken() !== refreshToken) return getAccessToken() ?? ''
+      if (Number(localStorage.getItem(marker)) > Date.now()) {
+        const shared = await waitForPeerRotation(channel, fingerprint, refreshToken)
+        if (generation !== authGeneration) throw expiredSession()
+        if (shared) return shared
+        clearAccessToken()
+        throw expiredSession()
+      }
+      const result = await rotate(refreshToken)
+      lastRotation = { type: 'rotated', fingerprint, tokens: result }
+      try { markRotation(marker) } catch { /* Storage may be restricted by the browser. */ }
+      channel.postMessage(lastRotation)
+      return result.accessToken
+    })
   })()
+  refreshInFlight = { generation, promise }
 
   try {
-    return await refreshInFlight
+    return await promise
   } finally {
-    refreshInFlight = undefined
+    if (refreshInFlight?.promise === promise) refreshInFlight = undefined
   }
 }
 
 async function fetchAuthenticated(path: string, init: RequestInit): Promise<Response> {
+  const generation = authGeneration
+  refreshChannel()
   const token = getAccessToken()
   const response = await fetch(appPath(path), {
     ...init,
     headers: { ...(init.headers as Record<string, string> | undefined), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   })
+  if (generation !== authGeneration) throw expiredSession()
   if (response.status !== 401 || !token) return response
 
-  const newToken = await refreshAccessToken()
-  return fetch(appPath(path), {
+  init.signal?.throwIfAborted()
+  const current = getAccessToken()
+  const newToken = current && current !== token ? current : await refreshAccessToken(generation)
+  if (generation !== authGeneration || !newToken) throw expiredSession()
+  const retry = await fetch(appPath(path), {
     ...init,
     headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${newToken}` },
   })
+  if (generation !== authGeneration) throw expiredSession()
+  if (retry.status === 401 && getAccessToken() === newToken) clearAccessToken()
+  return retry
 }
 
 async function apiErrorFromResponse(response: Response, fallback: string): Promise<ApiError> {
@@ -138,7 +260,6 @@ async function apiErrorFromResponse(response: Response, fallback: string): Promi
 export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetchAuthenticated(path, signal ? { signal } : {})
   if (!response.ok) {
-    if (response.status === 401) clearAccessToken()
     throw await apiErrorFromResponse(response, response.status === 401 ? 'Sesión expirada' : 'No se pudieron cargar los datos')
   }
   return response.json() as Promise<T>
@@ -150,41 +271,61 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
  * for touch devices whose browsers cannot print PDFs from an iframe.
  */
 export async function apiPrintPdf(path: string, target?: Window | null): Promise<void> {
-  const response = await fetchAuthenticated(path, {})
-  if (!response.ok) {
-    target?.close()
-    if (response.status === 401) clearAccessToken()
-    throw await apiErrorFromResponse(response, response.status === 401 ? 'Sesión expirada' : 'No se pudo preparar el documento para imprimir')
+  let frame: HTMLIFrameElement | undefined
+  let objectUrl: string | undefined
+  function cleanup() {
+    frame?.remove()
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
   }
-  const objectUrl = URL.createObjectURL(new Blob([await response.blob()], { type: 'application/pdf' }))
-  if (target) {
-    target.location.href = objectUrl
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
-    return
-  }
-  const frame = document.createElement('iframe')
-  frame.title = 'Documento para imprimir'
-  frame.setAttribute('aria-hidden', 'true')
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
-  await new Promise<void>((resolve) => {
-    frame.onload = () => resolve()
-    frame.src = objectUrl
-    document.body.appendChild(frame)
-  })
   try {
-    frame.contentWindow?.focus()
-    frame.contentWindow?.print()
-  } catch {
-    window.open(objectUrl, '_blank', 'noopener')
+    const response = await fetchAuthenticated(path, {})
+    if (!response.ok) {
+      throw await apiErrorFromResponse(response, 'No se pudo preparar el documento para imprimir')
+    }
+    const pdf = await response.blob()
+    objectUrl = URL.createObjectURL(pdf.type === 'application/pdf' ? pdf : pdf.slice(0, pdf.size, 'application/pdf'))
+    if (target) {
+      target.location.href = objectUrl
+    } else {
+      const printer = document.createElement('iframe')
+      frame = printer
+      printer.title = 'Documento para imprimir'
+      printer.setAttribute('aria-hidden', 'true')
+      printer.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
+      printer.src = objectUrl
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => finish(new Error('El documento tardó demasiado en cargar.')), 15_000)
+        function finish(error?: Error) {
+          window.clearTimeout(timeout)
+          printer.onload = null
+          printer.onerror = null
+          if (error) reject(error)
+          else resolve()
+        }
+        printer.onload = () => finish()
+        printer.onerror = () => finish(new Error('No se pudo abrir el documento para imprimir.'))
+        document.body.appendChild(printer)
+      })
+      try {
+        const printWindow = printer.contentWindow
+        if (!printWindow) throw new Error('No se pudo abrir la vista de impresión.')
+        printWindow.focus()
+        printWindow.print()
+      } catch {
+        window.open(objectUrl, '_blank', 'noopener')
+      }
+    }
+    window.setTimeout(cleanup, 60_000)
+  } catch (error) {
+    target?.close()
+    cleanup()
+    throw error
   }
-  // Keep the document alive while the print dialog is open; browsers copy it when printing starts.
-  window.setTimeout(() => { frame.remove(); URL.revokeObjectURL(objectUrl) }, 60_000)
 }
 
 export async function apiGetBlob(path: string, filename: string): Promise<void> {
   const response = await fetchAuthenticated(path, {})
   if (!response.ok) {
-    if (response.status === 401) clearAccessToken()
     throw await apiErrorFromResponse(response, response.status === 401 ? 'Sesión expirada' : 'No se pudo descargar el documento')
   }
 
@@ -197,7 +338,7 @@ export async function apiGetBlob(path: string, filename: string): Promise<void> 
     link.click()
     link.remove()
   } finally {
-    URL.revokeObjectURL(objectUrl)
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
   }
 }
 
@@ -209,25 +350,26 @@ async function apiMutate<T>(path: string, method: string, body: unknown): Promis
     ...(hasBody ? { body: JSON.stringify(body) } : {}),
   })
   if (!response.ok) {
-    if (response.status === 401) clearAccessToken()
     throw await apiErrorFromResponse(response, 'No se pudo guardar el registro')
   }
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>
+  if (response.status === 204 || response.body === null) return undefined as T
+  if (!response.body) return response.json() as Promise<T>
+  const content = await response.text()
+  return content.length === 0 ? undefined as T : JSON.parse(content) as T
 }
 
 export async function logout() {
   const refreshToken = getRefreshToken()
-  try {
-    if (refreshToken) {
-      await fetch(appPath('/api/auth/logout'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      })
-    }
-  } finally {
-    clearAccessToken()
-  }
+  clearAccessToken()
+  if (refreshToken) await revokeRefreshToken(refreshToken)
+}
+
+function revokeRefreshToken(refreshToken: string) {
+  return fetch(appPath('/api/auth/logout'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  })
 }
 
 export function apiPost<T>(path: string, body: unknown): Promise<T> { return apiMutate<T>(path, 'POST', body) }
