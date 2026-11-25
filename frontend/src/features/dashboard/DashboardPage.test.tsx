@@ -17,6 +17,18 @@ function response(body: unknown) {
   return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
 }
 
+/** «Para atender ahora» asks for its own data, so only the period summary gets the failure. */
+function failSummaryOnce(failure: () => Promise<Response>) {
+  let failed = false
+  return vi.spyOn(global, 'fetch').mockImplementation((input) => {
+    if (!failed && String(input).startsWith('/api/dashboard?')) {
+      failed = true
+      return failure()
+    }
+    return response(data)
+  })
+}
+
 function renderDashboard(entry = '/dashboard') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><DashboardPage /></MemoryRouter></QueryClientProvider>)
@@ -83,7 +95,7 @@ describe('DashboardPage', () => {
   })
 
   it('keeps the date controls available and retries a failed request', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Error de conexión')).mockImplementation(() => response(data))
+    failSummaryOnce(() => Promise.reject(new Error('Error de conexión')))
     renderDashboard()
     await screen.findByText('No se pudo cargar el resumen')
     expect(screen.getByLabelText('Desde')).toBeInTheDocument()
@@ -92,8 +104,7 @@ describe('DashboardPage', () => {
   })
 
   it('keeps the page usable when an outdated backend returns the old summary format', async () => {
-    vi.spyOn(global, 'fetch').mockImplementationOnce(() => response({ todaySales: 100, pendingBalance: 50 }))
-      .mockImplementation(() => response(data))
+    failSummaryOnce(() => response({ todaySales: 100, pendingBalance: 50 }))
     renderDashboard()
     expect(await screen.findByText(/La respuesta del servidor no es compatible/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Resumen operativo' })).toBeInTheDocument()

@@ -56,7 +56,7 @@ export default function ShrinkagesPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Stock" title="Mermas" actions={<Button variant="secondary" href={backToStock}>Volver a Stock</Button>} />
+    <PageHeader title="Mermas" actions={<Button variant="secondary" href={backToStock}>Volver a Stock</Button>} />
     <Panel title="Mermas registradas">
       <div className="toolbar items-end">
         <div className="orders-date-filters ml-0">

@@ -37,6 +37,7 @@ test('editing uses the order form and locks customer and seller on desktop and m
   const detailLink = page.getByRole('link', { name: 'Abrir pedido PED-EDITAR' })
   const editLink = page.getByRole('link', { name: 'Editar pedido PED-EDITAR' })
   await expect(detailLink).toBeVisible()
+  await page.getByRole('button', { name: 'Más acciones del pedido PED-EDITAR' }).click()
   await expect(editLink).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('order-list-actions.png'), fullPage: true })
   await editLink.click()

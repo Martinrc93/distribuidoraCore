@@ -20,7 +20,7 @@ export default function SupplierOrderRestockPage() {
   if (!productId) return <Navigate to="/supplier-orders" replace />
 
   return <>
-    <PageHeader eyebrow="Compras" title="Reposición" />
+    <PageHeader title="Reposición" />
     {saved ? <Panel title={`Compra ${saved.number}`}>
       <p className="success-text" role="status">Compra {purchaseSavedMessage(saved.status)}</p>
       <div className="page-actions">

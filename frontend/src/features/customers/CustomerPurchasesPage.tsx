@@ -96,7 +96,7 @@ export default function CustomerPurchasesPage() {
 
   return <>
     <div className="[&_.page-header>div:first-child]:min-w-0 [&_.page-header_p]:[overflow-wrap:anywhere]">
-      <PageHeader eyebrow="Clientes" title="Compras del cliente" description={summary?.customer}
+      <PageHeader title="Compras del cliente" description={summary?.customer}
         actions={<Button variant="secondary" href={back}>{canOpenCustomer ? 'Volver a la ficha' : 'Volver a clientes'}</Button>} />
     </div>
     <div className="content-grid">

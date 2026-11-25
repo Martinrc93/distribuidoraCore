@@ -305,7 +305,7 @@ export default function CustomersPage() {
     </div> })
 
   return <>
-    <PageHeader eyebrow="Operación" title="Clientes" description={isAdmin ? 'Gestioná clientes, vendedor, lista de precios y cuenta corriente.' : 'Consultá únicamente los clientes asignados a tu vendedor.'} actions={canCreate ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
+    <PageHeader title="Clientes" description={isAdmin ? 'Gestioná clientes, vendedor, lista de precios y cuenta corriente.' : 'Consultá únicamente los clientes asignados a tu vendedor.'} actions={canCreate ? <Button onClick={() => { setFormCustomer(undefined); setShowForm((value) => !value) }}>+ Nuevo cliente</Button> : undefined} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
     {actionError && <p className="error-text" role="alert"><CurrencyText>{actionError}</CurrencyText></p>}
     {loadingSettlement && <p className="helper-text" role="status">Consultando el saldo actual del cliente…</p>}

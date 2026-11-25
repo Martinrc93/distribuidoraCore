@@ -90,7 +90,7 @@ export default function SuppliersPage() {
   const total = query.data?.totalElements ?? 0
 
   return <>
-    <PageHeader eyebrow="Catálogo" title="Proveedores" description="Consulta y administra los datos de contacto de los proveedores." actions={<Button type="button" onClick={() => startForm()}>+ Nuevo proveedor</Button>} />
+    <PageHeader title="Proveedores" description="Consulta y administra los datos de contacto de los proveedores." actions={<Button type="button" onClick={() => startForm()}>+ Nuevo proveedor</Button>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {form && <SupplierForm initial={form.initial} onClose={() => setForm(null)} onSuccess={setFeedback} />}
     <Panel title="Proveedores registrados" description={`${total} ${total === 1 ? 'proveedor' : 'proveedores'}`}>

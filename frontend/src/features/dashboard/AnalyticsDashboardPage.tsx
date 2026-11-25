@@ -143,7 +143,7 @@ export default function AnalyticsDashboardPage() {
     return range.start === start && range.end === end
   }) ?? 'custom'
   return <div className="grid min-w-0 gap-[20px] [&>.page-header]:mb-0">
-    <PageHeader eyebrow="Operación" title="Dashboard" description="Ventas, cobros, gastos y prioridades de la distribuidora." actions={<Button type="button" variant="secondary" disabled={Boolean(error) || query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Actualizando…' : 'Actualizar datos'}</Button>} />
+    <PageHeader title="Dashboard" description="Ventas, cobros, gastos y prioridades de la distribuidora." actions={<Button type="button" variant="secondary" disabled={Boolean(error) || query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Actualizando…' : 'Actualizar datos'}</Button>} />
     <Panel title="Período de análisis" description="El período se aplica a ventas, cobros, gastos, rankings y pedidos recientes.">
       <div className="toolbar mb-0 items-end [&>.field]:min-w-0 [@media(max-width:640px)]:grid [@media(max-width:640px)]:grid-cols-1">
         <label className="field"><span id="analytics-period-label">Período</span><select className="select" aria-labelledby="analytics-period-label" value={preset} onChange={(event) => changePreset(event.target.value)}><option value="today">Hoy</option><option value="week">Esta semana</option><option value="month">Este mes</option><option value="custom">Personalizado</option></select></label>

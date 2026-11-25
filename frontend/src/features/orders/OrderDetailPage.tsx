@@ -51,8 +51,8 @@ export default function OrderDetailPage() {
     setParams(next, { replace: true })
   }
 
-  if (query.isLoading) return <><PageHeader eyebrow="Operación" title="Pedido" description="Consultando pedido, venta y cobros." /><Panel><EmptyState state="loading" title="Cargando pedido" description="Consultando snapshots comerciales." /></Panel></>
-  if (query.isError || !query.data) return <><PageHeader eyebrow="Operación" title="Pedido" description="No se pudo abrir el detalle." /><Panel><EmptyState state="error" title="No se pudo cargar el pedido" description={query.error?.message ?? 'Revisá el número o el acceso al pedido.'} action={<Button variant="secondary" href="/orders">Volver a pedidos</Button>} /></Panel></>
+  if (query.isLoading) return <><PageHeader title="Pedido" description="Consultando pedido, venta y cobros." /><Panel><EmptyState state="loading" title="Cargando pedido" description="Consultando snapshots comerciales." /></Panel></>
+  if (query.isError || !query.data) return <><PageHeader title="Pedido" description="No se pudo abrir el detalle." /><Panel><EmptyState state="error" title="No se pudo cargar el pedido" description={query.error?.message ?? 'Revisá el número o el acceso al pedido.'} action={<Button variant="secondary" href="/orders">Volver a pedidos</Button>} /></Panel></>
 
   const { order, items, sale, payments, deliveryAttempts = [] } = query.data
   const commonListId = items[0]?.priceListId
@@ -103,7 +103,7 @@ export default function OrderDetailPage() {
 
   return <>
     <div className="order-customer-header">
-      <PageHeader eyebrow="Operación" title={order.customer} description={<span className="flex flex-wrap items-center gap-x-[8px] gap-y-[4px]">
+      <PageHeader title={order.customer} description={<span className="flex flex-wrap items-center gap-x-[8px] gap-y-[4px]">
         <span>{`Pedido ${order.number} · ${date(order.date)}`}</span>
         <Badge tone={order.status === 'DELIVERED' ? 'strong' : order.status === 'CANCELLED' ? 'muted' : 'soft'}>
           <span className="sr-only">Estado del pedido: </span>{orderStatusLabel(order.status)}

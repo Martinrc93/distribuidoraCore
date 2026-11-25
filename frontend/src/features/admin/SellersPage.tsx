@@ -218,7 +218,7 @@ export default function SellersPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Administración" title="Vendedores" description="Perfiles comerciales, clientes asignados y reasignaciones." actions={<div className="page-actions"><Button onClick={openCreate}>+ {newProfileLabel}</Button><Button variant="secondary" onClick={() => { setReassignCustomers(true); setError('') }}>Reasignar clientes</Button><Button variant="secondary" onClick={() => { setReassignOrders(true); setError('') }}>Reasignar pedidos</Button></div>} />
+    <PageHeader title="Vendedores" description="Perfiles comerciales, clientes asignados y reasignaciones." actions={<div className="page-actions"><Button onClick={openCreate}>+ {newProfileLabel}</Button><Button variant="secondary" onClick={() => { setReassignCustomers(true); setError('') }}>Reasignar clientes</Button><Button variant="secondary" onClick={() => { setReassignOrders(true); setError('') }}>Reasignar pedidos</Button></div>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
 
     {showCreate && <FormModal label={formTitle} size="compact" busy={saving} onClose={requestDiscard}>

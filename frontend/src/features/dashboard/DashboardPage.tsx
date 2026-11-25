@@ -10,11 +10,11 @@ import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
 import { Panel } from '../../shared/components/Panel'
-import { StatCard } from '../../shared/components/StatCard'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
 import { parseDashboardData } from './dashboardResponses'
 import { SellerOrdersDialog, type SellerOrderSelection } from './SellerOrdersDialog'
 import { PendingOrderReviews } from './PendingOrderReviews'
+import { AttentionNow } from './AttentionNow'
 
 type Metrics = {
   performedOrders: number
@@ -31,6 +31,11 @@ export type DashboardData = {
   dateMax: string
   totals: Metrics
   bySeller: Array<Metrics & { sellerId: string | null; seller: string }>
+}
+
+/** A figure of the period strip. */
+function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return <div className="metric"><dt>{label}</dt><dd className="metric-value">{value}</dd>{detail && <dd className="metric-detail">{detail}</dd>}</div>
 }
 
 function money(value: number) {
@@ -90,37 +95,36 @@ export default function DashboardPage() {
   }]
 
   return <>
-    <PageHeader eyebrow="Operación" title="Resumen operativo" description="Totales del período y detalle por vendedor." />
-    <div className="[&_.panel-header]:mb-0 [&_.panel-header]:items-center [&_.panel-header]:flex-wrap">
-    <Panel title="Período" description="Se toman los pedidos creados entre Desde y Hasta, incluyendo ambos días." action={
-      <form className="flex flex-wrap items-end gap-[9px] max-w-full [@media(max-width:760px)]:w-full" onSubmit={(event) => event.preventDefault()}>
-        <div className="orders-date-filters ml-0 min-w-[240px] [@media(max-width:640px)]:w-auto [@media(max-width:640px)]:flex-1">
+    <PageHeader title="Resumen operativo" description="Pedidos creados entre Desde y Hasta, incluidos ambos días." actions={
+      <form className="dashboard-period" aria-label="Período" onSubmit={(event) => event.preventDefault()}>
+        <div className="orders-date-filters">
           <OrderDateFilter id="dashboard-date-min" label="Desde" value={dateMin} isoValue={min ?? ''} onChange={(value) => setDate('dateMin', value)} invalid={!min || reversed} describedBy={dateError ? 'dashboard-date-error' : undefined} />
           <OrderDateFilter id="dashboard-date-max" label="Hasta" value={dateMax} isoValue={max ?? ''} onChange={(value) => setDate('dateMax', value)} invalid={!max || reversed} describedBy={dateError ? 'dashboard-date-error' : undefined} />
         </div>
         <Button type="button" variant="secondary" onClick={showToday}>Hoy</Button>
       </form>
-    }>
-      {dateError && <p id="dashboard-date-error" className="error-text" role="alert">{dateError}</p>}
-    </Panel>
-    </div>
-    <PendingOrderReviews />
+    } />
+    {dateError && <p id="dashboard-date-error" className="error-text mb-[16px]" role="alert">{dateError}</p>}
+    <AttentionNow />
+    <PendingOrderReviews hideWhenEmpty />
     {!dateError && (query.isLoading ? <EmptyState state="loading" title="Cargando resumen" description="Consultando pedidos y sus saldos." />
       : query.isError ? <EmptyState state="error" title="No se pudo cargar el resumen" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />
       : data && <>
-        <section className="mt-[20px]" aria-label="Totales del período">
-          <h2>Pedidos</h2>
-          <div className="stats-grid dashboard-order-metrics">
-            <StatCard label="Pedidos realizados" value={String(data.totals.performedOrders)} detail="Incluye pedidos cancelados" />
-            <StatCard label="Pedidos entregados" value={String(data.totals.deliveredOrders)} detail="Del conjunto de pedidos del período" />
+        <section className="metric-strip" aria-label="Totales del período">
+          <div className="metric-group">
+            <h2>Pedidos</h2>
+            <dl>
+              <Metric label="Pedidos realizados" value={String(data.totals.performedOrders)} detail="Incluye cancelados" />
+              <Metric label="Pedidos entregados" value={String(data.totals.deliveredOrders)} detail="Del período" />
+            </dl>
           </div>
-          <h2>Facturación y cobros</h2>
-          <div className="stats-grid compact">
-            <StatCard label="Total facturado" value={money(data.totals.totalBilled)} detail="Importe de ventas no canceladas" />
-            <StatCard label="Total pagado" value={money(data.totals.totalPaid)} detail="Cobros acumulados de esas ventas" />
-            <StatCard label="Pagado en efectivo" value={money(data.totals.cashPaid)} detail="Cobros acumulados en efectivo" />
-            <StatCard label="Pagado en transferencia" value={money(data.totals.transferPaid)} detail="Cobros acumulados por transferencia" />
-            <StatCard label="Por cobrar en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo pendiente de cobro de esas ventas" />
+          <div className="metric-group metric-group-wide">
+            <h2>Facturación y cobros</h2>
+            <dl>
+              <Metric label="Total facturado" value={money(data.totals.totalBilled)} detail="Ventas no canceladas" />
+              <Metric label="Total pagado" value={money(data.totals.totalPaid)} detail={`Efectivo ${money(data.totals.cashPaid)} · Transferencia ${money(data.totals.transferPaid)}`} />
+              <Metric label="Por cobrar en cuenta corriente" value={money(data.totals.accountBalance)} detail="Saldo de esas ventas" />
+            </dl>
           </div>
         </section>
         <Panel title="Detalle por vendedor" description="Entregas, cobros y saldos reflejan el estado actual de los pedidos del período. No incluye deuda de otros períodos ni saldo anterior agregado al remito.">

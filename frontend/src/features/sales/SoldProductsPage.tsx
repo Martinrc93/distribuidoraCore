@@ -102,7 +102,7 @@ export default function SoldProductsPage() {
 
   return <>
     <div className="[&_.page-header>div:first-child]:min-w-0 [&_h1]:[overflow-wrap:anywhere]">
-      <PageHeader eyebrow="Ventas" title={productId ? selected?.product ?? 'Historial por artículo' : 'Artículos vendidos'}
+      <PageHeader title={productId ? selected?.product ?? 'Historial por artículo' : 'Artículos vendidos'}
         actions={<Button variant="secondary" href={productId ? `/sales/products${summarySuffix}` : backHref}>
           {productId ? 'Volver a artículos vendidos' : backLabel}
         </Button>} />

@@ -36,11 +36,11 @@ export default function SupplierOrderDetailPage() {
   const query = useQuery({ queryKey: queryKeys.purchasing.detail(orderId), queryFn: ({ signal }) => apiGet<SupplierOrderDetail>(`/api/supplier-orders/${orderId}`, signal), retry: false })
   const back = `/supplier-orders${params.toString() ? `?${params}` : ''}`
   if (query.isLoading) return <>
-    <PageHeader eyebrow="Operación" title="Compra" actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
+    <PageHeader title="Compra" actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
     <Panel><EmptyState state="loading" title="Cargando compra" description="Consultando la solicitud al proveedor." /></Panel>
   </>
   if (query.isError || !query.data) return <>
-    <PageHeader eyebrow="Operación" title="Compra" actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
+    <PageHeader title="Compra" actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
     <Panel><EmptyState state="error" title="No se pudo cargar la compra" description={query.error?.message ?? 'Compra no disponible.'} action={<Button variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} /></Panel>
   </>
   const { order, items } = query.data
@@ -68,7 +68,7 @@ export default function SupplierOrderDetailPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Operación" title={order.number} description={`${order.supplier} · ${displayDate(order.date)}`} actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
+    <PageHeader title={order.number} description={`${order.supplier} · ${displayDate(order.date)}`} actions={<Button variant="secondary" href={back}>Volver a compras</Button>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {editing ? <SupplierOrderForm initial={query.data} onClose={() => setEditing(false)} onSaved={(result) => {
       setEditing(false)

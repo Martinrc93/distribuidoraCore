@@ -15,7 +15,7 @@ export default function SupplierOrderCreatePage() {
   }
 
   return <>
-    <PageHeader eyebrow="Compras" title="Nueva compra" />
+    <PageHeader title="Nueva compra" />
     <SupplierOrderForm onClose={() => navigate(`/supplier-orders${search}`, { replace: true })} onSaved={handleSaved} />
   </>
 }

@@ -419,7 +419,7 @@ export default function PriceListsPage() {
   }
 
   return <div className="price-lists-page">
-    <PageHeader eyebrow="Catálogo" title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <>
+    <PageHeader title="Listas de precios" description="Cada producto tiene un precio por lista; los pedidos resuelven la lista del cliente o la elegida para la operación." actions={isAdmin ? <>
       <DocumentActions path="/api/documents/price-lists" filename="listas-de-precios.pdf" downloadLabel="Descargar todas las listas"
         disabled={!listsQuery.data?.totalElements} onDone={reportDocumentAction} />
       <Button onClick={() => { setShowCreate((value) => !value); setError('') }}>+ Nueva lista</Button>

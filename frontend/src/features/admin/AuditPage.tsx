@@ -80,7 +80,7 @@ export default function AuditPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Administración" title="Auditoría" description="Consultá los eventos append-only con actor, operación y recurso." />
+    <PageHeader title="Auditoría" description="Consultá los eventos append-only con actor, operación y recurso." />
     <Panel>
       <div className="toolbar"><label className="field min-w-0 [@media(max-width:640px)]:w-full"><span>Filtrar eventos</span><input className="input search-input audit-search-input" placeholder="Operación, recurso, ID o resultado" aria-label="Filtrar eventos de auditoría" value={search} onChange={(event) => update({ search: event.target.value })} /></label></div>
       {query.isLoading ? <EmptyState state="loading" title="Cargando auditoría" description="Consultando eventos registrados." /> : query.isError ? <EmptyState state="error" title="No se pudo cargar la auditoría" description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} /> : rows.length === 0 ? <EmptyState title="No hay eventos para mostrar" description="Probá otra búsqueda." /> : <>

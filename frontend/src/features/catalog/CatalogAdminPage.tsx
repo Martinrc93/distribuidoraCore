@@ -168,7 +168,7 @@ export default function CatalogAdminPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Catálogo" title="Marcas y categorías" description="Organizá el catálogo y mantené asociaciones visibles en los productos." actions={isAdmin ? <Button onClick={openCreate}>+ Nueva {resource.singular}</Button> : undefined} />
+    <PageHeader title="Marcas y categorías" description="Organizá el catálogo y mantené asociaciones visibles en los productos." actions={isAdmin ? <Button onClick={openCreate}>+ Nueva {resource.singular}</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && !showForm && !deactivateItem && <p className="error-text" role="alert">{error}</p>}
     <div ref={catalogTabs} className="catalog-tabs" role="tablist" aria-label="Administrar marcas y categorías" onKeyDown={moveBetweenTabs}>

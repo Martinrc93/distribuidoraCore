@@ -37,9 +37,13 @@ describe('OrdersPage', () => {
     const row = await screen.findByRole('row', { name: /PED-REVIEW/ })
     expect(row).not.toHaveTextContent('Cargado por:')
     expect(screen.queryByText('Vendedor · Pendiente de revisión')).not.toBeInTheDocument()
+    // A pending order shows preparation as its next step; delivery and review stay in the row menu.
     expect(screen.getByRole('button', { name: 'Preparar pedido PED-REVIEW' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Pasar a entregado pedido PED-REVIEW' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Pasar a entregado pedido PED-REVIEW' })).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('&status=CONFIRMED&'), expect.anything())
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('&createdBy=SELLER&fulfillmentStatus=PENDING&reviewPending=true'), expect.anything())
+    await user.click(screen.getByRole('button', { name: 'Más acciones del pedido PED-REVIEW' }))
+    expect(screen.getByRole('button', { name: 'Pasar a entregado pedido PED-REVIEW' })).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Confirmar revisión del pedido PED-REVIEW' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar revisión' }))
     expect(await screen.findByRole('status')).toHaveTextContent('Revisión del pedido PED-REVIEW confirmada')
@@ -140,6 +144,7 @@ describe('OrdersPage', () => {
     await screen.findByText('PED-CONFIRMED')
     expect(screen.getAllByRole('link', { name: /Abrir pedido/ })).toHaveLength(3)
     if (authority === 'ADMIN_ALL') {
+      fireEvent.click(screen.getByRole('button', { name: 'Más acciones del pedido PED-CONFIRMED' }))
       expect(screen.getByRole('link', { name: 'Editar pedido PED-CONFIRMED' })).toHaveAttribute('href', '/orders/CONFIRMED?edit=true')
       expect(screen.getAllByRole('link', { name: /Editar pedido/ })).toHaveLength(1)
     } else expect(screen.queryByRole('link', { name: /Editar pedido/ })).not.toBeInTheDocument()
@@ -299,7 +304,7 @@ describe('OrdersPage', () => {
     expect(screen.getByLabelText('Desde')).toHaveValue('')
     expect(screen.getByLabelText('Hasta')).toHaveValue('')
     expect(screen.getByLabelText('Buscar pedidos')).toHaveValue('')
-    expect(screen.getByLabelText('Filtrar por estado')).toHaveValue('')
+    expect(within(screen.getByRole('group', { name: 'Estado del pedido' })).getByRole('button', { name: /^Todos/ })).toHaveAttribute('aria-pressed', 'true')
     expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=20&search=&status=&dateMin=&dateMax=', expect.anything())
   })
 
@@ -366,6 +371,33 @@ describe('OrdersPage', () => {
     expect(JSON.parse(sessionStorage.getItem('distribuidora.orders.navigation') ?? '{}')).toMatchObject({ ids: ['order-1', 'order-2'], numbers: ['PED-001', 'PED-002'] })
   })
 
+  it('groups orders by state with counts and splits the orders to deliver by preparation', async () => {
+    const user = userEvent.setup()
+    const totals: Record<string, number> = { '': 9, CONFIRMED: 5, DELIVERED: 3, CANCELLED: 1, 'CONFIRMED:PENDING': 2, 'CONFIRMED:PREPARED': 3 }
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const params = new URL(String(input), 'http://localhost').searchParams
+      const key = [params.get('status') ?? '', params.get('fulfillmentStatus')].filter((part) => part !== null).join(':')
+      return response({ content: [{ id: 'order-1', number: 'PED-001', customer: 'Almacén Norte', seller: 'Lucía', total: 300, status: 'CONFIRMED', date: '2026-09-30T02:00:00Z', fulfillmentStatus: 'PREPARED' }], page: 0, size: 20, totalElements: totals[key] ?? 0, totalPages: 1 })
+    })
+    renderOrders('/orders?dateMin=&dateMax=', ['ADMIN_ALL'])
+    const stages = screen.getByRole('group', { name: 'Estado del pedido' })
+    expect(await within(stages).findByRole('button', { name: /^Por entregar[:\s]+5 pedidos$/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(stages).getByRole('button', { name: /^Todos[:\s]+9 pedidos$/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=1&search=&status=DELIVERED&dateMin=&dateMax=', expect.anything())
+    expect(screen.queryByRole('group', { name: 'Preparación' })).not.toBeInTheDocument()
+
+    await user.click(within(stages).getByRole('button', { name: /^Por entregar[:\s]+5 pedidos$/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=20&search=&status=CONFIRMED&dateMin=&dateMax=', expect.anything()))
+    const preparation = screen.getByRole('group', { name: 'Preparación' })
+    await user.click(await within(preparation).findByRole('button', { name: /^A preparar[:\s]+2 pedidos$/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=20&search=&status=CONFIRMED&dateMin=&dateMax=&fulfillmentStatus=PENDING', expect.anything()))
+    expect(within(preparation).getByRole('button', { name: /^A preparar[:\s]+2 pedidos$/ })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(within(stages).getByRole('button', { name: /^Entregados[:\s]+3 pedidos$/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders?page=0&size=20&search=&status=DELIVERED&dateMin=&dateMax=', expect.anything()))
+    expect(screen.queryByRole('group', { name: 'Preparación' })).not.toBeInTheDocument()
+  })
+
   it('hides the creator filter and column from sellers', async () => {
     mockOrders()
     renderOrders('/orders', ['ORDER_CREATE'])
@@ -380,7 +412,8 @@ describe('OrdersPage', () => {
     mockOrders()
     renderOrders('/orders?status=CONFIRMED&paid=UNDELIVERED')
     await screen.findByText('PED-001')
-    const toggle = screen.getByRole('button', { name: 'Más filtros (2)' })
+    expect(within(screen.getByRole('group', { name: 'Estado del pedido' })).getByRole('button', { name: /^Por entregar/ })).toHaveAttribute('aria-pressed', 'true')
+    const toggle = screen.getByRole('button', { name: 'Más filtros (1)' })
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')

@@ -42,13 +42,13 @@ export default function CustomerDetailPage() {
   const backAction = <Button variant="secondary" href={back}>Volver a clientes</Button>
 
   if (customerQuery.isPending) return <>
-    <PageHeader eyebrow="Operación" title="Cliente" actions={backAction} />
+    <PageHeader title="Cliente" actions={backAction} />
     <Panel><EmptyState state="loading" title="Cargando cliente" description="Consultando los datos del cliente." /></Panel>
   </>
   if (customerQuery.isError) {
     const unavailable = customerQuery.error instanceof ApiError && customerQuery.error.status === 404
     return <>
-      <PageHeader eyebrow="Operación" title="Cliente" actions={backAction} />
+      <PageHeader title="Cliente" actions={backAction} />
       <Panel><EmptyState state="error" title={unavailable ? 'Cliente no disponible' : 'No se pudo cargar el cliente'}
         description={unavailable ? 'El cliente no existe o no tenés acceso a sus datos.' : 'No se pudieron consultar los datos. Podés reintentar.'}
         action={!unavailable && <Button variant="secondary" onClick={() => customerQuery.refetch()}>Reintentar datos</Button>} /></Panel>
@@ -86,7 +86,7 @@ export default function CustomerDetailPage() {
   const clientRows = (clientsQuery.data?.content ?? []).map((client) => ({ id: client.id, name: client.name, number: client.number ?? '', balance: money(Number(client.balance ?? 0)), status: client.status }))
   const purchasePath = `/customers/${encodeURIComponent(customerId)}/purchases${params.size ? `?${new URLSearchParams({ customerFilters: params.toString() })}` : ''}`
   return <>
-    <PageHeader eyebrow="Operación" title={customer.name} description="Datos del cliente e historial de pedidos." actions={<>
+    <PageHeader title={customer.name} description="Datos del cliente e historial de pedidos." actions={<>
       {hasPermission('REPORTS_VIEW') && <Button variant="secondary" href={purchasePath}>Ver compras del cliente</Button>}
       {reseller && isAdmin && <Button variant="secondary" href={`/sales?accountCustomerId=${encodeURIComponent(customerId)}&pendingBalance=true`}>Ver deuda de la cuenta</Button>}
       {backAction}

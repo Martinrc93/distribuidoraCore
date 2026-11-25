@@ -41,7 +41,7 @@ export default function SupplierOrdersPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Operación" title="Compras" description="Solicitudes de compra e historial por proveedor y fecha." actions={<Link className="button button-primary" to={`/supplier-orders/new${search}`}>+ Nueva compra</Link>} />
+    <PageHeader title="Compras" description="Solicitudes de compra e historial por proveedor y fecha." actions={<Link className="button button-primary" to={`/supplier-orders/new${search}`}>+ Nueva compra</Link>} />
     {saved && <p className="success-text" role="status">Compra {saved.number} {purchaseSavedMessage(saved.status)} <Button variant="link" href={`/supplier-orders/${encodeURIComponent(saved.id)}${search}`}>Ver compra registrada</Button></p>}
     <Panel title="Compras realizadas" description="Sin fechas seleccionadas se muestra todo el historial. Los importes corresponden a la solicitud registrada.">
       <div className="toolbar items-end">

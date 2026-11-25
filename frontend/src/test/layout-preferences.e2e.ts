@@ -355,7 +355,15 @@ for (const width of [390, 1280]) {
 
     await page.goto('/orders')
     await expectTableFits()
-    await expect(page.locator('td[data-label="Estado"] .badge')).toHaveText('Confirmado')
+    // A confirmed order shows its preparation, and the row keeps one next step plus its menu.
+    await expect(page.locator('td[data-label="Estado"] .badge')).toHaveText('A preparar')
+    await expect(page.getByRole('button', { name: 'Preparar pedido 000100001' })).toBeVisible()
+    const orderActions = page.getByRole('button', { name: 'Más acciones del pedido 000100001' })
+    await orderActions.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: 'Confirmar revisión del pedido 000100001' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(orderActions).toBeFocused()
 
     await page.goto('/products')
     await expectTableFits()

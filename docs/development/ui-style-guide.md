@@ -107,7 +107,7 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   importado en `frontend/src/main.tsx`, con pesos variables y `font-display: swap`.
   El token `--font-sans` centraliza la familia para texto, controles y diálogos.
   Los números conservan `tabular-nums`.
-- Título de página: `h1`, `clamp(28px, 4vw, 42px)`, altura de línea `1.05`.
+- Título de página: `h1`, `28px` (`24px` a `760px` o menos), altura de línea `1.1`.
   Título de panel: `h2`, `15px`; subtítulo: `h3`, `14px`.
   Descripciones: `13px`; controles y tablas: `12px`; etiquetas: `11px`.
 - Los importes monetarios, cantidades y porcentajes reutilizan
@@ -134,9 +134,9 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 ### Tema claro y oscuro
 
 - `ThemeToggle` ofrece el cambio en la barra superior para todos los usuarios,
-  también hasta `1050px`, sin abrir el menú. Muestra la acción «Oscuro» o «Claro»
-  con un icono; hasta `460px` conserva solo el icono y su nombre accesible.
-  Tiene altura mínima de `44px`, foco visible, `aria-pressed` para el estado oscuro
+  también hasta `1050px`, sin abrir el menú. Es un botón de icono de `44px × 44px`
+  en todos los anchos; «Cambiar a modo oscuro/claro» es su nombre accesible y su
+  `title`. Tiene foco visible, `aria-pressed` para el estado oscuro
   y admite Enter/Espacio. No cambia los permisos ni la navegación.
 - El tema inicial es claro. La preferencia se guarda por navegador en
   `localStorage` (`distribuidora.theme`), se restaura antes de pintar y se sincroniza
@@ -156,8 +156,9 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 ### Tamaño de texto
 
 - `TextSizeToggle` aparece en la barra superior antes de `ThemeToggle`. Alterna
-  entre «Texto grande» y «Texto normal» con `aria-pressed`, `44px` de alto, foco
-  visible y Enter/Espacio; hasta `460px` muestra solo el icono «AA».
+  entre «Agrandar el texto» y «Usar texto de tamaño normal» con `aria-pressed`, foco
+  visible y Enter/Espacio. Es un botón de icono «AA» de `44px × 44px` en todos los
+  anchos, nombrado por `aria-label` y `title`.
 - La preferencia se guarda por navegador en `localStorage`
   (`distribuidora.text-size`), se restaura antes de pintar y se sincroniza entre
   pestañas, igual que el tema. El control también aparece en las pantallas públicas.
@@ -229,6 +230,8 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   Escape, clic en el fondo o selección de un enlace cierran el menú, también
   al cambiar de ruta o pasar a escritorio; en este último caso enfoca el enlace
   activo del sidebar. La barra indica la sección actual, incluidas sus subrutas.
+- Sobre `1050px`, la barra superior mide `56px` de alto con padding horizontal de
+  `32px`: ruta del grupo y la sección, tamaño de texto, tema y correo de la sesión.
 - La sesión activa muestra el correo del usuario cuando está disponible en su
   token. En escritorio también aparece en la barra superior. Con el menú
   compacto se consulta en el pie del menú.
@@ -254,11 +257,14 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
   restringe clientes a su vendedor asignado y ventas/pedidos al vendedor del
   pedido, usando el vendedor actual del cliente cuando no hay uno en el pedido;
   también protege búsqueda, opciones, conteos y acceso directo por ID o número.
-- `.page-content`: ancho máximo `1440px`, centrado y padding desktop `38px`.
+- `.page-content`: ancho máximo `1440px`, centrado y padding desktop `28px 32px`.
 - Usar [`PageHeader`](../../frontend/src/shared/components/PageHeader.tsx):
-  `eyebrow` y `title` obligatorios; `description` (texto o contenido en línea)
-  y `actions` opcionales.
-  Las acciones se agrupan automáticamente en `.page-actions`.
+  `title` obligatorio; `description` (texto o contenido en línea), `actions` y
+  `eyebrow` opcionales. La barra superior ya nombra el grupo y la sección, así que
+  `eyebrow` se usa solo para un contexto que la barra no muestra (por ejemplo
+  «Pedido confirmado»). El encabezado deja `20px` hasta el contenido.
+  Las acciones se agrupan automáticamente en `.page-actions`; los controles de
+  período de una pantalla de indicadores también van ahí.
 - Usar [`Panel`](../../frontend/src/shared/components/Panel.tsx): `title`,
   `description` y `action` opcionales, más `children`. Genera un `section.panel`
   y un `.panel-header` cuando corresponde. Las acciones directas conservan su
@@ -269,18 +275,30 @@ y bordes discretos. Mantener la jerarquía mediante tipografía, espacio y agrup
 - Usar [`StatCard`](../../frontend/src/shared/components/StatCard.tsx) con
   `label`, `value`, `detail` y `emphasis` opcional. `.stats-grid` tiene cuatro
   columnas; `.stats-grid.compact`, tres. Borde superior verde y valor de `25px`.
-- Resumen es exclusivo de `ADMIN_ALL` en menú, ruta y API. El panel «Período»
-  reutiliza `OrderDateFilter`, `OrderCalendar` y `.orders-date-filters` para
+- Resumen es exclusivo de `ADMIN_ALL` en menú, ruta y API. El período
+  (`.dashboard-period`) va en las acciones del encabezado y reutiliza
+  `OrderDateFilter`, `OrderCalendar` y `.orders-date-filters` para
   Desde/Hasta, con ambas fechas requeridas y el día actual de Argentina como
   valor inicial. Conserva el rango en la URL y ofrece «Hoy» para restablecerlo.
-  En esta pantalla, título y controles comparten el encabezado del panel para
-  reducir su altura. «Hoy» se ubica inmediatamente después de Desde/Hasta,
-  alineado con los campos; el conjunto se adapta al ancho disponible y solo
-  separa el botón en una segunda fila si no entra junto a las fechas.
   Fechas inválidas o invertidas bloquean la consulta y ocultan los resultados.
-  Las dos tarjetas de pedidos se agrupan bajo «Pedidos». Las cinco de
-  facturación y cobros usan `.stats-grid.compact` en tres columnas en escritorio
-  y dos a `760px` o menos. Ambos grupos pasan a una columna a `460px` o menos.
+- Debajo, [`AttentionNow`](../../frontend/src/features/dashboard/AttentionNow.tsx)
+  («Para atender ahora») muestra en tres tarjetas `.attention-card` la situación
+  actual, sin depender del período: pedidos de vendedores por revisar, pedidos
+  por entregar con la fecha del más antiguo y stock crítico. Cada tarjeta ofrece
+  un enlace a la tarea (revisiones, pedidos por entregar, Stock). El borde
+  superior y el texto de detalle usan cobre (pendientes) o peligro (stock), y el
+  texto explica el estado sin depender del color. Cada dato se consulta por
+  separado: uno que falla muestra «No se pudo consultar» y «Volver a consultar»
+  sin afectar a los demás ni al resto de la pantalla. Usa
+  `/api/dashboard/analytics` del día y la consulta de revisiones pendientes.
+  Las tarjetas pasan a una columna a `760px` o menos.
+- El panel de revisiones (`PendingOrderReviews` con `hideWhenEmpty`) aparece
+  solo cuando hay pedidos por revisar o se acaba de confirmar una revisión.
+- Las cifras del período van en una franja `.metric-strip` con borde superior
+  verde y dos grupos: «Pedidos» (realizados y entregados) y «Facturación y
+  cobros» (facturado, pagado con el desglose de efectivo y transferencia como
+  detalle, y por cobrar). Usa `dl` con valores de `22px`. A `760px` o menos los
+  grupos se apilan y cada uno muestra dos cifras por fila.
   Debajo, `DataTable` presenta las
   mismas métricas por vendedor y separa «Pagado en efectivo» y «Pagado en
   transferencia» en columnas; a `640px` se adapta a tarjetas etiquetadas.
@@ -767,25 +785,39 @@ el subtotal, el porcentaje general por separado y el descuento total guardado
 de productos más general. Si el pedido incluye un importe de la cuenta corriente,
 lo muestra en «Saldo anterior de cuenta corriente» y lo suma al «Total a cobrar».
 
+Etapas del listado: arriba del panel, `.orders-stages` (grupo «Estado del pedido»)
+ofrece Todos, Por entregar, Entregados y Cancelados como botones con
+`aria-pressed`, cada uno con la cantidad de pedidos que cumplen los demás filtros
+(`.orders-stage-count`, con «pedidos» para lectores de pantalla). Guardan el
+estado en `status`. Con «Por entregar», `.orders-preparation` (grupo
+«Preparación») divide los pedidos en Todos, A preparar y Listos para entregar y
+guarda `fulfillment`. Cambiar de etapa quita la preparación y vuelve a la
+primera página. Las cantidades se consultan con el mismo listado y tamaño `1`;
+si una falla, solo se omite ese número. Un enlace anterior con `fulfillment` y
+sin `status` se abre en «Por entregar». A `640px` o menos las etapas desplazan
+horizontalmente y las opciones de preparación ocupan el ancho con `44px` de alto.
+
 Filtros adicionales del listado: «Cobro» (Todos / Pagados sin entregar) para todos
 los usuarios y «Cargado por» (Todos / Administrador / Vendedor) solo para
 administradores, guardados en la URL (`paid`, `createdBy`). La celda «Fecha» muestra
 solo la fecha, sin atribución «Cargado por» ni distintivo de revisión pendiente.
-«Todas las fechas» limpia el rango y conserva los demás filtros. Un pedido
-confirmado totalmente pagado muestra el badge «Pagado» junto al estado
-(`.order-status-badges`).
+«Todas las fechas» limpia el rango y conserva los demás filtros. La celda
+«Estado» reúne en una línea el estado, la preparación de los confirmados
+(«A preparar» `muted`, «Preparado» `soft`) y «Pagado» (`strong`) cuando el pedido
+confirmado está totalmente pagado (`.order-status-badges`).
 
-Teclado: en la tabla, ↑/↓ mueven el foco entre los enlaces «Ver detalle». El listado
+Teclado: en la tabla, ↑/↓ mueven el foco entre los enlaces «Ver» de cada pedido. El listado
 guarda en `sessionStorage` los pedidos de la página visible; el detalle muestra
 `OrderNavigator` («← Anterior», «N de M», «Siguiente →», `.order-navigator`) y ← / →
 cambian de pedido cuando el foco no está en un campo y no hay un diálogo abierto.
 «Volver a pedidos» regresa al listado con sus filtros.
 
-Preparación y revisión (V42): el listado agrega «Preparación» (Todas / A preparar /
-Listos para entregar), en `fulfillment`, y para administradores «Revisión
-administrativa» (Todas / Pendientes de revisión), en `review`. Cambiar filtros
-reinicia la página. La preparación usa `Badge` con texto español.
-`OrderOperationalActions` comparte botones entre fila, detalle y Resumen; usa
+Preparación y revisión (V42): la preparación se filtra desde «Por entregar» y,
+para administradores, «Revisión administrativa» (Todas / Pendientes de revisión)
+queda en «Más filtros», en `review`. Cambiar filtros reinicia la página.
+`OrderOperationalActions` comparte botones entre fila, detalle y Resumen; `only`
+muestra una sola de sus acciones y `prepareVariant` permite que «Preparar» sea la
+acción principal de la fila. Usa
 `ConfirmationDialog` (`primary`), permite reintentar errores y bloquea cierre y
 doble envío durante guardado.
 
@@ -798,9 +830,11 @@ estado (`.badge`) permanecen en una línea sin cortar palabras ni números; los
 importes `.currency-value` conservan el mismo comportamiento en todas las
 `.compact-list-table`, mientras cliente y vendedor ajustan solo en límites de
 palabra. Preparar o entregar no elimina el distintivo de revisión; solo la
-revisión del administrador lo quita. Hasta `640px`, las tablas mantienen las
-tarjetas compartidas, `.order-review-pending .badge` permite salto de línea si
-falta ancho y las acciones usan el wrap compartido.
+revisión del administrador lo quita. Hasta `640px`, `.orders-list-table` usa una
+tarjeta corta sin etiquetas por celda: número y total en la primera línea,
+cliente y fecha en la segunda, «Vendedor: …», estados y acciones debajo. Las
+demás tablas mantienen las tarjetas compartidas, `.order-review-pending .badge`
+permite salto de línea si falta ancho y las acciones usan el wrap compartido.
 
 El detalle de «Operaciones del pedido» alinea los estados a la izquierda y los
 botones a la derecha, con alineación vertical centrada y salto de fila cuando
@@ -832,10 +866,15 @@ hay líneas agregadas y no hay un producto pendiente de agregar. El atajo usa la
 mismas validaciones que el botón. Con un producto marcado, Enter lo elige y
 reinicia el doble Enter. `SearchableSelect.onEmptyEnter` permite este atajo solo
 en el alta de pedidos; los demás selectores conservan su comportamiento.
-En el listado, `.table-row-actions` agrupa «Ver detalle», «Editar» y «Pasar a
-entregado». «Editar» aparece con `ORDER_EDIT` o `ADMIN_ALL` en pedidos confirmados.
-«Pasar a entregado» aparece en pedidos confirmados con `SALE_DELIVER` o
-`ADMIN_ALL`, tanto en las filas de escritorio como en las tarjetas móviles.
+En el listado, `.table-row-actions` muestra «Ver» y una sola acción principal, el
+próximo paso del pedido: «Preparar» si está confirmado y a preparar y el usuario
+tiene `ORDER_PREPARE` o `ADMIN_ALL`; si no, «Pasar a entregado» en pedidos
+confirmados con `SALE_DELIVER` o `ADMIN_ALL`. Las demás acciones quedan en
+`SecondaryRowActions` («Más acciones del pedido N»): «Editar» (`ORDER_EDIT` o
+`ADMIN_ALL`, en confirmados), «Pasar a entregado» cuando la acción principal es
+preparar y «Confirmar revisión» para administradores. El menú no aparece si no
+tiene acciones. Una entrega abierta desde el menú devuelve el foco a «Más
+acciones» al cancelar.
 Consulta el saldo actual antes de abrir `DeliveryAttemptDialog` en modo de
 confirmación de entrega: permite registrar pagos en efectivo o transferencia,
 su número e incluir deuda anterior autorizada, sin superar el total seleccionado.
@@ -993,14 +1032,14 @@ En móvil se adapta a la tarjeta de la tabla sin generar etiquetas de columna.
   clientes omite el saldo global para vendedores y carga todas las páginas de
   deudas autorizadas. Los saldos devueltos después de cobrar corresponden a las
   deudas del vendedor; el administrador conserva la vista completa del cliente.
-- En pedidos, la búsqueda en `.orders-toolbar` usa `14ch + 22px` y cada select
-  toma el ancho que necesita su opción más larga o su etiqueta. `.orders-secondary-filters` agrupa los filtros secundarios (`Cobro`,
-  `Preparación`, `Cargado por`, `Revisión`); a `640px` o menos quedan ocultos
-  bajo `.orders-more-filters-toggle` («Más filtros (N)», abierto
-  automáticamente si hay algún filtro secundario activo en URL). `.orders-date-filters`
-  agrupa dos campos de `120px` a la derecha, en la misma fila si hay espacio. A
-  `640px` o menos, la búsqueda y los selects principales ocupan filas completas y las fechas
-  se distribuyen en dos columnas iguales. Los campos usan `dd/mm/aaaa`,
+- En pedidos, `.orders-toolbar` deja en una fila la búsqueda, Desde/Hasta (`120px`
+  cada uno), «Todas las fechas» y, alineado a la derecha,
+  `.orders-more-filters-toggle` («Más filtros (N)»). Ese botón despliega en todos
+  los anchos `.orders-secondary-filters` (`Cobro`, `Revisión`, `Cargado por`) en
+  una fila propia; se abre automáticamente si hay alguno activo en la URL. A
+  `640px` o menos, la búsqueda ocupa la fila completa, las fechas se distribuyen
+  en dos columnas iguales y los dos botones comparten una fila. El estado y la
+  preparación se eligen con las etapas, no con selects. Los campos usan `dd/mm/aaaa`,
   labels visibles y errores asociados mediante `aria-describedby`.
   `OrderDateFilter` conserva el texto numérico y abre `OrderCalendar` en español al
   hacer clic en el campo o su botón de calendario, o con `Enter`/`Alt+ArrowDown`.
@@ -1485,7 +1524,7 @@ cambió, la pantalla actualiza el importe y pide revisar la nueva liquidación.
 | `.price-lists-page .modal-backdrop` | Ajuste de pricing con capa `30` |
 | `.price-list-pending`, `.price-products-table-follow` | Listas que siguen a la General: contador «N sin revisar» en la tarjeta (fondo de advertencia, `11px`) y tabla de cinco columnas con «Estado» (mínimo `880px`; en tarjetas hasta `640px`) |
 | `.price-lists-page .panel-header` | Hasta `640px` los controles del encabezado (filtros, confirmar pendientes) pasan a su propia fila |
-| `.compact-list-table` | Clientes, pedidos, ventas (`.sales-list-table`), artículos vendidos, panel comercial, stock, detalle de pedido y auditoría ajustan celdas sin scroll horizontal en `1280px`. Las acciones pueden pasar a otra línea. Hasta `640px` conservan las tarjetas compartidas |
+| `.compact-list-table` | Clientes, pedidos, ventas (`.sales-list-table`), artículos vendidos, panel comercial, stock, detalle de pedido y auditoría ajustan celdas sin scroll horizontal en `1280px`, con padding de celda `10px` sobre `640px`. Las acciones pueden pasar a otra línea. Hasta `640px` conservan las tarjetas compartidas, salvo la tarjeta corta de pedidos |
 | `.sale-detail-dialog` | Detalle de venta: hasta `1040px` sobre `760px`, padding `28px`, títulos de `20px` y tablas/datos de `14px`; hasta `760px` conserva el ancho y tipografía compactos. Altura limitada al viewport con scroll interno |
 | `.delivery-attempt-dialog` | Registro de entrega: diálogo nativo de hasta `720px`, encabezado y pie fijos, cuerpo con scroll y pagos con medio, importe y eliminación alineados. Número de transferencia dentro del mismo fondo. Hasta `640px`, los pagos se apilan y las acciones del pie comparten el ancho |
 

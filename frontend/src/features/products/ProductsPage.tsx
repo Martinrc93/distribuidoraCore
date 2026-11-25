@@ -172,7 +172,7 @@ export default function ProductsPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Catálogo" title="Stock" description="Productos, stock, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <>
+    <PageHeader title="Stock" description="Productos, stock, marcas, categorías y costos. Los precios se administran por lista." actions={isAdmin ? <>
       <Button variant="secondary" href={stockSearch ? `/products/shrinkages?stockSearch=${encodeURIComponent(stockSearch)}` : '/products/shrinkages'}>Ver mermas</Button>
       <Button onClick={() => { setFormProduct(undefined); setShowForm((value) => !value); setFeedback('') }} disabled={formSaving || mutating}>+ Nuevo producto</Button>
     </> : <Button variant="secondary" href="/price-lists">Ver listas de precios</Button>} />

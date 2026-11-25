@@ -124,7 +124,7 @@ function LoginPage() {
 }
 
 function PlaceholderPage({ title, description }: { title: string; description: string }) {
-  return <><PageHeader eyebrow="Módulo" title={title} description={description} /><Panel><EmptyState title="Página no disponible" description="Volvé al resumen para continuar con una pantalla conectada." action={<Button variant="secondary" href="/dashboard">Volver al resumen</Button>} /></Panel></>
+  return <><PageHeader title={title} description={description} /><Panel><EmptyState title="Página no disponible" description="Volvé al resumen para continuar con una pantalla conectada." action={<Button variant="secondary" href="/dashboard">Volver al resumen</Button>} /></Panel></>
 }
 
 export default function App() {

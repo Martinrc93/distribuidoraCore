@@ -16,7 +16,7 @@ export function SettingsPageHeader({ title, description, actions, index = false 
   }, [])
 
   return <div ref={header} role="group" tabIndex={-1} aria-label={title} className={index ? 'outline-none' : 'settings-detail-header outline-none'}>
-    <PageHeader eyebrow={index ? 'Administración' : 'Configuración'} title={title} description={description} actions={index ? actions : <>
+    <PageHeader title={title} description={description} actions={index ? actions : <>
       {actions}
       <Link to={settingsPath} className="button button-link min-h-[44px] whitespace-nowrap">Volver a Configuración</Link>
     </>} />

@@ -9,14 +9,16 @@ import { DataTable } from '../../shared/components/DataTable'
 import { OrderOperationalActions, OrderReviewBadge, type OrderOperations } from '../orders/OrderOperationalActions'
 
 type PendingOrder = OrderOperations & { customer: string; seller: string }
-const path = '/api/orders?page=0&size=5&reviewPending=true'
+export const pendingReviewsPath = '/api/orders?page=0&size=5&reviewPending=true'
 
-export function PendingOrderReviews() {
+/** `hideWhenEmpty` leaves the count to «Para atender ahora» while nothing is pending. */
+export function PendingOrderReviews({ hideWhenEmpty = false }: { hideWhenEmpty?: boolean }) {
   const isAdmin = hasAuthority('ADMIN_ALL')
   const [feedback, setFeedback] = useState('')
   useEffect(() => { if (feedback) document.getElementById('pending-reviews-link')?.focus() }, [feedback])
-  const query = useQuery({ queryKey: queryKeys.dashboard.orderReviews, queryFn: ({ signal }) => apiGet<ApiPage<PendingOrder>>(path, signal), enabled: isAdmin, retry: false })
+  const query = useQuery({ queryKey: queryKeys.dashboard.orderReviews, queryFn: ({ signal }) => apiGet<ApiPage<PendingOrder>>(pendingReviewsPath, signal), enabled: isAdmin, retry: false })
   if (!isAdmin) return null
+  if (hideWhenEmpty && !feedback && query.data?.totalElements === 0) return null
   return <Panel title={`Pedidos de vendedores por revisar${query.data ? ` (${query.data.totalElements})` : ''}`} description="Revisión administrativa al cierre del día. Incluye pendientes de todas las fechas; los vendedores pueden seguir operando." action={<Button id="pending-reviews-link" variant="link" href="/orders?review=PENDING&dateMin=&dateMax=">Ver todos los pendientes</Button>}>
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {query.isLoading ? <p role="status">Consultando pedidos pendientes de revisión...</p> : query.isError ? <div role="alert"><p className="error-text">No se pudieron cargar los pedidos por revisar.</p><Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar revisión</Button></div> : <DataTable columns={[

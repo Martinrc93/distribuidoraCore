@@ -3,7 +3,8 @@ import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 const viewportInset = 10
 const anchorGap = 6
 
-export function SecondaryRowActions({ label, triggerId, children }: { label: string; triggerId?: string; children: ReactNode }) {
+/** `iconOnly` shows «⋯» instead of «Más acciones» for dense lists; `label` remains the accessible name. */
+export function SecondaryRowActions({ label, triggerId, iconOnly = false, children }: { label: string; triggerId?: string; iconOnly?: boolean; children: ReactNode }) {
   const panelId = useId()
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -65,12 +66,14 @@ export function SecondaryRowActions({ label, triggerId, children }: { label: str
     event.stopPropagation()
     closeAndFocus()
   }}>
-    <button ref={trigger} id={triggerId} type="button" className="button button-secondary secondary-row-actions-trigger"
-      aria-label={label} aria-expanded={open} aria-controls={panelId} onClick={(event) => {
+    <button ref={trigger} id={triggerId} type="button" className={`button button-secondary secondary-row-actions-trigger${iconOnly ? ' secondary-row-actions-icon' : ''}`}
+      aria-label={label} title={iconOnly ? label : undefined} aria-expanded={open} aria-controls={panelId} onClick={(event) => {
         event.stopPropagation()
         setOpen((previous) => !previous)
       }}>
-      Más acciones <span className="secondary-row-actions-chevron" aria-hidden="true" />
+      {iconOnly
+        ? <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+        : <>Más acciones <span className="secondary-row-actions-chevron" aria-hidden="true" /></>}
     </button>
     <div ref={panel} id={panelId} className="secondary-row-actions-content" role="group" aria-label="Acciones disponibles" hidden={!open} onClick={(event) => {
       event.stopPropagation()

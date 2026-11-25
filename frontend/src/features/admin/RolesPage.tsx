@@ -108,7 +108,7 @@ export default function RolesPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Administración" title="Roles y permisos" description="Configurá qué acciones puede realizar cada rol." actions={<><Button type="button" disabled={!query.data || query.isError} onClick={() => { setFeedback(''); setCreating(true) }}>+ Crear rol</Button><Button type="button" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Actualizando...' : 'Actualizar roles'}</Button></>} />
+    <PageHeader title="Roles y permisos" description="Configurá qué acciones puede realizar cada rol." actions={<><Button type="button" disabled={!query.data || query.isError} onClick={() => { setFeedback(''); setCreating(true) }}>+ Crear rol</Button><Button type="button" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Actualizando...' : 'Actualizar roles'}</Button></>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     <Panel title="Roles existentes" description="Editar un rol cambia los permisos de todos sus usuarios.">
       {query.isPending ? <EmptyState state="loading" title="Cargando roles y permisos..." description="Consultando los roles y permisos configurados." /> : query.isError ? <EmptyState state="error" title="No se pudieron cargar los roles y permisos." description={query.error.message} action={<Button type="button" variant="secondary" onClick={() => void query.refetch()}>Reintentar</Button>} />

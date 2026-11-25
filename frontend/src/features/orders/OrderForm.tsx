@@ -596,7 +596,7 @@ export default function OrderForm({ editOrder, onSaved, onCancel }: Props) {
   const units = lines.reduce((sum, line) => sum + (validQuantity(line.quantity) ? quantityValue(line.quantity) : 0), 0)
 
   return <>
-    {editOrder ? <PageHeader eyebrow="Operación" title="Editar pedido" description={editOrder.order.number} actions={cancel} />
+    {editOrder ? <PageHeader title="Editar pedido" description={editOrder.order.number} actions={cancel} />
       : <header className="order-create-header">
         <nav aria-label="Ruta de navegación" className="order-create-breadcrumb">
           <span>Operación</span><span aria-hidden="true"> / </span><Link to="/orders" onClick={(event) => {

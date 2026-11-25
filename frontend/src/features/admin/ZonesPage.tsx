@@ -108,7 +108,7 @@ export default function ZonesPage() {
   const rows = zones.map((zone) => ({ id: zone.id, name: zone.name }))
 
   return <>
-    <PageHeader eyebrow="Administración" title="Zonas" description="Administrá las zonas de entrega disponibles para los clientes." actions={<Button type="button" onClick={startCreate}>+ Nueva zona</Button>} />
+    <PageHeader title="Zonas" description="Administrá las zonas de entrega disponibles para los clientes." actions={<Button type="button" onClick={startCreate}>+ Nueva zona</Button>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {showForm && <FormModal label={title} size="compact" busy={saving} onClose={requestDiscard}><Panel title={title}><form className="grid gap-[14px]" onSubmit={save}>
       <label className="field"><span>Nombre de la zona</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required disabled={saving} /></label>

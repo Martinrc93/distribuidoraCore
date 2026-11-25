@@ -114,7 +114,7 @@ export default function CommissionSettlementsPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Operación" title="Liquidación de comisiones"
+    <PageHeader title="Liquidación de comisiones"
       actions={<Link className="button button-secondary" to={commissionPlansPagePath}>Planes de comisiones</Link>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && !confirmation && <p className="error-text" role="alert">{error}</p>}

@@ -140,7 +140,7 @@ export function UsersPage() {
   ]
 
   return <>
-    <PageHeader eyebrow="Administración" title="Usuarios" description="Invitaciones, acceso y sesiones activas." actions={isAdmin ? <Button onClick={() => { setShowInvite((value) => !value); setError(''); setCreationMode('invite') }}>+ Crear usuario</Button> : undefined} />
+    <PageHeader title="Usuarios" description="Invitaciones, acceso y sesiones activas." actions={isAdmin ? <Button onClick={() => { setShowInvite((value) => !value); setError(''); setCreationMode('invite') }}>+ Crear usuario</Button> : undefined} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && !showInvite && !action && <p className="error-text" role="alert">{error}</p>}
     {roleUser && (rolesQuery.isPending || rolesQuery.isError) && <FormModal label={`Cambiar rol de ${roleUser.email}`} size="compact" onClose={() => setRoleUser(undefined)}><Panel title="Cambiar rol" description={roleUser.email}>

@@ -191,7 +191,7 @@ export default function ExpensesPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Operación" title="Gastos" actions={<Button type="button" onClick={() => {
+    <PageHeader title="Gastos" actions={<Button type="button" onClick={() => {
       setSaved(false)
       setFormOpen(true)
     }}>Nuevo gasto</Button>} />

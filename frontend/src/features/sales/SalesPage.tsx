@@ -157,7 +157,7 @@ export default function SalesPage() {
   const soldProductsHref = `/sales/products?${soldProductsParams}`
 
   return <>
-    <PageHeader eyebrow="Operación" title="Ventas" description={isAdmin ? 'Consultá importes cobrados, saldos y estado de las ventas.' : 'Consultá importes cobrados y saldos de tus ventas entregadas.'}
+    <PageHeader title="Ventas" description={isAdmin ? 'Consultá importes cobrados, saldos y estado de las ventas.' : 'Consultá importes cobrados y saldos de tus ventas entregadas.'}
       actions={hasPermission('REPORTS_VIEW') ? <Button variant="secondary" href={soldProductsHref}>Artículos vendidos</Button> : undefined} />
     <Panel>
       <form className="toolbar items-end" onSubmit={(event) => event.preventDefault()}>
