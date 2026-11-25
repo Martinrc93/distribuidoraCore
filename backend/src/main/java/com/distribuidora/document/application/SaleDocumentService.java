@@ -16,25 +16,22 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 public class SaleDocumentService {
     private final JdbcTemplate jdbc;
     private final CurrentUserAccess currentUser;
 
-    public SaleDocumentService(JdbcTemplate jdbc) {
-        this(jdbc, null);
-    }
-
     @Autowired
     public SaleDocumentService(JdbcTemplate jdbc, CurrentUserAccess currentUser) {
-        this.jdbc = jdbc;
-        this.currentUser = currentUser;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.currentUser = Objects.requireNonNull(currentUser, "currentUser");
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SaleDocumentModel load(UUID orderId) {
-        if (currentUser != null) currentUser.requireOrderAccess(orderId);
+        currentUser.requireOrderAccess(orderId);
         return loadModel(orderId);
     }
 
@@ -50,7 +47,8 @@ public class SaleDocumentService {
                 select s.id as sale_id, s.sale_number,
                        (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as sale_date,
                        c.business_name as customer_name, coalesce(sp.display_name, '') as seller_name,
-                       s.total, s.paid, s.order_discount_percent, b.business_name, b.business_address, b.business_phone
+                       s.total, s.paid, s.order_discount_percent, b.business_name, b.business_address, b.business_phone,
+                       b.business_logo
                   from orders.orders o
                   left join sale.sales s on s.order_id = o.id
                   join customer.customers c on c.id = coalesce(s.customer_id, o.customer_id)
@@ -79,26 +77,19 @@ public class SaleDocumentService {
                 rs.getBigDecimal("unit_price"),
                 rs.getBigDecimal("line_discount_percent"),
                 rs.getBigDecimal("line_total")), saleId);
-        List<SaleDocumentModel.Payment> payments = jdbc.query("""
-            select p.method, p.amount
-              from payment.payments p
-             where p.sale_id = ?
-             order by p.created_at, p.id
-            """, (rs, rowNum) -> new SaleDocumentModel.Payment(
-                rs.getString("method"), rs.getBigDecimal("amount")), saleId);
-
         return new SaleDocumentModel(
             (String) header.get("sale_number"),
             saleDate(header.get("sale_date")),
             (String) header.get("customer_name"),
             (String) header.get("seller_name"),
             lines,
-            payments,
+            List.of(),
             decimal(header.get("total")),
             decimal(header.get("paid")),
             decimal(header.getOrDefault("order_discount_percent", BigDecimal.ZERO)),
             new BusinessProfile((String) header.getOrDefault("business_name", ""),
-                (String) header.getOrDefault("business_address", ""), (String) header.getOrDefault("business_phone", "")));
+                (String) header.getOrDefault("business_address", ""), (String) header.getOrDefault("business_phone", "")),
+            (byte[]) header.get("business_logo"));
     }
 
     private UUID uuid(Object value) {

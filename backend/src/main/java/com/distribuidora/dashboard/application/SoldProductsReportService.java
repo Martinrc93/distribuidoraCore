@@ -59,10 +59,14 @@ public class SoldProductsReportService {
             from eligible_sales s join sale.sale_items item on item.sale_id = s.id
             join catalog.products p on p.id = item.product_id
             """ + filter.productWhere, Long.class, filter.args.toArray());
+        long totalElements = count == null ? 0L : count;
+        if (totalElements == 0 || (long) safePage * safeSize >= totalElements) {
+            return PageResponse.of(List.of(), safePage, safeSize, totalElements);
+        }
         var rows = jdbc.query(lines(filter) + PRODUCT_TOTALS
             + " order by lower(product), product_id limit ? offset ?", (row, i) -> productTotals(row),
             filter.pageArgs(safePage, safeSize));
-        return PageResponse.of(rows, safePage, safeSize, count);
+        return PageResponse.of(rows, safePage, safeSize, totalElements);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -70,24 +74,42 @@ public class SoldProductsReportService {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(100, size));
         Filter filter = filter(dateMin, dateMax, productId, "");
-        String lines = lines(filter);
-        var totals = jdbc.query(lines + PRODUCT_TOTALS, (row, i) -> productTotals(row), filter.args.toArray());
-        if (totals.isEmpty()) {
+        String sql = lines(filter) + """
+            , product_totals as (
+                """ + PRODUCT_TOTALS + """
+            ), paged_sales as (
+                select sale_id, order_id, sale_number, customer, status, created_at,
+                       sum(sold_units) as sale_sold_units, sum(returned_units) as sale_returned_units,
+                       sum(greatest(sold_units - returned_units, 0)) as sale_net_units, sum(amount) as sale_amount
+                from report_lines group by sale_id, order_id, sale_number, customer, status, created_at
+                order by created_at desc, sale_id desc limit ? offset ?
+            )
+            select pt.product_id, pt.product, pt.sales_count, pt.sold_units, pt.returned_units, pt.net_units, pt.amount,
+                   ps.sale_id, ps.order_id, ps.sale_number, ps.customer, ps.status, ps.created_at,
+                   ps.sale_sold_units, ps.sale_returned_units, ps.sale_net_units, ps.sale_amount
+            from product_totals pt
+            left join paged_sales ps on true
+            order by ps.created_at desc nulls last, ps.sale_id desc nulls last
+            """;
+        ProductTotals[] productHolder = new ProductTotals[1];
+        List<SaleEntry> rows = new ArrayList<>();
+        jdbc.query(sql, row -> {
+            if (productHolder[0] == null) {
+                productHolder[0] = productTotals(row);
+            }
+            UUID saleId = row.getObject("sale_id", UUID.class);
+            if (saleId != null) {
+                rows.add(new SaleEntry(saleId, row.getObject("order_id", UUID.class),
+                    row.getString("sale_number"), row.getString("customer"), row.getString("status"),
+                    row.getTimestamp("created_at").toInstant(), row.getBigDecimal("sale_sold_units"),
+                    row.getBigDecimal("sale_returned_units"), row.getBigDecimal("sale_net_units"),
+                    row.getBigDecimal("sale_amount")));
+            }
+        }, filter.pageArgs(safePage, safeSize));
+        if (productHolder[0] == null) {
             return new History(null, PageResponse.of(List.of(), safePage, safeSize, 0));
         }
-        ProductTotals product = totals.getFirst();
-        var rows = jdbc.query(lines + """
-            select sale_id, order_id, sale_number, customer, status, created_at,
-                   sum(sold_units) as sold_units, sum(returned_units) as returned_units,
-                   sum(greatest(sold_units - returned_units, 0)) as net_units, sum(amount) as amount
-            from report_lines group by sale_id, order_id, sale_number, customer, status, created_at
-            order by created_at desc, sale_id desc limit ? offset ?
-            """, (row, i) -> new SaleEntry(row.getObject("sale_id", UUID.class), row.getObject("order_id", UUID.class),
-            row.getString("sale_number"), row.getString("customer"), row.getString("status"),
-            row.getTimestamp("created_at").toInstant(), row.getBigDecimal("sold_units"),
-            row.getBigDecimal("returned_units"), row.getBigDecimal("net_units"), row.getBigDecimal("amount")),
-            filter.pageArgs(safePage, safeSize));
-        return new History(product, PageResponse.of(rows, safePage, safeSize, product.salesCount));
+        return new History(productHolder[0], PageResponse.of(rows, safePage, safeSize, productHolder[0].salesCount));
     }
 
     private Filter filter(LocalDate dateMin, LocalDate dateMax, UUID productId, String search) {

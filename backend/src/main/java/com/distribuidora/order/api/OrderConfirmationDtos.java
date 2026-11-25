@@ -23,10 +23,10 @@ public final class OrderConfirmationDtos {
         @NotBlank @Size(max = 100) String idempotencyKey,
         @NotNull UUID customerId,
         UUID priceListId,
-        @NotNull @Size(min = 1) List<@NotNull @Valid LineRequest> lines,
+        @NotNull @Size(min = 1, max = 500) List<@NotNull @Valid LineRequest> lines,
         @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 4)
         BigDecimal orderDiscountPercent,
-        List<@NotNull @Valid PaymentRequest> payments,
+        @Size(max = 50) List<@NotNull @Valid PaymentRequest> payments,
         UUID sellerId,
         @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousBalanceAmount,
         LocalDate orderDate,

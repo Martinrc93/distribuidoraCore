@@ -19,12 +19,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class SellerReadQueryTest {
     @Test
     void returnsSellerProjectionUsingParameterizedJoin() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        ReadQueryService service = new ReadQueryService(jdbc);
+        ReadQueryService service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
         Map<String, Object> seller = Map.of("id", "seller-1", "displayName", "Lucía", "email", "lucia@test");
         when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(seller));
         when(jdbc.queryForObject(eq("select count(*) from seller.seller_profiles sp join identity.users u on u.id = sp.user_id"), eq(Number.class)))
@@ -45,7 +46,7 @@ class SellerReadQueryTest {
             "order by sp.display_name",
             "limit ? offset ?"
         );
-        assertThat(parameters.getValue()).containsExactly(100, 0);
+        assertThat(parameters.getValue()).containsExactly(100, 0L);
     }
 
     @Test
@@ -60,7 +61,7 @@ class SellerReadQueryTest {
     @Test
     void returnsSellerFilteredProjectionWithSearchAndStatus() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        ReadQueryService service = new ReadQueryService(jdbc);
+        ReadQueryService service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
         Map<String, Object> seller = Map.of(
             "id", UUID.randomUUID(),
             "displayName", "Lucía",
@@ -78,17 +79,17 @@ class SellerReadQueryTest {
         ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).queryForList(sql.capture(), parameters.capture());
         assertThat(sql.getValue()).contains(
-            "lower(sp.display_name) like ?",
-            "lower(u.email) like ?",
-            "sp.status like ?"
+            "lower(sp.display_name) like ? escape '!'",
+            "lower(u.email) like ? escape '!'",
+            "sp.status = ?"
         );
-        assertThat(parameters.getValue()).containsExactly("%lucia%", "%lucia%", "ACTIVE", 20, 0);
+        assertThat(parameters.getValue()).containsExactly("%lucia%", "%lucia%", "ACTIVE", 20, 0L);
     }
 
     @Test
     void returnsSellerDetailById() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        ReadQueryService service = new ReadQueryService(jdbc);
+        ReadQueryService service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
         UUID sellerId = UUID.randomUUID();
         Map<String, Object> expected = Map.of("id", sellerId, "displayName", "Lucía", "status", "ACTIVE");
         when(jdbc.queryForMap(anyString(), eq(sellerId))).thenReturn(expected);

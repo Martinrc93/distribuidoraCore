@@ -43,7 +43,7 @@ class PricingCommandServiceTest {
 
         assertThat(id).isNotNull();
         verify(jdbc).update(anyString(), eq(id), eq("CUSTOM"), eq("Clientes"), any(), any());
-        verify(audit).record(eq(actorId), eq("PRICELIST_CREATE"), eq("PRICE_LIST"), eq(id.toString()),
+        verify(audit).recordWithinTransaction(eq(actorId), eq("PRICELIST_CREATE"), eq("PRICE_LIST"), eq(id.toString()),
             eq("SUCCESS"), eq(Map.of("code", "CUSTOM")));
     }
 
@@ -65,7 +65,7 @@ class PricingCommandServiceTest {
 
         verify(jdbc).update(anyString(), eq(id), eq("PROMOCION_NORTE"), eq("Promoción Norte"), any(), any());
         verify(jdbc).update(anyString(), eq(id), eq("PROMOCION_NORTE_2"), eq("Promoción Norte"), any(), any());
-        verify(audit).record(actorId, "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS", Map.of("code", "PROMOCION_NORTE_2"));
+        verify(audit).recordWithinTransaction(actorId, "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS", Map.of("code", "PROMOCION_NORTE_2"));
     }
 
     @Test
@@ -76,7 +76,7 @@ class PricingCommandServiceTest {
 
         service.renameList(listId, " Clientes ");
 
-        verify(audit).record(eq(actorId), eq("PRICELIST_UPDATE"), eq("PRICE_LIST"), eq(listId.toString()),
+        verify(audit).recordWithinTransaction(eq(actorId), eq("PRICELIST_UPDATE"), eq("PRICE_LIST"), eq(listId.toString()),
             eq("SUCCESS"), eq(Map.of("name", "Clientes")));
     }
 
@@ -104,7 +104,7 @@ class PricingCommandServiceTest {
         when(jdbc.update(anyString(), eq("ACTIVE"), eq(inactiveId))).thenReturn(1);
         service.setListStatus(inactiveId, "ACTIVE");
 
-        verify(audit).record(eq(actorId), eq("PRICELIST_STATUS"), eq("PRICE_LIST"), eq(inactiveId.toString()),
+        verify(audit).recordWithinTransaction(eq(actorId), eq("PRICELIST_STATUS"), eq("PRICE_LIST"), eq(inactiveId.toString()),
             eq("SUCCESS"), eq(Map.of("status", "ACTIVE")));
     }
 
@@ -121,7 +121,7 @@ class PricingCommandServiceTest {
         verify(jdbc).update(
             eq("insert into catalog.product_prices(price_list_id, product_id, price, created_at, updated_at) values (?, ?, ?, ?, ?) on conflict (price_list_id, product_id) do update set price = excluded.price, updated_at = excluded.updated_at"),
             eq(listId), eq(productId), eq(price), any(), any());
-        verify(audit).record(eq(actorId), eq("PRODUCT_PRICE_UPDATE"), eq("PRODUCT_PRICE"),
+        verify(audit).recordWithinTransaction(eq(actorId), eq("PRODUCT_PRICE_UPDATE"), eq("PRODUCT_PRICE"),
             eq(listId + ":" + productId), eq("SUCCESS"),
             eq(Map.of("price", price, "effectiveOn", LocalDate.now().toString(), "scheduled", false)));
     }
@@ -146,7 +146,7 @@ class PricingCommandServiceTest {
             any(), eq(listId), eq(productId), eq(price), eq(effectiveOn), any(), any());
         verify(jdbc, org.mockito.Mockito.never()).update(org.mockito.ArgumentMatchers.contains("catalog.product_prices"),
             org.mockito.ArgumentMatchers.<Object[]>any());
-        verify(audit).record(eq(actorId), eq("PRODUCT_PRICE_UPDATE"), eq("PRODUCT_PRICE"),
+        verify(audit).recordWithinTransaction(eq(actorId), eq("PRODUCT_PRICE_UPDATE"), eq("PRODUCT_PRICE"),
             eq(listId + ":" + productId), eq("SUCCESS"),
             eq(Map.of("price", price, "effectiveOn", effectiveOn.toString(), "scheduled", true)));
     }

@@ -78,7 +78,7 @@ class AuthServiceTest {
         assertThat(savedToken.getExpiresAt()).isAfter(Instant.now());
         assertThat(savedToken.getRevokedAt()).isNull();
 
-        verify(auditService).record(eq(userId), eq("LOGIN"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
+        verify(auditService).recordWithinTransaction(eq(userId), eq("LOGIN"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -93,6 +93,79 @@ class AuthServiceTest {
 
         verify(refreshTokens, never()).save(any());
         verify(auditService).record(eq(userId), eq("LOGIN"), eq("USER"), eq(userId.toString()), eq("FAILURE"), any());
+    }
+
+    @Test
+    void threeFailedLoginsLockTemporarilyWithoutBlockingStatusOrChangingSessionVersion() {
+        UserAccount user = new UserAccount("admin@distribuidora.local", encoder.encode("Correct123"));
+        UUID userId = UUID.randomUUID();
+        ReflectionTestUtils.setField(user, "id", userId);
+        ReflectionTestUtils.setField(user, "sessionVersion", 7L);
+        when(users.findByEmailIgnoreCase("admin@distribuidora.local")).thenReturn(Optional.of(user));
+
+        for (int i = 0; i < 4; i++) {
+            assertThatThrownBy(() -> authService.login(new AuthDtos.LoginRequest("admin@distribuidora.local", "wrong")))
+                .isInstanceOf(BadCredentialsException.class);
+        }
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(user.getSessionVersion()).isEqualTo(7L);
+        assertThat(user.getFailedLoginAttempts()).isEqualTo((short) 3);
+        assertThat(user.getLockedUntil()).isAfter(Instant.now());
+
+        // Even with the right password, a locked account is rejected without mutating sessionVersion.
+        assertThatThrownBy(() -> authService.login(new AuthDtos.LoginRequest("admin@distribuidora.local", "Correct123")))
+            .isInstanceOf(BadCredentialsException.class);
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(user.getSessionVersion()).isEqualTo(7L);
+
+        // Once lock expires, valid login succeeds and resets attempts without changing sessionVersion.
+        ReflectionTestUtils.setField(user, "lockedUntil", Instant.now().minusSeconds(1));
+        when(users.findAuthorityCodes(userId)).thenReturn(List.of("ADMIN_ALL"));
+        when(jwtService.issue(user, List.of("ADMIN_ALL"))).thenReturn("access-after-expiry");
+        when(jwtService.accessTokenSeconds()).thenReturn(900L);
+        AuthService.LoginResult result = authService.login(new AuthDtos.LoginRequest("admin@distribuidora.local", "Correct123"));
+        assertThat(result.accessToken()).isEqualTo("access-after-expiry");
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getLockedUntil()).isNull();
+        assertThat(user.getSessionVersion()).isEqualTo(7L);
+    }
+
+    @Test
+    void invitedAndBlockedUsersDoNotAccumulateFailedLoginAttempts() {
+        for (UserStatus nonActiveStatus : List.of(UserStatus.INVITED, UserStatus.BLOCKED)) {
+            UserAccount user = new UserAccount("user@distribuidora.local", encoder.encode("Correct123"));
+            UUID userId = UUID.randomUUID();
+            ReflectionTestUtils.setField(user, "id", userId);
+            ReflectionTestUtils.setField(user, "status", nonActiveStatus);
+            when(users.findByEmailIgnoreCase("user@distribuidora.local")).thenReturn(Optional.of(user));
+
+            assertThatThrownBy(() -> authService.login(new AuthDtos.LoginRequest("user@distribuidora.local", "Correct123")))
+                .isInstanceOf(BadCredentialsException.class);
+
+            assertThat(user.getFailedLoginAttempts()).isZero();
+            assertThat(user.getLockedUntil()).isNull();
+            assertThat(user.getStatus()).isEqualTo(nonActiveStatus);
+        }
+    }
+
+    @Test
+    void unknownLongEmailHashesAuditResourceIdWithinColumnLimitAndRejectsOverlongPassword() {
+        String longUnknownEmail = "a".repeat(300) + "@distribuidora.local";
+        when(users.findByEmailIgnoreCase(longUnknownEmail)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(new AuthDtos.LoginRequest(longUnknownEmail, "wrong")))
+            .isInstanceOf(BadCredentialsException.class);
+
+        ArgumentCaptor<String> resourceIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditService).record(eq(null), eq("LOGIN"), eq("USER"), resourceIdCaptor.capture(), eq("FAILURE"), any());
+        assertThat(resourceIdCaptor.getValue()).startsWith("unknown:").doesNotContain(longUnknownEmail);
+        assertThat(resourceIdCaptor.getValue().length()).isLessThanOrEqualTo(120);
+
+        String overlongPassword = "p".repeat(201);
+        assertThatThrownBy(() -> authService.login(new AuthDtos.LoginRequest("admin@distribuidora.local", overlongPassword)))
+            .isInstanceOf(BadCredentialsException.class);
+        verify(users, never()).findByEmailIgnoreCase("admin@distribuidora.local");
     }
 
     @Test
@@ -137,7 +210,7 @@ class AuthServiceTest {
         assertThat(savedOldToken.getReplacedBy()).isEqualTo(newToken.getId());
         assertThat(savedOldToken.isRevoked()).isTrue();
 
-        verify(auditService).record(eq(userId), eq("TOKEN_REFRESH"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
+        verify(auditService).recordWithinTransaction(eq(userId), eq("TOKEN_REFRESH"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -220,7 +293,7 @@ class AuthServiceTest {
         authService.logout(new AuthDtos.LogoutRequest(rawToken));
 
         assertThat(activeToken.isRevoked()).isTrue();
-        verify(auditService).record(eq(userId), eq("LOGOUT"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
+        verify(auditService).recordWithinTransaction(eq(userId), eq("LOGOUT"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -247,7 +320,7 @@ class AuthServiceTest {
 
         verify(users).save(invitedUser);
         verify(activationTokens).save(token);
-        verify(auditService).record(eq(userId), eq("USER_ACTIVATE"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
+        verify(auditService).recordWithinTransaction(eq(userId), eq("USER_ACTIVATE"), eq("USER"), eq(userId.toString()), eq("SUCCESS"), any());
     }
 
     @Test

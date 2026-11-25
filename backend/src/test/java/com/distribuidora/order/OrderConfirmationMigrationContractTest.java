@@ -46,8 +46,22 @@ class OrderConfirmationMigrationContractTest {
                 .isGreaterThan(normalized.indexOf("ALTER TABLE SALE.SALE_ITEMS ADD COLUMN PRICE_LIST_ID UUID NULL"));
     }
 
+    @Test
+    void v62WidensOrderAndSaleItemProductNameToMatchCanonicalProductNameLength() {
+        String v62 = readMigrationResource("/db/migration/V62__widen_order_and_sale_item_product_name.sql");
+        String normalized = normalize(v62);
+
+        assertThat(normalized)
+                .contains("ALTER TABLE ORDERS.ORDER_ITEMS ALTER COLUMN PRODUCT_NAME TYPE VARCHAR(301)")
+                .contains("ALTER TABLE SALE.SALE_ITEMS ALTER COLUMN PRODUCT_NAME TYPE VARCHAR(301)");
+    }
+
     private static String readMigration() {
-        try (InputStream stream = OrderConfirmationMigrationContractTest.class.getResourceAsStream(MIGRATION_RESOURCE)) {
+        return readMigrationResource(MIGRATION_RESOURCE);
+    }
+
+    private static String readMigrationResource(String resourcePath) {
+        try (InputStream stream = OrderConfirmationMigrationContractTest.class.getResourceAsStream(resourcePath)) {
             assertThat(stream).as("migration resource").isNotNull();
             if (stream == null) {
                 throw new AssertionError("Migration resource is missing");

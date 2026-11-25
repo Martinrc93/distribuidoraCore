@@ -49,7 +49,7 @@ class SupplierServiceTest {
         assertThat(supplier.phone()).isNull();
         assertThat(supplier.email()).isNull();
         assertThat(supplier.address()).isNull();
-        verify(audit).record(actor, "SUPPLIER_CREATE", "SUPPLIER", id.toString(), "SUCCESS", Map.of("name", "North supplier"));
+        verify(audit).recordWithinTransaction(actor, "SUPPLIER_CREATE", "SUPPLIER", id.toString(), "SUCCESS", Map.of("name", "North supplier"));
         assertThat(jdbc.queryForObject("select created_at is not null and updated_at is not null from supplier.suppliers where id = ?", Boolean.class, id)).isTrue();
     }
 

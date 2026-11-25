@@ -9,10 +9,11 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import com.distribuidora.shared.time.BusinessTime;
 
 /** Shared period, sale scope and line amounts for the commercial reports. */
 final class CommercialReportSales {
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final ZoneId BUSINESS_ZONE = BusinessTime.ZONE;
 
     record Period(LocalDate from, LocalDate to) { }
     record Selection(String sql, List<Object> args) { }

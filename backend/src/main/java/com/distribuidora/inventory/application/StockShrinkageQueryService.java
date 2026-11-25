@@ -12,11 +12,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.UUID;
+import com.distribuidora.shared.time.BusinessTime;
 
 @Service
 public class StockShrinkageQueryService {
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final ZoneId BUSINESS_ZONE = BusinessTime.ZONE;
     private final JdbcTemplate jdbc;
 
     public StockShrinkageQueryService(JdbcTemplate jdbc) {
@@ -46,9 +48,10 @@ public class StockShrinkageQueryService {
             filters.append(" and m.created_at < ?");
             parameters.add(Timestamp.from(dateMax.plusDays(1).atStartOfDay(BUSINESS_ZONE).toInstant()));
         }
-        Totals totals = jdbc.queryForObject("""
+        Totals totals = Objects.requireNonNullElse(jdbc.queryForObject("""
             select count(*), coalesce(sum(-m.quantity), 0) from inventory.stock_movements m
-            """ + filters, (row, i) -> new Totals(row.getLong(1), row.getBigDecimal(2)), parameters.toArray());
+            """ + filters, (row, i) -> new Totals(row.getLong(1), row.getBigDecimal(2)), parameters.toArray()),
+            new Totals(0L, BigDecimal.ZERO));
         parameters.add(safeSize);
         parameters.add((long) safePage * safeSize);
         var rows = jdbc.query("""

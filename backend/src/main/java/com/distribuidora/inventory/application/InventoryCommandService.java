@@ -2,13 +2,13 @@ package com.distribuidora.inventory.application;
 
 import com.distribuidora.audit.application.AuditService;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
+import com.distribuidora.shared.security.CurrentUserAccess;
 
 @Service
 public class InventoryCommandService {
@@ -96,8 +96,8 @@ public class InventoryCommandService {
 
     private UUID actorId() {
         try {
-            return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName());
-        } catch (Exception exception) {
+            return CurrentUserAccess.requireAuthenticatedUserId();
+        } catch (IllegalStateException exception) {
             throw new IllegalArgumentException("El actor autenticado no tiene un UUID válido", exception);
         }
     }

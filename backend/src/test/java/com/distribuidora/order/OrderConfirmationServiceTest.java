@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class OrderConfirmationServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
@@ -42,11 +43,27 @@ class OrderConfirmationServiceTest {
     private final OrderCalculationService calculation = new OrderCalculationService();
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
-    private final OrderConfirmationService service = new OrderConfirmationService(jdbc, pricing, calculation, inventory, audit);
+    private final OrderConfirmationService service = new OrderConfirmationService(jdbc, pricing, calculation, inventory, audit, TestCurrentUserAccess.admin(jdbc));
 
     @BeforeEach
     void numberOrders() {
-        when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), any(UUID.class))).thenReturn("ACTIVE");
+        org.mockito.Mockito.lenient().when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), any(UUID.class))).thenReturn("ACTIVE");
+        org.mockito.Mockito.lenient().when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("from catalog.products where id in"), any(Object[].class)))
+            .thenAnswer(inv -> {
+                Object[] args = inv.getArguments();
+                java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
+                for (int i = 1; i < args.length; i++) {
+                    Object arg = args[i];
+                    if (arg instanceof Object[] nested) {
+                        for (Object item : nested) {
+                            rows.add(java.util.Map.of("id", item, "name", "Producto", "status", "ACTIVE"));
+                        }
+                    } else if (arg != null) {
+                        rows.add(java.util.Map.of("id", arg, "name", "Producto", "status", "ACTIVE"));
+                    }
+                }
+                return rows;
+            });
         when(jdbc.queryForObject(eq("select orders.next_customer_order_number(?)"), eq(String.class), any(UUID.class)))
             .thenReturn("000100004");
     }
@@ -66,8 +83,8 @@ class OrderConfirmationServiceTest {
         when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10")));
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10"))));
         Instant before = Instant.now();
         service.confirm(new OrderConfirmationDtos.ConfirmationRequest("dated-order", customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
@@ -79,6 +96,7 @@ class OrderConfirmationServiceTest {
         verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
         assertThat(orderInsert.getValue()[1]).isEqualTo("000100004");
         verify(jdbc).update(contains("insert into sale.sales"), saleInsert.capture());
+        assertThat(saleInsert.getValue()[1]).isEqualTo(orderInsert.getValue()[1]);
         verify(jdbc).update(contains("insert into customer.account_ledger"), ledgerInsert.capture());
         Timestamp registeredAt = (Timestamp) orderInsert.getValue()[7];
         Timestamp ledgerAt = (Timestamp) ledgerInsert.getValue()[4];
@@ -113,9 +131,7 @@ class OrderConfirmationServiceTest {
         when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "balance", new BigDecimal("100")));
-        when(jdbc.queryForObject(eq("select balance from customer.customers where id = ? for update"), eq(BigDecimal.class), eq(customerId)))
-            .thenReturn(new BigDecimal("100"));
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of("priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10")));
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of("productId", productId, "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10"))));
         var response = service.confirm(new OrderConfirmationDtos.ConfirmationRequest("previous-balance", customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2"), BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of(), null, new BigDecimal("40")));
         assertThat(response.total()).isEqualByComparingTo("20");
@@ -140,9 +156,7 @@ class OrderConfirmationServiceTest {
         UUID customerId = UUID.randomUUID();
         when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
-            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "balance", new BigDecimal("100")));
-        when(jdbc.queryForObject(eq("select balance from customer.customers where id = ? for update"), eq(BigDecimal.class), eq(customerId)))
-            .thenReturn(new BigDecimal("30"));
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "balance", new BigDecimal("30")));
         var request = new OrderConfirmationDtos.ConfirmationRequest("changed-balance", customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO, List.of(), null, new BigDecimal("40"));
         assertThatThrownBy(() -> service.confirm(request)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("supera el saldo actual");
@@ -189,7 +203,7 @@ class OrderConfirmationServiceTest {
         when(jdbc.queryForMap(contains("customer.customers"), eq(customerId))).thenReturn(assigned
             ? Map.of("id", customerId, "status", "ACTIVE", "price_list_id", allowedListId)
             : Map.of("id", customerId, "status", "ACTIVE"));
-        if (!assigned) when(jdbc.queryForObject(contains("code = 'GENERAL'"), eq(UUID.class))).thenReturn(allowedListId);
+        if (!assigned) when(jdbc.queryForObject(contains("is_default = true"), eq(UUID.class))).thenReturn(allowedListId);
         var request = new OrderConfirmationDtos.ConfirmationRequest("wrong-list", customerId, UUID.randomUUID(),
             List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
             BigDecimal.ZERO, List.of());
@@ -213,16 +227,16 @@ class OrderConfirmationServiceTest {
         when(jdbc.queryForMap(contains("customer.customers"), eq(customerId))).thenReturn(scenario.equals("general")
             ? Map.of("id", customerId, "status", "ACTIVE")
             : Map.of("id", customerId, "status", "ACTIVE", "price_list_id", scenario.equals("admin") || scenario.equals("permission") ? UUID.randomUUID() : listId));
-        if (scenario.equals("general")) when(jdbc.queryForObject(contains("code = 'GENERAL'"), eq(UUID.class))).thenReturn(listId);
-        when(pricing.resolve(customerId, productId, listId)).thenReturn(Map.of(
-            "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN));
+        if (scenario.equals("general")) when(jdbc.queryForObject(contains("is_default = true"), eq(UUID.class))).thenReturn(listId);
+        when(pricing.resolveBatch(customerId, List.of(productId), listId)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN)));
 
         var result = service.confirm(new OrderConfirmationDtos.ConfirmationRequest("allowed-list", customerId, listId,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
             BigDecimal.ZERO, List.of()));
 
         assertThat(result.total()).isEqualByComparingTo("10");
-        verify(pricing).resolve(customerId, productId, listId);
+        verify(pricing).resolveBatch(customerId, List.of(productId), listId);
         verifyNoInteractions(inventory);
     }
 
@@ -236,8 +250,8 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000"))));
 
         var response = service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             "key-1", customerId, null,
@@ -285,10 +299,8 @@ class OrderConfirmationServiceTest {
         });
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "balance", new BigDecimal("100")));
-        when(jdbc.queryForObject(eq("select balance from customer.customers where id = ? for update"), eq(BigDecimal.class), eq(customerId)))
-            .thenReturn(new BigDecimal("100"));
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10")));
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10"))));
 
         var request = new OrderConfirmationDtos.ConfirmationRequest(
             "retry-key", customerId, null,
@@ -303,6 +315,8 @@ class OrderConfirmationServiceTest {
         var second = service.confirm(request);
 
         assertThat(second).isEqualTo(first);
+        assertThat(second.saleNumber()).isEqualTo(second.orderNumber());
+        verify(jdbc, never()).queryForObject("select sale.next_sale_number()", String.class);
         var changedDateRequest = new OrderConfirmationDtos.ConfirmationRequest(
             request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(),
             request.payments(), null, request.previousBalanceAmount(), LocalDate.of(2026, 9, 29));
@@ -319,7 +333,7 @@ class OrderConfirmationServiceTest {
                 request.idempotencyKey(), customerId, null, request.lines(), request.orderDiscountPercent(), request.payments());
             assertThat(service.confirm(legacyRequest)).isEqualTo(first);
         }
-        verify(pricing, times(1)).resolve(customerId, productId, null);
+        verify(pricing, times(1)).resolveBatch(customerId, List.of(productId), null);
 
         var changedRequest = new OrderConfirmationDtos.ConfirmationRequest(
             request.idempotencyKey(), customerId, null,
@@ -332,7 +346,7 @@ class OrderConfirmationServiceTest {
             request.payments(), UUID.randomUUID());
         assertThatThrownBy(() -> service.confirm(changedSellerRequest))
             .isInstanceOf(com.distribuidora.order.application.IdempotencyConflictException.class);
-        verify(pricing, times(1)).resolve(customerId, productId, null);
+        verify(pricing, times(1)).resolveBatch(customerId, List.of(productId), null);
     }
 
     @Test
@@ -384,8 +398,8 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000"))));
 
         var response = service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             "key-admin-discounts", customerId, null,
@@ -407,10 +421,10 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "seller_id", customerSellerId));
-        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(selectedSellerId)))
-            .thenReturn(true);
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(String.class), eq(selectedSellerId)))
+            .thenReturn("ACTIVE");
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000"))));
 
         service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             "admin-selected-seller", customerId, null,
@@ -432,10 +446,10 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "seller_id", customerSellerId));
-        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(customerSellerId)))
-            .thenReturn(true);
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(String.class), eq(customerSellerId)))
+            .thenReturn("ACTIVE");
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000"))));
 
         service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             "admin-default-seller", customerId, null,
@@ -456,8 +470,8 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
-        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(selectedSellerId)))
-            .thenReturn(false);
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(String.class), eq(selectedSellerId)))
+            .thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
 
         assertThatThrownBy(() -> service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             "missing-selected-seller", customerId, null,
@@ -509,10 +523,10 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "seller_id", customerSellerId));
-        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(Boolean.class), eq(profileSellerId)))
-            .thenReturn(true);
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(String.class), eq(profileSellerId)))
+            .thenReturn("ACTIVE");
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000"))));
 
         sellerService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             "authenticated-seller-default", customerId, null,
@@ -542,8 +556,8 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("100.0000")));
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("100.0000"))));
         var response = service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             "full-price-order", customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
@@ -554,10 +568,11 @@ class OrderConfirmationServiceTest {
         verify(jdbc).update(contains("insert into orders.orders"), orderInsert.capture());
         assertThat((BigDecimal) orderInsert.getValue()[5]).isEqualByComparingTo("0");
         assertThat((BigDecimal) orderInsert.getValue()[13]).isEqualByComparingTo("0");
-        var itemInserts = org.mockito.ArgumentCaptor.forClass(Object[].class);
-        verify(jdbc, times(2)).update(argThat(sql -> sql.contains("order_items") || sql.contains("sale_items")),
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<List<Object[]>> itemInserts = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(jdbc, times(2)).batchUpdate(argThat(sql -> sql.contains("order_items") || sql.contains("sale_items")),
             itemInserts.capture());
-        assertThat(itemInserts.getAllValues()).allSatisfy(args ->
+        assertThat(itemInserts.getAllValues()).flatExtracting(rows -> rows).allSatisfy(args ->
             assertThat((BigDecimal) args[9]).isEqualByComparingTo("0"));
         verify(jdbc, never()).queryForList(contains("commercial_discount_rules"), any(Object[].class));
     }
@@ -594,10 +609,8 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of(Map.of("product_id", productId, "quantity", BigDecimal.ONE)));
         when(jdbc.queryForObject(contains("account_ledger"), eq(BigDecimal.class), eq(saleId)))
             .thenReturn(new BigDecimal("8"));
-        when(jdbc.queryForObject(contains("catalog.products"), eq(String.class), eq(productId)))
-            .thenReturn("Product");
-        when(pricing.resolve(customerId, productId, listId)).thenReturn(Map.of(
-            "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN));
+        when(pricing.resolveBatch(customerId, List.of(productId), listId)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN)));
 
         var result = service.editConfirmed(orderId, new OrderEditDtos.EditRequest(listId,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
@@ -633,6 +646,73 @@ class OrderConfirmationServiceTest {
             .isInstanceOfAny(IllegalArgumentException.class, IllegalStateException.class);
         verify(jdbc, never()).update(anyString(), any(Object[].class));
         verifyNoInteractions(pricing, inventory, audit);
+    }
+
+    @Test
+    void rejectsForeignCustomerBeforeLockingIdempotencyKey() {
+        authenticate("ORDER_CREATE");
+        CurrentUserAccess currentUser = mock(CurrentUserAccess.class);
+        OrderConfirmationService scopedService = new OrderConfirmationService(
+            jdbc, pricing, calculation, inventory, audit, currentUser);
+        UUID customerId = UUID.randomUUID();
+        doThrow(new org.springframework.dao.EmptyResultDataAccessException(1))
+            .when(currentUser).requireCustomerAccess(customerId);
+
+        assertThatThrownBy(() -> scopedService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "foreign-key", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of())))
+            .isInstanceOf(org.springframework.dao.EmptyResultDataAccessException.class);
+
+        verifyNoInteractions(jdbc, pricing, inventory, audit);
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void rejectsIdempotencyKeyOwnedByForeignOrderWithoutRevealingConflictOrOrder() throws Exception {
+        authenticate("ORDER_CREATE");
+        CurrentUserAccess currentUser = mock(CurrentUserAccess.class);
+        OrderConfirmationService scopedService = new OrderConfirmationService(
+            jdbc, pricing, calculation, inventory, audit, currentUser);
+        UUID customerId = UUID.randomUUID();
+        UUID foreignOrderId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(RowMapper.class), eq("shared-key"))).thenAnswer(invocation -> {
+            ResultSet rs = mock(ResultSet.class);
+            when(rs.getObject("order_id", UUID.class)).thenReturn(foreignOrderId);
+            when(rs.getObject("sale_id", UUID.class)).thenReturn(UUID.randomUUID());
+            when(rs.getObject("customer_id", UUID.class)).thenReturn(UUID.randomUUID());
+            when(rs.getString("order_number")).thenReturn("000100001");
+            when(rs.getString("sale_number")).thenReturn("000100001");
+            when(rs.getBigDecimal("total")).thenReturn(BigDecimal.TEN);
+            when(rs.getBigDecimal("paid")).thenReturn(BigDecimal.ZERO);
+            when(rs.getString("idempotency_fingerprint")).thenReturn("different-fingerprint");
+            return List.of(((RowMapper) invocation.getArgument(1)).mapRow(rs, 0));
+        });
+        doThrow(new org.springframework.dao.EmptyResultDataAccessException(1))
+            .when(currentUser).requireOrderAccess(foreignOrderId);
+
+        assertThatThrownBy(() -> scopedService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "shared-key", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of())))
+            .isInstanceOf(org.springframework.dao.EmptyResultDataAccessException.class);
+
+        verify(currentUser).requireCustomerAccess(customerId);
+        verify(currentUser).requireOrderAccess(foreignOrderId);
+    }
+
+    @Test
+    void rejectsPreviousDebtPaymentsWithoutSalePaymentPermissionBeforeSideEffects() {
+        authenticate("ORDER_CREATE");
+        var request = new OrderConfirmationDtos.ConfirmationRequest(
+            "prev-debt-no-perm", UUID.randomUUID(), null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), null, BigDecimal.TEN, null,
+            List.of(new OrderConfirmationDtos.PaymentRequest("CASH", BigDecimal.TEN)));
+
+        assertThatThrownBy(() -> service.confirm(request))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verifyNoInteractions(jdbc, pricing, inventory, audit);
     }
 
     @Test
@@ -674,8 +754,11 @@ class OrderConfirmationServiceTest {
         authenticate("ORDER_CREATE");
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
-        when(pricing.resolve(any(), any(), any())).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("5.0000")));
+        when(pricing.resolveBatch(any(), any(), any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked") List<UUID> productIds = (List<UUID>) inv.getArgument(1);
+            return productIds.stream().map(id -> Map.<String, Object>of(
+                "productId", id, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("5.0000"))).toList();
+        });
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
         when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
@@ -742,6 +825,126 @@ class OrderConfirmationServiceTest {
     }
 
     @Test
+    void editConfirmedExcludesCurrentSaleDebtFromAvailablePreviousBalance() {
+        authenticate("ADMIN_ALL");
+        UUID orderId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID listId = UUID.randomUUID();
+        when(jdbc.queryForMap(contains("from orders.orders"), eq(orderId))).thenReturn(Map.of(
+            "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "sale_id", saleId,
+            "customer_id", customerId, "account_customer_id", customerId, "sale_total", BigDecimal.TEN,
+            "paid", new BigDecimal("2"), "previous_balance_amount", BigDecimal.ZERO));
+        when(jdbc.queryForMap(contains("customer.customers"), eq(customerId)))
+            .thenReturn(Map.of("id", customerId, "balance", new BigDecimal("100")));
+        when(jdbc.queryForObject(contains("account_ledger"), eq(BigDecimal.class), eq(saleId)))
+            .thenReturn(new BigDecimal("8"));
+        when(jdbc.queryForList(contains("from orders.order_items"), eq(orderId)))
+            .thenReturn(List.of(Map.of("product_id", productId, "quantity", BigDecimal.ONE)));
+        when(pricing.resolveBatch(customerId, List.of(productId), listId)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", listId, "priceListCode", "GENERAL", "unitPrice", BigDecimal.TEN)));
+
+        assertThatThrownBy(() -> service.editConfirmed(orderId, new OrderEditDtos.EditRequest(
+            listId, List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, new BigDecimal("93"))))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("supera el saldo actual");
+
+        var accepted = service.editConfirmed(orderId, new OrderEditDtos.EditRequest(
+            listId, List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, new BigDecimal("92")));
+        assertThat(accepted.total()).isEqualByComparingTo("10");
+    }
+
+    @Test
+    void rejectsInactiveAssignedSellerBeforePricingOrInventoryWrites() {
+        authenticate("ORDER_CREATE", "ADMIN_ALL");
+        UUID customerId = UUID.randomUUID();
+        UUID inactiveSellerId = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+            .thenReturn(List.of());
+        when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("id", customerId, "status", "ACTIVE", "seller_id", inactiveSellerId));
+        when(jdbc.queryForObject(contains("seller.seller_profiles"), eq(String.class), eq(inactiveSellerId)))
+            .thenReturn("INACTIVE");
+
+        assertThatThrownBy(() -> service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "inactive-seller", customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), null)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("no está activo");
+        verifyNoInteractions(pricing, inventory);
+    }
+
+    @Test
+    void editConfirmedAllowsDefaultFallbackSnapshotsAndPreventsCloningOverridesToDuplicateLines() {
+        authenticate("ORDER_EDIT");
+        UUID orderId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID assignedListId = UUID.randomUUID();
+        UUID defaultListId = UUID.randomUUID();
+        when(jdbc.queryForMap(contains("from orders.orders"), eq(orderId))).thenReturn(Map.of(
+            "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "sale_id", saleId,
+            "customer_id", customerId, "account_customer_id", customerId, "sale_total", new BigDecimal("50.0000"),
+            "paid", BigDecimal.ZERO, "previous_balance_amount", BigDecimal.ZERO, "order_discount_percent", BigDecimal.ZERO));
+        when(jdbc.queryForMap(contains("customer.customers"), eq(customerId)))
+            .thenReturn(Map.of("id", customerId, "balance", BigDecimal.ZERO));
+        when(jdbc.queryForObject(eq("select price_list_id from customer.customers where id = ?"), eq(UUID.class), eq(customerId)))
+            .thenReturn(assignedListId);
+        when(jdbc.queryForObject(eq("select id from catalog.price_lists where is_default = true and status = 'ACTIVE'"), eq(UUID.class)))
+            .thenReturn(defaultListId);
+        when(jdbc.queryForList(contains("from orders.order_items"), eq(orderId)))
+            .thenReturn(List.of(Map.of("product_id", productId, "quantity", BigDecimal.ONE,
+                "price_list_id", defaultListId, "unit_price", new BigDecimal("50.0000"), "line_discount_percent", BigDecimal.ZERO)));
+        when(pricing.resolveBatch(eq(customerId), any(), isNull())).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", defaultListId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("80.0000"))));
+
+        // Single line preserving the historical $50 override succeeds even when snapshot used default list fallback
+        var single = service.editConfirmed(orderId, new OrderEditDtos.EditRequest(
+            null, List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2"), BigDecimal.ZERO, new BigDecimal("50.0000"))),
+            BigDecimal.ZERO, BigDecimal.ZERO));
+        assertThat(single.total()).isEqualByComparingTo("100.0000");
+
+        // Second duplicate line cannot clone that same historical override without ORDER_PRICE_OVERRIDE
+        when(pricing.resolveBatch(eq(customerId), any(), isNull())).thenReturn(List.of(
+            Map.of("productId", productId, "priceListId", defaultListId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("80.0000")),
+            Map.of("productId", productId, "priceListId", defaultListId, "priceListCode", "GENERAL", "unitPrice", new BigDecimal("80.0000"))));
+        assertThatThrownBy(() -> service.editConfirmed(orderId, new OrderEditDtos.EditRequest(
+            null, List.of(
+                new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, new BigDecimal("50.0000")),
+                new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, new BigDecimal("50.0000"))),
+            BigDecimal.ZERO, BigDecimal.ZERO)))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
+    void rejectsOverSizedLineAndPaymentListsAndOverflowAmounts() {
+        var tooManyLines = java.util.Collections.nCopies(501,
+            new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO, null));
+        assertThatThrownBy(() -> service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "too-many-lines", UUID.randomUUID(), null, tooManyLines, BigDecimal.ZERO, List.of())))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("500");
+
+        var tooManyPayments = java.util.Collections.nCopies(51,
+            new OrderConfirmationDtos.PaymentRequest("CASH", BigDecimal.ONE));
+        assertThatThrownBy(() -> service.confirm(validRequest(tooManyPayments)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("50");
+
+        assertThatThrownBy(() -> service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "overflow-price", UUID.randomUUID(), null,
+            List.of(new OrderConfirmationDtos.LineRequest(UUID.randomUUID(), BigDecimal.ONE, BigDecimal.ZERO,
+                new BigDecimal("1000000000000000"))),
+            BigDecimal.ZERO, List.of())))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void noPaymentsCreatesEntireTotalAsAccountDebt() {
         var response = confirmWithPayments(null);
 
@@ -761,8 +964,8 @@ class OrderConfirmationServiceTest {
             .thenReturn(List.of());
         when(jdbc.queryForMap(contains("customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("id", customerId, "status", "ACTIVE"));
-        when(pricing.resolve(customerId, productId, null)).thenReturn(Map.of(
-            "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000")));
+        when(pricing.resolveBatch(customerId, List.of(productId), null)).thenReturn(List.of(Map.of(
+            "productId", productId, "priceListId", UUID.randomUUID(), "priceListCode", "GENERAL", "unitPrice", new BigDecimal("10.0000"))));
         return service.confirm(new OrderConfirmationDtos.ConfirmationRequest(
             UUID.randomUUID().toString(), customerId, null,
             List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),

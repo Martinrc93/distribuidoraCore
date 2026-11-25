@@ -50,7 +50,7 @@ como alias para identificar sus registros al actualizar fechas sin renumerarlos.
 ## Iniciar el entorno local
 
 ```powershell
-.dev.cmd start
+.\dev.cmd start
 ```
 
 El comando inicia PostgreSQL mediante Docker Compose y espera a que esté listo.

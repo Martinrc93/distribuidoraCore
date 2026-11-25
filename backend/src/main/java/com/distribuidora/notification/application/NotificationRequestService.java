@@ -26,6 +26,7 @@ public class NotificationRequestService {
     }
 
     public record CreateNotificationResult(UUID requestId, String status) { }
+    public record CustomerContact(String email, String phone) { }
 
     public record NotificationStatus(UUID requestId, String status, int attemptCount,
                                      java.time.Instant requestedAt, java.time.Instant sentAt, String lastError) { }
@@ -57,6 +58,16 @@ public class NotificationRequestService {
         this.stateService = stateService;
     }
 
+    @Transactional(readOnly = true)
+    public CustomerContact contact(UUID orderId) {
+        currentUser.requireOrderAccess(orderId);
+        return jdbc.queryForObject("""
+            select c.email, c.phone from orders.orders o
+            join customer.customers c on c.id = o.customer_id
+            where o.id = ?
+            """, (rs, row) -> new CustomerContact(rs.getString("email"), rs.getString("phone")), orderId);
+    }
+
     @Transactional
     public CreateNotificationResult request(UUID orderId, CreateNotificationCommand request) {
         if (orderId == null || request == null) throw new IllegalArgumentException("La solicitud de notificación es obligatoria");
@@ -67,6 +78,7 @@ public class NotificationRequestService {
         String idempotencyKey = request.idempotencyKey() == null ? "" : request.idempotencyKey().trim();
         if (!channel.equals("EMAIL") && !channel.equals("WHATSAPP")) throw new IllegalArgumentException("Canal inválido");
         if (!format.equals("A4") && !format.equals("TICKET")) throw new IllegalArgumentException("Formato inválido");
+        if (recipient.length() > 320) throw new IllegalArgumentException("El destinatario no puede superar 320 caracteres");
         if (channel.equals("EMAIL") && !EMAIL.matcher(recipient).matches()) throw new IllegalArgumentException("Email inválido");
         if (channel.equals("WHATSAPP") && !PHONE.matcher(recipient).matches()) throw new IllegalArgumentException("Teléfono WhatsApp inválido; use formato E.164");
         if (idempotencyKey.isBlank() || idempotencyKey.length() > 120) throw new IllegalArgumentException("idempotencyKey es obligatorio y admite hasta 120 caracteres");
@@ -75,7 +87,7 @@ public class NotificationRequestService {
         Map<String, Object> sale = jdbc.queryForMap("select s.id as sale_id from orders.orders o "
             + "join sale.sales s on s.order_id = o.id where o.id = ?", orderId);
         UUID saleId = uuid(sale.get("sale_id"));
-        jdbc.update("insert into notification.delivery_requests(id, order_id, sale_id, channel, document_format, "
+        int inserted = jdbc.update("insert into notification.delivery_requests(id, order_id, sale_id, channel, document_format, "
                 + "recipient, requested_by, idempotency_key) values (?, ?, ?, ?, ?, ?, ?, ?) "
                 + "on conflict (idempotency_key) do nothing",
             UUID.randomUUID(), orderId, saleId, channel, format, recipient, currentUser.userId(), idempotencyKey);
@@ -87,16 +99,15 @@ public class NotificationRequestService {
             throw new IllegalArgumentException("idempotencyKey ya fue usado con otra solicitud");
         }
         UUID requestId = uuid(existing.get("id"));
-        if (!"QUEUED".equals(existing.get("status")) && jdbc.queryForObject(
-                "select outbox_event_id is not null from notification.delivery_requests where id = ?", Boolean.class, requestId)) {
+        if (!"QUEUED".equals(existing.get("status")) && Boolean.TRUE.equals(jdbc.queryForObject(
+                "select outbox_event_id is not null from notification.delivery_requests where id = ?", Boolean.class, requestId))) {
             return new CreateNotificationResult(requestId, (String) existing.get("status"));
         }
         UUID eventId = outbox.enqueue("NOTIFICATION_DELIVERY_REQUESTED", "NOTIFICATION", requestId,
             Map.of("notificationRequestId", requestId.toString()), "NOTIFICATION_REQUEST:" + requestId);
         jdbc.update("update notification.delivery_requests set outbox_event_id = ? where id = ? and outbox_event_id is null",
             eventId, requestId);
-        if (jdbc.queryForObject("select count(*) from audit.audit_events where operation = 'NOTIFICATION_REQUEST' "
-                + "and resource_id = ?", Long.class, requestId.toString()) == 0) {
+        if (inserted == 1) {
             audit.recordWithinTransaction(currentUser.userId(), "NOTIFICATION_REQUEST", "NOTIFICATION", requestId.toString(),
                 "SUCCESS", Map.of("channel", channel, "format", format, "recipient", mask(recipient)));
         }

@@ -29,18 +29,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import com.distribuidora.shared.time.BusinessTime;
 
 @Component
-@Profile("!test")
+@Profile("local & !test")
 public class DemoDataSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(DemoDataSeeder.class);
-    private static final ZoneId ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final ZoneId ZONE = BusinessTime.ZONE;
     private static final int DAYS_BEFORE = 30;
     private static final int DAYS_AFTER = 30;
     private static final String SEED_NAME = "demo-v1";
     private static final int PRODUCT_COUNT = 500;
     private static final int CUSTOMER_COUNT = 300;
     private static final int SALE_COUNT = 1_000;
+    private static final String DEMO_SALES = """
+        FROM generate_series(1, 1000) AS seed(index)
+        JOIN orders.orders o ON o.legacy_order_number = 'PED-' || lpad(seed.index::text, 5, '0')
+        JOIN sale.sales s ON s.order_id = o.id
+            AND s.legacy_sale_number = 'V-' || lpad(seed.index::text, 6, '0')
+        """;
     private static final String[] CATEGORY_NAMES = {"Bebidas", "Almac\u00e9n", "Limpieza"};
     private static final String[] BRAND_NAMES = {
         "Marca Demo 01", "Marca Demo 02", "Marca Demo 03", "Marca Demo 04", "Marca Demo 05", "Marca Demo 06"
@@ -61,7 +68,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         JdbcTemplate jdbc,
         PasswordEncoder passwordEncoder,
         @Value("${app.seed-demo:false}") boolean enabled,
-        @Value("${app.demo-password:ChangeMe123!}") String password
+        @Value("${app.demo-password:}") String password
     ) {
         this(jdbc, passwordEncoder, enabled, password, Clock.system(ZONE));
     }
@@ -80,12 +87,14 @@ public class DemoDataSeeder implements ApplicationRunner {
         if (!enabled) {
             return;
         }
+        if (password == null || password.isBlank() || password.length() < 8) {
+            throw new IllegalArgumentException("DEMO_PASSWORD must contain at least 8 characters when demo seeding is enabled");
+        }
         LocalDate today = LocalDate.now(clock.withZone(ZONE));
         ensureDemoReferenceData();
         ensureProductPrices();
         if (alreadySeeded()) {
             repairSeedReferenceAssignments();
-            repairSeedRoles();
             repairSeedLedger();
             if (args.containsOption("refresh-demo-dates")) {
                 refreshDemoDates(today);
@@ -419,8 +428,8 @@ public class DemoDataSeeder implements ApplicationRunner {
             String orderNumber = jdbc.queryForObject("select orders.next_customer_order_number(?)", String.class, customerId);
             jdbc.update("insert into orders.orders(id, order_number, customer_id, seller_id, status, subtotal, discount, total, created_at, legacy_order_number, fulfillment_status, legacy_fulfillment) values (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'PREPARED', true)",
                 orderId, orderNumber, customerId, sellerProfiles.get(index % sellerProfiles.size()), status, total, total, timestamp(createdAt), "PED-%05d".formatted(index));
-            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                saleId, "V-%06d".formatted(index), orderId, customerId, status, total, total.multiply(BigDecimal.valueOf(index % 3 == 0 ? 0.5 : 1)), timestamp(createdAt), customerId);
+            jdbc.update("insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id, legacy_sale_number) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                saleId, orderNumber, orderId, customerId, status, total, total.multiply(BigDecimal.valueOf(index % 3 == 0 ? 0.5 : 1)), timestamp(createdAt), customerId, "V-%06d".formatted(index));
             for (Line line : lines) {
                 jdbc.update("insert into orders.order_items(id, order_id, product_id, product_name, quantity, unit_price, line_total, price_list_id, price_list_code, line_discount_percent) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     UUID.randomUUID(), orderId, line.productId(), line.name(), line.quantity(), line.price(), line.total(), generalPriceListId, "GENERAL", BigDecimal.ZERO.setScale(4));
@@ -453,11 +462,7 @@ public class DemoDataSeeder implements ApplicationRunner {
     private void refreshDemoDates(LocalDate today) {
         List<SeedDates> dates = jdbc.query("""
             SELECT o.id AS order_id, s.id AS sale_id, seed.index, s.created_at
-            FROM generate_series(1, 1000) AS seed(index)
-            JOIN orders.orders o ON o.legacy_order_number = 'PED-' || lpad(seed.index::text, 5, '0')
-            JOIN sale.sales s ON s.order_id = o.id
-                AND s.sale_number = 'V-' || lpad(seed.index::text, 6, '0')
-            """, (rs, rowNum) -> new SeedDates(rs.getObject("order_id", UUID.class),
+            """ + DEMO_SALES, (rs, rowNum) -> new SeedDates(rs.getObject("order_id", UUID.class),
                 rs.getObject("sale_id", UUID.class), rs.getInt("index"), rs.getTimestamp("created_at")));
         for (SeedDates entry : dates) {
             Timestamp date = timestamp(saleDate(today, entry.index()));
@@ -480,9 +485,8 @@ public class DemoDataSeeder implements ApplicationRunner {
     private void repairSeedLedger() {
         List<RepairLedgerEntry> missing = jdbc.query("""
             SELECT s.id, s.account_customer_id, s.total - s.paid AS amount, s.created_at
-            FROM sale.sales s
-            WHERE s.sale_number LIKE 'V-%'
-              AND s.total > s.paid
+            """ + DEMO_SALES + """
+            WHERE s.total > s.paid
               AND NOT EXISTS (
                   SELECT 1 FROM customer.account_ledger l
                   WHERE l.sale_id = s.id AND l.entry_type = 'DEBIT'
@@ -503,8 +507,9 @@ public class DemoDataSeeder implements ApplicationRunner {
                 WHERE l.customer_id = c.id
             ), 0)
             WHERE EXISTS (
-                SELECT 1 FROM sale.sales s
-                WHERE s.account_customer_id = c.id AND s.sale_number LIKE 'V-%'
+                SELECT 1
+            """ + DEMO_SALES + """
+                WHERE s.account_customer_id = c.id
             )
             """);
     }

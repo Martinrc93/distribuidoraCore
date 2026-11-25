@@ -1,302 +1,103 @@
 package com.distribuidora.dashboard.application;
 
-import com.distribuidora.shared.web.PageResponse;
-import com.distribuidora.payment.application.DeliveryDebtQuery;
 import com.distribuidora.shared.security.CurrentUserAccess;
-import com.distribuidora.shared.security.PermissionAccess;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.stereotype.Service;
+import com.distribuidora.shared.web.PageResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.ArrayList;
-import java.sql.Timestamp;
 import java.time.LocalDate;
-import java.time.ZoneId;
-import java.math.BigDecimal;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 
 @Service
+@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class ReadQueryService {
-    private final JdbcTemplate jdbc;
-    private final CurrentUserAccess currentUser;
+    public enum StockFilter { ALL, POSITIVE, NEGATIVE }
 
-    public ReadQueryService(JdbcTemplate jdbc) {
-        this(jdbc, null);
+    private final DashboardReadQueryService dashboardReads;
+    private final CustomerCatalogReadQueryService customerCatalogReads;
+    private final CommercialReadQueryService commercialReads;
+    private final AdminReadQueryService adminReads;
+
+    public ReadQueryService(JdbcTemplate jdbc, CurrentUserAccess currentUser) {
+        this(
+            new DashboardReadQueryService(jdbc, currentUser),
+            new CustomerCatalogReadQueryService(jdbc, currentUser),
+            new CommercialReadQueryService(jdbc, currentUser),
+            new AdminReadQueryService(jdbc, currentUser));
     }
 
     @Autowired
-    public ReadQueryService(JdbcTemplate jdbc, CurrentUserAccess currentUser) {
-        this.jdbc = jdbc;
-        this.currentUser = currentUser;
+    public ReadQueryService(DashboardReadQueryService dashboardReads,
+                            CustomerCatalogReadQueryService customerCatalogReads,
+                            CommercialReadQueryService commercialReads,
+                            AdminReadQueryService adminReads) {
+        this.dashboardReads = Objects.requireNonNull(dashboardReads, "dashboardReads");
+        this.customerCatalogReads = Objects.requireNonNull(customerCatalogReads, "customerCatalogReads");
+        this.commercialReads = Objects.requireNonNull(commercialReads, "commercialReads");
+        this.adminReads = Objects.requireNonNull(adminReads, "adminReads");
     }
 
     public Map<String, Object> dashboard(LocalDate dateMin, LocalDate dateMax) {
-        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
-        LocalDate today = LocalDate.now(zone);
-        LocalDate from = dateMin == null ? today : dateMin;
-        LocalDate to = dateMax == null ? today : dateMax;
-        if (from.isAfter(to)) {
-            throw new IllegalArgumentException("La fecha desde no puede ser posterior a la fecha hasta");
-        }
-        List<Map<String, Object>> bySeller = jdbc.queryForList("""
-            with period_orders as (
-                select o.seller_id, o.status as order_status, s.status as sale_status,
-                       s.total, s.paid, coalesce(pay.cash_paid, 0) as cash_paid,
-                       coalesce(pay.transfer_paid, 0) as transfer_paid,
-                       (select coalesce(sum(case when l.entry_type = 'DEBIT' then l.amount else -l.amount end), 0)
-                        from customer.account_ledger l where l.sale_id = s.id) as account_debt
-                from orders.orders o
-                left join sale.sales s on s.order_id = o.id
-                left join (
-                    select sale_id,
-                           sum(case when method = 'CASH' then amount else 0 end) as cash_paid,
-                           sum(case when method = 'BANK_TRANSFER' then amount else 0 end) as transfer_paid
-                    from payment.payments group by sale_id
-                ) pay on pay.sale_id = s.id
-                where o.created_at >= ? and o.created_at < ?
-            )
-            select sp.id as "sellerId", coalesce(sp.display_name, 'Sin asignar') as seller,
-                   count(*) as "performedOrders",
-                   sum(case when p.order_status = 'DELIVERED' then 1 else 0 end) as "deliveredOrders",
-                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
-                       then coalesce(p.total, 0) else 0 end) as "totalBilled",
-                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
-                       then coalesce(p.paid, 0) else 0 end) as "totalPaid",
-                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
-                       then p.cash_paid else 0 end) as "cashPaid",
-                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
-                       then p.transfer_paid else 0 end) as "transferPaid",
-                   sum(case when p.order_status <> 'CANCELLED' and p.sale_status <> 'CANCELLED'
-                       then least(greatest(p.account_debt, 0), greatest(p.total - p.paid, 0))
-                       else 0 end) as "accountBalance"
-            from period_orders p
-            left join seller.seller_profiles sp on sp.id = p.seller_id
-            group by sp.id, sp.display_name
-            order by seller, sp.id
-            """, Timestamp.from(from.atStartOfDay(zone).toInstant()),
-                Timestamp.from(to.plusDays(1).atStartOfDay(zone).toInstant()));
-        Map<String, Object> totals = new HashMap<>();
-        for (String key : List.of("performedOrders", "deliveredOrders", "totalBilled", "totalPaid", "cashPaid", "transferPaid", "accountBalance")) {
-            totals.put(key, bySeller.stream().map(row -> new BigDecimal(row.get(key).toString()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
-        }
-        return Map.of("dateMin", from, "dateMax", to, "totals", totals, "bySeller", bySeller);
+        return dashboardReads.dashboard(dateMin, dateMax);
     }
 
     public PageResponse<Map<String, Object>> dashboardSellerOrders(UUID sellerId, boolean unassigned,
             LocalDate dateMin, LocalDate dateMax, int page, int size) {
-        if ((sellerId == null) != unassigned) {
-            throw new IllegalArgumentException("Seleccione un vendedor o los pedidos sin asignar");
-        }
-        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
-        LocalDate today = LocalDate.now(zone);
-        LocalDate from = dateMin == null ? today : dateMin;
-        LocalDate to = dateMax == null ? today : dateMax;
-        if (from.isAfter(to)) {
-            throw new IllegalArgumentException("La fecha desde no puede ser posterior a la fecha hasta");
-        }
-        String source = """
-            from orders.orders o
-            join sale.sales s on s.order_id = o.id
-            join customer.customers c on c.id = o.customer_id
-            where o.status = 'DELIVERED' and s.status <> 'CANCELLED'
-              and o.created_at >= ? and o.created_at < ?
-            """ + (unassigned ? " and o.seller_id is null" : " and o.seller_id = ?");
-        List<Object> parameters = new ArrayList<>(List.of(
-            Timestamp.from(from.atStartOfDay(zone).toInstant()), Timestamp.from(to.plusDays(1).atStartOfDay(zone).toInstant())));
-        if (!unassigned) parameters.add(sellerId);
-        var result = page("""
-            select o.id, o.order_number as number, c.business_name as customer,
-                   o.created_at as date, o.delivered_at as "deliveredAt", s.id as "saleId", s.total, s.paid,
-                   least(greatest((select coalesce(sum(case when l.entry_type = 'DEBIT' then l.amount else -l.amount end), 0)
-                       from customer.account_ledger l where l.sale_id = s.id), 0), greatest(s.total - s.paid, 0)) as "accountBalance"
-            """ + source + " order by o.created_at desc, o.id", "select count(*) " + source,
-            page, size, parameters.toArray());
-        if (result.content().isEmpty()) return result;
-        Object[] saleIds = result.content().stream().map(row -> row.get("saleId")).toArray();
-        String placeholders = String.join(",", java.util.Collections.nCopies(saleIds.length, "?"));
-        var payments = jdbc.queryForList("""
-            select sale_id as "saleId", method, sum(amount) as amount
-            from payment.payments where sale_id in (
-            """ + placeholders + ") group by sale_id, method order by method", saleIds);
-        for (var row : result.content()) {
-            row.put("payments", payments.stream().filter(payment -> row.get("saleId").equals(payment.get("saleId")))
-                .map(payment -> Map.of("method", payment.get("method"), "amount", payment.get("amount"))).toList());
-        }
-        return result;
+        return dashboardReads.dashboardSellerOrders(sellerId, unassigned, dateMin, dateMax, page, size);
     }
 
     public PageResponse<Map<String, Object>> customers(int page, int size, String search) {
-        return customers(page, size, search, null, false, "");
+        return customerCatalogReads.customers(page, size, search);
     }
 
     public PageResponse<Map<String, Object>> customers(int page, int size, String search,
             UUID sellerId, boolean hasBalance, String status) {
-        return customers(page, size, search, sellerId, hasBalance, status, null, null);
+        return customerCatalogReads.customers(page, size, search, sellerId, hasBalance, status);
     }
 
     /** {@code kind} filters regular customers or resellers; {@code resellerId}, the customers of a reseller. */
     public PageResponse<Map<String, Object>> customers(int page, int size, String search,
             UUID sellerId, boolean hasBalance, String status, String kind, UUID resellerId) {
-        String state = status == null ? "" : status.trim();
-        if (!state.isEmpty() && !state.equals("ACTIVE") && !state.equals("INACTIVE")) {
-            throw new IllegalArgumentException("El estado del cliente debe ser ACTIVE o INACTIVE");
-        }
-        String customerKind = kind == null ? "" : kind.trim();
-        if (!customerKind.isEmpty() && !customerKind.equals("REGULAR") && !customerKind.equals("RESELLER")) {
-            throw new IllegalArgumentException("El tipo de cliente debe ser REGULAR o RESELLER");
-        }
-        String term = like(search);
-        var balance = new com.distribuidora.payment.application.CustomerAccountBalanceQuery(jdbc, currentUser).projection();
-        String source = " from (select c.*, " + balance.sql() + " as scoped_balance from customer.customers c) c "
-            + "left join seller.seller_profiles sp on sp.id = c.seller_id "
-            + "left join customer.customers reseller on reseller.id = c.reseller_id ";
-        String where = " where (lower(c.business_name) like ? or lower(c.tax_id) like ?)";
-        List<Object> parameters = new ArrayList<>(balance.parameters()); parameters.add(term); parameters.add(term);
-        if (sellerScoped()) {
-            where += " and c.seller_id = ?";
-            parameters.add(currentUser.requireSellerProfile());
-        }
-        if (sellerId != null) {
-            where += " and c.seller_id = ?";
-            parameters.add(sellerId);
-        }
-        if (hasBalance) where += " and c.scoped_balance <> 0";
-        if (!state.isEmpty()) {
-            where += " and c.status = ?";
-            parameters.add(state);
-        }
-        if (!customerKind.isEmpty()) {
-            where += " and c.kind = ?";
-            parameters.add(customerKind);
-        }
-        if (resellerId != null) {
-            where += " and c.reseller_id = ?";
-            parameters.add(resellerId);
-        }
-        return page("""
-            select c.id, lpad(cast(c.customer_number as varchar), greatest(4, length(cast(c.customer_number as varchar))), '0') as "number", c.business_name as name, c.tax_id as "cuitId", c.email, c.phone, c.address, c.zone, c.seller_id as "sellerId",
-                   c.price_list_id as "priceListId", coalesce(sp.display_name, 'Sin asignar') as seller,
-                   c.scoped_balance as balance, c.status,
-                   c.kind, c.reseller_id as "resellerId", reseller.business_name as reseller
-            """ + source + where + " order by c.business_name, c.id", "select count(*)" + source + where,
-            page, size, parameters.toArray());
+        return customerCatalogReads.customers(page, size, search, sellerId, hasBalance, status, kind, resellerId);
     }
 
     public Map<String, Object> customerFilterOptions() {
-        String where = "";
-        List<Object> parameters = new ArrayList<>();
-        if (sellerScoped()) {
-            where = " where c.seller_id = ?";
-            parameters.add(currentUser.requireSellerProfile());
-        }
-        return Map.of("sellers", jdbc.queryForList("""
-            select distinct sp.id, sp.display_name as name
-            from customer.customers c join seller.seller_profiles sp on sp.id = c.seller_id
-            """ + where + " order by sp.display_name, sp.id", parameters.toArray()));
+        return customerCatalogReads.customerFilterOptions();
     }
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search) {
-        return products(page, size, search, true);
+        return customerCatalogReads.products(page, size, search);
     }
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search, boolean includeStock) {
-        return products(page, size, search, includeStock, null, null, StockFilter.ALL);
+        return customerCatalogReads.products(page, size, search, includeStock);
     }
-
-    public enum StockFilter { ALL, POSITIVE, NEGATIVE }
 
     public PageResponse<Map<String, Object>> products(int page, int size, String search, boolean includeStock,
             UUID brandId, UUID categoryId, StockFilter stock) {
-        boolean assigned = sellerScoped();
-        if (assigned && stock != StockFilter.ALL) {
-            throw new AccessDeniedException("El filtro de inventario requiere acceso administrativo");
-        }
-        boolean showStock = includeStock && (!assigned
-            || PermissionAccess.allows("ORDER_CREATE") || PermissionAccess.allows("ORDER_EDIT"));
-        String term = like(search);
-        String costColumn = assigned ? "" : ", p.cost";
-        String stockColumn = showStock ? ", coalesce(ib.quantity, 0) as stock" : "";
-        String stockJoin = showStock || stock != StockFilter.ALL
-            ? " left join inventory.inventory_balances ib on ib.product_id = p.id" : "";
-        String source = """
-             from catalog.products p
-             left join catalog.categories cat on cat.id = p.category_id
-            """ + stockJoin + " where lower(p.name) like ?";
-        List<Object> parameters = new ArrayList<>(List.of(term));
-        if (brandId != null) {
-            source += " and p.brand_id = ?";
-            parameters.add(brandId);
-        }
-        if (categoryId != null) {
-            source += " and p.category_id = ?";
-            parameters.add(categoryId);
-        }
-        source += switch (stock) {
-            case ALL -> "";
-            case POSITIVE -> " and coalesce(ib.quantity, 0) > 0";
-            case NEGATIVE -> " and coalesce(ib.quantity, 0) < 0";
-        };
-        PageResponse<Map<String, Object>> result = page("""
-            select p.id, p.name, coalesce(p.description, p.name) as description, coalesce(cat.name, p.category) as category,
-                   p.category_id as "categoryId", p.brand_id as "brandId", p.presentation, p.status
-            """ + costColumn + stockColumn + source + " order by p.name, p.id",
-            "select count(*) " + source, page, size, parameters.toArray());
-        if (assigned || result.content().isEmpty()) return result;
-        String ids = String.join(",", java.util.Collections.nCopies(result.content().size(), "?"));
-        var associations = jdbc.queryForList("select ps.product_id, s.id, s.name from catalog.product_suppliers ps "
-            + "join supplier.suppliers s on s.id = ps.supplier_id where ps.product_id in (" + ids + ") order by s.name, s.id",
-            result.content().stream().map(product -> product.get("id")).toArray());
-        var content = result.content().stream().map(product -> {
-            Map<String, Object> row = new org.springframework.util.LinkedCaseInsensitiveMap<>();
-            row.putAll(product);
-            row.put("suppliers", associations.stream().filter(association -> product.get("id").equals(association.get("product_id")))
-                .map(association -> Map.of("id", association.get("id"), "name", association.get("name"))).toList());
-            return row;
-        }).toList();
-        return new PageResponse<>(content, result.page(), result.size(), result.totalElements(), result.totalPages());
+        return customerCatalogReads.products(page, size, search, includeStock, brandId, categoryId, stock);
     }
 
     public PageResponse<Map<String, Object>> inventory(int page, int size, String search) {
-        String term = like(search);
-        return page("""
-            select p.id, p.name as product,
-                   coalesce(ib.quantity, 0) as stock,
-                   sm.movement_type as "lastMovement",
-                   sm.created_at as updated
-            from catalog.products p
-            left join inventory.inventory_balances ib on ib.product_id = p.id
-            left join lateral (select movement_type, created_at from inventory.stock_movements
-                where product_id = p.id order by created_at desc limit 1) sm on true
-            where lower(p.name) like ?
-            order by p.name
-            """, "select count(*) from catalog.products where lower(name) like ?",
-             page, size, term);
+        return customerCatalogReads.inventory(page, size, search);
     }
 
     public PageResponse<Map<String, Object>> movements(UUID productId, int page, int size) {
-        return page("""
-            select sm.id, sm.movement_type as "movementType", sm.quantity, sm.reason,
-                   sm.reference_type as "referenceType", sm.reference_id as "referenceId",
-                   sm.created_at as date
-            from inventory.stock_movements sm
-            where sm.product_id = ?
-            order by sm.created_at desc
-            """, "select count(*) from inventory.stock_movements where product_id = ?",
-            page, size, productId);
+        return customerCatalogReads.movements(productId, page, size);
     }
 
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status) {
-        return orders(page, size, search, status, null, null);
+        return commercialReads.orders(page, size, search, status);
     }
 
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
             LocalDate dateMin, LocalDate dateMax) {
-        return orders(page, size, search, status, dateMin, dateMax, null, false);
+        return commercialReads.orders(page, size, search, status, dateMin, dateMax);
     }
 
     /**
@@ -305,252 +106,49 @@ public class ReadQueryService {
      */
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
             LocalDate dateMin, LocalDate dateMax, String createdBy, boolean paidUndelivered) {
-        return orders(page, size, search, status, dateMin, dateMax, createdBy, paidUndelivered, null, false);
+        return commercialReads.orders(page, size, search, status, dateMin, dateMax, createdBy, paidUndelivered);
     }
 
     public PageResponse<Map<String, Object>> orders(int page, int size, String search, String status,
             LocalDate dateMin, LocalDate dateMax, String createdBy, boolean paidUndelivered,
             String fulfillmentStatus, boolean reviewPending) {
-        if (fulfillmentStatus != null && !fulfillmentStatus.isBlank()
-            && !List.of("PENDING", "PREPARED").contains(fulfillmentStatus)) {
-            throw new IllegalArgumentException("fulfillmentStatus debe ser PENDING o PREPARED");
-        }
-        if (createdBy != null && !createdBy.isBlank() && !"ADMIN".equals(createdBy) && !"SELLER".equals(createdBy)) {
-            throw new IllegalArgumentException("createdBy debe ser ADMIN o SELLER");
-        }
-        if (dateMin != null && dateMax != null && dateMin.isAfter(dateMax)) {
-            throw new IllegalArgumentException("La fecha mínima no puede ser posterior a la fecha máxima");
-        }
-        String term = like(search);
-        String state = status == null || status.isBlank() ? "%" : status;
-        String where = " where (lower(c.business_name) like ? or lower(o.order_number) like ?) and o.status like ?";
-        List<Object> parameters = new ArrayList<>(List.of(term, term, state));
-        if (sellerScoped()) {
-            UUID sellerId = currentUser.requireSellerProfile();
-            where += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
-            parameters.add(sellerId);
-            parameters.add(sellerId);
-        }
-        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
-        if (dateMin != null) {
-            where += " and o.created_at >= ?";
-            parameters.add(Timestamp.from(dateMin.atStartOfDay(zone).toInstant()));
-        }
-        if (dateMax != null) {
-            where += " and o.created_at < ?";
-            parameters.add(Timestamp.from(dateMax.plusDays(1).atStartOfDay(zone).toInstant()));
-        }
-        if ("ADMIN".equals(createdBy)) where += " and o.created_by_admin = true";
-        if ("SELLER".equals(createdBy)) where += " and o.created_by_admin = false";
-        if (paidUndelivered) where += " and o.status = 'CONFIRMED' and s.id is not null and s.paid >= s.total";
-        if (fulfillmentStatus != null && !fulfillmentStatus.isBlank()) {
-            where += " and o.status = 'CONFIRMED' and o.fulfillment_status = ?";
-            parameters.add(fulfillmentStatus);
-        }
-        if (reviewPending) where += " and o.created_by_admin = false and o.reviewed_at is null";
-        return page("""
-            select o.id, o.order_number as number, c.business_name as customer,
-                   coalesce(sp.display_name, 'Sin asignar') as seller,
-                   o.total, o.status, o.created_at as date,
-                   o.created_by_admin as "createdByAdmin", coalesce(s.paid, 0) as paid,
-                   o.fulfillment_status as "fulfillmentStatus",
-                   (o.created_by_admin = false and o.reviewed_at is null) as "reviewPending"
-            from orders.orders o
-            join customer.customers c on c.id = o.customer_id
-            left join seller.seller_profiles sp on sp.id = o.seller_id
-            left join sale.sales s on s.order_id = o.id
-            """ + where + " order by o.created_at desc, o.id desc", """
-            select count(*) from orders.orders o join customer.customers c on c.id = o.customer_id
-            left join sale.sales s on s.order_id = o.id
-             """ + where, page, size, parameters.toArray());
+        return commercialReads.orders(page, size, search, status, dateMin, dateMax, createdBy, paidUndelivered,
+            fulfillmentStatus, reviewPending);
     }
 
     public Map<String, Object> lastCustomerOrder(UUID customerId) {
-        if (currentUser != null) currentUser.requireCustomerAccess(customerId);
-        String where = " where o.customer_id = ? and o.status in ('CONFIRMED', 'DELIVERED')";
-        List<Object> parameters = new ArrayList<>(List.of(customerId));
-        if (sellerScoped()) {
-            UUID sellerId = currentUser.requireSellerProfile();
-            where += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
-            parameters.add(sellerId);
-            parameters.add(sellerId);
-        }
-        List<Map<String, Object>> orders = jdbc.queryForList("""
-            select o.id, o.order_number as "number", o.order_discount_percent as "orderDiscountPercent"
-            from orders.orders o join customer.customers c on c.id = o.customer_id
-            """ + where + " order by o.created_at desc, o.id desc limit 1", parameters.toArray());
-        if (orders.isEmpty()) return Map.of("available", false);
-        Map<String, Object> order = orders.getFirst();
-        List<Map<String, Object>> items = jdbc.queryForList("""
-            select oi.product_id as "productId", coalesce(p.name, oi.product_name) as "productName",
-                   p.presentation, p.status,
-                   oi.quantity, oi.line_discount_percent as "lineDiscountPercent"
-            from orders.order_items oi
-            left join catalog.products p on p.id = oi.product_id
-            where oi.order_id = ? order by oi.id
-            """, order.get("ID"));
-        return Map.of("available", !items.isEmpty(), "orderId", order.get("ID"),
-            "orderNumber", order.get("number"), "orderDiscountPercent", order.get("orderDiscountPercent"), "items", items);
+        return commercialReads.lastCustomerOrder(customerId);
     }
 
     /** Open debts owed by the customer's account; the scope fallback uses each order's recipient. */
     public PageResponse<Map<String, Object>> customerDebts(UUID customerId, int page, int size) {
-        if (currentUser != null) currentUser.requireCustomerAccess(customerId);
-        jdbc.queryForObject("select id from customer.customers where id = ?", UUID.class, customerId);
-        String source = """
-            from sale.sales s
-            join orders.orders o on o.id = s.order_id
-            join customer.customers c on c.id = s.customer_id
-            left join lateral (
-                select sum(amount) filter (where entry_type = 'DEBIT') as debit,
-                       sum(amount) filter (where entry_type = 'CREDIT') as credit
-                from customer.account_ledger where sale_id = s.id
-            ) l on true
-            where s.account_customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
-              and least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) > 0
-            """;
-        List<Object> parameters = new ArrayList<>(List.of(customerId));
-        if (sellerScoped()) {
-            UUID sellerId = currentUser.requireSellerProfile();
-            source += " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
-            parameters.add(sellerId);
-            parameters.add(sellerId);
-        }
-        String rows = """
-            select s.id as "saleId", s.sale_number as "saleNumber", s.status,
-                   s.total, s.paid, o.id as "orderId", o.order_number as "orderNumber",
-                   s.created_at as "createdAt", c.id as "customerId", c.business_name as customer,
-                   least(greatest(coalesce(l.debit, 0) - coalesce(l.credit, 0), 0), greatest(s.total - s.paid, 0)) as balance
-            """ + source + " order by s.created_at, s.id";
-        return page(rows, "select count(*) " + source, page, size, parameters.toArray());
+        return customerCatalogReads.customerDebts(customerId, page, size);
     }
 
     public Map<String, Object> orderDetail(UUID orderId) {
-        if (sellerScoped()) currentUser.requireOrderAccess(orderId);
-        Map<String, Object> order = jdbc.queryForMap("""
-            select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer,
-                   coalesce(assigned_seller.display_name, customer_seller.display_name, 'Sin asignar') as seller,
-                   o.status, o.subtotal, o.discount, o.total,
-                   o.fulfillment_status as "fulfillmentStatus", o.prepared_at as "preparedAt",
-                   o.prepared_by_user_id as "preparedByUserId", o.legacy_fulfillment as "legacyFulfillment",
-                   o.created_by_admin as "createdByAdmin", o.created_by_user_id as "createdByUserId",
-                   (o.created_by_admin = false and o.reviewed_at is null) as "reviewPending",
-                   o.reviewed_at as "reviewedAt", o.reviewed_by_user_id as "reviewedByUserId",
-                   o.order_discount_percent as "orderDiscountPercent",
-                   o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
-                   o.projected_balance_snapshot as "projectedBalanceSnapshot",
-                   account_customer.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
-                   account_sale.account_customer_id as "accountCustomerId", account_customer.business_name as "accountCustomer",
-                   account_customer.kind as "accountKind",
-                   (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
-            from orders.orders o
-            join customer.customers c on c.id = o.customer_id
-            join sale.sales account_sale on account_sale.order_id = o.id
-            join customer.customers account_customer on account_customer.id = account_sale.account_customer_id
-            left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id
-            left join seller.seller_profiles customer_seller on customer_seller.id = c.seller_id
-            where o.id = ?
-            """, orderId);
-        return detail(order, orderId);
+        return commercialReads.orderDetail(orderId);
     }
 
     public Map<String, Object> saleDetail(UUID saleId) {
-        UUID orderId = jdbc.queryForObject("select order_id from sale.sales where id = ?", UUID.class, saleId);
-        if (sellerScoped()) currentUser.requireOrderAccess(orderId);
-        Map<String, Object> detail = new HashMap<>(orderDetail(orderId));
-        detail.put("saleItems", jdbc.queryForList("""
-            select si.id as "saleItemId", si.product_id as "productId", si.product_name as "productName",
-                   si.quantity, coalesce(sum(ri.quantity), 0) as "returnedQuantity",
-                   greatest(si.quantity - coalesce(sum(ri.quantity), 0), 0) as "returnableQuantity"
-            from sale.sale_items si
-            left join sale.return_items ri on ri.sale_item_id = si.id and ri.sale_id = si.sale_id
-            where si.sale_id = ?
-            group by si.id, si.product_id, si.product_name, si.quantity
-            order by si.id
-            """, saleId));
-        return detail;
+        return commercialReads.saleDetail(saleId);
     }
 
     public Map<String, Object> orderDetailByNumber(String orderNumber) {
-        Map<String, Object> order = jdbc.queryForMap("""
-            select o.id, o.order_number as number, o.customer_id as "customerId",
-                   c.business_name as customer,
-                   coalesce(assigned_seller.display_name, customer_seller.display_name, 'Sin asignar') as seller,
-                   o.status, o.subtotal, o.discount, o.total,
-                   o.order_discount_percent as "orderDiscountPercent",
-                   o.credit_limit_exceeded as "creditLimitExceeded", o.credit_limit_snapshot as "creditLimitSnapshot",
-                   o.projected_balance_snapshot as "projectedBalanceSnapshot",
-                   account_customer.balance as "customerBalance", o.previous_balance_amount as "previousBalanceAmount",
-                   account_sale.account_customer_id as "accountCustomerId", account_customer.business_name as "accountCustomer",
-                   account_customer.kind as "accountKind",
-                   (o.total + o.previous_balance_amount) as "collectionTotal", o.created_at as date
-            from orders.orders o
-            join customer.customers c on c.id = o.customer_id
-            join sale.sales account_sale on account_sale.order_id = o.id
-            join customer.customers account_customer on account_customer.id = account_sale.account_customer_id
-            left join seller.seller_profiles assigned_seller on assigned_seller.id = o.seller_id
-            left join seller.seller_profiles customer_seller on customer_seller.id = c.seller_id
-             where o.order_number = ? or o.legacy_order_number = ?
-             order by case when o.order_number = ? then 0 else 1 end limit 1
-             """, orderNumber, orderNumber, orderNumber);
-        if (sellerScoped()) currentUser.requireOrderAccess((UUID) order.get("id"));
-        return detail(order, (UUID) order.get("id"));
-    }
-
-    private Map<String, Object> detail(Map<String, Object> order, UUID orderId) {
-        Map<String, Object> sale = jdbc.queryForMap("""
-            select s.id, s.sale_number as number, s.status, s.total, s.paid,
-                   s.order_discount_percent as "orderDiscountPercent",
-                   (s.total - s.paid) as balance, s.created_at as date
-            from sale.sales s where s.order_id = ?
-            """, orderId);
-        UUID saleId = (UUID) sale.get("id");
-        sale = new HashMap<>(sale);
-        sale.put("previousDebtAvailable", new DeliveryDebtQuery(jdbc, currentUser).previousBalance(saleId));
-        // Every entry of a sale belongs to the account that owes it (enforced by a composite foreign key).
-        Map<String, Object> account = jdbc.queryForMap("""
-            select coalesce(sum(amount) filter (where entry_type = 'DEBIT'), 0) as debit,
-                   coalesce(sum(amount) filter (where entry_type = 'CREDIT'), 0) as credit,
-                   coalesce(sum(amount) filter (where entry_type = 'DEBIT'), 0)
-                     - coalesce(sum(amount) filter (where entry_type = 'CREDIT'), 0) as net
-            from customer.account_ledger where sale_id = ?
-            """, saleId);
-        return Map.of(
-            "order", order,
-            "items", jdbc.queryForList("""
-                select oi.product_id as "productId", oi.product_name as "productName",
-                       oi.quantity, oi.unit_price as "unitPrice", oi.line_total as "lineTotal",
-                       oi.price_list_id as "priceListId", oi.price_list_code as "priceListCode",
-                       oi.line_discount_percent as "lineDiscountPercent"
-                from orders.order_items oi where oi.order_id = ? order by oi.id
-                """, orderId),
-            "sale", sale,
-            "payments", jdbc.queryForList("""
-                select p.id, p.amount, p.method, p.transfer_reference as "transferReference", p.created_at as date
-                from payment.payments p where p.sale_id = ? order by p.created_at, p.id
-                """, saleId),
-            "deliveryAttempts", jdbc.queryForList("""
-                select da.id, da.attempt_number as "attemptNumber", da.result, da.observation,
-                       da.attempted_by as "attemptedBy", da.attempted_at as "attemptedAt"
-                from orders.delivery_attempts da where da.order_id = ? order by da.attempt_number
-                """, orderId),
-            "account", account
-        );
+        return commercialReads.orderDetailByNumber(orderNumber);
     }
 
     public PageResponse<Map<String, Object>> sales(int page, int size, String search) {
-        return sales(page, size, search, null, null, false);
+        return commercialReads.sales(page, size, search);
     }
 
     public PageResponse<Map<String, Object>> sales(int page, int size, String search,
             UUID customerId, UUID sellerId, boolean pendingBalance) {
-        return sales(page, size, search, customerId, sellerId, pendingBalance, null, null);
+        return commercialReads.sales(page, size, search, customerId, sellerId, pendingBalance);
     }
 
     public PageResponse<Map<String, Object>> sales(int page, int size, String search,
             UUID customerId, UUID sellerId, boolean pendingBalance, LocalDate dateMin, LocalDate dateMax) {
-        return sales(page, size, search, customerId, null, sellerId, pendingBalance, dateMin, dateMax);
+        return commercialReads.sales(page, size, search, customerId, sellerId, pendingBalance, dateMin, dateMax);
     }
 
     /**
@@ -559,208 +157,39 @@ public class ReadQueryService {
      */
     public PageResponse<Map<String, Object>> sales(int page, int size, String search, UUID customerId,
             UUID accountCustomerId, UUID sellerId, boolean pendingBalance, LocalDate dateMin, LocalDate dateMax) {
-        if (dateMin != null && dateMax != null && dateMin.isAfter(dateMax)) {
-            throw new IllegalArgumentException("La fecha mínima no puede ser posterior a la fecha máxima");
-        }
-        String from = """
-            from sale.sales s
-            join orders.orders o on o.id = s.order_id
-            join customer.customers c on c.id = s.customer_id
-            join customer.customers account_customer on account_customer.id = s.account_customer_id
-            where lower(s.sale_number) like ?
-            """;
-        List<Object> parameters = new ArrayList<>(List.of(like(search)));
-        if (customerId != null) {
-            from += " and s.customer_id = ?";
-            parameters.add(customerId);
-        }
-        if (accountCustomerId != null) {
-            from += " and s.account_customer_id = ?";
-            parameters.add(accountCustomerId);
-        }
-        if (sellerId != null) {
-            from += " and coalesce(o.seller_id, c.seller_id) = ?";
-            parameters.add(sellerId);
-        }
-        if (pendingBalance) {
-            from += " and s.total > s.paid and s.status <> 'CANCELLED'";
-        }
-        if (sellerScoped()) {
-            UUID scopedSellerId = currentUser.requireSellerProfile();
-            from += " and s.status = 'DELIVERED' and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
-            parameters.add(scopedSellerId);
-            parameters.add(scopedSellerId);
-        }
-        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
-        if (dateMin != null) {
-            from += " and s.created_at >= ?";
-            parameters.add(Timestamp.from(dateMin.atStartOfDay(zone).toInstant()));
-        }
-        if (dateMax != null) {
-            from += " and s.created_at < ?";
-            parameters.add(Timestamp.from(dateMax.plusDays(1).atStartOfDay(zone).toInstant()));
-        }
-        return page("""
-            select s.id, s.sale_number as number, c.business_name as customer, s.customer_id as "customerId",
-                   s.account_customer_id as "accountCustomerId", account_customer.business_name as account,
-                   s.total, s.paid, (s.total - s.paid) as balance,
-                   s.status, s.created_at as date
-            """ + from + " order by s.created_at desc, s.id desc", "select count(*) " + from,
-            page, size, parameters.toArray());
+        return commercialReads.sales(page, size, search, customerId, accountCustomerId, sellerId, pendingBalance, dateMin, dateMax);
     }
 
     public Map<String, Object> saleFilterOptions() {
-        String from = """
-            from sale.sales s
-            join orders.orders o on o.id = s.order_id
-            join customer.customers c on c.id = s.customer_id
-            left join seller.seller_profiles sp on sp.id = coalesce(o.seller_id, c.seller_id)
-            where 1 = 1
-            """;
-        List<Object> parameters = new ArrayList<>();
-        if (sellerScoped()) {
-            UUID sellerId = currentUser.requireSellerProfile();
-            from += " and s.status = 'DELIVERED' and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
-            parameters.add(sellerId);
-            parameters.add(sellerId);
-        }
-        return Map.of(
-            "customers", jdbc.queryForList("select distinct c.id, c.business_name as name " + from
-                + " order by name, c.id", parameters.toArray()),
-            "sellers", jdbc.queryForList("select distinct sp.id, sp.display_name as name " + from
-                + " and sp.id is not null order by name, sp.id", parameters.toArray())
-        );
+        return commercialReads.saleFilterOptions();
     }
 
     public PageResponse<Map<String, Object>> payments(int page, int size, String search) {
-        String term = like(search);
-        if (sellerScoped()) {
-            UUID sellerId = currentUser.requireSellerProfile();
-            return page("""
-                select p.id, c.business_name as customer, s.sale_number as sale, p.amount, p.method,
-                       p.transfer_reference as "transferReference", p.created_at as date
-                from payment.payments p join customer.customers c on c.id = p.customer_id
-                join sale.sales s on s.id = p.sale_id join orders.orders o on o.id = s.order_id
-                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
-                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?) order by p.created_at desc
-                """, """
-                select count(*) from payment.payments p join customer.customers c on c.id = p.customer_id
-                join sale.sales s on s.id = p.sale_id join orders.orders o on o.id = s.order_id
-                where (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))
-                  and (lower(c.business_name) like ? or lower(s.sale_number) like ?)
-                """, page, size, sellerId, sellerId, term, term);
-        }
-        return page("""
-            select p.id, c.business_name as customer, s.sale_number as sale,
-                   p.amount, p.method, p.transfer_reference as "transferReference", p.created_at as date
-            from payment.payments p
-            join customer.customers c on c.id = p.customer_id
-            join sale.sales s on s.id = p.sale_id
-            where lower(c.business_name) like ? or lower(s.sale_number) like ?
-            order by p.created_at desc
-            """, "select count(*) from payment.payments p join customer.customers c on c.id = p.customer_id join sale.sales s on s.id = p.sale_id where lower(c.business_name) like ? or lower(s.sale_number) like ?",
-            page, size, term, term);
+        return commercialReads.payments(page, size, search);
     }
 
     public PageResponse<Map<String, Object>> auditEvents(int page, int size, String search) {
-        String term = like(search);
-        return page("""
-                select ae.id, ae.actor_user_id as "actorUserId", u.email as actor,
-                       ae.operation, ae.resource_type as "resourceType", ae.resource_id as "resourceId",
-                       ae.result, ae.correlation_id as "correlationId", ae.details::text as details,
-                       ae.created_at as "createdAt"
-                from audit.audit_events ae left join identity.users u on u.id = ae.actor_user_id
-                where lower(ae.operation) like ? or lower(ae.resource_type) like ?
-                   or lower(coalesce(ae.resource_id, '')) like ? or lower(ae.result) like ?
-                order by ae.created_at desc, ae.id desc
-                """, """
-                select count(*) from audit.audit_events ae
-                where lower(ae.operation) like ? or lower(ae.resource_type) like ?
-                   or lower(coalesce(ae.resource_id, '')) like ? or lower(ae.result) like ?
-                """, page, size, term, term, term, term);
+        return adminReads.auditEvents(page, size, search);
     }
 
     public PageResponse<Map<String, Object>> users(int page, int size, String search) {
-        String term = like(search);
-        return page("""
-            select u.id, u.email, u.email as name, u.status,
-                   coalesce((select string_agg(r.code, ',' order by r.code)
-                       from identity.user_roles ur join identity.roles r on r.id = ur.role_id
-                       where ur.user_id = u.id), '') as roles,
-                   sp.display_name as "sellerDisplayName", sp.status as "sellerStatus"
-            from identity.users u
-            left join seller.seller_profiles sp on sp.user_id = u.id
-            where lower(u.email) like ? order by lower(u.email)
-            """, "select count(*) from identity.users u where lower(u.email) like ?",
-             page, size, term);
+        return adminReads.users(page, size, search);
     }
 
     public PageResponse<Map<String, Object>> sellers(int page, int size) {
-        return page("""
-            select sp.id, sp.display_name as "displayName", u.email
-            from seller.seller_profiles sp
-            join identity.users u on u.id = sp.user_id
-            order by sp.display_name
-            """, "select count(*) from seller.seller_profiles sp join identity.users u on u.id = sp.user_id",
-            page, size);
+        return adminReads.sellers(page, size);
     }
 
     public PageResponse<Map<String, Object>> sellers(int page, int size, String search, String status) {
-        String term = like(search);
-        String state = status == null || status.isBlank() ? "%" : status.trim();
-        return page("""
-            select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
-                   u.email, sp.status, sp.created_at as "createdAt",
-                   (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
-            from seller.seller_profiles sp
-            join identity.users u on u.id = sp.user_id
-            where (lower(sp.display_name) like ? or lower(u.email) like ?)
-              and sp.status like ?
-            order by sp.display_name
-            """, """
-            select count(*)
-            from seller.seller_profiles sp
-            join identity.users u on u.id = sp.user_id
-            where (lower(sp.display_name) like ? or lower(u.email) like ?)
-              and sp.status like ?
-            """, page, size, term, term, state);
+        return adminReads.sellers(page, size, search, status);
+    }
+
+    public PageResponse<Map<String, Object>> commercialProfiles(
+            int page, int size, String search, String status, String kind, boolean canViewResellers) {
+        return adminReads.commercialProfiles(page, size, search, status, kind, canViewResellers);
     }
 
     public Map<String, Object> sellerDetail(UUID id) {
-        return jdbc.queryForMap("""
-            select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
-                   u.email, sp.status, sp.created_at as "createdAt",
-                   (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
-            from seller.seller_profiles sp
-            join identity.users u on u.id = sp.user_id
-            where sp.id = ?
-            """, id);
-    }
-
-    private PageResponse<Map<String, Object>> page(String sql, String countSql, int page, int size, Object... parameters) {
-        int safePage = Math.max(page, 0);
-        int safeSize = Math.min(Math.max(size, 1), 100);
-        List<Map<String, Object>> rows = jdbc.queryForList(sql + " limit ? offset ?", append(parameters, safeSize, safePage * safeSize));
-        Number total = jdbc.queryForObject(countSql, Number.class, parameters);
-        return PageResponse.of(rows, safePage, safeSize, total == null ? 0 : total.longValue());
-    }
-
-    private Object[] append(Object[] values, Object... suffix) {
-        Object[] result = java.util.Arrays.copyOf(values, values.length + suffix.length);
-        System.arraycopy(suffix, 0, result, values.length, suffix.length);
-        return result;
-    }
-
-    private String like(String value) {
-        return "%" + (value == null ? "" : value.trim().toLowerCase()) + "%";
-    }
-
-    private Number number(String sql) {
-        Number value = jdbc.queryForObject(sql, Number.class);
-        return value == null ? 0 : value;
-    }
-
-    private boolean sellerScoped() {
-        return currentUser != null && !currentUser.isAdmin();
+        return adminReads.sellerDetail(id);
     }
 }

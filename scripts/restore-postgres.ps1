@@ -1,3 +1,4 @@
+#Requires -Version 7.2
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)][string]$BackupPath,
@@ -16,23 +17,38 @@ $pgRestore = if ($pgBin) { Join-Path $pgBin 'pg_restore.exe' } else { (Get-Comma
 if (-not (Test-Path -LiteralPath $pgRestore)) { throw "No se encontró pg_restore: $pgRestore" }
 Import-Module (Join-Path $PSScriptRoot 'BackupCrypto.psm1') -Force
 
-$plainDump = Join-Path ([IO.Path]::GetTempPath()) ("restore-" + [guid]::NewGuid() + '.dump')
+$temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("distribuidora-restore-" + [guid]::NewGuid().ToString('N'))
+$plainDump = Join-Path $temporaryDirectory 'restore.dump'
 $previousPassword = $env:PGPASSWORD
 try {
     $resolvedBackup = (Resolve-Path -LiteralPath $BackupPath).Path
-    $null = Test-BackupArchive -InputPath $resolvedBackup
+    if ($IsWindows) {
+        $null = [IO.Directory]::CreateDirectory($temporaryDirectory)
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $acl = [Security.AccessControl.DirectorySecurity]::new()
+        $acl.SetOwner($owner)
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($owner, 'FullControl',
+            'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+        Set-Acl -LiteralPath $temporaryDirectory -AclObject $acl
+    } else {
+        & mkdir -m 700 -- $temporaryDirectory
+        if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear un directorio privado para la restauración.' }
+    }
     Unprotect-BackupArchive -InputPath $resolvedBackup -OutputPath $plainDump
     if ($dbPassword) { $env:PGPASSWORD = $dbPassword }
-    else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
     $list = & $pgRestore --list $plainDump 2>&1
     if ($LASTEXITCODE -ne 0 -or -not ($list -match 'TABLE')) { throw 'pg_restore rechazó el backup o no encontró objetos restaurables.' }
     $action = "Restaurar backup sobre PostgreSQL $PgHost`:$Port/$TargetDatabase (reemplaza objetos existentes)"
     if ($Force -or $PSCmdlet.ShouldProcess($TargetDatabase, $action)) {
-        $restoreArgs = @('--no-password', '--exit-on-error', '--clean', '--if-exists', '--no-owner', "--host=$PgHost", "--port=$Port", "--username=$Username", "--dbname=$TargetDatabase", $plainDump)
+        $restoreArgs = @('--no-password', '--single-transaction', '--clean', '--if-exists', '--no-owner', "--host=$PgHost", "--port=$Port", "--username=$Username", "--dbname=$TargetDatabase", $plainDump)
         & $pgRestore @restoreArgs
         if ($LASTEXITCODE -ne 0) { throw "pg_restore falló con código $LASTEXITCODE." }
     }
 } finally {
     if ($previousPassword) { $env:PGPASSWORD = $previousPassword } else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
-    Remove-Item -LiteralPath $plainDump -Force -ErrorAction SilentlyContinue
+    if ([IO.Directory]::Exists($temporaryDirectory)) {
+        [IO.File]::Delete($plainDump)
+        [IO.Directory]::Delete($temporaryDirectory)
+    }
 }

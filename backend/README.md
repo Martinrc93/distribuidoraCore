@@ -11,11 +11,15 @@ Backend REST en Spring Boot para una instancia empresarial.
 ## Ejecutar tests
 
 ```bash
-mvn test
+mvn clean verify
 ```
 
-El test de contexto usa H2 únicamente para validar el arranque. Los tests de
-persistencia deben utilizar PostgreSQL mediante Testcontainers.
+La fase `verify` ejecuta pruebas unitarias (`*Test`), suites de integración
+(`*IT`), Checkstyle, SpotBugs, ArchUnit (`ModuleBoundaryTest`) y reportes JaCoCo
+en `target/site/jacoco` y `target/site/jacoco-it`. Con Docker y
+`POSTGRES_TEST_URL`, `POSTGRES_TEST_USERNAME` y `POSTGRES_TEST_PASSWORD`
+apuntando a una base PostgreSQL 16 descartable se ejecutan también las suites
+PostgreSQL y Flyway.
 
 ## Ejecutar la aplicación
 
@@ -35,6 +39,7 @@ Configurar:
 DB_URL=jdbc:postgresql://localhost:5433/distribuidora
 DB_USERNAME=distribuidora
 DB_PASSWORD=distribuidora
+SPRING_PROFILES_ACTIVE=local
 ```
 
 Luego ejecutar:
@@ -55,7 +60,7 @@ Servicios:
 
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8080`
-- Health: `http://localhost:8080/actuator/health`
+- Health: `http://localhost:8080/actuator/health/readiness`
 - Swagger: `http://localhost:8080/swagger-ui.html`
 - PostgreSQL: `localhost:5433` (host port for the Docker Compose database)
 
@@ -68,10 +73,15 @@ el volumen `postgres-data`.
 Endpoints iniciales:
 
 ```text
-GET /actuator/health
+GET /actuator/health/liveness
+GET /actuator/health/readiness
 GET /v3/api-docs
 GET /swagger-ui.html
 ```
+
+Swagger y OpenAPI se habilitan con el perfil `local`. Los probes
+son públicos en el backend. El resto de Actuator requiere `ADMIN_ALL`.
+El proxy del frontend publica la API comercial bajo `/api/`.
 
 ## Inventario
 
@@ -95,7 +105,7 @@ curl -X POST http://localhost:8080/api/auth/login \
 La respuesta `200` tiene la forma:
 
 ```json
-{"accessToken":"<jwt>","tokenType":"Bearer","expiresInSeconds":900}
+{"accessToken":"<jwt>","tokenType":"Bearer","expiresInSeconds":900,"refreshToken":"<token>"}
 ```
 
 Reemplace `<jwt>` y `<productId>` en los siguientes ejemplos.
@@ -153,9 +163,8 @@ Errores esperados:
 ## Pricing
 
 El módulo de pricing usa listas normalizadas y precios por producto. La
-migración crea diez listas con identificadores deterministas: `GENERAL` y
-`LISTA_2` a `LISTA_3` quedan activas; `LISTA_4` a `LISTA_10` quedan inactivas.
-Se pueden crear hasta diez listas en total; las listas y sus precios no se
+migración inicial crea listas predeterminadas y se pueden crear listas adicionales sin
+límite fijo; las listas y sus precios no se
 eliminan físicamente. `GENERAL` es la lista default para clientes sin lista
 asignada. Los cambios de precio tienen efecto inmediato.
 
@@ -409,10 +418,10 @@ Detalle de pedido (`200`):
 }
 ```
 
-Todavía no se implementan historial de precios ni vigencias futuras. Los
-documentos A4 de venta se generan bajo demanda; tickets y envíos por WhatsApp
-continúan pendientes. Los snapshots de precio y descuento ya se persisten al
-confirmar pedidos.
+El sistema soporta historial y vigencias futuras de precios por lista, remitos A4,
+tickets PDF de 80 mm y solicitudes asíncronas por email/WhatsApp mediante outbox
+(cuando el proveedor webhook está configurado). Los snapshots de precio y descuento
+se persisten al confirmar o editar pedidos.
 
 El plan incremental de aplicación de los ADR está en
 `docs/development/backend-implementation-roadmap.md`.

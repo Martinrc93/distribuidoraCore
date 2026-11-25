@@ -72,4 +72,51 @@ class UserInvitationEmailServiceTest {
             mapper.writeValueAsString(Map.of("email", "seller@example.test", "activationLink", "https://app.example.test/activate?token=secret-token",
                 "expiresAt", expiresAt.toString())), "invitation", 1);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void encryptsAndDecryptsActivationLinkWithConfiguredSecretAndFailsPermanentlyOnTamperOrExpiry() {
+        var encryptedService = new UserInvitationEmailService(sender, outbox, mapper,
+            "https://app.example.test/", "jwt-secret-for-aes-gcm-encryption-key");
+        when(sender.isConfigured("EMAIL")).thenReturn(true);
+        UUID userId = UUID.randomUUID();
+        Instant expiry = Instant.now().plusSeconds(1800);
+
+        encryptedService.enqueue(userId, "seller@example.test", "secret-token", expiry);
+        var payloadCaptor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(outbox).enqueue(eq(UserInvitationEmailService.EVENT_TYPE), eq("USER"), eq(userId),
+            payloadCaptor.capture(), eq("USER_INVITATION_EMAIL:" + userId));
+        Map<String, String> queuedPayload = (Map<String, String>) payloadCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(queuedPayload).containsKey("encryptedActivationLink")
+            .doesNotContainKey("activationLink");
+        org.assertj.core.api.Assertions.assertThat(queuedPayload.get("encryptedActivationLink"))
+            .doesNotContain("secret-token");
+
+        OutboxEvent encryptedEvent = new OutboxEvent(UUID.randomUUID(), UserInvitationEmailService.EVENT_TYPE,
+            "USER", userId, assertDoesNotThrowSerialize(queuedPayload), "key", 1);
+        encryptedService.dispatch(new OutboxDispatchEvent(encryptedEvent));
+        verify(sender).sendEmail(eq("seller@example.test"), anyString(),
+            contains("https://app.example.test/activate?token=secret-token"), eq(encryptedEvent.id()));
+
+        OutboxEvent expired = new OutboxEvent(UUID.randomUUID(), UserInvitationEmailService.EVENT_TYPE,
+            "USER", userId, assertDoesNotThrowSerialize(Map.of("email", "seller@example.test",
+                "encryptedActivationLink", queuedPayload.get("encryptedActivationLink"),
+                "expiresAt", Instant.now().minusSeconds(10).toString())), "key2", 1);
+        assertThatThrownBy(() -> encryptedService.dispatch(new OutboxDispatchEvent(expired)))
+            .isInstanceOf(com.distribuidora.notification.application.NonRetryableOutboxException.class);
+
+        OutboxEvent corrupt = new OutboxEvent(UUID.randomUUID(), UserInvitationEmailService.EVENT_TYPE,
+            "USER", userId, assertDoesNotThrowSerialize(Map.of("email", "seller@example.test",
+                "encryptedActivationLink", "invalid-base64!", "expiresAt", expiry.toString())), "key3", 1);
+        assertThatThrownBy(() -> encryptedService.dispatch(new OutboxDispatchEvent(corrupt)))
+            .isInstanceOf(com.distribuidora.notification.application.NonRetryableOutboxException.class);
+    }
+
+    private String assertDoesNotThrowSerialize(Object payload) {
+        try {
+            return mapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
 }

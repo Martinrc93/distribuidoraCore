@@ -38,6 +38,7 @@ class CategoryServiceTest {
         currentUser = mock(CurrentUserAccess.class);
         adminUserId = UUID.randomUUID();
         when(currentUser.userId()).thenReturn(adminUserId);
+        when(currentUser.actorIdOrSystem()).thenReturn(adminUserId);
         service = new CategoryService(jdbc, audit, currentUser);
     }
 
@@ -73,7 +74,7 @@ class CategoryServiceTest {
             eq("insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)"),
             eq(categoryId), eq("Bebidas"), eq(categoryId.toString()), any(Timestamp.class)
         );
-        verify(audit).record(eq(adminUserId), eq("CATEGORY_CREATE"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("CATEGORY_CREATE"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -120,7 +121,17 @@ class CategoryServiceTest {
         service.update(categoryId, new CatalogAdminDtos.UpdateCategoryRequest("Snacks"));
 
         verify(jdbc).update(eq("update catalog.categories set name = ? where id = ?"), eq("Snacks"), eq(categoryId));
-        verify(audit).record(eq(adminUserId), eq("CATEGORY_UPDATE"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
+        verify(jdbc).update(eq("update catalog.products set category = ? where category_id = ?"), eq("Snacks"), eq(categoryId));
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("CATEGORY_UPDATE"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("a".repeat(101))))
+            .isInstanceOf(IllegalArgumentException.class);
+        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.categories where lower(name) = ?)"), eq(Boolean.class), eq("lacteos")))
+            .thenReturn(false);
+        when(jdbc.update(org.mockito.ArgumentMatchers.startsWith("insert into catalog.categories"), any(), eq("Lacteos"), any(), any()))
+            .thenThrow(new org.springframework.dao.DuplicateKeyException("ux"));
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateCategoryRequest("Lacteos")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("nombre");
     }
 
     @Test
@@ -142,7 +153,7 @@ class CategoryServiceTest {
         service.setStatus(categoryId, "INACTIVE");
 
         verify(jdbc).update(eq("update catalog.categories set status = ? where id = ?"), eq("INACTIVE"), eq(categoryId));
-        verify(audit).record(eq(adminUserId), eq("CATEGORY_STATUS"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("CATEGORY_STATUS"), eq("CATEGORY"), eq(categoryId.toString()), eq("SUCCESS"), any());
     }
 
     @Test

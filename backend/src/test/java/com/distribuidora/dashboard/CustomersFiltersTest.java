@@ -15,11 +15,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class CustomersFiltersTest {
     private final JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
         "jdbc:h2:mem:customers-filters;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", "sa", ""));
-    private final ReadQueryService service = new ReadQueryService(jdbc);
+    private final ReadQueryService service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
     private final UUID ana = UUID.randomUUID();
     private final UUID lucia = UUID.randomUUID();
 

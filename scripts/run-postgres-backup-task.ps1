@@ -1,3 +1,4 @@
+#Requires -Version 7.2
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Database,
@@ -22,6 +23,10 @@ $env:DISTRIBUIDORA_BACKUP_TASK_LOG = $logPath
 $exitCode = 0
 Add-Content -LiteralPath $logPath -Value "[$(Get-Date -Format o)] Inicia ejecución programada de backup."
 try {
+    $cutoff = (Get-Date).AddDays(-90)
+    Get-ChildItem -LiteralPath $logDirectory -Filter 'postgres-backup-task-*.log' -File |
+        Where-Object { $_.LastWriteTime -lt $cutoff -and $_.FullName -ne $logPath } |
+        Remove-Item -Force
     $output = & (Join-Path $PSScriptRoot 'backup-postgres.ps1') `
         -Database $Database -PgHost $PgHost -Port $Port -Username $Username `
         -OutputDirectory $OutputDirectory -ExternalOutputDirectory $ExternalOutputDirectory 2>&1

@@ -1,6 +1,8 @@
 package com.distribuidora.purchasing;
 
 import com.distribuidora.audit.application.AuditService;
+import com.distribuidora.inventory.application.InventoryMovementService;
+import com.distribuidora.purchasing.application.SupplierOrderQueryService;
 import com.distribuidora.purchasing.application.SupplierOrderService;
 import com.distribuidora.purchasing.application.SupplierOrderService.LineInput;
 import com.distribuidora.purchasing.application.SupplierOrderService.OrderInput;
@@ -46,7 +48,8 @@ class PurchaseStockPostgresTest {
 
     @BeforeEach
     void fixtures() {
-        service = new SupplierOrderService(jdbc, mock(AuditService.class), mock(CurrentUserAccess.class));
+        service = new SupplierOrderService(jdbc, mock(AuditService.class), mock(CurrentUserAccess.class),
+            new InventoryMovementService(jdbc), new SupplierOrderQueryService(jdbc));
     }
 
     private void rollback(Runnable body) {
@@ -83,18 +86,27 @@ class PurchaseStockPostgresTest {
     }
 
     @Test
-    void draftDoesNotMoveStockUntilConfirmedAndCannotBeConfirmedTwice() {
+    void createsPendingPurchasesAndAddsStockOnlyOnceOnConfirmation() {
         rollback(() -> {
-            var draft = service.create(input(false, new BigDecimal("3"), null));
-            assertThat(draft.status()).isEqualTo("DRAFT");
+            assertThatThrownBy(() -> service.create(input(true, new BigDecimal("3"), null)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("pendiente");
             assertThat(stock(flour)).isEqualByComparingTo("5");
 
-            var detail = service.confirm(draft.id());
+            var request = input(false, new BigDecimal("3"), null);
+            var purchase = service.create(request);
+            assertThat(purchase.status()).isEqualTo("PENDING");
+            assertThat(status(purchase.id())).isEqualTo("PENDING");
+            assertThat(service.create(request)).isEqualTo(purchase);
+            assertThat(stock(flour)).isEqualByComparingTo("5");
+            assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where reference_id = ?", Integer.class, purchase.id())).isZero();
+
+            var detail = service.confirm(purchase.id());
             assertThat(((Map<?, ?>) detail.get("order")).get("status")).isEqualTo("CONFIRMED");
             assertThat(stock(flour)).isEqualByComparingTo("8");
-            assertThat(jdbc.queryForObject("select movement_type from inventory.stock_movements where reference_id = ?", String.class, draft.id()))
+            assertThat(jdbc.queryForObject("select movement_type from inventory.stock_movements where reference_id = ?", String.class, purchase.id()))
                 .isEqualTo("PURCHASE");
-            assertThatThrownBy(() -> service.confirm(draft.id())).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> service.confirm(purchase.id())).isInstanceOf(IllegalStateException.class);
+            assertThat(service.create(request).status()).isEqualTo("CONFIRMED");
             assertThat(stock(flour)).isEqualByComparingTo("8");
         });
     }
@@ -102,8 +114,8 @@ class PurchaseStockPostgresTest {
     @Test
     void editingAConfirmedPurchaseMovesOnlyTheDifferenceAndCancellingRevertsIt() {
         rollback(() -> {
-            var confirmed = service.create(input(true, new BigDecimal("4"), new BigDecimal("2")));
-            assertThat(confirmed.status()).isEqualTo("CONFIRMED");
+            var confirmed = service.create(input(false, new BigDecimal("4"), new BigDecimal("2")));
+            service.confirm(confirmed.id());
             assertThat(stock(flour)).isEqualByComparingTo("9");
             assertThat(stock(rice)).isEqualByComparingTo("7");
 
@@ -123,11 +135,11 @@ class PurchaseStockPostgresTest {
     }
 
     @Test
-    void draftsAndLegacyPurchasesNeverTouchStockAndQuantitiesMustBeHalfUnits() {
+    void pendingAndLegacyPurchasesNeverTouchStockAndQuantitiesMustBeHalfUnits() {
         rollback(() -> {
-            var draft = service.create(input(false, new BigDecimal("2"), null));
-            service.update(draft.id(), input(false, new BigDecimal("10"), null));
-            service.cancel(draft.id());
+            var purchase = service.create(input(false, new BigDecimal("2"), null));
+            service.update(purchase.id(), input(false, new BigDecimal("10"), null));
+            service.cancel(purchase.id());
             assertThat(stock(flour)).isEqualByComparingTo("5");
 
             var legacy = service.create(input(false, new BigDecimal("1"), null));
@@ -140,8 +152,26 @@ class PurchaseStockPostgresTest {
             assertThat(stock(flour)).isEqualByComparingTo("5");
 
             assertThatThrownBy(() -> service.create(input(false, new BigDecimal("1.25"), null))).isInstanceOf(IllegalArgumentException.class);
-            var other = service.create(input(true, new BigDecimal("1"), null));
+            var other = service.create(input(false, new BigDecimal("1"), null));
+            service.confirm(other.id());
             assertThatThrownBy(() -> service.update(other.id(), input(false, new BigDecimal("1.25"), null))).isInstanceOf(IllegalArgumentException.class);
+        });
+    }
+
+    @Test
+    void inactiveProductPermitsReducingConfirmedPurchaseQuantityButBlocksIncreases() {
+        rollback(() -> {
+            var confirmed = service.create(input(false, new BigDecimal("4"), null));
+            service.confirm(confirmed.id());
+            assertThat(stock(flour)).isEqualByComparingTo("9");
+
+            jdbc.update("update catalog.products set status = 'INACTIVE' where id = ?", flour);
+
+            service.update(confirmed.id(), input(false, new BigDecimal("2"), null));
+            assertThat(stock(flour)).isEqualByComparingTo("7");
+
+            assertThatThrownBy(() -> service.update(confirmed.id(), input(false, new BigDecimal("3"), null)))
+                .isInstanceOf(IllegalArgumentException.class);
         });
     }
 }

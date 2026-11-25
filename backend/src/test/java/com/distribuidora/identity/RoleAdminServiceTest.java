@@ -128,4 +128,32 @@ class RoleAdminServiceTest {
         assertThat(new RoleAdminService.PermissionView("ORDER_PREPARE", "Preparar pedidos").adminOnly()).isFalse();
         assertThat(new RoleAdminService.RoleView(adminRoleId, "ADMIN", "Administrador", List.of("ADMIN_ALL")).requiredPermissions()).containsExactly("ADMIN_ALL");
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void replacingPermissionsIncrementsSessionVersionForAffectedUsers() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(currentUser.userId()).thenReturn(actorId);
+        when(jdbc.queryForList(contains("where rp.role_id = ? order by p.code"), eq(String.class), eq(sellerRoleId)))
+            .thenReturn(List.of("ORDER_CREATE"));
+        when(jdbc.queryForList("select user_id from identity.user_roles where role_id = ?", UUID.class, sellerRoleId))
+            .thenReturn(List.of(userId));
+        when(jdbc.query(contains("from identity.roles r"), any(org.springframework.jdbc.core.RowMapper.class), eq(actorId)))
+            .thenAnswer(invocation -> {
+                org.springframework.jdbc.core.RowMapper<Object> mapper = invocation.getArgument(1);
+                java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                when(rs.getObject("id", UUID.class)).thenReturn(sellerRoleId);
+                when(rs.getString("code")).thenReturn("SELLER");
+                when(rs.getString("description")).thenReturn("Vendedor");
+                when(rs.getString("permission_code")).thenReturn("ORDER_CREATE");
+                when(rs.getBoolean("assigned_to_current_user")).thenReturn(false);
+                return List.of(mapper.mapRow(rs, 0));
+            });
+
+        service.replacePermissions("SELLER", Set.of("ORDER_CREATE", "SALE_DELIVER"));
+
+        verify(jdbc).update(contains("session_version = session_version + 1"), any(), eq(userId));
+        verify(refreshTokens).revokeAllByUserId(eq(userId), any());
+    }
 }

@@ -50,6 +50,7 @@ public class AuthService {
     private final AuditService auditService;
     private final long refreshTokenDays;
     private final SecureRandom secureRandom = new SecureRandom();
+    private final String dummyPasswordHash;
 
     public AuthService(
         UserAccountRepository users,
@@ -67,19 +68,48 @@ public class AuthService {
         this.jwtService = jwtService;
         this.auditService = auditService;
         this.refreshTokenDays = refreshTokenDays;
+        String encodedDummy = passwordEncoder.encode("dummy-timing-guard");
+        this.dummyPasswordHash = encodedDummy != null
+            ? encodedDummy
+            : "$argon2id$v=19$m=16384,t=2,p=1$c2FsdHNhbHRzYWx0c2FsdA$1234567890123456789012345678901234567890123";
     }
 
     @Transactional(noRollbackFor = BadCredentialsException.class)
     public LoginResult login(LoginCommand request) {
-        String email = request.email() == null ? "" : request.email().trim().toLowerCase(Locale.ROOT);
+        if (request == null || request.email() == null || request.password() == null) {
+            throw badCredentials();
+        }
+        String trimmedEmail = request.email().trim();
+        if (trimmedEmail.isEmpty() || trimmedEmail.length() > 320
+            || request.password().isEmpty() || request.password().length() > 200) {
+            throw badCredentials();
+        }
+        String email = trimmedEmail.toLowerCase(Locale.ROOT);
+        Instant now = Instant.now();
         UserAccount user = users.findByEmailIgnoreCase(email).orElse(null);
         if (user == null) {
-            auditService.record(null, "LOGIN", "USER", email, "FAILURE", Map.of("reason", "invalid_credentials"));
+            passwordEncoder.matches(request.password(), dummyPasswordHash);
+            String unknownResourceId = "unknown:" + hashToken(email).substring(0, 24);
+            auditService.record(null, "LOGIN", "USER", unknownResourceId, "FAILURE", Map.of("reason", "invalid_credentials"));
             throw badCredentials();
         }
 
-        if (user.getStatus() != UserStatus.ACTIVE || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            user.registerFailedLogin();
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            passwordEncoder.matches(request.password(), dummyPasswordHash);
+            String userId = user.getId() == null ? null : user.getId().toString();
+            auditService.record(user.getId(), "LOGIN", "USER", userId, "FAILURE", Map.of("reason", "account_not_active"));
+            throw badCredentials();
+        }
+
+        if (user.isLocked(now)) {
+            passwordEncoder.matches(request.password(), dummyPasswordHash);
+            String userId = user.getId() == null ? null : user.getId().toString();
+            auditService.record(user.getId(), "LOGIN", "USER", userId, "FAILURE", Map.of("reason", "account_locked"));
+            throw badCredentials();
+        }
+
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            user.registerFailedLogin(now);
             String userId = user.getId() == null ? null : user.getId().toString();
             auditService.record(user.getId(), "LOGIN", "USER", userId, "FAILURE", Map.of("reason", "invalid_credentials"));
             throw badCredentials();
@@ -91,12 +121,12 @@ public class AuthService {
 
         String rawRefreshToken = generateRawToken();
         String tokenHash = hashToken(rawRefreshToken);
-        Instant expiresAt = Instant.now().plus(Duration.ofDays(refreshTokenDays));
+        Instant expiresAt = now.plus(Duration.ofDays(refreshTokenDays));
 
         RefreshToken refreshToken = new RefreshToken(user.getId(), tokenHash, expiresAt);
         refreshTokens.save(refreshToken);
 
-        auditService.record(user.getId(), "LOGIN", "USER", userId, "SUCCESS", Map.of());
+        auditService.recordWithinTransaction(user.getId(), "LOGIN", "USER", userId, "SUCCESS", Map.of());
         return new LoginResult(
             jwtService.issue(user, users.findAuthorityCodes(user.getId())),
             "Bearer",
@@ -163,7 +193,7 @@ public class AuthService {
         refreshTokens.save(oldToken);
 
         String newAccessToken = jwtService.issue(user, users.findAuthorityCodes(userId));
-        auditService.record(userId, "TOKEN_REFRESH", "USER", userId.toString(), "SUCCESS", Map.of());
+        auditService.recordWithinTransaction(userId, "TOKEN_REFRESH", "USER", userId.toString(), "SUCCESS", Map.of());
 
         return new LoginResult(newAccessToken, "Bearer", jwtService.accessTokenSeconds(), newRawToken);
     }
@@ -179,7 +209,7 @@ public class AuthService {
             if (!token.isRevoked()) {
                 token.revoke(Instant.now());
                 refreshTokens.save(token);
-                auditService.record(token.getUserId(), "LOGOUT", "USER", token.getUserId().toString(), "SUCCESS", Map.of());
+                auditService.recordWithinTransaction(token.getUserId(), "LOGOUT", "USER", token.getUserId().toString(), "SUCCESS", Map.of());
             }
         });
     }
@@ -225,7 +255,7 @@ public class AuthService {
         activationToken.markUsed(now);
         activationTokens.save(activationToken);
 
-        auditService.record(user.getId(), "USER_ACTIVATE", "USER", user.getId().toString(), "SUCCESS", Map.of());
+        auditService.recordWithinTransaction(user.getId(), "USER_ACTIVATE", "USER", user.getId().toString(), "SUCCESS", Map.of());
     }
 
     public static String hashToken(String rawToken) {

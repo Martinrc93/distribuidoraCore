@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import com.distribuidora.shared.time.BusinessTime;
 
 @Component
 @Profile("!test")
@@ -30,7 +31,7 @@ public class NotificationRetentionJob {
         this.outboxRetentionDays = outboxRetentionDays;
     }
 
-    @Scheduled(cron = "${app.notifications.retention.cron:0 30 3 * * *}")
+    @Scheduled(cron = "${app.notifications.retention.cron:0 30 3 * * *}", zone = BusinessTime.ZONE_ID)
     public int purge() {
         int requests = stateService.purgeTerminalBefore(Instant.now().minus(retentionDays, ChronoUnit.DAYS));
         int events = outboxRepository.purgeTerminalBefore(Instant.now().minus(outboxRetentionDays, ChronoUnit.DAYS));

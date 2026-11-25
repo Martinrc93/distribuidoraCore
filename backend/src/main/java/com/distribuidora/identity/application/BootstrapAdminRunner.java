@@ -19,27 +19,36 @@ public class BootstrapAdminRunner implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final String email;
     private final String password;
+    private final boolean requirePasswordMatch;
 
     public BootstrapAdminRunner(
         UserAccountRepository users,
         PasswordEncoder passwordEncoder,
         @Value("${app.security.bootstrap-admin-email:}") String email,
-        @Value("${app.security.bootstrap-admin-password:}") String password
+        @Value("${app.security.bootstrap-admin-password:}") String password,
+        @Value("${app.security.require-bootstrap-password-match:false}") boolean requirePasswordMatch
     ) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.email = email;
         this.password = password;
+        this.requirePasswordMatch = requirePasswordMatch;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
         if (email.isBlank() || password.isBlank()) {
+            if (requirePasswordMatch) {
+                throw new IllegalStateException("Administrator credentials are required for the tunnel");
+            }
             return;
         }
         UserAccount user = users.findByEmailIgnoreCase(email)
             .orElseGet(() -> users.save(new UserAccount(email, passwordEncoder.encode(password))));
+        if (requirePasswordMatch && !passwordEncoder.matches(password, user.getPasswordHash())) {
+            throw new IllegalStateException("Rotate the existing administrator password locally before enabling the tunnel");
+        }
         UUID roleId = users.findRoleId("ADMIN");
         users.assignRole(user.getId(), roleId);
     }

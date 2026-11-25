@@ -3,6 +3,7 @@ package com.distribuidora.catalog.application;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 public class CategoryService {
@@ -28,9 +30,9 @@ public class CategoryService {
     private final CurrentUserAccess currentUser;
 
     public CategoryService(JdbcTemplate jdbc, AuditService audit, CurrentUserAccess currentUser) {
-        this.jdbc = jdbc;
-        this.audit = audit;
-        this.currentUser = currentUser;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.audit = Objects.requireNonNull(audit, "audit");
+        this.currentUser = Objects.requireNonNull(currentUser, "currentUser");
     }
 
     @Transactional
@@ -40,6 +42,9 @@ public class CategoryService {
         }
 
         String name = request.name().trim();
+        if (name.length() > 100) {
+            throw new IllegalArgumentException("name no puede superar 100 caracteres");
+        }
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.categories where lower(name) = ?)",
@@ -52,12 +57,16 @@ public class CategoryService {
         UUID id = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
 
-        jdbc.update(
-            "insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
-            id, name, id.toString(), now
-        );
+        try {
+            jdbc.update(
+                "insert into catalog.categories(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
+                id, name, id.toString(), now
+            );
+        } catch (DuplicateKeyException e) {
+            throw new IllegalStateException("Ya existe una categoría con ese nombre", e);
+        }
 
-        audit.record(actorId(), "CATEGORY_CREATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name));
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "CATEGORY_CREATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name));
         return id;
     }
 
@@ -75,6 +84,9 @@ public class CategoryService {
         }
 
         String name = request.name().trim();
+        if (name.length() > 100) {
+            throw new IllegalArgumentException("name no puede superar 100 caracteres");
+        }
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.categories where lower(name) = ? and id <> ?)",
@@ -84,8 +96,13 @@ public class CategoryService {
             throw new IllegalStateException("Ya existe una categoría con ese nombre");
         }
 
-        jdbc.update("update catalog.categories set name = ? where id = ?", name, id);
-        audit.record(actorId(), "CATEGORY_UPDATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name));
+        try {
+            jdbc.update("update catalog.categories set name = ? where id = ?", name, id);
+        } catch (DuplicateKeyException e) {
+            throw new IllegalStateException("Ya existe una categoría con ese nombre", e);
+        }
+        jdbc.update("update catalog.products set category = ? where category_id = ?", name, id);
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "CATEGORY_UPDATE", "CATEGORY", id.toString(), "SUCCESS", Map.of("name", name));
     }
 
     @Transactional
@@ -99,7 +116,7 @@ public class CategoryService {
             throw new EmptyResultDataAccessException("La categoría no existe", 1);
         }
 
-        audit.record(actorId(), "CATEGORY_STATUS", "CATEGORY", id.toString(), "SUCCESS", Map.of("status", status));
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "CATEGORY_STATUS", "CATEGORY", id.toString(), "SUCCESS", Map.of("status", status));
     }
 
     @Transactional
@@ -129,7 +146,7 @@ public class CategoryService {
             getById(id);
             throw new CatalogEntryInUseException("La categoría tiene productos asociados.");
         }
-        audit.record(actorId(), "CATEGORY_DELETE", "CATEGORY", id.toString(), "SUCCESS", Map.of());
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "CATEGORY_DELETE", "CATEGORY", id.toString(), "SUCCESS", Map.of());
     }
 
     public CategoryView getById(UUID id) {
@@ -155,17 +172,26 @@ public class CategoryService {
     }
 
     public List<CategoryView> list(String search, String status) {
-        String term = "%" + (search == null ? "" : search.trim().toLowerCase(Locale.ROOT)) + "%";
-        String state = status == null || status.isBlank() ? "%" : status.trim();
-
-        return jdbc.query("""
+        String term = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
+        String state = status == null ? "" : status.trim();
+        StringBuilder sql = new StringBuilder("""
             select c.id, c.name, c.status, c.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.category_id = c.id or lower(p.category) = lower(c.name)) as "productCount"
             from catalog.categories c
-            where lower(c.name) like ?
-              and c.status like ?
-            order by c.name
-            """,
+            where 1 = 1
+            """);
+        List<Object> params = new java.util.ArrayList<>();
+        if (!term.isEmpty()) {
+            sql.append(" and lower(c.name) like ? escape '!'");
+            params.add("%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%");
+        }
+        if (!state.isEmpty()) {
+            sql.append(" and c.status = ?");
+            params.add(state);
+        }
+        sql.append(" order by c.name");
+
+        return jdbc.query(sql.toString(),
             (rs, i) -> new CategoryView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
@@ -173,17 +199,8 @@ public class CategoryService {
                 rs.getTimestamp("createdAt").toInstant(),
                 rs.getLong("productCount")
             ),
-            term, state
+            params.toArray()
         );
     }
 
-    private UUID actorId() {
-        if (currentUser != null) {
-            try {
-                return currentUser.userId();
-            } catch (Exception ignored) {
-            }
-        }
-        return UUID.fromString("00000000-0000-0000-0000-000000000000");
-    }
 }

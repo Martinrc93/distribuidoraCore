@@ -32,6 +32,6 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     @Transactional
     @Modifying
-    @Query("update UserAccount u set u.version = u.version + 1, u.updatedAt = ?2 where u.id = ?1")
+    @Query("update UserAccount u set u.sessionVersion = u.sessionVersion + 1, u.version = u.version + 1, u.updatedAt = ?2 where u.id = ?1")
     void incrementSessionVersion(UUID userId, java.time.Instant updatedAt);
 }

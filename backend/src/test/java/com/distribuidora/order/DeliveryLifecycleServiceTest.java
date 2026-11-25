@@ -19,13 +19,14 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class DeliveryLifecycleServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final InventoryMovementService inventory = mock(InventoryMovementService.class);
     private final AuditService audit = mock(AuditService.class);
-    private final DeliveryLifecycleService service = new DeliveryLifecycleService(jdbc, inventory, audit, null,
-        new com.distribuidora.order.application.OrderFulfillmentService(jdbc, inventory, audit, null),
+    private final DeliveryLifecycleService service = new DeliveryLifecycleService(jdbc, inventory, audit, TestCurrentUserAccess.admin(jdbc),
+        new com.distribuidora.order.application.OrderFulfillmentService(jdbc, inventory, audit, TestCurrentUserAccess.admin(jdbc)),
         mock(com.distribuidora.sale.application.CommissionAccrualService.class));
 
     @AfterEach
@@ -115,6 +116,15 @@ class DeliveryLifecycleServiceTest {
     }
 
     @Test
+    void previousDebtRequiresPositiveCollectionAmount() {
+        assertThatThrownBy(() -> service.recordAttempt(UUID.randomUUID(),
+            new DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", null, null, null, BigDecimal.ONE)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("cobro positivo");
+        verifyNoInteractions(jdbc, inventory, audit);
+    }
+
+    @Test
     void rejectsCancellationOfPaidSale() {
         UUID orderId = UUID.randomUUID();
         authenticate("ADMIN_ALL");
@@ -140,6 +150,8 @@ class DeliveryLifecycleServiceTest {
             "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", new BigDecimal("15.0000")));
+        when(jdbc.queryForObject(contains("from customer.account_ledger"), eq(BigDecimal.class), eq(saleId)))
+            .thenReturn(new BigDecimal("15.0000"));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("balance", new BigDecimal("20.0000")));
         when(jdbc.queryForList(contains("sum(quantity) as net_quantity"), any(Object[].class))).thenReturn(List.of(
@@ -231,6 +243,8 @@ class DeliveryLifecycleServiceTest {
             "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
             "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
             "total", new BigDecimal("10.0000")));
+        when(jdbc.queryForObject(contains("from customer.account_ledger"), eq(BigDecimal.class), eq(saleId)))
+            .thenReturn(new BigDecimal("10.0000"));
         when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
             .thenReturn(Map.of("balance", new BigDecimal("10.0000")));
         when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
@@ -254,6 +268,62 @@ class DeliveryLifecycleServiceTest {
             .isInstanceOf(IllegalStateException.class);
         verifyNoInteractions(inventory, audit);
         verify(jdbc, never()).update(contains("insert into customer.account_ledger"), any(Object[].class));
+    }
+
+    @Test
+    void cancellationClampsCreditToNonNegativeAccountBalance() {
+        UUID orderId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        authenticate("ADMIN_ALL");
+        when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
+            "order_status", "CONFIRMED", "sale_status", "CONFIRMED", "paid", BigDecimal.ZERO,
+            "total", new BigDecimal("10.0000")));
+        when(jdbc.queryForObject(contains("from customer.account_ledger"), eq(BigDecimal.class), eq(saleId)))
+            .thenReturn(new BigDecimal("10.0000"));
+        when(jdbc.queryForMap(contains("from customer.customers"), any(Object[].class)))
+            .thenReturn(Map.of("balance", new BigDecimal("3.0000")));
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
+
+        service.cancel(orderId);
+
+        verify(jdbc).update(contains("insert into customer.account_ledger"), any(), eq(customerId), eq(saleId), eq(new BigDecimal("3.0000")), any());
+        verify(jdbc).update(contains("update customer.customers set balance = balance -"), eq(new BigDecimal("3.0000")), eq(customerId));
+    }
+
+    @Test
+    void reactivateRejectsInactiveCustomerAndInactiveResellerAccount() {
+        UUID orderId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        UUID resellerId = UUID.randomUUID();
+        authenticate("ADMIN_ALL");
+
+        when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", customerId,
+            "order_status", "CANCELLED", "sale_status", "CANCELLED", "paid", BigDecimal.ZERO,
+            "total", new BigDecimal("10.0000")));
+        when(jdbc.queryForObject(contains("from payment.payments"), eq(Integer.class), eq(saleId))).thenReturn(0);
+        when(jdbc.queryForList(contains("from customer.customers where id = ? for update"), eq(customerId)))
+            .thenReturn(List.of(Map.of("id", customerId, "status", "INACTIVE")));
+
+        assertThatThrownBy(() -> service.reactivate(orderId))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("cliente no está activo");
+
+        when(jdbc.queryForMap(contains("join sale.sales"), any(Object[].class))).thenReturn(Map.of(
+            "order_id", orderId, "sale_id", saleId, "customer_id", customerId, "account_customer_id", resellerId,
+            "order_status", "CANCELLED", "sale_status", "CANCELLED", "paid", BigDecimal.ZERO,
+            "total", new BigDecimal("10.0000")));
+        when(jdbc.queryForList(contains("where id in (?, ?) order by id for update"), eq(customerId), eq(resellerId)))
+            .thenReturn(List.of(
+                Map.of("id", customerId, "status", "ACTIVE"),
+                Map.of("id", resellerId, "status", "INACTIVE")));
+
+        assertThatThrownBy(() -> service.reactivate(orderId))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("revendedor no está activa");
     }
 
     private Map<String, Object> confirmed(UUID orderId) {

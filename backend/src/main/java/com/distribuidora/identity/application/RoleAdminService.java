@@ -10,7 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -171,7 +170,7 @@ public class RoleAdminService {
         List<UUID> affectedUsers = jdbc.queryForList(
             "select user_id from identity.user_roles where role_id = ?", UUID.class, roleId);
         for (UUID userId : affectedUsers) {
-            jdbc.update("update identity.users set version = version + 1, updated_at = ? where id = ?",
+            jdbc.update("update identity.users set session_version = session_version + 1, version = version + 1, updated_at = ? where id = ?",
                 Timestamp.from(now), userId);
             refreshTokens.revokeAllByUserId(userId, now);
         }

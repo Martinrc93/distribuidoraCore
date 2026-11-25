@@ -2,6 +2,8 @@ package com.distribuidora.purchasing;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.catalog.application.ProductCommandService;
+import com.distribuidora.inventory.application.InventoryMovementService;
+import com.distribuidora.purchasing.application.SupplierOrderQueryService;
 import com.distribuidora.purchasing.application.SupplierOrderService;
 import com.distribuidora.purchasing.application.SupplierOrderService.LineInput;
 import com.distribuidora.purchasing.application.SupplierOrderService.OrderInput;
@@ -14,9 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import com.distribuidora.testinfra.SharedPostgres;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -26,12 +26,12 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-@Testcontainers(disabledWithoutDocker = true)
 class SupplierOrderPostgresTest {
-    @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    private static final SharedPostgres.Database POSTGRES = SharedPostgres.databaseFor(SupplierOrderPostgresTest.class);
     static JdbcTemplate jdbc;
     static TransactionTemplate transactions;
     SupplierOrderService service;
+    SupplierOrderQueryService queries;
     AuditService audit;
     UUID supplier;
     UUID otherSupplier;
@@ -45,7 +45,8 @@ class SupplierOrderPostgresTest {
     }
     @BeforeEach void fixtures() {
         audit = mock(AuditService.class);
-        service = new SupplierOrderService(jdbc, audit, mock(CurrentUserAccess.class));
+        queries = new SupplierOrderQueryService(jdbc);
+        service = new SupplierOrderService(jdbc, audit, mock(CurrentUserAccess.class), new InventoryMovementService(jdbc), queries);
         supplier = UUID.randomUUID(); otherSupplier = UUID.randomUUID(); product = UUID.randomUUID();
         for (UUID id : List.of(supplier, otherSupplier)) jdbc.update("insert into supplier.suppliers(id,name,created_at,updated_at) values (?, 'Supplier', now(), now())", id);
         jdbc.update("insert into catalog.products(id,name,description,cost,created_at) values (?, 'Product', 'Product', 12.3456, now())", product);
@@ -62,7 +63,7 @@ class SupplierOrderPostgresTest {
         jdbc.update("update catalog.products set name='Renamed', cost=20 where id=?", product);
         assertThat(create(request)).isEqualTo(first);
         assertThat(first.total()).isEqualByComparingTo("30.8640");
-        var detail = service.detail(first.id());
+        var detail = queries.detail(first.id());
         var items = (List<java.util.Map<String,Object>>) detail.get("items");
         assertThat(items).hasSize(1);
         assertThat(items.getFirst()).containsEntry("productName", "Product");
@@ -71,19 +72,19 @@ class SupplierOrderPostgresTest {
         assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id=?", BigDecimal.class, product)).isEqualByComparingTo("7");
         assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where product_id=?", Integer.class, product)).isZero();
         assertThatThrownBy(() -> create(input(request.idempotencyKey(), supplier, request.orderDate(), BigDecimal.ONE, null))).isInstanceOf(IllegalStateException.class);
-        verify(audit, times(1)).record(any(), eq("SUPPLIER_ORDER_CREATE"), anyString(), anyString(), anyString(), anyMap());
+        verify(audit, times(1)).recordWithinTransaction(any(), eq("SUPPLIER_ORDER_CREATE"), anyString(), anyString(), anyString(), anyMap());
     }
     @Test void filtersBeforePaginationAndLoadsOnlyTheLatestOrderOfTheExactSupplier() {
         create(input(UUID.randomUUID().toString(), supplier, LocalDate.of(2026,9,1), BigDecimal.ONE, BigDecimal.TEN));
         var last = create(input(UUID.randomUUID().toString(), supplier, LocalDate.of(2026,9,30), BigDecimal.ONE, BigDecimal.TEN));
         create(input(UUID.randomUUID().toString(), otherSupplier, LocalDate.of(2026,10,1), BigDecimal.ONE, BigDecimal.TEN));
-        var page = service.list(0, 1, supplier, LocalDate.of(2026,9,1), LocalDate.of(2026,9,30));
+        var page = queries.list(0, 1, supplier, LocalDate.of(2026,9,1), LocalDate.of(2026,9,30));
         assertThat(page.totalElements()).isEqualTo(2);
         assertThat(page.totalPages()).isEqualTo(2);
         assertThat(page.content().getFirst()).containsEntry("id", last.id()).containsEntry("date", "2026-09-30");
-        assertThat(((java.util.Map<?,?>) service.lastOrder(supplier).get("order")).get("id")).isEqualTo(last.id());
-        assertThat(service.list(0, 20, supplier, LocalDate.of(2026,9,30), LocalDate.of(2026,9,30)).content()).hasSize(1);
-        assertThatThrownBy(() -> service.list(0,20,supplier,LocalDate.of(2026,10,1),LocalDate.of(2026,9,1))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(((java.util.Map<?,?>) queries.lastOrder(supplier).get("order")).get("id")).isEqualTo(last.id());
+        assertThat(queries.list(0, 20, supplier, LocalDate.of(2026,9,30), LocalDate.of(2026,9,30)).content()).hasSize(1);
+        assertThatThrownBy(() -> queries.list(0,20,supplier,LocalDate.of(2026,10,1),LocalDate.of(2026,9,1))).isInstanceOf(IllegalArgumentException.class);
     }
     @Test void rejectsDuplicateProductsNegativeCostsAndInactiveProductsWithoutWritingOrders() {
         String key = UUID.randomUUID().toString();

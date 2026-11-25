@@ -10,6 +10,7 @@ import org.openpdf.text.pdf.PdfPTable;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Objects;
 
@@ -27,8 +28,18 @@ public class PriceListPdfRenderer {
     }
 
     public byte[] renderAll(List<PriceListDocumentModel> lists) {
+        var output = new ByteArrayOutputStream();
+        renderAll(lists, output);
+        return output.toByteArray();
+    }
+
+    public void render(PriceListDocumentModel model, OutputStream output) {
+        renderAll(List.of(model), output);
+    }
+
+    public void renderAll(List<PriceListDocumentModel> lists, OutputStream output) {
         Document document = new Document(PageSize.A4, 36f, 36f, 36f, 36f);
-        return PdfFormat.render(document, new ByteArrayOutputStream(), doc -> {
+        PdfFormat.render(document, output, doc -> {
             try {
                 if (lists.isEmpty()) doc.add(new Paragraph("No hay listas de precios", TITLE));
                 for (int index = 0; index < lists.size(); index++) {
@@ -52,7 +63,11 @@ public class PriceListPdfRenderer {
         table.addCell(cell("Producto", BOLD, Element.ALIGN_LEFT));
         table.addCell(cell("Precio", BOLD, Element.ALIGN_RIGHT));
         String category = null;
+        int rows = 0;
+        table.setComplete(false);
         for (PriceListDocumentModel.Line line : model.lines()) {
+            if (rows > 0 && rows % 100 == 0) doc.add(table);
+            rows++;
             if (!Objects.equals(category, line.category())) {
                 category = line.category();
                 PdfPCell group = cell(category == null || category.isBlank() ? "Sin categoría" : category, BOLD, Element.ALIGN_LEFT);
@@ -63,6 +78,7 @@ public class PriceListPdfRenderer {
             table.addCell(cell(line.product(), NORMAL, Element.ALIGN_LEFT));
             table.addCell(cell(PdfFormat.money(line.price()), NORMAL, Element.ALIGN_RIGHT));
         }
+        table.setComplete(true);
         doc.add(table);
         doc.add(new Paragraph(model.lines().size() + (model.lines().size() == 1 ? " producto" : " productos"), SMALL));
     }

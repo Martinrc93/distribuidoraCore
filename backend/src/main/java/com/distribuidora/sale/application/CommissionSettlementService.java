@@ -17,11 +17,13 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import com.distribuidora.shared.time.BusinessTime;
 
 @Service
 public class CommissionSettlementService {
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final ZoneId BUSINESS_ZONE = BusinessTime.ZONE;
 
     /** Who earns the commission. Each constant holds fixed SQL fragments, never request input. */
     public enum Beneficiary {
@@ -77,8 +79,9 @@ public class CommissionSettlementService {
         int number = Math.max(0, page);
         int limit = Math.max(1, Math.min(100, size));
         String filter = " where e." + beneficiary.column + " = ? and e.occurred_at >= ? and e.occurred_at < ? ";
-        Totals totals = jdbc.queryForObject("select count(*), coalesce(sum(e.amount), 0) from sale.commission_entries e" + filter,
-            (row, index) -> new Totals(row.getLong(1), row.getBigDecimal(2)), beneficiaryId, start, end);
+        Totals totals = Objects.requireNonNullElse(jdbc.queryForObject("select count(*), coalesce(sum(e.amount), 0) from sale.commission_entries e" + filter,
+            (row, index) -> new Totals(row.getLong(1), row.getBigDecimal(2)), beneficiaryId, start, end),
+            new Totals(0L, BigDecimal.ZERO));
         List<Movement> movements = jdbc.query("""
             select e.id, o.id as order_id, o.order_number, c.business_name as customer, i.product_name,
                    e.return_id is not null as returned, e.amount, e.occurred_at, p.paid_at
@@ -126,7 +129,12 @@ public class CommissionSettlementService {
 
     private Pending pending(Beneficiary beneficiary, UUID beneficiaryId) {
         return jdbc.queryForObject("""
-            select coalesce(md5(string_agg(id::text, ',' order by id)), '') as token,
+            select case when count(*) = 0 then '' else md5(
+                       count(*)::text || ':' || coalesce(sum(amount), 0)::text || ':'
+                       || min(id::text) || ':' || max(id::text) || ':'
+                       || coalesce(bit_xor(('x' || substr(replace(id::text, '-', ''), 1, 16))::bit(64)::bigint), 0)::text || ':'
+                       || coalesce(bit_xor(('x' || substr(replace(id::text, '-', ''), 17, 16))::bit(64)::bigint), 0)::text
+                   ) end as token,
                    count(*) as items, coalesce(sum(amount), 0) as amount
             from sale.commission_entries
             where %s = ? and settlement_id is null

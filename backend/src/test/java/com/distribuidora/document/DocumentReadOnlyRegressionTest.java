@@ -1,20 +1,36 @@
 package com.distribuidora.document;
 
+import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.document.application.SaleDocumentService;
 import com.distribuidora.document.rendering.OpenPdfA4Renderer;
+import com.distribuidora.document.rendering.OpenPdfTicketRenderer;
 import com.distribuidora.document.rendering.SaleDocumentModel;
+import com.distribuidora.settings.application.BusinessSettingsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.openpdf.text.pdf.PdfName;
+import org.openpdf.text.pdf.PdfReader;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class DocumentReadOnlyRegressionTest {
     private final JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
@@ -33,8 +49,8 @@ class DocumentReadOnlyRegressionTest {
         jdbc.execute("CREATE SCHEMA payment");
         jdbc.execute("CREATE SCHEMA inventory");
         jdbc.execute("CREATE SCHEMA app");
-        jdbc.execute("CREATE TABLE app.business_settings (id SMALLINT PRIMARY KEY, business_name VARCHAR(120), business_address VARCHAR(240), business_phone VARCHAR(60))");
-        jdbc.update("INSERT INTO app.business_settings VALUES (1, 'Comercio', '', '')");
+        jdbc.execute("CREATE TABLE app.business_settings (id SMALLINT PRIMARY KEY, business_name VARCHAR(120), business_address VARCHAR(240), business_phone VARCHAR(60), business_logo BYTEA, updated_by UUID, updated_at TIMESTAMP)");
+        jdbc.update("INSERT INTO app.business_settings(id, business_name, business_address, business_phone) VALUES (1, 'Comercio', '', '')");
         jdbc.execute("CREATE TABLE customer.customers (id UUID PRIMARY KEY, business_name VARCHAR(120), balance NUMERIC(19,4))");
         jdbc.execute("CREATE TABLE seller.seller_profiles (id UUID PRIMARY KEY, display_name VARCHAR(120))");
         jdbc.execute("CREATE TABLE orders.orders (id UUID PRIMARY KEY, customer_id UUID, seller_id UUID, status VARCHAR(20))");
@@ -65,13 +81,55 @@ class DocumentReadOnlyRegressionTest {
     void generatingDocumentDoesNotChangePersistedBusinessState() {
         Map<String, Object> before = snapshot();
 
-        SaleDocumentModel document = new SaleDocumentService(jdbc).load(orderId);
+        SaleDocumentModel document = new SaleDocumentService(jdbc, TestCurrentUserAccess.admin(jdbc)).load(orderId);
         byte[] pdf = new OpenPdfA4Renderer().render(document);
 
         assertThat(pdf).startsWith("%PDF".getBytes());
         assertThat(pdf).isNotEmpty();
-        assertThat(new SaleDocumentService(jdbc).load(orderId).saleNumber()).isEqualTo("SAL-READ-ONLY");
+        assertThat(new SaleDocumentService(jdbc, TestCurrentUserAccess.admin(jdbc)).load(orderId).saleNumber()).isEqualTo("SAL-READ-ONLY");
         assertThat(snapshot()).containsExactlyInAnyOrderEntriesOf(before);
+    }
+
+    @Test
+    void usesTheSavedLogoInBothFormatsAndOmitsItAfterRemoval() throws IOException {
+        var settings = new BusinessSettingsService(jdbc, mock(AuditService.class));
+        var documents = new SaleDocumentService(jdbc, TestCurrentUserAccess.admin(jdbc));
+        var logo = new BufferedImage(64, 32, BufferedImage.TYPE_INT_ARGB);
+        logo.setRGB(10, 10, 0xff34745d);
+        var source = new ByteArrayOutputStream();
+        ImageIO.write(logo, "png", source);
+
+        var context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(UUID.randomUUID().toString(), null,
+            List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        SecurityContextHolder.setContext(context);
+        try {
+            assertThat(settings.businessLogo()).isNull();
+            byte[] saved = settings.updateBusinessLogo(Base64.getEncoder().encodeToString(source.toByteArray()));
+            assertThat(settings.businessLogo()).containsExactly(saved);
+            var model = documents.load(orderId);
+            assertThat(model.businessLogo()).containsExactly(saved);
+            assertThat(hasImage(new OpenPdfA4Renderer().render(model))).isTrue();
+            assertThat(hasImage(new OpenPdfTicketRenderer().render(model))).isTrue();
+
+            settings.removeBusinessLogo();
+            var withoutLogo = documents.load(orderId);
+            assertThat(withoutLogo.businessLogo()).isNull();
+            assertThat(hasImage(new OpenPdfA4Renderer().render(withoutLogo))).isFalse();
+            assertThat(hasImage(new OpenPdfTicketRenderer().render(withoutLogo))).isFalse();
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    private boolean hasImage(byte[] pdf) throws IOException {
+        try (var reader = new PdfReader(pdf)) {
+            var objects = reader.getPageN(1).getAsDict(PdfName.RESOURCES).getAsDict(PdfName.XOBJECT);
+            return objects != null && objects.getKeys().stream().anyMatch(key -> {
+                var stream = objects.getAsStream(key);
+                return stream != null && PdfName.IMAGE.equals(stream.getAsName(PdfName.SUBTYPE));
+            });
+        }
     }
 
     private Map<String, Object> snapshot() {

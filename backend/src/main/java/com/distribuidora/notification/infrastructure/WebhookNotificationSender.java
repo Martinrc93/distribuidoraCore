@@ -1,5 +1,6 @@
 package com.distribuidora.notification.infrastructure;
 
+import com.distribuidora.notification.application.NonRetryableOutboxException;
 import com.distribuidora.notification.application.NotificationChannelSender;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -65,17 +66,21 @@ public class WebhookNotificationSender implements NotificationChannelSender {
 
     private void post(String endpoint, String token, Map<String, Object> payload, UUID idempotencyKey) {
         try {
+            byte[] body = objectMapper.writeValueAsBytes(payload);
             HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(endpoint)).timeout(timeout)
                 .header("Content-Type", "application/json")
                 .header("Idempotency-Key", idempotencyKey.toString())
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)));
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body));
             if (token != null && !token.isBlank()) request.header("Authorization", "Bearer " + token);
             HttpResponse<Void> response = client.send(request.build(), HttpResponse.BodyHandlers.discarding());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("El proveedor de notificaciones respondió HTTP " + response.statusCode());
+            int status = response.statusCode();
+            if (status >= 200 && status < 300) return;
+            if (status >= 400 && status < 500 && status != 408 && status != 429) {
+                throw new NonRetryableOutboxException("El proveedor de notificaciones respondió HTTP " + status);
             }
+            throw new IllegalStateException("El proveedor de notificaciones respondió HTTP " + status);
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("No se pudo serializar la solicitud de notificación", exception);
+            throw new NonRetryableOutboxException("No se pudo serializar la solicitud de notificación", exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("El envío de notificación fue interrumpido", exception);
@@ -88,11 +93,11 @@ public class WebhookNotificationSender implements NotificationChannelSender {
         if (value == null || value.isBlank()) return false;
         try {
             URI uri = URI.create(value);
-            if (uri.getHost() == null) return false;
+            if (uri.getHost() == null || uri.getUserInfo() != null) return false;
             if ("https".equalsIgnoreCase(uri.getScheme())) return true;
             return "http".equalsIgnoreCase(uri.getScheme())
                 && ("localhost".equalsIgnoreCase(uri.getHost()) || "127.0.0.1".equals(uri.getHost())
-                    || "::1".equals(uri.getHost()));
+                    || "[::1]".equals(uri.getHost()) || "::1".equals(uri.getHost()));
         } catch (IllegalArgumentException exception) {
             return false;
         }

@@ -156,10 +156,10 @@ public class UserAdminService {
         if (!userExists(userId)) {
             throw new IllegalArgumentException("Usuario no encontrado");
         }
-        jdbc.update("update identity.users set version = version + 1, updated_at = ? where id = ?",
+        jdbc.update("update identity.users set session_version = session_version + 1, version = version + 1, updated_at = ? where id = ?",
             Timestamp.from(Instant.now()), userId);
         refreshTokens.revokeAllByUserId(userId, Instant.now());
-        audit.record(currentUser.userId(), "REVOKE_SESSIONS", "USER", userId.toString(), "SUCCESS", Map.of());
+        audit.recordWithinTransaction(currentUser.userId(), "REVOKE_SESSIONS", "USER", userId.toString(), "SUCCESS", Map.of());
     }
 
     @Transactional
@@ -170,20 +170,26 @@ public class UserAdminService {
         if ("ACTIVE".equals(status) && userHasAdminRole(userId)) {
             ensureAnotherActiveAdmin(userId);
         }
-        jdbc.update("update identity.users set status = 'BLOCKED', version = version + 1, updated_at = ? where id = ?",
+        jdbc.update("update identity.users set status = 'BLOCKED', session_version = session_version + 1, version = version + 1, updated_at = ? where id = ?",
             Timestamp.from(Instant.now()), userId);
         refreshTokens.revokeAllByUserId(userId, Instant.now());
-        audit.record(currentUser.userId(), "USER_BLOCK", "USER", userId.toString(), "SUCCESS", Map.of());
+        audit.recordWithinTransaction(currentUser.userId(), "USER_BLOCK", "USER", userId.toString(), "SUCCESS", Map.of());
     }
 
     @Transactional
     public void unblockUser(UUID userId) {
-        if (!userExists(userId)) {
+        String status;
+        try {
+            status = jdbc.queryForObject("select status from identity.users where id = ? for update", String.class, userId);
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
             throw new IllegalArgumentException("Usuario no encontrado");
         }
-        jdbc.update("update identity.users set status = 'ACTIVE', failed_login_attempts = 0, locked_until = null, version = version + 1, updated_at = ? where id = ?",
+        if (!"BLOCKED".equals(status)) {
+            throw new IllegalStateException("Solo se pueden desbloquear usuarios bloqueados");
+        }
+        jdbc.update("update identity.users set status = 'ACTIVE', failed_login_attempts = 0, locked_until = null, session_version = session_version + 1, version = version + 1, updated_at = ? where id = ?",
             Timestamp.from(Instant.now()), userId);
-        audit.record(currentUser.userId(), "USER_UNBLOCK", "USER", userId.toString(), "SUCCESS", Map.of());
+        audit.recordWithinTransaction(currentUser.userId(), "USER_UNBLOCK", "USER", userId.toString(), "SUCCESS", Map.of());
     }
 
     @Transactional
@@ -220,7 +226,7 @@ public class UserAdminService {
         jdbc.update("delete from identity.user_roles where user_id = ?", userId);
         jdbc.update("insert into identity.user_roles(user_id, role_id) values (?, ?)", userId, targetRoleId);
         Instant now = Instant.now();
-        jdbc.update("update identity.users set version = version + 1, updated_at = ? where id = ?",
+        jdbc.update("update identity.users set session_version = session_version + 1, version = version + 1, updated_at = ? where id = ?",
             Timestamp.from(now), userId);
         refreshTokens.revokeAllByUserId(userId, now);
         audit.recordWithinTransaction(currentUser.userId(), "USER_ROLE_CHANGE", "USER", userId.toString(), "SUCCESS",

@@ -4,8 +4,9 @@ import com.distribuidora.document.api.SupplierOrderDocumentController;
 import com.distribuidora.document.rendering.SupplierOrderPdfRenderer;
 import com.distribuidora.purchasing.api.SupplierOrderController;
 import com.distribuidora.purchasing.application.SupplierOrderService;
-import com.distribuidora.purchasing.application.SupplierOrderService.DocumentLine;
-import com.distribuidora.purchasing.application.SupplierOrderService.OrderDocument;
+import com.distribuidora.purchasing.application.SupplierOrderQueryService;
+import com.distribuidora.purchasing.application.SupplierOrderQueryService.DocumentLine;
+import com.distribuidora.purchasing.application.SupplierOrderQueryService.OrderDocument;
 import com.distribuidora.shared.error.ApiExceptionHandler;
 import com.distribuidora.shared.web.PageResponse;
 import org.junit.jupiter.api.AfterEach;
@@ -44,36 +45,41 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standal
 class SupplierOrderControllerTest {
     @Configuration @EnableMethodSecurity static class Config {
         @Bean SupplierOrderService service() { return mock(SupplierOrderService.class); }
-        @Bean SupplierOrderController controller(SupplierOrderService service) { return new SupplierOrderController(service); }
-        @Bean SupplierOrderDocumentController documentController(SupplierOrderService service) {
-            return new SupplierOrderDocumentController(service, new SupplierOrderPdfRenderer());
+        @Bean SupplierOrderQueryService queries() { return mock(SupplierOrderQueryService.class); }
+        @Bean SupplierOrderController controller(SupplierOrderService service, SupplierOrderQueryService queries) {
+            return new SupplierOrderController(service, queries);
+        }
+        @Bean SupplierOrderDocumentController documentController(SupplierOrderQueryService queries) {
+            return new SupplierOrderDocumentController(queries, new SupplierOrderPdfRenderer());
         }
     }
     @Autowired SupplierOrderController controller;
     @Autowired SupplierOrderDocumentController documentController;
     @Autowired SupplierOrderService service;
+    @Autowired SupplierOrderQueryService queries;
     MockMvc mvc;
     @BeforeEach void setup() {
         authenticate("ADMIN_ALL");
         mvc = standaloneSetup(controller, documentController).setControllerAdvice(new ApiExceptionHandler()).build();
     }
-    @AfterEach void cleanup() { SecurityContextHolder.clearContext(); reset(service); }
+    @AfterEach void cleanup() { SecurityContextHolder.clearContext(); reset(service, queries); }
     void authenticate(String authority) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(),"",List.of(new SimpleGrantedAuthority(authority))));
     }
     @Test void acceptsIsoCalendarDatesAndExactSupplierFilters() throws Exception {
         UUID supplier = UUID.randomUUID();
-        when(service.list(1,20,supplier,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30))).thenReturn(PageResponse.of(List.of(),1,20,0));
+        when(queries.list(1,20,supplier,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30))).thenReturn(PageResponse.of(List.of(),1,20,0));
         mvc.perform(get("/api/supplier-orders").param("page","1").param("supplierId",supplier.toString()).param("dateMin","2026-09-01").param("dateMax","2026-09-30"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(1));
-        verify(service).list(1,20,supplier,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30));
+        verify(queries).list(1,20,supplier,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30));
     }
     @Test void createsRequestsAndLoadsLastOrderBySupplier() throws Exception {
         UUID id = UUID.randomUUID(), supplier = UUID.randomUUID();
-        when(service.create(any())).thenReturn(new SupplierOrderService.OrderResult(id,"PRV-00000001",BigDecimal.TEN));
+        when(service.create(any())).thenReturn(new SupplierOrderService.OrderResult(id,"PRV-00000001",BigDecimal.TEN,"PENDING"));
         mvc.perform(post("/api/supplier-orders").contentType(APPLICATION_JSON).content("{\"supplierId\":\"" + supplier + "\",\"orderDate\":\"2026-09-01\",\"lines\":[],\"idempotencyKey\":\"test\"}"))
-            .andExpect(status().isCreated()).andExpect(jsonPath("$.number").value("PRV-00000001"));
-        when(service.lastOrder(supplier)).thenReturn(Map.of("available",false));
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.number").value("PRV-00000001"))
+            .andExpect(jsonPath("$.status").value("PENDING"));
+        when(queries.lastOrder(supplier)).thenReturn(Map.of("available",false));
         mvc.perform(get("/api/supplier-orders/supplier/" + supplier + "/last-order")).andExpect(status().isOk()).andExpect(jsonPath("$.available").value(false));
     }
     @Test void downloadsAnA4PurchaseWithProductsAndQuantitiesAcrossPages() throws Exception {
@@ -81,10 +87,11 @@ class SupplierOrderControllerTest {
         var lines = IntStream.rangeClosed(1, 85)
             .mapToObj(number -> new DocumentLine("Harina integral %02d".formatted(number), new BigDecimal("2.50")))
             .toList();
-        when(service.document(id)).thenReturn(new OrderDocument("PRV-00000001", "Distribución Norte",
+        when(queries.document(id)).thenReturn(new OrderDocument("PRV-00000001", "Distribución Norte",
             LocalDate.of(2026, 9, 1), lines));
 
-        byte[] pdf = mvc.perform(get("/api/supplier-orders/{id}/documents/a4", id))
+        var download = mvc.perform(get("/api/supplier-orders/{id}/documents/a4", id)).andReturn();
+        byte[] pdf = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(download))
             .andExpect(status().isOk()).andExpect(content().contentType(APPLICATION_PDF))
             .andExpect(header().string(CONTENT_DISPOSITION, "attachment; filename=\"compra-PRV-00000001.pdf\""))
             .andReturn().getResponse().getContentAsByteArray();
@@ -102,19 +109,21 @@ class SupplierOrderControllerTest {
     }
     @Test void returnsNotFoundWhenDownloadingAnUnknownPurchase() throws Exception {
         UUID id = UUID.randomUUID();
-        when(service.document(id)).thenThrow(new EmptyResultDataAccessException(1));
+        when(queries.document(id)).thenThrow(new EmptyResultDataAccessException(1));
         mvc.perform(get("/api/supplier-orders/{id}/documents/a4", id)).andExpect(status().isNotFound());
     }
     @Test void rejectsSellerReadsWritesDetailsAndHistoryBeforeAccessingTheService() throws Exception {
         authenticate("ORDER_CREATE");
         mvc.perform(get("/api/supplier-orders")).andExpect(status().isForbidden());
-        mvc.perform(post("/api/supplier-orders").contentType(APPLICATION_JSON).content("{}" )).andExpect(status().isForbidden());
+        mvc.perform(post("/api/supplier-orders").contentType(APPLICATION_JSON)
+            .content("{\"supplierId\":\"" + UUID.randomUUID() + "\",\"orderDate\":\"2026-09-01\",\"lines\":[],\"idempotencyKey\":\"test\"}")).andExpect(status().isForbidden());
         mvc.perform(get("/api/supplier-orders/" + UUID.randomUUID())).andExpect(status().isForbidden());
         mvc.perform(get("/api/supplier-orders/{id}/documents/a4", UUID.randomUUID())).andExpect(status().isForbidden());
         mvc.perform(get("/api/supplier-orders/supplier/" + UUID.randomUUID() + "/last-order")).andExpect(status().isForbidden());
-        mvc.perform(put("/api/supplier-orders/" + UUID.randomUUID()).contentType(APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
+        mvc.perform(put("/api/supplier-orders/" + UUID.randomUUID()).contentType(APPLICATION_JSON)
+            .content("{\"supplierId\":\"" + UUID.randomUUID() + "\",\"orderDate\":\"2026-09-01\",\"lines\":[]}")).andExpect(status().isForbidden());
         mvc.perform(post("/api/supplier-orders/" + UUID.randomUUID() + "/confirm")).andExpect(status().isForbidden());
         mvc.perform(post("/api/supplier-orders/" + UUID.randomUUID() + "/cancel")).andExpect(status().isForbidden());
-        verifyNoInteractions(service);
+        verifyNoInteractions(service, queries);
     }
 }

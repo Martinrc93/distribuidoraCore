@@ -21,6 +21,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class PreviousCustomerOrderTest {
     private JdbcTemplate jdbc;
@@ -41,7 +42,7 @@ class PreviousCustomerOrderTest {
         jdbc.update("insert into customer.customers values (?, ?)", customerId, sellerId);
         jdbc.update("insert into catalog.products values (?, 'Current name', 'Bag', 'ACTIVE')", productId);
         jdbc.update("insert into inventory.inventory_balances values (?, 20)", productId);
-        service = new ReadQueryService(jdbc);
+        service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
     }
 
     @Test

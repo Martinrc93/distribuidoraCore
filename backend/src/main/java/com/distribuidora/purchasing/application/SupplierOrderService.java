@@ -2,10 +2,7 @@ package com.distribuidora.purchasing.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.distribuidora.shared.security.CurrentUserAccess;
-import com.distribuidora.shared.web.PageResponse;
-import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,14 +14,33 @@ import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeSet;
+import java.util.UUID;
 
 @Service
 public class SupplierOrderService {
-    public record LineInput(UUID productId, BigDecimal quantity, BigDecimal unitCost) { }
+    public record LineInput(
+        @jakarta.validation.constraints.NotNull UUID productId,
+        @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.DecimalMin(value = "0.0000", inclusive = false)
+        @jakarta.validation.constraints.Digits(integer = 15, fraction = 4) BigDecimal quantity,
+        @jakarta.validation.constraints.DecimalMin("0") @jakarta.validation.constraints.Digits(integer = 15, fraction = 4) BigDecimal unitCost
+    ) { }
 
-    /** {@code confirm=true} registers the purchase as CONFIRMED and adds its quantities to stock; otherwise it is a DRAFT. */
-    public record OrderInput(UUID supplierId, LocalDate orderDate, List<LineInput> lines, String idempotencyKey, Boolean confirm) {
+    /** The legacy confirm flag is retained for replaying requests accepted before V56. */
+    public record OrderInput(
+        UUID supplierId,
+        LocalDate orderDate,
+        @jakarta.validation.constraints.Size(max = 1000) List<@jakarta.validation.constraints.NotNull @jakarta.validation.Valid LineInput> lines,
+        @jakarta.validation.constraints.Size(max = 100) String idempotencyKey,
+        Boolean confirm
+    ) {
         public OrderInput(UUID supplierId, LocalDate orderDate, List<LineInput> lines, String idempotencyKey) {
             this(supplierId, orderDate, lines, idempotencyKey, null);
         }
@@ -36,35 +52,32 @@ public class SupplierOrderService {
         public OrderResult(UUID id, String number, BigDecimal total) { this(id, number, total, null); }
     }
 
-    public record DocumentLine(String product, BigDecimal quantity) { }
-    public record OrderDocument(String number, String supplier, LocalDate date, List<DocumentLine> lines) { }
-
     private static final BigDecimal HALF = new BigDecimal("0.5");
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
     private final InventoryMovementService movements;
+    private final SupplierOrderQueryService queries;
 
-    public SupplierOrderService(JdbcTemplate jdbc, AuditService audit, CurrentUserAccess currentUser) {
-        this(jdbc, audit, currentUser, new InventoryMovementService(jdbc));
-    }
-
-    @Autowired
-    public SupplierOrderService(JdbcTemplate jdbc, AuditService audit, CurrentUserAccess currentUser, InventoryMovementService movements) {
+    public SupplierOrderService(JdbcTemplate jdbc, AuditService audit, CurrentUserAccess currentUser,
+            InventoryMovementService movements, SupplierOrderQueryService queries) {
         this.jdbc = jdbc;
         this.audit = audit;
         this.currentUser = currentUser;
         this.movements = movements;
+        this.queries = queries;
     }
 
     @Transactional
     public OrderResult create(OrderInput input) {
         validate(input);
         String fingerprint = fingerprint(input);
+        jdbc.query("select pg_advisory_xact_lock(hashtext(?))", rs -> null, "supplier-order:" + input.idempotencyKey());
         var existing = existing(input.idempotencyKey());
         if (!existing.isEmpty()) return replay(existing.getFirst(), fingerprint);
+        if (input.confirms()) throw new IllegalArgumentException("Guardá la compra como pendiente antes de confirmarla");
         String supplierName = supplierName(input.supplierId());
-        var resolved = resolveLines(input.lines());
+        var resolved = resolveLines(input.lines(), Map.of());
         BigDecimal total = total(resolved);
         UUID id = UUID.randomUUID();
         Long sequence = jdbc.queryForObject("select nextval('purchasing.supplier_order_number_seq')", Long.class);
@@ -73,37 +86,33 @@ public class SupplierOrderService {
         var inserted = jdbc.queryForList("""
             insert into purchasing.supplier_orders(id, order_number, supplier_id, supplier_name, order_date,
                 total, idempotency_key, request_fingerprint, created_by, created_at, status, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
             on conflict (idempotency_key) do nothing returning id
             """, id, number, input.supplierId(), supplierName, input.orderDate(), total,
             input.idempotencyKey(), fingerprint, currentUser.userId(), now, now);
         if (inserted.isEmpty()) return replay(existing(input.idempotencyKey()).getFirst(), fingerprint);
         insertItems(id, resolved);
-        audit.record(currentUser.userId(), "SUPPLIER_ORDER_CREATE", "SUPPLIER_ORDER", id.toString(), "SUCCESS",
+        audit.recordWithinTransaction(currentUser.userId(), "SUPPLIER_ORDER_CREATE", "SUPPLIER_ORDER", id.toString(), "SUCCESS",
             Map.of("supplierId", input.supplierId().toString(), "number", number, "total", total));
-        if (input.confirms()) {
-            applyConfirmation(id, resolved, now);
-            return new OrderResult(id, number, total, "CONFIRMED");
-        }
-        return new OrderResult(id, number, total, "DRAFT");
+        return new OrderResult(id, number, total, "PENDING");
     }
 
-    /** Confirms a draft: the purchase becomes CONFIRMED and every line adds its quantity to stock. */
+    /** Confirms a pending purchase and adds each line to stock. */
     @Transactional
     public Map<String, Object> confirm(UUID id) {
         var order = lockOrder(id);
-        if (!"DRAFT".equals(order.get("status"))) throw new IllegalStateException("Solo se pueden confirmar compras en borrador");
+        if (!"PENDING".equals(order.get("status"))) throw new IllegalStateException("Solo se pueden confirmar compras pendientes");
         var lines = jdbc.queryForList("""
             select product_id as "productId", quantity from purchasing.supplier_order_items
             where order_id = ? order by product_id
             """, id);
         applyConfirmation(id, lines, Timestamp.from(Instant.now()));
-        return detail(id);
+        return queries.loadDetail(id);
     }
 
     /**
      * Replaces supplier, date and lines. On a CONFIRMED purchase the stock receives the difference per product
-     * (PURCHASE_ADJUSTMENT); drafts and legacy purchases do not touch stock. Cancelled purchases cannot change.
+     * (PURCHASE_ADJUSTMENT); pending and legacy purchases do not touch stock. Cancelled purchases cannot change.
      */
     @Transactional
     public Map<String, Object> update(UUID id, OrderInput input) {
@@ -113,10 +122,10 @@ public class SupplierOrderService {
         if ("CANCELLED".equals(status)) throw new IllegalStateException("Una compra anulada no puede modificarse");
         if (!"LEGACY".equals(status)) requireHalfUnits(input.lines());
         String supplierName = supplierName(input.supplierId());
-        var resolved = resolveLines(input.lines());
-        BigDecimal total = total(resolved);
         Map<UUID, BigDecimal> before = quantities(jdbc.queryForList(
             "select product_id as \"productId\", quantity from purchasing.supplier_order_items where order_id = ?", id));
+        var resolved = resolveLines(input.lines(), before);
+        BigDecimal total = total(resolved);
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("delete from purchasing.supplier_order_items where order_id = ?", id);
         insertItems(id, resolved);
@@ -139,7 +148,7 @@ public class SupplierOrderService {
         }
         audit.recordWithinTransaction(currentUser.userId(), "SUPPLIER_ORDER_UPDATE", "SUPPLIER_ORDER", id.toString(), "SUCCESS",
             Map.of("status", status, "total", total, "stockChanges", deltas));
-        return detail(id);
+        return queries.loadDetail(id);
     }
 
     /** Cancels a purchase. A confirmed one gives its quantities back (PURCHASE_CANCELLATION). */
@@ -165,7 +174,7 @@ public class SupplierOrderService {
             """, now, currentUser.userId(), now, id);
         audit.recordWithinTransaction(currentUser.userId(), "SUPPLIER_ORDER_CANCEL", "SUPPLIER_ORDER", id.toString(), "SUCCESS",
             Map.of("previousStatus", status, "stockReverted", "CONFIRMED".equals(status)));
-        return detail(id);
+        return queries.loadDetail(id);
     }
 
     private void applyConfirmation(UUID id, List<Map<String, Object>> lines, Timestamp now) {
@@ -195,11 +204,14 @@ public class SupplierOrderService {
         return jdbc.queryForObject("select name from supplier.suppliers where id = ? for share", String.class, supplierId);
     }
 
-    private List<Map<String, Object>> resolveLines(List<LineInput> lines) {
+    private List<Map<String, Object>> resolveLines(List<LineInput> lines, Map<UUID, BigDecimal> existingQuantities) {
         var resolved = new ArrayList<Map<String, Object>>();
         for (LineInput line : lines.stream().sorted(Comparator.comparing(line -> line.productId().toString())).toList()) {
             var product = jdbc.queryForMap("select id, name, status, cost from catalog.products where id = ? for share", line.productId());
-            if (!"ACTIVE".equals(product.get("status"))) throw new IllegalArgumentException("El pedido contiene un producto inactivo");
+            BigDecimal previousQuantity = existingQuantities.getOrDefault(line.productId(), BigDecimal.ZERO);
+            if (line.quantity().compareTo(previousQuantity) > 0 && !"ACTIVE".equals(product.get("status"))) {
+                throw new IllegalArgumentException("El pedido contiene un producto inactivo");
+            }
             BigDecimal cost = line.unitCost() == null ? (BigDecimal) product.get("cost") : line.unitCost();
             decimal(cost, false);
             BigDecimal lineTotal = line.quantity().multiply(cost).setScale(4, RoundingMode.HALF_UP);
@@ -236,72 +248,6 @@ public class SupplierOrderService {
                 throw new IllegalArgumentException("Las cantidades deben ser múltiplos de 0,5");
             }
         }
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<Map<String, Object>> list(int page, int size, UUID supplierId, LocalDate dateMin, LocalDate dateMax) {
-        if (page < 0 || size < 1 || size > 100) throw new IllegalArgumentException("Paginación inválida");
-        if (dateMin != null && dateMax != null && dateMin.isAfter(dateMax)) throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la final");
-        var parameters = new ArrayList<Object>();
-        String where = " where 1 = 1";
-        if (supplierId != null) { where += " and supplier_id = ?"; parameters.add(supplierId); }
-        if (dateMin != null) { where += " and order_date >= ?"; parameters.add(dateMin); }
-        if (dateMax != null) { where += " and order_date <= ?"; parameters.add(dateMax); }
-        Long total = jdbc.queryForObject("select count(*) from purchasing.supplier_orders" + where, Long.class, parameters.toArray());
-        parameters.add(size);
-        parameters.add((long) page * size);
-        var rows = jdbc.queryForList("select id, order_number as number, supplier_id as \"supplierId\", supplier_name as supplier, status, "
-            + "order_date as date, total from purchasing.supplier_orders" + where + " order by order_date desc, created_at desc, id desc limit ? offset ?",
-            parameters.toArray());
-        rows.forEach(row -> row.put("date", row.get("date").toString()));
-        return PageResponse.of(rows, page, size, total == null ? 0 : total);
-    }
-
-    @Transactional(readOnly = true)
-    public Map<String, Object> detail(UUID id) {
-        var order = jdbc.queryForMap("select id, order_number as number, supplier_id as \"supplierId\", supplier_name as supplier, status, "
-            + "confirmed_at as \"confirmedAt\", cancelled_at as \"cancelledAt\", "
-            + "order_date as date, total from purchasing.supplier_orders where id = ?", id);
-        order.put("date", order.get("date").toString());
-        var items = jdbc.queryForList("""
-            select i.product_id as "productId", i.product_name as "productName", i.quantity,
-                   i.unit_cost as "unitCost", i.line_total as "lineTotal", p.status, p.cost as "currentCost"
-            from purchasing.supplier_order_items i join catalog.products p on p.id = i.product_id
-            where i.order_id = ? order by i.product_name, i.product_id
-            """, id);
-        return Map.of("order", order, "items", items);
-    }
-
-    @Transactional(readOnly = true)
-    public OrderDocument document(UUID id) {
-        return jdbc.query("""
-            select o.order_number, o.supplier_name, o.order_date, i.product_name, i.quantity
-            from purchasing.supplier_orders o
-            left join purchasing.supplier_order_items i on i.order_id = o.id
-            where o.id = ? order by i.product_name, i.product_id
-            """, rows -> {
-                if (!rows.next()) throw new EmptyResultDataAccessException(1);
-                String number = rows.getString("order_number");
-                String supplier = rows.getString("supplier_name");
-                LocalDate date = rows.getObject("order_date", LocalDate.class);
-                var lines = new ArrayList<DocumentLine>();
-                do {
-                    String product = rows.getString("product_name");
-                    if (product != null) lines.add(new DocumentLine(product, rows.getBigDecimal("quantity")));
-                } while (rows.next());
-                return new OrderDocument(number, supplier, date, List.copyOf(lines));
-            }, id);
-    }
-
-    @Transactional(readOnly = true)
-    public Map<String, Object> lastOrder(UUID supplierId) {
-        jdbc.queryForObject("select id from supplier.suppliers where id = ?", UUID.class, supplierId);
-        var ids = jdbc.queryForList("select id from purchasing.supplier_orders where supplier_id = ? "
-            + "order by order_date desc, created_at desc, id desc limit 1", UUID.class, supplierId);
-        if (ids.isEmpty()) return Map.of("available", false);
-        var result = new HashMap<>(detail(ids.getFirst()));
-        result.put("available", true);
-        return result;
     }
 
     private List<Map<String, Object>> existing(String key) {

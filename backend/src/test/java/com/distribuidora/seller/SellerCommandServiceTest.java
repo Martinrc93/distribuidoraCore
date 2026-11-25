@@ -40,6 +40,7 @@ class SellerCommandServiceTest {
         currentUser = mock(CurrentUserAccess.class);
         adminUserId = UUID.randomUUID();
         when(currentUser.userId()).thenReturn(adminUserId);
+        when(currentUser.actorIdOrSystem()).thenReturn(adminUserId);
         service = new SellerCommandService(jdbc, audit, currentUser);
     }
 
@@ -58,8 +59,8 @@ class SellerCommandServiceTest {
     @Test
     void create_rejectsWhenUserDoesNotExist() {
         UUID userId = UUID.randomUUID();
-        when(jdbc.queryForObject(eq("select exists(select 1 from identity.users where id = ?)"), eq(Boolean.class), eq(userId)))
-            .thenReturn(false);
+        when(jdbc.queryForObject(eq("select status from identity.users where id = ? for update"), eq(String.class), eq(userId)))
+            .thenThrow(new EmptyResultDataAccessException(1));
 
         assertThatThrownBy(() -> service.create(new SellerDtos.CreateSellerRequest(userId, "Juan Pérez")))
             .isInstanceOf(EmptyResultDataAccessException.class);
@@ -68,9 +69,7 @@ class SellerCommandServiceTest {
     @Test
     void create_rejectsWhenUserIsBlockedOrDisabled() {
         UUID userId = UUID.randomUUID();
-        when(jdbc.queryForObject(eq("select exists(select 1 from identity.users where id = ?)"), eq(Boolean.class), eq(userId)))
-            .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from identity.users where id = ?"), eq(String.class), eq(userId)))
+        when(jdbc.queryForObject(eq("select status from identity.users where id = ? for update"), eq(String.class), eq(userId)))
             .thenReturn("BLOCKED");
 
         assertThatThrownBy(() -> service.create(new SellerDtos.CreateSellerRequest(userId, "Juan Pérez")))
@@ -79,12 +78,25 @@ class SellerCommandServiceTest {
     }
 
     @Test
+    void create_rejectsWhenUserIsAdmin() {
+        UUID userId = UUID.randomUUID();
+        when(jdbc.queryForObject(eq("select status from identity.users where id = ? for update"), eq(String.class), eq(userId)))
+            .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("r.code = 'ADMIN'"), eq(Boolean.class), eq(userId)))
+            .thenReturn(true);
+
+        assertThatThrownBy(() -> service.create(new SellerDtos.CreateSellerRequest(userId, "Juan Pérez")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("ADMIN");
+    }
+
+    @Test
     void create_rejectsWhenUserAlreadyHasSellerProfile() {
         UUID userId = UUID.randomUUID();
-        when(jdbc.queryForObject(eq("select exists(select 1 from identity.users where id = ?)"), eq(Boolean.class), eq(userId)))
-            .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from identity.users where id = ?"), eq(String.class), eq(userId)))
+        when(jdbc.queryForObject(eq("select status from identity.users where id = ? for update"), eq(String.class), eq(userId)))
             .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("r.code = 'ADMIN'"), eq(Boolean.class), eq(userId)))
+            .thenReturn(false);
         when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where user_id = ?)"), eq(Boolean.class), eq(userId)))
             .thenReturn(true);
 
@@ -94,15 +106,15 @@ class SellerCommandServiceTest {
     }
 
     @Test
-    void create_succeeds_assignsRoleAndAudits() {
+    void create_succeeds_assignsRoleRotatesSessionAndAudits() {
         UUID userId = UUID.randomUUID();
-        when(jdbc.queryForObject(eq("select exists(select 1 from identity.users where id = ?)"), eq(Boolean.class), eq(userId)))
-            .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from identity.users where id = ?"), eq(String.class), eq(userId)))
+        when(jdbc.queryForObject(eq("select status from identity.users where id = ? for update"), eq(String.class), eq(userId)))
             .thenReturn("ACTIVE");
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("r.code = 'ADMIN'"), eq(Boolean.class), eq(userId)))
+            .thenReturn(false);
         when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where user_id = ?)"), eq(Boolean.class), eq(userId)))
             .thenReturn(false);
-        when(jdbc.update(anyString(), any(), any(), any(), any(), any())).thenReturn(1);
+        when(jdbc.update(anyString(), any(), any(), any(), any())).thenReturn(1);
 
         UUID sellerId = service.create(new SellerDtos.CreateSellerRequest(userId, "Juan Pérez"));
 
@@ -113,8 +125,10 @@ class SellerCommandServiceTest {
             eq(userId),
             eq(userId)
         );
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("session_version = session_version + 1"), any(), eq(userId));
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("refresh_tokens"), any(), eq(userId));
         // Verify audit
-        verify(audit).record(eq(adminUserId), eq("SELLER_CREATE"), eq("SELLER"), eq(sellerId.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("SELLER_CREATE"), eq("SELLER"), eq(sellerId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -148,7 +162,7 @@ class SellerCommandServiceTest {
         service.update(sellerId, new SellerDtos.UpdateSellerRequest("Nuevo Nombre"));
 
         verify(jdbc).update(eq("update seller.seller_profiles set display_name = ? where id = ?"), eq("Nuevo Nombre"), eq(sellerId));
-        verify(audit).record(eq(adminUserId), eq("SELLER_UPDATE"), eq("SELLER"), eq(sellerId.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("SELLER_UPDATE"), eq("SELLER"), eq(sellerId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -165,7 +179,8 @@ class SellerCommandServiceTest {
     @Test
     void setStatus_rejectsNonExistentSeller() {
         UUID sellerId = UUID.randomUUID();
-        when(jdbc.update(anyString(), any(), any())).thenReturn(0);
+        when(jdbc.queryForMap(eq("select user_id, status from seller.seller_profiles where id = ? for update"), eq(sellerId)))
+            .thenThrow(new EmptyResultDataAccessException(1));
 
         assertThatThrownBy(() -> service.setStatus(sellerId, "INACTIVE"))
             .isInstanceOf(EmptyResultDataAccessException.class);
@@ -174,17 +189,25 @@ class SellerCommandServiceTest {
     @Test
     void setStatus_succeeds_andAudits() {
         UUID sellerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(jdbc.queryForMap(eq("select user_id, status from seller.seller_profiles where id = ? for update"), eq(sellerId)))
+            .thenReturn(Map.of("user_id", userId, "status", "ACTIVE"));
         when(jdbc.update(anyString(), any(), eq(sellerId))).thenReturn(1);
 
         service.setStatus(sellerId, "INACTIVE");
 
         verify(jdbc).update(eq("update seller.seller_profiles set status = ? where id = ?"), eq("INACTIVE"), eq(sellerId));
-        verify(audit).record(eq(adminUserId), eq("SELLER_STATUS"), eq("SELLER"), eq(sellerId.toString()), eq("SUCCESS"), any());
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("session_version = session_version + 1"), any(), eq(userId));
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("refresh_tokens"), any(), eq(userId));
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("SELLER_STATUS"), eq("SELLER"), eq(sellerId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
     void activateAndDeactivate_delegateToSetStatus() {
         UUID sellerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(jdbc.queryForMap(eq("select user_id, status from seller.seller_profiles where id = ? for update"), eq(sellerId)))
+            .thenReturn(Map.of("user_id", userId, "status", "ACTIVE"), Map.of("user_id", userId, "status", "INACTIVE"));
         when(jdbc.update(anyString(), any(), eq(sellerId))).thenReturn(1);
 
         service.deactivate(sellerId);
@@ -223,6 +246,9 @@ class SellerCommandServiceTest {
         assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(s1, s1, null, true)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("no pueden ser el mismo");
+        assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(s1, s2, List.of(), true)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("vacío");
     }
 
     @Test
@@ -262,7 +288,7 @@ class SellerCommandServiceTest {
             .thenReturn(true);
         when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
             .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ? for share"), eq(String.class), eq(target)))
             .thenReturn("INACTIVE");
 
         assertThatThrownBy(() -> service.reassignCustomers(new SellerDtos.ReassignCustomersRequest(source, target, null, true)))
@@ -279,13 +305,13 @@ class SellerCommandServiceTest {
             .thenReturn(true);
         when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
             .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ? for share"), eq(String.class), eq(target)))
             .thenReturn("ACTIVE");
 
-        when(jdbc.update(eq("update customer.customers set seller_id = ? where seller_id = ?"), eq(target), eq(source)))
-            .thenReturn(8);
-        when(jdbc.update(eq("update orders.orders set seller_id = ? where seller_id = ? and status = 'CONFIRMED'"), eq(target), eq(source)))
+        when(jdbc.update(org.mockito.ArgumentMatchers.contains("update orders.orders"), eq(source), eq(target)))
             .thenReturn(3);
+        when(jdbc.update(org.mockito.ArgumentMatchers.contains("update customer.customers"), eq(source), eq(target)))
+            .thenReturn(8);
 
         SellerCommandService.ReassignCustomersResult response = service.reassignCustomers(
             new SellerDtos.ReassignCustomersRequest(source, target, null, true)
@@ -296,7 +322,7 @@ class SellerCommandServiceTest {
         assertThat(response.reassignedCustomersCount()).isEqualTo(8);
         assertThat(response.reassignedOrdersCount()).isEqualTo(3);
 
-        verify(audit).record(eq(adminUserId), eq("SELLER_CUSTOMER_REASSIGNMENT"), eq("SELLER"), eq(target.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("SELLER_CUSTOMER_REASSIGNMENT"), eq("SELLER"), eq(target.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -310,7 +336,7 @@ class SellerCommandServiceTest {
             .thenReturn(true);
         when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
             .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ? for share"), eq(String.class), eq(target)))
             .thenReturn("ACTIVE");
 
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(2);
@@ -342,7 +368,7 @@ class SellerCommandServiceTest {
 
         when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
             .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ? for share"), eq(String.class), eq(target)))
             .thenReturn("ACTIVE");
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(2);
 
@@ -352,7 +378,7 @@ class SellerCommandServiceTest {
 
         assertThat(response.targetSellerId()).isEqualTo(target);
         assertThat(response.reassignedOrdersCount()).isEqualTo(2);
-        verify(audit).record(eq(adminUserId), eq("SELLER_ORDER_REASSIGNMENT"), eq("SELLER"), eq(target.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("SELLER_ORDER_REASSIGNMENT"), eq("SELLER"), eq(target.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -360,7 +386,7 @@ class SellerCommandServiceTest {
         UUID target = UUID.randomUUID();
         when(jdbc.queryForObject(eq("select exists(select 1 from seller.seller_profiles where id = ?)"), eq(Boolean.class), eq(target)))
             .thenReturn(true);
-        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ?"), eq(String.class), eq(target)))
+        when(jdbc.queryForObject(eq("select status from seller.seller_profiles where id = ? for share"), eq(String.class), eq(target)))
             .thenReturn("ACTIVE");
 
         assertThatThrownBy(() -> service.reassignOrders(

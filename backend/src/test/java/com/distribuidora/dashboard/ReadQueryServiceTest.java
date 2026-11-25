@@ -23,10 +23,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class ReadQueryServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
-    private final ReadQueryService service = new ReadQueryService(jdbc);
+    private final ReadQueryService service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
 
     @Test
     void returnsCatalogWithoutStockOrCostForRolesWithoutOrderPermissions() {
@@ -125,7 +126,7 @@ class ReadQueryServiceTest {
             "limit ? offset ?"
         );
         assertThat(sql.getValue()).doesNotContain("depot_id", "depotCode", "inventory.depots");
-        assertThat(parameters.getValue()).containsExactly(productId, 2, 2);
+        assertThat(parameters.getValue()).containsExactly(productId, 2, 2L);
         verify(jdbc).queryForObject(
             eq("select count(*) from inventory.stock_movements where product_id = ?"),
             eq(Number.class), eq(productId));

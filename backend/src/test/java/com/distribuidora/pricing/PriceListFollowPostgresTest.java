@@ -33,6 +33,7 @@ import static org.mockito.Mockito.mock;
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 class PriceListFollowPostgresTest {
     private static final UUID GENERAL = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID ACTOR = UUID.randomUUID();
     private static JdbcTemplate jdbc;
     private static TransactionTemplate transactions;
 
@@ -49,6 +50,10 @@ class PriceListFollowPostgresTest {
         Flyway.configure().dataSource(datasource).callbacks(new InitialPriceListMigrationCallback()).load().migrate();
         jdbc = new JdbcTemplate(datasource);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(datasource));
+        jdbc.update("""
+            insert into identity.users(id, email, password_hash, status, created_at, updated_at)
+            values (?, ?, 'test', 'ACTIVE', now(), now()) on conflict (id) do nothing
+            """, ACTOR, "pricelist-follow-" + ACTOR + "@example.test");
     }
 
     @BeforeEach
@@ -57,8 +62,7 @@ class PriceListFollowPostgresTest {
         pricing = new PricingCommandService(jdbc, mock(AuditService.class), follows);
         queries = new PricingQueryService(jdbc);
         products = new ProductCommandService(jdbc, mock(AuditService.class), follows);
-        UUID actor = UUID.randomUUID();
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(actor.toString(), null));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(ACTOR.toString(), null));
     }
 
     @AfterEach

@@ -5,13 +5,18 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(schema = "identity", name = "refresh_tokens")
-public class RefreshToken {
+public class RefreshToken implements Persistable<UUID> {
+
+    @Transient
+    private boolean persisted = false;
 
     @Id
     private UUID id;
@@ -102,5 +107,16 @@ public class RefreshToken {
     public void replaceWith(UUID newTokenId, Instant now) {
         this.revokedAt = now;
         this.replacedBy = newTokenId;
+    }
+
+    @jakarta.persistence.PostLoad
+    @jakarta.persistence.PostPersist
+    void markPersisted() {
+        this.persisted = true;
+    }
+
+    @Override
+    public boolean isNew() {
+        return !persisted;
     }
 }

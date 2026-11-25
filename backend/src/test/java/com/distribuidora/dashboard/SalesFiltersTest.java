@@ -18,11 +18,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class SalesFiltersTest {
     private final JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
         "jdbc:h2:mem:sales-filters;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", "sa", ""));
-    private final ReadQueryService service = new ReadQueryService(jdbc);
+    private final ReadQueryService service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
     private UUID ana;
     private UUID lucia;
     private UUID north;
@@ -38,7 +39,7 @@ class SalesFiltersTest {
         jdbc.execute("CREATE TABLE seller.seller_profiles (id UUID PRIMARY KEY, display_name VARCHAR(120))");
         jdbc.execute("CREATE TABLE customer.customers (id UUID PRIMARY KEY, business_name VARCHAR(120), seller_id UUID)");
         jdbc.execute("CREATE TABLE orders.orders (id UUID PRIMARY KEY, seller_id UUID)");
-        jdbc.execute("CREATE TABLE sale.sales (id UUID PRIMARY KEY, sale_number VARCHAR(40), order_id UUID, customer_id UUID, total NUMERIC(19,4), paid NUMERIC(19,4), status VARCHAR(20), created_at TIMESTAMP WITH TIME ZONE, account_customer_id UUID)");
+        jdbc.execute("CREATE TABLE sale.sales (id UUID PRIMARY KEY, sale_number VARCHAR(40), order_id UUID, customer_id UUID, total NUMERIC(19,4), paid NUMERIC(19,4), status VARCHAR(20), created_at TIMESTAMP WITH TIME ZONE, account_customer_id UUID, legacy_sale_number VARCHAR(30))");
         ana = UUID.randomUUID();
         lucia = UUID.randomUUID();
         north = UUID.randomUUID();
@@ -61,11 +62,41 @@ class SalesFiltersTest {
     }
 
     @Test
+    void searchesPreviousSaleNumbersWithoutDuplicatingMatchesOrExpandingSellerScope() {
+        jdbc.update("UPDATE sale.sales SET sale_number = '000100001', legacy_sale_number = 'SAL-001' WHERE sale_number = 'SAL-001'");
+        assertThat(service.sales(0, 20, " sal-001 ").content()).extracting(row -> row.get("number"))
+            .containsExactly("000100001");
+        assertThat(service.sales(0, 20, "000100001").totalElements()).isEqualTo(1);
+        assertThat(service.sales(0, 20, "001").content()).extracting(row -> row.get("number"))
+            .containsExactly("000100001");
+        assertThat(service.sales(0, 20, "SAL-001", south, null, false).totalElements()).isZero();
+        CurrentUserAccess access = mock(CurrentUserAccess.class);
+        when(access.isAdmin()).thenReturn(false);
+        when(access.requireSellerProfile()).thenReturn(lucia);
+        assertThat(new ReadQueryService(jdbc, access).sales(0, 20, "SAL-001").totalElements()).isZero();
+    }
+
+    @Test
     void filtersByOrderSellerWithCustomerFallback() {
         assertThat(service.sales(0, 20, "", null, lucia, false).content())
             .extracting(row -> row.get("number")).containsExactlyInAnyOrder("SAL-002", "SAL-003", "SAL-005");
         assertThat(service.sales(0, 20, "", north, ana, false).content())
             .extracting(row -> row.get("number")).containsExactlyInAnyOrder("SAL-001", "SAL-004");
+    }
+
+    @Test
+    void includesOrderSellerAndHistoricalAccountForTheRepresentativeColumn() {
+        UUID reseller = UUID.randomUUID();
+        jdbc.update("INSERT INTO customer.customers VALUES (?, 'Revendedor Sur', null)", reseller);
+        jdbc.update("UPDATE sale.sales SET account_customer_id = ? WHERE sale_number = 'SAL-002'", reseller);
+
+        assertThat(service.sales(0, 20, "SAL-001").content().getFirst())
+            .containsEntry("seller", "Ana").containsEntry("accountCustomerId", north);
+        assertThat(service.sales(0, 20, "SAL-002").content().getFirst())
+            .containsEntry("seller", "Lucía").containsEntry("accountCustomerId", reseller)
+            .containsEntry("account", "Revendedor Sur").containsEntry("customerId", north);
+        assertThat(service.sales(0, 20, "SAL-005").content().getFirst())
+            .containsEntry("seller", "Lucía");
     }
 
     @Test
@@ -107,6 +138,7 @@ class SalesFiltersTest {
         jdbc.update("INSERT INTO customer.customers VALUES (?, 'Unassigned', null)", unassigned);
         sale("SAL-006", unassigned, null, 0, "CONFIRMED");
         assertThat(service.sales(0, 20, "SAL-006", null, null, true).totalElements()).isEqualTo(1);
+        assertThat(service.sales(0, 20, "SAL-006").content().getFirst()).containsEntry("seller", "Sin asignar");
         assertThat(service.sales(0, 20, "SAL-006", null, ana, true).totalElements()).isZero();
     }
 
@@ -207,7 +239,7 @@ class SalesFiltersTest {
     private void sale(String number, UUID customer, UUID seller, int paid, String status) {
         UUID order = UUID.randomUUID();
         jdbc.update("INSERT INTO orders.orders VALUES (?, ?)", order, seller);
-        jdbc.update("INSERT INTO sale.sales VALUES (?, ?, ?, ?, 100, ?, ?, TIMESTAMP '2026-09-30 12:00:00', ?)",
+        jdbc.update("INSERT INTO sale.sales VALUES (?, ?, ?, ?, 100, ?, ?, TIMESTAMP '2026-09-30 12:00:00', ?, null)",
             UUID.randomUUID(), number, order, customer, paid, status, customer);
     }
 }

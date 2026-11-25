@@ -50,6 +50,21 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
+    void acceptsJwtWhenOnlyOptimisticLockVersionChanges() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UserAccount tokenUser = user(userId, UserStatus.ACTIVE, 4);
+        String token = jwtService.issue(tokenUser, List.of("ORDER_CREATE"));
+        UserAccount updatedRow = user(userId, UserStatus.ACTIVE, 4);
+        ReflectionTestUtils.setField(updatedRow, "version", 99L);
+        when(users.findById(userId)).thenReturn(Optional.of(updatedRow));
+
+        Authentication authentication = filter(token);
+
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getName()).isEqualTo(userId.toString());
+    }
+
+    @Test
     void rejectsJwtWhenUserIsBlocked() throws Exception {
         UUID userId = UUID.randomUUID();
         UserAccount tokenUser = user(userId, UserStatus.ACTIVE, 4);
@@ -71,11 +86,11 @@ class JwtAuthenticationFilterTest {
         return observed.get();
     }
 
-    private UserAccount user(UUID userId, UserStatus status, long version) {
+    private UserAccount user(UUID userId, UserStatus status, long sessionVersion) {
         UserAccount user = new UserAccount("session-test@example.com", "hash");
         ReflectionTestUtils.setField(user, "id", userId);
         ReflectionTestUtils.setField(user, "status", status);
-        ReflectionTestUtils.setField(user, "version", version);
+        ReflectionTestUtils.setField(user, "sessionVersion", sessionVersion);
         return user;
     }
 }

@@ -3,7 +3,6 @@ package com.distribuidora.customer.application;
 import com.distribuidora.audit.application.AuditService;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.distribuidora.shared.security.CurrentUserAccess;
 
 @Service
 public class ZoneService {
@@ -36,29 +36,38 @@ public class ZoneService {
         requireUniqueName(normalizedName, null);
         UUID id = UUID.randomUUID();
         Timestamp now = timestamp();
-        jdbc.update("insert into customer.zones(id, name, created_at, updated_at) values (?, ?, ?, ?)", id, normalizedName, now, now);
-        audit.record(actorId(), "ZONE_CREATE", "ZONE", id.toString(), "SUCCESS", Map.of("name", normalizedName));
+        try {
+            jdbc.update("insert into customer.zones(id, name, created_at, updated_at) values (?, ?, ?, ?)", id, normalizedName, now, now);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw new IllegalStateException("Ya existe una zona con ese nombre", e);
+        }
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "ZONE_CREATE", "ZONE", id.toString(), "SUCCESS", Map.of("name", normalizedName));
         return id;
     }
 
     @Transactional
     public void rename(UUID id, String name) {
         String normalizedName = validateName(name);
+        String previousName = jdbc.queryForObject("select name from customer.zones where id = ? for update", String.class, id);
         requireUniqueName(normalizedName, id);
-        String previousName = jdbc.queryForObject("select name from customer.zones where id = ?", String.class, id);
-        if (jdbc.update("update customer.zones set name = ?, updated_at = ? where id = ?", normalizedName, timestamp(), id) == 0) {
-            throw new EmptyResultDataAccessException(1);
+        try {
+            if (jdbc.update("update customer.zones set name = ?, updated_at = ? where id = ?", normalizedName, timestamp(), id) == 0) {
+                throw new EmptyResultDataAccessException(1);
+            }
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw new IllegalStateException("Ya existe una zona con ese nombre", e);
         }
-        jdbc.update("update customer.customers set zone = ? where zone = ?", normalizedName, previousName);
-        audit.record(actorId(), "ZONE_UPDATE", "ZONE", id.toString(), "SUCCESS", Map.of("name", normalizedName));
+        jdbc.update("update customer.customers set zone = ?, zone_id = ? where zone_id = ? or lower(zone) = lower(?)",
+            normalizedName, id, id, previousName);
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "ZONE_UPDATE", "ZONE", id.toString(), "SUCCESS", Map.of("name", normalizedName));
     }
 
     @Transactional
     public void delete(UUID id) {
-        String name = jdbc.queryForObject("select name from customer.zones where id = ?", String.class, id);
-        jdbc.update("update customer.customers set zone = null where zone = ?", name);
+        String name = jdbc.queryForObject("select name from customer.zones where id = ? for update", String.class, id);
+        jdbc.update("update customer.customers set zone = null, zone_id = null where zone_id = ? or lower(zone) = lower(?)", id, name);
         jdbc.update("delete from customer.zones where id = ?", id);
-        audit.record(actorId(), "ZONE_DELETE", "ZONE", id.toString(), "SUCCESS", Map.of("name", name));
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "ZONE_DELETE", "ZONE", id.toString(), "SUCCESS", Map.of("name", name));
     }
 
     private void requireUniqueName(String name, UUID excludedId) {
@@ -76,8 +85,4 @@ public class ZoneService {
     }
 
     private Timestamp timestamp() { return Timestamp.from(Instant.now()); }
-    private UUID actorId() {
-        try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); }
-        catch (Exception ignored) { return null; }
-    }
 }

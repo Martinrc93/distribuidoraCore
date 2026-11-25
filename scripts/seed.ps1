@@ -21,7 +21,7 @@ try {
     Write-Host 'Ejecutando la seed demo: ventas con fechas actuales y pedidos a proveedores del último mes.'
     $seedArguments = '--spring.profiles.active=local --app.seed-demo=true --refresh-demo-dates --app.seed-only=true --server.port=0 --app.outbox.worker.enabled=false --app.notifications.retention.enabled=false'
     # Keep compilation separate from any running backend's mapped class files.
-    $seedBuildDirectory = Join-Path $ProjectRoot 'frontend\test-results\seed-runtime'
+    $seedBuildDirectory = Join-Path $ProjectRoot 'backend\target-seed'
     & mvn -f (Join-Path $ProjectRoot 'backend\pom.xml') "-Disolated.build.dir=$seedBuildDirectory" spring-boot:run "-Dspring-boot.run.arguments=$seedArguments"
     if ($LASTEXITCODE -ne 0) { throw 'La ejecución de la seed falló.' }
 }

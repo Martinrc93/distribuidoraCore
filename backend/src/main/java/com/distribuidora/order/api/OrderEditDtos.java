@@ -19,7 +19,7 @@ public final class OrderEditDtos {
 
     public record EditRequest(
         UUID priceListId,
-        @NotNull @Size(min = 1) List<@NotNull @Valid LineRequest> lines,
+        @NotNull @Size(min = 1, max = 500) List<@NotNull @Valid LineRequest> lines,
         @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 4)
         BigDecimal orderDiscountPercent,
         @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal previousBalanceAmount

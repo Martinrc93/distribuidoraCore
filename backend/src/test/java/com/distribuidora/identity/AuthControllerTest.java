@@ -2,6 +2,7 @@ package com.distribuidora.identity;
 
 import com.distribuidora.identity.api.AuthController;
 import com.distribuidora.identity.api.AuthDtos;
+import com.distribuidora.identity.api.AuthRateLimiter;
 import com.distribuidora.identity.application.AuthService;
 import com.distribuidora.identity.application.InvalidRefreshTokenException;
 import com.distribuidora.identity.api.IdentityExceptionHandler;
@@ -9,12 +10,18 @@ import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
@@ -145,5 +152,45 @@ class AuthControllerTest {
                     """))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_ACTIVATION_TOKEN"));
+    }
+
+    @Test
+    void loginRejectsOverlongEmailAndPasswordWith400() throws Exception {
+        String longEmail = "a".repeat(310) + "@example.com";
+        mockMvc.perform(post("/api/auth/login")
+                .contentType(APPLICATION_JSON)
+                .content("{\"email\":\"" + longEmail + "\",\"password\":\"Password123\"}"))
+            .andExpect(status().isBadRequest());
+
+        String longPassword = "p".repeat(201);
+        mockMvc.perform(post("/api/auth/login")
+                .contentType(APPLICATION_JSON)
+                .content("{\"email\":\"user@example.com\",\"password\":\"" + longPassword + "\"}"))
+            .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(authService);
+    }
+
+    @Test
+    void rateLimiterReturns429WithRetryAfterWhenExceeded() throws Exception {
+        AuthService limitedAuth = mock(AuthService.class);
+        when(limitedAuth.login(any())).thenReturn(
+            new AuthService.LoginResult("access-123", "Bearer", 900L, "refresh-456")
+        );
+        AuthRateLimiter limiter = new AuthRateLimiter(
+            true, 60, 2, 10, 10, 10, Clock.fixed(Instant.parse("2026-11-24T12:00:00Z"), ZoneOffset.UTC));
+        MockMvc limitedMvc = standaloneSetup(new AuthController(limitedAuth, limiter))
+            .setControllerAdvice(new IdentityExceptionHandler(), new ApiExceptionHandler())
+            .build();
+
+        String body = "{\"email\":\"user@example.com\",\"password\":\"Password123\"}";
+        limitedMvc.perform(post("/api/auth/login").contentType(APPLICATION_JSON).content(body))
+            .andExpect(status().isOk());
+        limitedMvc.perform(post("/api/auth/login").contentType(APPLICATION_JSON).content(body))
+            .andExpect(status().isOk());
+        limitedMvc.perform(post("/api/auth/login").contentType(APPLICATION_JSON).content(body))
+            .andExpect(status().isTooManyRequests())
+            .andExpect(header().string("Retry-After", "60"))
+            .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"));
     }
 }

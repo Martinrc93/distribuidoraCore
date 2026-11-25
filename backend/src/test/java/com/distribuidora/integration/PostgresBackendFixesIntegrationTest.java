@@ -56,7 +56,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -82,6 +82,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -104,6 +105,7 @@ class PostgresBackendFixesIntegrationTest {
         registry.add("app.outbox.worker.enabled", () -> "false");
         registry.add("app.notifications.retention.enabled", () -> "false");
         registry.add("app.security.jwt-secret", () -> "postgres-integration-test-secret-2026-09-23");
+        registry.add("app.security.rate-limit.enabled", () -> "false");
     }
 
     @Autowired JdbcTemplate jdbc;
@@ -137,9 +139,10 @@ class PostgresBackendFixesIntegrationTest {
     @Autowired NotificationRequestService notificationRequestService;
     @Autowired NotificationRequestStateService notificationRequestStateService;
     @Autowired MeterRegistry meterRegistry;
-    @MockBean NotificationChannelSender notificationChannelSender;
+    @MockitoBean NotificationChannelSender notificationChannelSender;
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired PlatformTransactionManager transactionManager;
+    @Autowired com.distribuidora.customer.application.ZoneService zoneService;
 
     private final Set<UUID> users = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> roles = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -181,8 +184,12 @@ class PostgresBackendFixesIntegrationTest {
         deleteIds("delete from app.commission_plans where id in (%s)", commissionPlans);
         deleteIds("delete from inventory.stock_movements where product_id in (%s)", products);
         deleteIds("delete from inventory.inventory_balances where product_id in (%s)", products);
+        deleteIds("delete from catalog.price_list_follows where product_id in (%s)", products);
+        deleteIds("delete from catalog.price_list_follows where price_list_id in (%s)", priceLists);
         deleteIds("delete from catalog.product_price_history where product_id in (%s)", products);
+        deleteIds("delete from catalog.product_price_history where price_list_id in (%s)", priceLists);
         deleteIds("delete from catalog.product_prices where product_id in (%s)", products);
+        deleteIds("delete from catalog.product_prices where price_list_id in (%s)", priceLists);
         deleteIds("delete from catalog.products where id in (%s)", products);
         deleteIds("delete from catalog.price_lists where id in (%s)", priceLists);
         deleteIds("delete from seller.seller_profiles where id in (%s)", sellers);
@@ -218,6 +225,7 @@ class PostgresBackendFixesIntegrationTest {
         sales.clear();
         saleItems.clear();
         products.clear();
+        priceLists.clear();
         brands.clear();
         categories.clear();
         notificationRequests.clear();
@@ -290,7 +298,7 @@ class PostgresBackendFixesIntegrationTest {
         UUID userId = createUser("admin-session");
         refreshTokens.saveAndFlush(new RefreshToken(userId, AuthService.hashToken("pg-admin-token-1-" + userId), Instant.now().plusSeconds(600)));
         refreshTokens.saveAndFlush(new RefreshToken(userId, AuthService.hashToken("pg-admin-token-2-" + userId), Instant.now().plusSeconds(600)));
-        UUID actorId = UUID.randomUUID();
+        UUID actorId = createUser("selected-seller-order-admin");
         SecurityContextHolder.getContext().setAuthentication(
             UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test", List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
 
@@ -573,6 +581,75 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void createsAResellerWithoutAUserAccountThroughTheCustomerApi() throws Exception {
+        UUID manager = createUser("new-reseller-manager");
+        assignRole(manager, "ADMIN");
+        String managerToken = loginHttp(email(manager));
+        UUID seller = createUser("new-reseller-seller");
+        assignRole(seller, createRoleWithPermission("CUSTOMER_CREATE"));
+        String sellerToken = loginHttp(email(seller));
+        String body = "{\"businessName\":\"New reseller\",\"kind\":\"RESELLER\"}";
+
+        mockMvc.perform(post("/api/customers").header("Authorization", "Bearer " + sellerToken)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden());
+        long userCount = jdbc.queryForObject("select count(*) from identity.users", Long.class);
+        long sellerCount = jdbc.queryForObject("select count(*) from seller.seller_profiles", Long.class);
+
+        MvcResult response = mockMvc.perform(post("/api/customers").header("Authorization", "Bearer " + managerToken)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated()).andReturn();
+        UUID resellerId = UUID.fromString(objectMapper.readTree(response.getResponse().getContentAsString()).path("id").asText());
+        customers.add(resellerId);
+
+        assertThat(jdbc.queryForMap("select business_name, kind, seller_id from customer.customers where id = ?", resellerId))
+            .containsEntry("business_name", "New reseller").containsEntry("kind", "RESELLER").containsEntry("seller_id", null);
+        assertThat(jdbc.queryForObject("select count(*) from identity.users", Long.class)).isEqualTo(userCount);
+        assertThat(jdbc.queryForObject("select count(*) from seller.seller_profiles", Long.class)).isEqualTo(sellerCount);
+    }
+
+    @Test
+    void listsCommercialProfilesTogetherWithSharedFiltersAndPagination() throws Exception {
+        UUID admin = createUser("commercial-profiles-admin");
+        assignRole(admin, "ADMIN");
+        String token = "Bearer " + loginHttp(email(admin));
+        String prefix = "Commercial sample " + UUID.randomUUID();
+        UUID seller = createSeller("commercial-profiles");
+        UUID reseller = createCustomer(null);
+        UUID client = createCustomer(seller);
+        jdbc.update("update seller.seller_profiles set display_name = ? where id = ?", prefix + " A", seller);
+        jdbc.update("update customer.customers set business_name = ? where id = ?", prefix + " B", reseller);
+        jdbc.update("update customer.customers set business_name = ? where id = ?", prefix + " C", client);
+        authenticateOrderActor(admin, "ADMIN_ALL", "RESELLER_MANAGE");
+        customerCommandService.changeKind(reseller, "RESELLER");
+        customerCommandService.assignReseller(client, reseller);
+        SecurityContextHolder.clearContext();
+        jdbc.update("update customer.customers set status = 'INACTIVE' where id = ?", reseller);
+
+        String path = "/api/sellers/profiles";
+        mockMvc.perform(get(path).header("Authorization", token).param("search", prefix).param("size", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalPages").value(2))
+            .andExpect(jsonPath("$.totalElements").value(2))
+            .andExpect(jsonPath("$.content[0].id").value(seller.toString()))
+            .andExpect(jsonPath("$.content[0].kind").value("SELLER"))
+            .andExpect(jsonPath("$.content[0].assignedCustomersCount").value(1));
+        mockMvc.perform(get(path).header("Authorization", token).param("search", prefix).param("size", "1").param("page", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].id").value(reseller.toString()))
+            .andExpect(jsonPath("$.content[0].kind").value("RESELLER"))
+            .andExpect(jsonPath("$.content[0].assignedCustomersCount").value(1));
+        mockMvc.perform(get(path).header("Authorization", token).param("search", prefix).param("kind", "RESELLER"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value(reseller.toString()));
+        mockMvc.perform(get(path).header("Authorization", token).param("search", prefix).param("status", "ACTIVE"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value(seller.toString()));
+    }
+
+    @Test
     void commercialHttpFlowConfirmsIdempotentlyAndTracksDeliveryAgainstPostgres() throws Exception {
         UUID adminId = createUser("commercial-e2e-admin");
         assignRole(adminId, "ADMIN");
@@ -741,7 +818,7 @@ class PostgresBackendFixesIntegrationTest {
         UUID productId = createProduct("selected-seller-order");
         jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", productId);
         putGeneralPrice(productId, new BigDecimal("10.0000"));
-        UUID actorId = UUID.randomUUID();
+        UUID actorId = createUser("selected-seller-order-admin");
         SecurityContextHolder.getContext().setAuthentication(
             UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
                 List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
@@ -788,7 +865,7 @@ class PostgresBackendFixesIntegrationTest {
         UUID productId = createProduct("price-history");
         UUID customerId = createCustomer(null);
         UUID generalListId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UUID actorId = UUID.randomUUID();
+        UUID actorId = createUser("selected-seller-order-admin");
         auditResources.add(generalListId + ":" + productId);
         SecurityContextHolder.getContext().setAuthentication(
             UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
@@ -832,8 +909,9 @@ class PostgresBackendFixesIntegrationTest {
         UUID productId = createProduct("manual-discount");
         UUID generalListId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         putGeneralPrice(productId, new BigDecimal("100.0000"));
+        UUID actorId = createUser("manual-discount-actor");
         SecurityContextHolder.getContext().setAuthentication(
-            UsernamePasswordAuthenticationToken.authenticated(UUID.randomUUID().toString(), "test",
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
                 List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
 
         var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
@@ -1089,11 +1167,12 @@ class PostgresBackendFixesIntegrationTest {
             new OrderConfirmationDtos.LineRequest(fixture.productId(), BigDecimal.ONE, BigDecimal.ZERO, null),
             new OrderConfirmationDtos.LineRequest(second, BigDecimal.ONE, BigDecimal.ZERO, null)), BigDecimal.ZERO));
         // Fail on the last product after the first movement, proving transaction rollback.
-        UUID inactive = fixture.productId().toString().compareTo(second.toString()) > 0 ? fixture.productId() : second;
-        jdbc.update("update catalog.products set status = 'INACTIVE' where id = ?", inactive);
-        assertThatThrownBy(() -> orderFulfillmentService.prepare(fixture.orderId())).isInstanceOf(IllegalStateException.class);
-        assertThat(stock(fixture.productId())).isEqualByComparingTo("10");
-        assertThat(stock(second)).isEqualByComparingTo("10");
+        UUID failing = fixture.productId().toString().compareTo(second.toString()) > 0 ? fixture.productId() : second;
+        jdbc.update("update inventory.inventory_balances set quantity = -999999999999999.5000 where product_id = ?", failing);
+        assertThatThrownBy(() -> orderFulfillmentService.prepare(fixture.orderId())).isInstanceOf(IllegalArgumentException.class);
+        UUID nonFailing = failing.equals(fixture.productId()) ? second : fixture.productId();
+        assertThat(stock(nonFailing)).isEqualByComparingTo("10");
+        assertThat(stock(failing)).isEqualByComparingTo("-999999999999999.5000");
         assertThat(jdbc.queryForObject("select fulfillment_status from orders.orders where id = ?", String.class, fixture.orderId())).isEqualTo("PENDING");
         assertThat(jdbc.queryForObject("select count(*) from inventory.stock_movements where reference_id = ?", Long.class, fixture.orderId())).isZero();
     }
@@ -1149,6 +1228,9 @@ class PostgresBackendFixesIntegrationTest {
         UUID admin = createUser("fulfillment-review-admin");
         authenticateOrderActor(admin, "ADMIN_ALL");
         assertThat(readQueryService.orders(0, 100, "", "", null, null, null, false, null, true).content()).anySatisfy(row -> assertThat(row.get("id")).isEqualTo(result.orderId()));
+        assertThatThrownBy(() -> orderFulfillmentService.review(result.orderId()))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        authenticateOrderActor(admin, "ADMIN_ALL", "ORDER_REVIEW");
         orderFulfillmentService.review(result.orderId());
         orderFulfillmentService.review(result.orderId());
         assertThat(orderReviewPending(result.orderId())).isFalse();
@@ -1335,17 +1417,17 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from sale.returns where sale_id = ?", Long.class, fixture.saleId())).isEqualTo(2L);
 
         UUID healthyProduct = createProduct("return-healthy");
-        UUID missingBalanceProduct = createProduct("return-missing-balance");
+        UUID overflowBalanceProduct = createProduct("return-overflow-balance");
         jdbc.update("update inventory.inventory_balances set quantity = 2 where product_id = ?", healthyProduct);
         inventoryMovementService.apply(healthyProduct, new BigDecimal("-0.5"), "SALE", fixture.orderId(), "Fixture sale line");
-        jdbc.update("delete from inventory.inventory_balances where product_id = ?", missingBalanceProduct);
+        jdbc.update("update inventory.inventory_balances set quantity = 999999999999999.9999 where product_id = ?", overflowBalanceProduct);
         UUID healthyLine = createSaleItem(fixture.saleId(), healthyProduct, new BigDecimal("0.5"));
-        UUID missingBalanceLine = createSaleItem(fixture.saleId(), missingBalanceProduct, new BigDecimal("0.5"));
+        UUID overflowBalanceLine = createSaleItem(fixture.saleId(), overflowBalanceProduct, new BigDecimal("0.5"));
 
         assertThatThrownBy(() -> saleReturnService.create(fixture.saleId(), new SaleReturnDtos.ReturnRequest("Atomic failure",
             List.of(new SaleReturnDtos.ReturnItemRequest(healthyLine, new BigDecimal("0.5")),
-                new SaleReturnDtos.ReturnItemRequest(missingBalanceLine, new BigDecimal("0.5"))))))
-            .isInstanceOf(org.springframework.dao.EmptyResultDataAccessException.class);
+                new SaleReturnDtos.ReturnItemRequest(overflowBalanceLine, new BigDecimal("0.5"))))))
+            .isInstanceOf(IllegalArgumentException.class);
         assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?", BigDecimal.class, healthyProduct))
             .isEqualByComparingTo("1.5");
         assertThat(jdbc.queryForObject("select count(*) from sale.returns where sale_id = ?", Long.class, fixture.saleId())).isEqualTo(2L);
@@ -2062,6 +2144,40 @@ class PostgresBackendFixesIntegrationTest {
     }
 
     @Test
+    void orderNotificationContactsRespectScopeAndOnlyUpdateTheSelectedField() throws Exception {
+        UUID seller = createSeller("notification-contact");
+        UUID owner = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, seller);
+        assignRole(owner, createRoleWithPermission("ORDER_NOTIFY"));
+        UUID customer = createCustomer(seller);
+        String phone = "+5491112345678";
+        jdbc.update("update customer.customers set phone = ? where id = ?", phone, customer);
+        UUID order = createOrder(customer, seller, "CONFIRMED");
+        UUID otherOrder = createOrder(createCustomer(null), null, "CONFIRMED");
+        String path = "/api/orders/{id}/notifications/contact";
+        String ownerToken = "Bearer " + loginHttp(email(owner));
+        String emailBody = "{\"email\":\"compras@example.test\"}";
+
+        mockMvc.perform(get(path, order).header("Authorization", ownerToken))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.phone").value(phone));
+        mockMvc.perform(get(path, otherOrder).header("Authorization", ownerToken)).andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/customers/{id}/contact", customer).header("Authorization", ownerToken)
+            .contentType(MediaType.APPLICATION_JSON).content(emailBody)).andExpect(status().isForbidden());
+
+        assignRole(owner, createRoleWithPermission("CUSTOMER_EDIT"));
+        String editorToken = "Bearer " + loginHttp(email(owner));
+        mockMvc.perform(patch("/api/customers/{id}/contact", customer).header("Authorization", editorToken)
+            .contentType(MediaType.APPLICATION_JSON).content("{\"phone\":\"1112345678\"}")).andExpect(status().isBadRequest());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(patch("/api/customers/{id}/contact", customer).header("Authorization", editorToken)
+                .contentType(MediaType.APPLICATION_JSON).content(emailBody)).andExpect(status().isNoContent());
+        }
+        mockMvc.perform(get(path, order).header("Authorization", editorToken)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.email").value("compras@example.test")).andExpect(jsonPath("$.phone").value(phone));
+        assertThat(jdbc.queryForObject("select count(*) from audit.audit_events where resource_id = ? and operation = 'CUSTOMER_UPDATE'",
+            Long.class, customer.toString())).isEqualTo(1);
+    }
+
+    @Test
     void notificationRequestIsIdempotentAuditedAndDeliveredFromOutbox() {
         jdbc.update("delete from notification.outbox_events e where e.event_type = 'NOTIFICATION_DELIVERY_REQUESTED' "
             + "and not exists (select 1 from notification.delivery_requests d where d.id = e.aggregate_id)");
@@ -2308,6 +2424,43 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(jdbc.queryForObject("""
             select count(*) from audit.audit_events where resource_id = ? and operation in ('COMMISSION_SETTLEMENT', 'RESELLER_COMMISSION_ASSIGNMENT')
             """, Long.class, reseller.toString())).isEqualTo(3L);
+    }
+
+    @Test
+    void defaultCommissionPlansCalculateTheResellerPendingBalance() {
+        UUID admin = createUser("reseller-default-commission");
+        assignRole(admin, "ADMIN");
+        authenticateOrderActor(admin, "ADMIN_ALL", "RESELLER_MANAGE");
+        UUID reseller = createCustomer(null);
+        customerCommandService.changeKind(reseller, "RESELLER");
+        UUID product = createProduct("reseller-default-commission-" + UUID.randomUUID());
+        putGeneralPrice(product, new BigDecimal("26"));
+        jdbc.update("update inventory.inventory_balances set quantity = 20 where product_id = ?", product);
+
+        var plans = commissionPlansService.list();
+        UUID profitPlan = plans.stream().filter(plan -> plan.name().equals("10% de la ganancia por producto"))
+            .findFirst().orElseThrow().id();
+        UUID unitPlan = plans.stream().filter(plan -> plan.name().equals("$1 por unidad vendida"))
+            .findFirst().orElseThrow().id();
+
+        assertThat(commissionPlansService.resellerAssignment(reseller).planId()).isNull();
+        commissionPlansService.assignReseller(reseller, profitPlan, null);
+        var profitOrder = confirmFor(reseller, product, "2");
+        deliver(profitOrder.orderId());
+
+        commissionPlansService.assignReseller(reseller, unitPlan, profitPlan);
+        var unitOrder = confirmFor(reseller, product, "3");
+        deliver(unitOrder.orderId());
+
+        var statement = commissionSettlementService.statement(
+            com.distribuidora.sale.application.CommissionSettlementService.Beneficiary.RESELLER,
+            reseller, null, null, 0, 20);
+        assertThat(statement.pending().entryCount()).isEqualTo(2);
+        assertThat(new BigDecimal(statement.pending().amount())).isEqualByComparingTo("8");
+        assertThat(statement.movements().content()).filteredOn(movement -> movement.orderId().equals(profitOrder.orderId()))
+            .singleElement().satisfies(movement -> assertThat(new BigDecimal(movement.amount())).isEqualByComparingTo("5"));
+        assertThat(statement.movements().content()).filteredOn(movement -> movement.orderId().equals(unitOrder.orderId()))
+            .singleElement().satisfies(movement -> assertThat(new BigDecimal(movement.amount())).isEqualByComparingTo("3"));
     }
 
     private UUID commissionPlan(String fixedPerUnit) {
@@ -2751,8 +2904,9 @@ class PostgresBackendFixesIntegrationTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.summary.totalAmount").value(230))
             .andExpect(jsonPath("$.summary.salesCount").value(4));
 
-        byte[] pdf = mockMvc.perform(get(document, customer).header("Authorization", assigned)
-                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02"))
+        var download = mockMvc.perform(get(document, customer).header("Authorization", assigned)
+                .param("dateMin", "2026-10-02").param("dateMax", "2026-10-02")).andReturn();
+        byte[] pdf = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(download))
             .andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
                 .contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse().getContentAsByteArray();
         try (var reader = new org.openpdf.text.pdf.PdfReader(pdf)) {
@@ -2816,6 +2970,21 @@ class PostgresBackendFixesIntegrationTest {
         mockMvc.perform(get("/api/expenses").header("Authorization", token).param("size", "1"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
             .andExpect(jsonPath("$.content[0].id").value(outside.toString()));
+        mockMvc.perform(get("/api/expenses").header("Authorization", token).param("size", "1")
+                .param("type", "FUEL").param("dateMin", "2024-02-29").param("dateMax", "2024-02-29"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.totalPages").value(1)).andExpect(jsonPath("$.content[0].id").value(inside.toString()));
+        mockMvc.perform(get("/api/expenses").header("Authorization", token).param("dateMin", "2024-03-01"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value(outside.toString()));
+        mockMvc.perform(get("/api/expenses").header("Authorization", token).param("type", "SERVICES")
+                .param("dateMax", "2024-02-29"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mockMvc.perform(get("/api/expenses").header("Authorization", token).param("type", "UNKNOWN"))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/expenses").header("Authorization", token)
+                .param("dateMin", "2024-03-01").param("dateMax", "2024-02-29"))
+            .andExpect(status().isBadRequest());
         mockMvc.perform(get("/api/dashboard/analytics").header("Authorization", token)
                 .param("dateMin", "2024-02-29").param("dateMax", "2024-02-29"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.expenses.amount").value(120.75))
@@ -2879,6 +3048,23 @@ class PostgresBackendFixesIntegrationTest {
         mockMvc.perform(get(path).header("Authorization", token)).andExpect(status().isOk())
             .andExpect(jsonPath("$[?(@.id=='" + plan + "')].sellerCount").value(org.hamcrest.Matchers.contains(2)));
 
+        UUID reseller = createCustomer(null);
+        auditResources.add(reseller.toString());
+        jdbc.update("update customer.customers set kind = 'RESELLER' where id = ?", reseller);
+        mockMvc.perform(put(path + "/reseller-assignments/{customerId}", reseller).header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(assign)).andExpect(status().isOk());
+        String assignments = path + "/assignments";
+        String firstRow = "$.content[?(@.beneficiaryId=='" + first + "')]";
+        String resellerRow = "$.content[?(@.beneficiaryId=='" + reseller + "')]";
+        mockMvc.perform(get(assignments).header("Authorization", sellerToken)).andExpect(status().isForbidden());
+        mockMvc.perform(get(assignments).header("Authorization", token).param("size", "100"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath(firstRow + ".type").value(org.hamcrest.Matchers.contains("SELLER")))
+            .andExpect(jsonPath(resellerRow + ".type").value(org.hamcrest.Matchers.contains("RESELLER")))
+            .andExpect(jsonPath(resellerRow + ".planName").value(org.hamcrest.Matchers.contains(name)));
+        mockMvc.perform(get(assignments).header("Authorization", token).param("page", "1").param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(1)).andExpect(jsonPath("$.content.length()").value(1));
+
         String edit = """
             {"version":1,"name":"%s ajustado","rules":[%s]}
             """.formatted(name, differentiated);
@@ -2896,6 +3082,9 @@ class PostgresBackendFixesIntegrationTest {
         mockMvc.perform(put(assignment, first).header("Authorization", token)
                 .contentType(MediaType.APPLICATION_JSON).content(clear))
             .andExpect(status().isOk()).andExpect(jsonPath("$.planId").isEmpty());
+        mockMvc.perform(get(assignments).header("Authorization", token).param("size", "100"))
+            .andExpect(status().isOk()).andExpect(jsonPath(firstRow).isEmpty())
+            .andExpect(jsonPath(resellerRow + ".planName").value(org.hamcrest.Matchers.contains(name + " ajustado")));
         mockMvc.perform(get(assignment, second).header("Authorization", token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.planId").value(plan.toString()));
         assertThat(jdbc.queryForObject("""
@@ -2997,6 +3186,637 @@ class PostgresBackendFixesIntegrationTest {
         assertThat(jdbc.queryForObject("""
             select count(*) from audit.audit_events where resource_id = ? and operation = 'COMMISSION_SETTLEMENT'
             """, Long.class, seller.toString())).isEqualTo(1L);
+    }
+
+    @Test
+    void concurrentTransactingAuditsDoNotStarveTenConnectionPool() throws Exception {
+        UUID actorId = createUser("rem06-pool-actor");
+        int threads = 15;
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        try {
+            List<Future<UUID>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                final int index = i;
+                futures.add(executor.submit(() -> {
+                    SecurityContextHolder.getContext().setAuthentication(
+                        UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                            List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+                    ready.countDown();
+                    try {
+                        if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("timeout");
+                        UUID listId = pricingCommandService.createList(
+                            "POOL_" + index + "_" + UUID.randomUUID().toString().substring(0, 6).toUpperCase(),
+                            "Pool Test " + index);
+                        priceLists.add(listId);
+                        auditResources.add(listId.toString());
+                        return listId;
+                    } finally {
+                        SecurityContextHolder.clearContext();
+                    }
+                }));
+            }
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            List<UUID> created = new ArrayList<>();
+            for (Future<UUID> future : futures) {
+                created.add(future.get(15, TimeUnit.SECONDS));
+            }
+            assertThat(created).hasSize(threads).doesNotHaveDuplicates();
+            assertThat(jdbc.queryForObject(
+                "select count(*) from audit.audit_events where actor_user_id = ? and operation = 'PRICELIST_CREATE' and result = 'SUCCESS'",
+                Long.class, actorId)).isEqualTo(threads);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void unauthorizedAndInvalidJwtRequestsReturn401WithRequestIdHeader() throws Exception {
+        MvcResult unauthenticated = mockMvc.perform(get("/api/customers"))
+            .andExpect(status().isUnauthorized())
+            .andReturn();
+        assertThat(unauthenticated.getResponse().getHeader("X-Request-Id")).isNotBlank();
+
+        MvcResult invalidToken = mockMvc.perform(get("/api/customers").header("Authorization", "Bearer invalid.jwt.token"))
+            .andExpect(status().isUnauthorized())
+            .andReturn();
+        assertThat(invalidToken.getResponse().getHeader("X-Request-Id")).isNotBlank();
+    }
+
+    @Test
+    void confirmedOrderPermitsPrepareAndDeliveryAfterProductDeactivation() {
+        UUID actorId = createUser("rem07-prepare-inactive");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customerId = createCustomer(null);
+        UUID productId = createProduct("rem07-inactive-prepare");
+        putGeneralPrice(productId, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 10 where product_id = ?", productId);
+
+        var confirmed = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "rem07-confirm-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("2"), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of()));
+        orders.add(confirmed.orderId());
+        sales.add(confirmed.saleId());
+
+        jdbc.update("update catalog.products set status = 'INACTIVE' where id = ?", productId);
+
+        orderFulfillmentService.prepare(confirmed.orderId());
+        assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?",
+            BigDecimal.class, productId)).isEqualByComparingTo("8");
+
+        deliveryLifecycleService.recordAttempt(confirmed.orderId(),
+            new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", "Entregado"));
+        assertThat(jdbc.queryForObject("select status from sale.sales where id = ?", String.class, confirmed.saleId()))
+            .isEqualTo("DELIVERED");
+        assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances where product_id = ?",
+            BigDecimal.class, productId)).isEqualByComparingTo("8");
+    }
+
+    @Test
+    void pricingFallbackUsesDefaultGeneralListRegardlessOfUuidOrdering() {
+        UUID actorId = createUser("rem07-pricing-default");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID firstCreated = pricingCommandService.createList("ARB_A_" + UUID.randomUUID().toString().substring(0, 6).toUpperCase(), "Lista B");
+        UUID secondCreated = pricingCommandService.createList("ARB_B_" + UUID.randomUUID().toString().substring(0, 6).toUpperCase(), "Lista C");
+        priceLists.add(firstCreated);
+        priceLists.add(secondCreated);
+        auditResources.add(firstCreated.toString());
+        auditResources.add(secondCreated.toString());
+
+        UUID listB = firstCreated.toString().compareTo(secondCreated.toString()) <= 0 ? firstCreated : secondCreated;
+        UUID listC = firstCreated.toString().compareTo(secondCreated.toString()) <= 0 ? secondCreated : firstCreated;
+        UUID productId = createProduct("rem07-default-fallback");
+        putGeneralPrice(productId, new BigDecimal("20.0000"));
+        pricingCommandService.setProductPrice(listB, productId, new BigDecimal("35.0000"), null);
+        jdbc.update("delete from catalog.price_list_follows where price_list_id = ? and product_id = ?", listC, productId);
+        jdbc.update("delete from catalog.product_price_history where price_list_id = ? and product_id = ?", listC, productId);
+        jdbc.update("delete from catalog.product_prices where price_list_id = ? and product_id = ?", listC, productId);
+
+        UUID customerId = createCustomer(null);
+        jdbc.update("update customer.customers set price_list_id = ? where id = ?", listC, customerId);
+
+        Map<String, Object> single = pricingQueryService.resolve(customerId, productId, listC);
+        List<Map<String, Object>> batch = pricingQueryService.resolveBatch(customerId, List.of(productId), listC);
+
+        assertThat(single).containsEntry("priceListCode", "GENERAL");
+        assertThat((BigDecimal) single.get("unitPrice")).isEqualByComparingTo("20.0000");
+        assertThat(batch).hasSize(1);
+        assertThat(batch.getFirst()).containsEntry("priceListCode", "GENERAL");
+        assertThat((BigDecimal) batch.getFirst().get("unitPrice")).isEqualByComparingTo("20.0000");
+    }
+
+    @Test
+    void concurrentConfirmationsSerializeCreditLimitChecksUnderAccountLock() throws Exception {
+        UUID actorId = createUser("rem08-credit-limit");
+        jdbc.update("update app.business_settings set credit_limit = 100.0000 where id = 1");
+        UUID customerId = createCustomer(null);
+        UUID productId = createProduct("rem08-credit-prod");
+        putGeneralPrice(productId, new BigDecimal("80.0000"));
+        jdbc.update("update inventory.inventory_balances set quantity = 50 where product_id = ?", productId);
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<OrderConfirmationService.ConfirmationResult>> futures = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                final String key = "rem08-credit-" + i + "-" + UUID.randomUUID();
+                futures.add(executor.submit(() -> {
+                    SecurityContextHolder.getContext().setAuthentication(
+                        UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                            List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+                    ready.countDown();
+                    try {
+                        if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("timeout");
+                        var result = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+                            key, customerId, null,
+                            List.of(new OrderConfirmationDtos.LineRequest(productId, BigDecimal.ONE, BigDecimal.ZERO, null)),
+                            BigDecimal.ZERO, List.of()));
+                        orders.add(result.orderId());
+                        sales.add(result.saleId());
+                        return result;
+                    } finally {
+                        SecurityContextHolder.clearContext();
+                    }
+                }));
+            }
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            List<OrderConfirmationService.ConfirmationResult> results = new ArrayList<>();
+            for (var future : futures) {
+                results.add(future.get(15, TimeUnit.SECONDS));
+            }
+            assertThat(customerBalance(customerId)).isEqualByComparingTo("160.0000");
+            assertThat(results).filteredOn(r -> r.creditLimitWarning() != null).hasSize(1);
+            assertThat(jdbc.queryForObject(
+                "select count(*) from orders.orders where customer_id = ? and credit_limit_exceeded = true and projected_balance_snapshot = 160.0000",
+                Long.class, customerId)).isEqualTo(1L);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentAccountPaymentDeliveryReassignAndResellerOperationsDoNotDeadlock() throws Exception {
+        UUID actorId = createUser("rem08-abba-actor");
+        UUID seller1 = createSeller("rem08-abba-s1");
+        UUID seller2 = createSeller("rem08-abba-s2");
+        auditResources.add(seller1.toString());
+        auditResources.add(seller2.toString());
+
+        UUID productId = createProduct("rem08-abba-prod");
+        putGeneralPrice(productId, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 100 where product_id = ?", productId);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            // 1. accountPaymentService.apply vs deliveryLifecycleService.recordAttempt(DELIVERED, previousDebt)
+            SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                    List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+            UUID customerPay = createCustomer(seller1);
+            for (int i = 0; i < 3; i++) {
+                var older = confirmFor(customerPay, productId, "1", List.of(), BigDecimal.ZERO);
+                orderFulfillmentService.prepare(older.orderId());
+                jdbc.update("update sale.sales set created_at = created_at - interval '60 seconds' where id = ?", older.saleId());
+                var current = confirmFor(customerPay, productId, "1", List.of(), BigDecimal.ZERO);
+                orderFulfillmentService.prepare(current.orderId());
+
+                CountDownLatch ready = new CountDownLatch(2);
+                CountDownLatch start = new CountDownLatch(1);
+                Future<Throwable> payFuture = executor.submit(() -> runConcurrentAction(actorId, ready, start, () -> {
+                    accountPaymentService.apply(customerPay, new AccountPaymentDtos.PaymentRequest(
+                        BigDecimal.TEN, "CASH", null, null));
+                }));
+                Future<Throwable> deliverFuture = executor.submit(() -> runConcurrentAction(actorId, ready, start, () -> {
+                    deliveryLifecycleService.recordAttempt(current.orderId(),
+                        new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+                            "DELIVERED", "ABBA",
+                            List.of(new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", BigDecimal.TEN)),
+                            null, BigDecimal.TEN));
+                }));
+                assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+                start.countDown();
+                assertNoDeadlock(payFuture.get(15, TimeUnit.SECONDS));
+                assertNoDeadlock(deliverFuture.get(15, TimeUnit.SECONDS));
+            }
+
+            // 2. sellerCommandService.reassignCustomers vs accountPaymentService.apply
+            SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                    List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+            UUID customerReassign = createCustomer(seller1);
+            confirmFor(customerReassign, productId, "1", List.of(), BigDecimal.ZERO);
+            confirmFor(customerReassign, productId, "1", List.of(), BigDecimal.ZERO);
+            confirmFor(customerReassign, productId, "1", List.of(), BigDecimal.ZERO);
+            for (int i = 0; i < 4; i++) {
+                UUID source = i % 2 == 0 ? seller1 : seller2;
+                UUID target = i % 2 == 0 ? seller2 : seller1;
+                CountDownLatch ready = new CountDownLatch(2);
+                CountDownLatch start = new CountDownLatch(1);
+                Future<Throwable> reassignFuture = executor.submit(() -> runConcurrentAction(actorId, ready, start, () -> {
+                    sellerCommandService.reassignCustomers(new SellerDtos.ReassignCustomersRequest(
+                        source, target, List.of(customerReassign), true));
+                }));
+                Future<Throwable> payFuture = executor.submit(() -> runConcurrentAction(actorId, ready, start, () -> {
+                    accountPaymentService.apply(customerReassign, new AccountPaymentDtos.PaymentRequest(
+                        new BigDecimal("5.0000"), "CASH", null, null));
+                }));
+                assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+                start.countDown();
+                assertNoDeadlock(reassignFuture.get(15, TimeUnit.SECONDS));
+                assertNoDeadlock(payFuture.get(15, TimeUnit.SECONDS));
+            }
+
+            // 3. customerCommandService.assignReseller vs orderConfirmationService.confirm
+            SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                    List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+            UUID reseller = createCustomer(null);
+            jdbc.update("update customer.customers set kind = 'RESELLER' where id = ?", reseller);
+            UUID customerToggle = createCustomer(null);
+            for (int i = 0; i < 4; i++) {
+                UUID targetReseller = i % 2 == 0 ? reseller : null;
+                CountDownLatch ready = new CountDownLatch(2);
+                CountDownLatch start = new CountDownLatch(1);
+                Future<Throwable> resellerFuture = executor.submit(() -> runConcurrentAction(actorId, ready, start, () -> {
+                    customerCommandService.assignReseller(customerToggle, targetReseller);
+                }));
+                Future<Throwable> confirmFuture = executor.submit(() -> runConcurrentAction(actorId, ready, start, () -> {
+                    try {
+                        confirmFor(customerToggle, productId, "1", List.of(), BigDecimal.ZERO);
+                    } catch (IllegalStateException changed) {
+                        if (changed.getMessage() == null || !changed.getMessage().contains("revendedor")) {
+                            throw changed;
+                        }
+                    }
+                }));
+                assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+                start.countDown();
+                assertNoDeadlock(resellerFuture.get(15, TimeUnit.SECONDS));
+                assertNoDeadlock(confirmFuture.get(15, TimeUnit.SECONDS));
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void editConfirmedUsesSellerScopedBalanceExcludingCurrentSaleDebt() {
+        UUID admin = createUser("rem08-edit-admin");
+        UUID sellerA = createSeller("rem08-edit-a");
+        UUID sellerB = createSeller("rem08-edit-b");
+        auditResources.add(sellerA.toString());
+        auditResources.add(sellerB.toString());
+        UUID sellerAUser = jdbc.queryForObject("select user_id from seller.seller_profiles where id = ?", UUID.class, sellerA);
+
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(admin.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID customerId = createCustomer(sellerA);
+        UUID productId = createProduct("rem08-edit-prod");
+        putGeneralPrice(productId, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 50 where product_id = ?", productId);
+
+        // Seller A prior debt: 50
+        var priorSellerA = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "rem08-sa-prior-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("5"), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), sellerA));
+        orders.add(priorSellerA.orderId());
+        sales.add(priorSellerA.saleId());
+
+        // Seller B prior debt: 40 (must not count towards Seller A's scoped previous balance)
+        var priorSellerB = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "rem08-sb-prior-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("4"), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), sellerB));
+        orders.add(priorSellerB.orderId());
+        sales.add(priorSellerB.saleId());
+
+        // Seller A current sale: 30 (total customer balance = 120, Seller A scoped excluding current = 50)
+        var currentSellerA = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "rem08-sa-current-" + UUID.randomUUID(), customerId, null,
+            List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("3"), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of(), sellerA));
+        orders.add(currentSellerA.orderId());
+        sales.add(currentSellerA.saleId());
+
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(sellerAUser.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ORDER_EDIT"))));
+
+        assertThatThrownBy(() -> orderConfirmationService.editConfirmed(currentSellerA.orderId(),
+            new OrderEditDtos.EditRequest(null,
+                List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("3"), BigDecimal.ZERO, null)),
+                BigDecimal.ZERO, new BigDecimal("51"))))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("supera el saldo actual");
+
+        var edited = orderConfirmationService.editConfirmed(currentSellerA.orderId(),
+            new OrderEditDtos.EditRequest(null,
+                List.of(new OrderConfirmationDtos.LineRequest(productId, new BigDecimal("3"), BigDecimal.ZERO, null)),
+                BigDecimal.ZERO, new BigDecimal("50")));
+        assertThat(edited.total()).isEqualByComparingTo("30.0000");
+    }
+
+    @Test
+    void reactivateRejectsInactiveCustomerAndInactiveResellerAccount() {
+        UUID actorId = createUser("rem08-reactivate-actor");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"), new SimpleGrantedAuthority("RESELLER_MANAGE"))));
+        UUID productId = createProduct("rem08-reactivate-prod");
+        putGeneralPrice(productId, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 50 where product_id = ?", productId);
+
+        UUID customer1 = createCustomer(null);
+        var order1 = confirmFor(customer1, productId, "1", List.of(), BigDecimal.ZERO);
+        deliveryLifecycleService.cancel(order1.orderId());
+        jdbc.update("update customer.customers set status = 'INACTIVE' where id = ?", customer1);
+        assertThatThrownBy(() -> deliveryLifecycleService.reactivate(order1.orderId()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("cliente no está activo");
+
+        UUID reseller = createCustomer(null);
+        jdbc.update("update customer.customers set kind = 'RESELLER' where id = ?", reseller);
+        UUID customer2 = createCustomer(null);
+        customerCommandService.assignReseller(customer2, reseller);
+        var order2 = confirmFor(customer2, productId, "1", List.of(), BigDecimal.ZERO);
+        deliveryLifecycleService.cancel(order2.orderId());
+        jdbc.update("update customer.customers set status = 'INACTIVE' where id = ?", reseller);
+        assertThatThrownBy(() -> deliveryLifecycleService.reactivate(order2.orderId()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("revendedor no está activa");
+    }
+
+    @Test
+    void historicalResellerSaleStillBlocksReturnAfterUnmarkingReseller() {
+        UUID actorId = createUser("rem08-historical-reseller");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        UUID productId = createProduct("rem08-reseller-return");
+        putGeneralPrice(productId, BigDecimal.TEN);
+        jdbc.update("update inventory.inventory_balances set quantity = 20 where product_id = ?", productId);
+
+        UUID reseller = createCustomer(null);
+        jdbc.update("update customer.customers set kind = 'RESELLER' where id = ?", reseller);
+        var delivered = confirmFor(reseller, productId, "2", List.of(), BigDecimal.ZERO);
+        orderFulfillmentService.prepare(delivered.orderId());
+        deliveryLifecycleService.recordAttempt(delivered.orderId(),
+            new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest("DELIVERED", "Venta a revendedor"));
+
+        assertThat(jdbc.queryForObject("select account_kind from sale.sales where id = ?", String.class, delivered.saleId()))
+            .isEqualTo("RESELLER");
+
+        jdbc.update("update customer.customers set kind = 'REGULAR' where id = ?", reseller);
+        UUID saleItemId = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, delivered.saleId());
+
+        assertThatThrownBy(() -> saleReturnService.create(delivered.saleId(),
+            new SaleReturnDtos.ReturnRequest("Intento tardío",
+                List.of(new SaleReturnDtos.ReturnItemRequest(saleItemId, BigDecimal.ONE)))))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("revendedor no admiten devoluciones");
+    }
+
+    @Test
+    void paginationOverflowWildcardEscapingAndV63V64SchemaArtifactsWork() {
+        UUID actorId = createUser("rem09-read-checks");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+
+        // Large page numbers must not overflow 32-bit int offset arithmetic
+        assertThat(readQueryService.customers(30_000_000, 100, "").content()).isEmpty();
+        assertThat(readQueryService.products(30_000_000, 100, "").content()).isEmpty();
+        assertThat(readQueryService.orders(30_000_000, 100, null, null, null, null, null, false).content()).isEmpty();
+        assertThat(readQueryService.sales(30_000_000, 100, "").content()).isEmpty();
+        assertThat(readQueryService.inventory(30_000_000, 100, "").content()).isEmpty();
+
+        // LIKE wildcard characters (% and _) must be matched literally
+        UUID literalCustomer = createCustomer(null);
+        UUID wildcardFalsePositive = createCustomer(null);
+        String uniqueSuffix = UUID.randomUUID().toString().substring(0, 6);
+        String literalName = "100%_literal_" + uniqueSuffix;
+        String otherName = "100XXliteral_" + uniqueSuffix;
+        jdbc.update("update customer.customers set business_name = ? where id = ?", literalName, literalCustomer);
+        jdbc.update("update customer.customers set business_name = ? where id = ?", otherName, wildcardFalsePositive);
+
+        var searchResult = readQueryService.customers(0, 20, "100%_literal_" + uniqueSuffix);
+        assertThat(searchResult.content()).extracting(row -> row.get("name"))
+            .containsExactly(literalName);
+
+        List<String> indexNames = jdbc.queryForList("select indexname from pg_indexes where schemaname in ('customer', 'payment', 'orders', 'sale', 'inventory', 'catalog', 'notification', 'audit')", String.class);
+        assertThat(indexNames).contains(
+            "ix_sales_account_open_unpaid",
+            "ix_payments_sale_created",
+            "ix_account_ledger_sale_id",
+            "ix_order_items_order_id",
+            "ix_stock_movements_reference_id",
+            "ix_customers_business_name_trgm",
+            "ix_product_price_history_covering"
+        );
+        Integer ckCount = jdbc.queryForObject("""
+            select count(*) from pg_constraint con
+            join pg_class rel on rel.oid = con.conrelid
+            join pg_namespace nsp on nsp.oid = rel.relnamespace
+            where nsp.nspname = 'sale' and rel.relname = 'sales' and con.conname = 'ck_sales_account_kind'
+            """, Integer.class);
+        assertThat(ckCount).isEqualTo(1);
+    }
+
+    @Test
+    void rem11EndToEndConstraintsLocksGuardsAndQueriesHoldInPostgres() {
+        UUID adminActor = createUser("rem11-admin");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(adminActor.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"), new SimpleGrantedAuthority("RESELLER_MANAGE"),
+                    new SimpleGrantedAuthority("CUSTOMER_CREATE"), new SimpleGrantedAuthority("CUSTOMER_STATUS_CHANGE"))));
+
+        // 1. V65 CHECK constraints & cross-schema FKs
+        UUID product = createProduct("rem11-prod");
+        UUID customer = createCustomer(null);
+        putGeneralPrice(product, new BigDecimal("100.0000"));
+        var confirmed = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "rem11-order-" + UUID.randomUUID(), customer, null,
+            List.of(new OrderConfirmationDtos.LineRequest(product, new BigDecimal("2"), BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of()));
+        orders.add(confirmed.orderId());
+        sales.add(confirmed.saleId());
+
+        assertThatThrownBy(() -> jdbc.update(
+            "insert into payment.payments(id, sale_id, customer_id, amount, method, created_at) values (?, ?, ?, 0, 'CASH', now())",
+            UUID.randomUUID(), confirmed.saleId(), customer)).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+            "insert into payment.payments(id, sale_id, customer_id, amount, method, created_at) values (?, ?, ?, 1, 'CRYPTO', now())",
+            UUID.randomUUID(), confirmed.saleId(), customer)).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+            "insert into orders.order_items(id, order_id, product_id, product_name, quantity, unit_price, line_total, price_list_code, line_discount_percent) values (?, ?, ?, 'Bad', 0.3, 10, 3, 'GENERAL', 0)",
+            UUID.randomUUID(), confirmed.orderId(), product)).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+            "update orders.orders set total = -1 where id = ?", confirmed.orderId())).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+            "update orders.orders set created_by_user_id = ? where id = ?", UUID.randomUUID(), confirmed.orderId()))
+            .isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+            "update orders.order_items set price_list_id = ? where order_id = ?", UUID.randomUUID(), confirmed.orderId()))
+            .isInstanceOf(org.springframework.dao.DataAccessException.class);
+
+        // 2. ReadQueryService.orderDetailByNumber parity with orderDetail
+        Map<String, Object> byId = readQueryService.orderDetail(confirmed.orderId());
+        Map<String, Object> byNumber = readQueryService.orderDetailByNumber(confirmed.orderNumber());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> orderById = (Map<String, Object>) byId.get("order");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> orderByNumber = (Map<String, Object>) byNumber.get("order");
+        assertThat(orderByNumber).containsKey("fulfillmentStatus").containsKey("reviewPending");
+        assertThat(orderByNumber.get("fulfillmentStatus")).isEqualTo(orderById.get("fulfillmentStatus"));
+
+        // 3. ux_zones_name_lower & ZoneService + Customer zone_id
+        String zoneName = "Zona-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID zoneId = zoneService.create(zoneName);
+        try {
+            assertThatThrownBy(() -> zoneService.create(zoneName.toLowerCase(java.util.Locale.ROOT)))
+                .isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> jdbc.update(
+                "insert into customer.zones(id, name, created_at, updated_at) values (?, ?, now(), now())",
+                UUID.randomUUID(), zoneName.toUpperCase(java.util.Locale.ROOT)))
+                .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+
+            UUID zonedCustomer = customerCommandService.create(new CustomerCommandService.CustomerInput(
+                "Zoned Customer", null, null, null, null, zoneName.toLowerCase(java.util.Locale.ROOT), null, null));
+            customers.add(zonedCustomer);
+            assertThat(jdbc.queryForObject("select zone_id from customer.customers where id = ?", UUID.class, zonedCustomer))
+                .isEqualTo(zoneId);
+            String renamedZone = zoneName + "-Alta";
+            zoneService.rename(zoneId, renamedZone);
+            assertThat(jdbc.queryForObject("select zone from customer.customers where id = ?", String.class, zonedCustomer))
+                .isEqualTo(renamedZone);
+            zoneService.delete(zoneId);
+            assertThat(jdbc.queryForObject("select zone from customer.customers where id = ?", String.class, zonedCustomer))
+                .isNull();
+            assertThat(jdbc.queryForObject("select zone_id from customer.customers where id = ?", UUID.class, zonedCustomer))
+                .isNull();
+        } finally {
+            jdbc.update("delete from customer.zones where id = ?", zoneId);
+        }
+
+        // 4. RESELLER status guard requiring RESELLER_MANAGE
+        UUID reseller = createCustomer(null);
+        customerCommandService.changeKind(reseller, "RESELLER");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(adminActor.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"), new SimpleGrantedAuthority("CUSTOMER_STATUS_CHANGE"))));
+        assertThatThrownBy(() -> customerCommandService.setStatus(reseller, "INACTIVE"))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(adminActor.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"), new SimpleGrantedAuthority("RESELLER_MANAGE"),
+                    new SimpleGrantedAuthority("CUSTOMER_STATUS_CHANGE"))));
+        customerCommandService.setStatus(reseller, "INACTIVE");
+
+        // 5. Seller ADMIN guard, session_version rotation on setStatus, and UserAdminService.unblockUser guard
+        UUID adminRoleUser = createUser("admin-role-user");
+        jdbc.update("insert into identity.user_roles(user_id, role_id) select ?, id from identity.roles where code = 'ADMIN'", adminRoleUser);
+        assertThatThrownBy(() -> sellerCommandService.create(new SellerDtos.CreateSellerRequest(adminRoleUser, "Admin Not Seller")))
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> userAdminService.unblockUser(adminRoleUser))
+            .isInstanceOf(IllegalStateException.class);
+
+        UUID sellerUser = createUser("seller-session-rot");
+        UUID sellerProfileId = sellerCommandService.create(new SellerDtos.CreateSellerRequest(sellerUser, "Vendedor Session"));
+        sellers.add(sellerProfileId);
+        refreshTokens.saveAndFlush(new RefreshToken(sellerUser, AuthService.hashToken("seller-tok-" + sellerUser), Instant.now().plusSeconds(600)));
+        Long versionBefore = jdbc.queryForObject("select session_version from identity.users where id = ?", Long.class, sellerUser);
+        sellerCommandService.setStatus(sellerProfileId, "INACTIVE");
+        assertThat(jdbc.queryForObject("select session_version from identity.users where id = ?", Long.class, sellerUser))
+            .isEqualTo(versionBefore + 1);
+        assertThat(jdbc.queryForObject("select count(*) from identity.refresh_tokens where user_id = ? and revoked_at is null", Long.class, sellerUser))
+            .isZero();
+
+        // 6. ProductCommandService.update rejects inactive list
+        UUID inactiveList = pricingCommandService.createList("INACT_" + UUID.randomUUID().toString().substring(0, 6).toUpperCase(), "Inactiva");
+        priceLists.add(inactiveList);
+        pricingCommandService.setListStatus(inactiveList, "INACTIVE");
+        UUID catId = jdbc.queryForObject("select id from catalog.categories limit 1", UUID.class);
+        UUID brId = jdbc.queryForObject("select id from catalog.brands limit 1", UUID.class);
+        assertThatThrownBy(() -> productCommandService.update(product, new ProductCommandService.ProductInput(
+            "Updated Prod", "Cat", "Pres", BigDecimal.ONE,
+            List.of(new ProductCommandService.ProductPriceInput(inactiveList, BigDecimal.TEN)), catId, brId)))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        // 7. CommissionSettlementService pending token consistency & DeliveryLifecycle previousDebt audit
+        var pending1 = commissionSettlementService.statement(
+            com.distribuidora.sale.application.CommissionSettlementService.Beneficiary.SELLER, sellerProfileId, null, null, 0, 10);
+        var pending2 = commissionSettlementService.statement(
+            com.distribuidora.sale.application.CommissionSettlementService.Beneficiary.SELLER, sellerProfileId, null, null, 0, 10);
+        assertThat(pending1.pending().token()).isEqualTo(pending2.pending().token());
+
+        UUID debtCustomer = createCustomer(null);
+        putGeneralPrice(product, new BigDecimal("50.0000"));
+        var olderOrder = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "rem11-older-" + UUID.randomUUID(), debtCustomer, null,
+            List.of(new OrderConfirmationDtos.LineRequest(product, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of()));
+        orders.add(olderOrder.orderId());
+        sales.add(olderOrder.saleId());
+        var newerOrder = orderConfirmationService.confirm(new OrderConfirmationDtos.ConfirmationRequest(
+            "rem11-newer-" + UUID.randomUUID(), debtCustomer, null,
+            List.of(new OrderConfirmationDtos.LineRequest(product, BigDecimal.ONE, BigDecimal.ZERO, null)),
+            BigDecimal.ZERO, List.of()));
+        orders.add(newerOrder.orderId());
+        sales.add(newerOrder.saleId());
+
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(adminActor.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        deliveryLifecycleService.recordAttempt(newerOrder.orderId(),
+            new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryAttemptRequest(
+                "DELIVERED", null,
+                List.of(new com.distribuidora.order.api.DeliveryLifecycleDtos.DeliveryPaymentRequest("CASH", new BigDecimal("70.0000"))),
+                null, new BigDecimal("50.0000")));
+        String auditDetails = jdbc.queryForObject(
+            "select details::text from audit.audit_events where operation = 'DELIVERY_ATTEMPT' and resource_id = ? order by created_at desc limit 1",
+            String.class, newerOrder.orderId().toString());
+        assertThat(auditDetails).contains("previousDebtApplied", "previousDebtAllocations", olderOrder.saleId().toString());
+    }
+
+    private Throwable runConcurrentAction(UUID actorId, CountDownLatch ready, CountDownLatch start, Runnable action) {
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(actorId.toString(), "test",
+                List.of(new SimpleGrantedAuthority("ADMIN_ALL"), new SimpleGrantedAuthority("RESELLER_MANAGE"))));
+        ready.countDown();
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) return new IllegalStateException("timeout");
+            action.run();
+            return null;
+        } catch (Throwable throwable) {
+            return throwable;
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    private void assertNoDeadlock(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof java.sql.SQLException sqlException && "40P01".equals(sqlException.getSQLState())) {
+                throw new AssertionError("Postgres deadlock (40P01) occurred", error);
+            }
+            if (current.getMessage() != null && current.getMessage().contains("deadlock detected")) {
+                throw new AssertionError("Postgres deadlock detected", error);
+            }
+        }
+        if (error != null && !(error instanceof IllegalStateException)) {
+            throw new AssertionError("Unexpected concurrency exception", error);
+        }
     }
 
     private String reportSaleNumber(UUID saleId) {

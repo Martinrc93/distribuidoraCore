@@ -23,6 +23,7 @@ import java.util.UUID;
  */
 @Service
 public class AccountStatementDocumentService {
+    private static final int MAX_STATEMENT_LINES = 5_000;
     private final JdbcTemplate jdbc;
     private final CurrentUserAccess currentUser;
 
@@ -33,22 +34,27 @@ public class AccountStatementDocumentService {
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AccountStatementModel load(UUID customerId) {
+        List<Object> parameters = new ArrayList<>(List.of(customerId));
+        String scope = "";
+        if (!currentUser.isAdmin()) {
+            try {
+                currentUser.requireCustomerAccess(customerId);
+                UUID sellerId = currentUser.requireSellerProfile();
+                scope = " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
+                parameters.add(sellerId);
+                parameters.add(sellerId);
+            } catch (EmptyResultDataAccessException exception) {
+                throw new DocumentNotFoundException("Cliente inexistente");
+            }
+        }
         Map<String, Object> customer;
         try {
             customer = jdbc.queryForMap("select business_name, tax_id, address from customer.customers where id = ?", customerId);
         } catch (EmptyResultDataAccessException exception) {
             throw new DocumentNotFoundException("Cliente inexistente");
         }
-        List<Object> parameters = new ArrayList<>(List.of(customerId));
-        String scope = "";
-        if (!currentUser.isAdmin()) {
-            currentUser.requireCustomerAccess(customerId);
-            UUID sellerId = currentUser.requireSellerProfile();
-            scope = " and (o.seller_id = ? or (o.seller_id is null and c.seller_id = ?))";
-            parameters.add(sellerId);
-            parameters.add(sellerId);
-        }
         boolean[] otherCustomers = {false};
+        parameters.add(MAX_STATEMENT_LINES + 1);
         List<AccountStatementModel.Line> lines = jdbc.query("""
             select (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as sale_date,
                    s.sale_number, o.order_number, c.business_name as customer_name,
@@ -62,9 +68,11 @@ public class AccountStatementDocumentService {
                 from customer.account_ledger where sale_id = s.id
             ) l on true
             where s.account_customer_id = ? and s.status in ('CONFIRMED', 'DELIVERED')
+              and s.paid < s.total
             """ + scope + """
               and least(greatest(coalesce(l.balance, 0), 0), greatest(s.total - s.paid, 0)) > 0
             order by s.created_at, s.id
+            limit ?
             """, (rs, row) -> {
                 otherCustomers[0] |= rs.getBoolean("other_customer");
                 return new AccountStatementModel.Line(
@@ -72,6 +80,9 @@ public class AccountStatementDocumentService {
                     rs.getString("customer_name"), rs.getBigDecimal("total"), rs.getBigDecimal("paid"), rs.getBigDecimal("due"));
             },
             parameters.toArray());
+        if (lines.size() > MAX_STATEMENT_LINES) {
+            throw new IllegalArgumentException("La cuenta supera el límite de ventas para exportar el estado de deuda.");
+        }
         BigDecimal totalDue = lines.stream().map(AccountStatementModel.Line::due).reduce(BigDecimal.ZERO, BigDecimal::add);
         LocalDate today = jdbc.queryForObject(
             "select (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date", LocalDate.class);

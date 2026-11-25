@@ -2,6 +2,8 @@ package com.distribuidora.seller.api;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import com.distribuidora.seller.application.SellerCommandService;
 
 import java.time.Instant;
@@ -14,17 +16,17 @@ public final class SellerDtos {
 
     public record CreateSellerRequest(
         @NotNull(message = "userId es obligatorio") UUID userId,
-        @NotBlank(message = "displayName es obligatorio") String displayName
+        @NotBlank(message = "displayName es obligatorio") @Size(max = 160) String displayName
     ) implements SellerCommandService.CreateSellerCommand {
     }
 
     public record UpdateSellerRequest(
-        @NotBlank(message = "displayName es obligatorio") String displayName
+        @NotBlank(message = "displayName es obligatorio") @Size(max = 160) String displayName
     ) implements SellerCommandService.UpdateSellerCommand {
     }
 
     public record SellerStatusRequest(
-        @NotBlank(message = "status es obligatorio") String status
+        @NotBlank(message = "status es obligatorio") @Pattern(regexp = "ACTIVE|INACTIVE") String status
     ) {
     }
 
@@ -45,7 +47,7 @@ public final class SellerDtos {
     public record ReassignCustomersRequest(
         @NotNull(message = "sourceSellerId es obligatorio") UUID sourceSellerId,
         @NotNull(message = "targetSellerId es obligatorio") UUID targetSellerId,
-        List<UUID> customerIds,
+        @Size(max = 1000) List<@NotNull UUID> customerIds,
         Boolean reassignPendingOrders
     ) implements SellerCommandService.ReassignCustomersCommand {
     }
@@ -60,7 +62,7 @@ public final class SellerDtos {
 
     public record ReassignOrdersRequest(
         @NotNull(message = "targetSellerId es obligatorio") UUID targetSellerId,
-        @NotNull(message = "orderIds es obligatorio") List<UUID> orderIds,
+        @NotNull(message = "orderIds es obligatorio") @Size(max = 1000) List<@NotNull UUID> orderIds,
         Boolean onlyPending
     ) implements SellerCommandService.ReassignOrdersCommand {
     }

@@ -6,13 +6,18 @@ import org.openpdf.text.Font;
 import org.openpdf.text.FontFactory;
 import org.openpdf.text.PageSize;
 import org.openpdf.text.Paragraph;
+import org.openpdf.text.Phrase;
 import org.openpdf.text.Rectangle;
+import org.openpdf.text.pdf.ColumnText;
 import org.openpdf.text.pdf.PdfPCell;
+import org.openpdf.text.pdf.PdfPageEventHelper;
 import org.openpdf.text.pdf.PdfPTable;
+import org.openpdf.text.pdf.PdfTemplate;
 import org.openpdf.text.pdf.PdfWriter;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.awt.Color;
 
 import static com.distribuidora.document.rendering.PdfFormat.BOLD;
@@ -28,46 +33,72 @@ public class OpenPdfA4Renderer {
     private static final Font BANNER = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14f, Font.NORMAL, Color.WHITE);
     private static final Font BUSINESS_NAME = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20f);
     private static final Color LINE = new Color(210, 210, 210);
+    private static final float SUMMARY_WIDTH_FRACTION = 0.60f;
+    private static final float SUMMARY_GAP = 14f;
 
     public byte[] render(SaleDocumentModel model) {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        Document document = null;
-        RuntimeException failure = null;
+        render(model, output);
+        return output.toByteArray();
+    }
+
+    public void render(SaleDocumentModel model, OutputStream output) {
+        Document document;
         try {
             document = createDocument();
-            PdfWriter.getInstance(document, output);
-            document.open();
-
-            addBusinessHeader(document, model);
-            document.add(metadata(model));
-            document.add(products(model));
-            document.add(summary(model));
-        } catch (RuntimeException exception) {
-            failure = exception;
-        } finally {
-            if (document != null) {
-                try {
-                    document.close();
-                } catch (RuntimeException closeFailure) {
-                    if (failure == null) {
-                        failure = closeFailure;
-                    } else {
-                        failure.addSuppressed(closeFailure);
-                    }
-                }
-            }
+        } catch (RuntimeException failure) {
+            throw new DocumentRenderingException("Unable to render sale document", failure);
         }
-        if (failure != null) {
-            throw new IllegalStateException("Unable to render sale document", failure);
-        }
-        return output.toByteArray();
+        PdfFormat.render(document, output, writer -> writer.setPageEvent(new PageNumberFooter()), (opened, writer) -> {
+            addBusinessHeader(opened, model);
+            opened.add(metadata(model));
+            opened.add(products(model));
+            addSummaryAtPageBottom(opened, writer, summary(model));
+        }, "Unable to render sale document");
     }
 
     protected Document createDocument() {
         return new Document(PageSize.A4);
     }
 
+    private static final class PageNumberFooter extends PdfPageEventHelper {
+        private PdfTemplate totalPages;
+        private int lastPage;
+
+        @Override
+        public void onOpenDocument(PdfWriter writer, Document document) {
+            totalPages = writer.getDirectContent().createTemplate(32f, 12f);
+        }
+
+        @Override
+        public void onEndPage(PdfWriter writer, Document document) {
+            lastPage = writer.getPageNumber();
+            var prefix = new Phrase("Página " + lastPage + " de", SMALL);
+            var font = SMALL.getCalculatedBaseFont(false);
+            float prefixWidth = font.getWidthPoint(prefix.getContent(), SMALL.getSize());
+            float digitWidth = font.getWidthPoint("0", SMALL.getSize());
+            float spaceWidth = font.getWidthPoint(" ", SMALL.getSize());
+            float center = (document.left() + document.right()) / 2f;
+            float totalX = center + (prefixWidth + spaceWidth - digitWidth) / 2f;
+            float baseline = document.bottom() / 2f;
+            var canvas = writer.getDirectContent();
+            ColumnText.showTextAligned(canvas, Element.ALIGN_RIGHT, prefix, totalX - spaceWidth, baseline, 0);
+            canvas.addTemplate(totalPages, totalX, baseline);
+        }
+
+        @Override
+        public void onCloseDocument(PdfWriter writer, Document document) {
+            ColumnText.showTextAligned(totalPages, Element.ALIGN_LEFT,
+                new Phrase(Integer.toString(lastPage), SMALL), 0, 0, 0);
+        }
+    }
+
     private void addBusinessHeader(Document document, SaleDocumentModel model) {
+        if (model.businessLogo() != null) {
+            var logo = PdfFormat.documentLogo(model.businessLogo(), 112f, 54f);
+            logo.setSpacingAfter(6f);
+            document.add(logo);
+        }
         var business = model.businessProfile();
         if (!business.name().isBlank()) document.add(centered(business.name(), BUSINESS_NAME));
         if (!business.address().isBlank()) document.add(centered(business.address(), NORMAL));
@@ -129,12 +160,18 @@ public class OpenPdfA4Renderer {
         return table;
     }
 
+    private void addSummaryAtPageBottom(Document document, PdfWriter writer, PdfPTable table) {
+        float width = (document.right() - document.left()) * SUMMARY_WIDTH_FRACTION;
+        table.setTotalWidth(width);
+        float top = document.bottom() + table.getTotalHeight();
+        if (writer.getVerticalPosition(true) < top + SUMMARY_GAP) {
+            document.newPage();
+        }
+        table.writeSelectedRows(0, -1, document.right() - width, top, writer.getDirectContent());
+    }
+
     private PdfPTable summary(SaleDocumentModel model) {
         var table = new PdfPTable(new float[]{58f, 42f});
-        table.setWidthPercentage(60);
-        table.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        table.setSpacingBefore(14f);
-        table.setKeepTogether(true);
 
         var totals = model.totals();
         summaryRow(table, "Cant. de artículos", number(totals.quantity()), NORMAL, false);

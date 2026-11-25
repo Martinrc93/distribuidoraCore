@@ -36,7 +36,7 @@ public class JwtService {
             .issuedAt(issuedAt)
             .expiration(new Date(issuedAt.getTime() + accessTokenSeconds * 1000))
             .subject(user.getId().toString())
-            .claim("sessionVersion", user.getVersion())
+            .claim("sessionVersion", user.getSessionVersion())
             .claim("email", user.getEmail())
             .claim("authorities", List.copyOf(authorities))
             .signWith(secretKey, Jwts.SIG.HS256)

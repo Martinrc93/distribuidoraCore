@@ -6,9 +6,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import com.distribuidora.testinfra.SharedPostgres;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -23,10 +21,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Testcontainers
 class DashboardAnalyticsPostgresTest {
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    private static final SharedPostgres.Database POSTGRES = SharedPostgres.databaseFor(DashboardAnalyticsPostgresTest.class);
     static JdbcTemplate jdbc;
     static DashboardAnalyticsService service;
 
@@ -99,8 +95,16 @@ class DashboardAnalyticsPostgresTest {
         amount(rows(report, "trend").getFirst(), "amount", "300");
         amount(rows(report, "trend").get(1), "amount", "0");
         amount(rows(report, "trend").getLast(), "amount", "500");
-        amount(rows(report, "topProducts").getFirst(), "amount", "800");
-        amount(rows(report, "topProducts").getFirst(), "units", "14");
+        amount(rows(report, "topProducts").getFirst(), "amount", "700");
+        amount(rows(report, "topProducts").getFirst(), "units", "12");
+        assertThat(rows(report, "topProducts").getFirst().get("name")).isEqualTo("Selling product");
+        jdbc.update("update catalog.products set name = 'Renamed selling product' where id = ?", product);
+        try {
+            Map<String, Object> renamedReport = service.report(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
+            assertThat(rows(renamedReport, "topProducts").getFirst().get("name")).isEqualTo("Renamed selling product");
+        } finally {
+            jdbc.update("update catalog.products set name = 'Selling product' where id = ?", product);
+        }
         amount(rows(report, "sellers").getFirst(), "amount", "800");
         assertThat(rows(report, "sellers").getFirst().get("name")).isEqualTo("Sin asignar");
         Map<String, Object> coverage = rows(report, "stockCoverage").stream().filter(row -> product.equals(row.get("id"))).findFirst().orElseThrow();
@@ -115,10 +119,13 @@ class DashboardAnalyticsPostgresTest {
         org.mockito.Mockito.when(mockJdbc.queryForMap(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(Map.of());
         var fixed = new DashboardAnalyticsService(mockJdbc, Clock.fixed(Instant.parse("2026-10-02T13:00:00Z"), ZoneOffset.UTC));
         fixed.report(LocalDate.of(2026, 10, 2), LocalDate.of(2026, 10, 2));
+        var args = org.mockito.ArgumentCaptor.forClass(Object[].class);
         org.mockito.Mockito.verify(mockJdbc, org.mockito.Mockito.atLeastOnce()).queryForMap(
-            org.mockito.ArgumentMatchers.contains("from sale.sales where status"),
-            org.mockito.ArgumentMatchers.eq(Timestamp.from(Instant.parse("2026-10-01T03:00:00Z"))),
-            org.mockito.ArgumentMatchers.eq(Timestamp.from(Instant.parse("2026-10-01T13:00:00Z"))));
+            org.mockito.ArgumentMatchers.contains("sales_agg as"),
+            args.capture());
+        assertThat(args.getValue()).contains(
+            Timestamp.from(Instant.parse("2026-10-01T03:00:00Z")),
+            Timestamp.from(Instant.parse("2026-10-01T13:00:00Z")));
         assertThatThrownBy(() -> fixed.report(LocalDate.of(2026, 10, 3), LocalDate.of(2026, 10, 2))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> fixed.report(LocalDate.of(2026, 10, 2), LocalDate.of(2026, 10, 3))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> fixed.report(LocalDate.of(2025, 1, 1), LocalDate.of(2026, 10, 2))).isInstanceOf(IllegalArgumentException.class);

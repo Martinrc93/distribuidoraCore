@@ -57,9 +57,25 @@ public class NotificationRequestStateService {
             Map.of("outboxEventId", event.id().toString(), "attempt", event.attemptCount()));
     }
 
+    private static final int PURGE_BATCH_SIZE = 5000;
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int purgeTerminalBefore(Instant cutoff) {
-        return jdbc.update("delete from notification.delivery_requests where created_at < ? "
-                + "and status in ('SENT', 'FAILED', 'RETRY_EXHAUSTED')", java.sql.Timestamp.from(cutoff));
+        Boolean locked = jdbc.queryForObject(
+            "select pg_try_advisory_xact_lock(hashtext('notification.delivery_requests.purge'))",
+            Boolean.class);
+        if (!Boolean.TRUE.equals(locked)) return 0;
+        java.sql.Timestamp cutoffTimestamp = java.sql.Timestamp.from(cutoff);
+        int totalDeleted = 0;
+        while (true) {
+            int deleted = jdbc.update(
+                "with doomed as ("
+                    + " select id from notification.delivery_requests "
+                    + " where created_at < ? and status in ('SENT', 'RETRY_EXHAUSTED') limit ?"
+                    + ") delete from notification.delivery_requests d using doomed x where d.id = x.id",
+                cutoffTimestamp, PURGE_BATCH_SIZE);
+            totalDeleted += deleted;
+            if (deleted < PURGE_BATCH_SIZE) return totalDeleted;
+        }
     }
 }

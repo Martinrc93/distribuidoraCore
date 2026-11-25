@@ -7,7 +7,6 @@ import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.inventory.application.InventoryMovementService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,9 +14,11 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,35 +50,48 @@ public class SaleReturnService {
 
     public SaleReturnService(JdbcTemplate jdbc, InventoryMovementService inventory, AuditService audit,
                              CurrentUserAccess currentUser, CommissionAccrualService commissions) {
-        this.jdbc = jdbc;
-        this.inventory = inventory;
-        this.audit = audit;
-        this.currentUser = currentUser;
-        this.commissions = commissions;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.inventory = Objects.requireNonNull(inventory, "inventory");
+        this.audit = Objects.requireNonNull(audit, "audit");
+        this.currentUser = Objects.requireNonNull(currentUser, "currentUser");
+        this.commissions = Objects.requireNonNull(commissions, "commissions");
     }
 
     @Transactional
     public ReturnResult create(UUID saleId, ReturnCommand request) {
         PermissionAccess.require("SALE_RETURN");
-        UUID actorId = actorId();
+        UUID actorId = authenticatedActorId();
         validate(saleId, request);
 
         Map<String, Object> sale = jdbc.queryForMap("""
-            select s.id, o.id as order_id, s.status as sale_status, o.status as order_status
-            from sale.sales s
-            join orders.orders o on o.id = s.order_id
+            select s.id, o.id as order_id, s.status as sale_status, o.status as order_status,
+                   s.customer_id, s.account_customer_id, s.account_kind
+            from orders.orders o
+            join sale.sales s on s.order_id = o.id
             where s.id = ?
-            for update of s, o
+            for update of o, s
             """, saleId);
         currentUser.requireOrderAccess(uuid(sale.get("order_id")));
         if (!"DELIVERED".equals(sale.get("sale_status")) || !"DELIVERED".equals(sale.get("order_status"))) {
             throw new IllegalStateException("Solo se pueden devolver ventas entregadas");
         }
-        // Delivered sales charged to a reseller's account cannot be returned (phase 9 rule).
-        String accountKind = jdbc.queryForObject("""
+        // Delivered sales charged to a reseller's account cannot be returned even if the reseller mark is later removed.
+        UUID saleCustomerId = sale.get("customer_id") == null ? null : uuid(sale.get("customer_id"));
+        UUID saleAccountId = sale.get("account_customer_id") == null ? null : uuid(sale.get("account_customer_id"));
+        String currentAccountKind = jdbc.queryForObject("""
             select c.kind from sale.sales s join customer.customers c on c.id = s.account_customer_id where s.id = ?
             """, String.class, saleId);
-        if ("RESELLER".equals(accountKind)) {
+        boolean hasResellerCommission = Boolean.TRUE.equals(jdbc.queryForObject("""
+            select exists(
+                select 1 from sale.sale_items si
+                join sale.commission_entries ce on ce.sale_item_id = si.id
+                where si.sale_id = ? and ce.reseller_id is not null
+            )
+            """, Boolean.class, saleId));
+        if ("RESELLER".equals(sale.get("account_kind"))
+            || "RESELLER".equals(currentAccountKind)
+            || (saleCustomerId != null && saleAccountId != null && !Objects.equals(saleCustomerId, saleAccountId))
+            || hasResellerCommission) {
             throw new IllegalStateException("Las ventas a cargo de un revendedor no admiten devoluciones");
         }
 
@@ -101,12 +115,12 @@ public class SaleReturnService {
             }
             Map<String, Object> line = lines.getFirst();
             BigDecimal sold = decimal(line.get("quantity"));
-            BigDecimal previouslyReturned = jdbc.queryForObject("""
+            BigDecimal previouslyReturned = Objects.requireNonNullElse(jdbc.queryForObject("""
                 select coalesce(sum(ri.quantity), 0)
                 from sale.return_items ri
                 join sale.returns r on r.id = ri.return_id
                 where r.sale_id = ? and ri.sale_item_id = ?
-                """, BigDecimal.class, saleId, item.saleItemId());
+                """, BigDecimal.class, saleId, item.saleItemId()), BigDecimal.ZERO);
             if (previouslyReturned.add(item.quantity()).compareTo(sold) > 0) {
                 throw new IllegalStateException("La cantidad solicitada supera la cantidad aún disponible para devolución");
             }
@@ -122,6 +136,9 @@ public class SaleReturnService {
         for (ReturnItemResult item : resolved) {
             jdbc.update("insert into sale.return_items(id, return_id, sale_id, sale_item_id, product_id, quantity) values (?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID(), returnId, saleId, item.saleItemId(), item.productId(), item.quantity());
+        }
+        // Apply stock movements in canonical ascending productId order to prevent AB-BA inventory deadlocks.
+        for (ReturnItemResult item : resolved.stream().sorted(Comparator.comparing(entry -> entry.productId().toString())).toList()) {
             inventory.apply(item.productId(), item.quantity(), "RETURN", returnId, reason);
         }
         commissions.returned(returnId, now);
@@ -131,15 +148,11 @@ public class SaleReturnService {
         return new ReturnResult(returnId, saleId, reason, resolved);
     }
 
-    private UUID actorId() {
-        var authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getName() == null) {
-            throw new AccessDeniedException("Se requiere un administrador autenticado para registrar devoluciones");
-        }
+    private UUID authenticatedActorId() {
         try {
-            return UUID.fromString(authentication.getName());
-        } catch (IllegalArgumentException exception) {
-            throw new AccessDeniedException("La identidad autenticada no es válida", exception);
+            return CurrentUserAccess.requireAuthenticatedUserId();
+        } catch (IllegalStateException exception) {
+            throw new AccessDeniedException("Se requiere un administrador autenticado para registrar devoluciones", exception);
         }
     }
 

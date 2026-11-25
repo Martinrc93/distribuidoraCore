@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 
 import static com.distribuidora.document.rendering.PdfFormat.discount;
 import static com.distribuidora.document.rendering.PdfFormat.money;
@@ -29,10 +30,26 @@ public class OpenPdfTicketRenderer {
     private static final Font TOTAL = FontFactory.getFont(FontFactory.COURIER_BOLD, 12f);
 
     public byte[] render(SaleDocumentModel model) {
+        var output = new ByteArrayOutputStream();
+        render(model, output);
+        return output.toByteArray();
+    }
+
+    public void render(SaleDocumentModel model, OutputStream output) {
         PdfPTable content = new PdfPTable(new float[]{52f, 48f});
         content.setTotalWidth(WIDTH_80_MM - MARGIN * 2);
         content.setLockedWidth(true);
 
+        if (model.businessLogo() != null) {
+            var logo = PdfFormat.documentLogo(model.businessLogo(), 104f, 42f);
+            var logoCell = new PdfPCell(logo, false);
+            logoCell.setColspan(2);
+            logoCell.setBorder(Rectangle.NO_BORDER);
+            logoCell.setPadding(0f);
+            logoCell.setPaddingBottom(6f);
+            logoCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            content.addCell(logoCell);
+        }
         var business = model.businessProfile();
         if (!business.name().isBlank()) centered(content, business.name(), BUSINESS_NAME, 2f);
         if (!business.address().isBlank()) centered(content, business.address(), NORMAL, 1f);
@@ -92,7 +109,7 @@ public class OpenPdfTicketRenderer {
         content.calculateHeights(true);
         float height = Math.min(14400f, Math.max(180f, content.getTotalHeight() + 25f));
         Document document = new Document(new Rectangle(WIDTH_80_MM, height), MARGIN, MARGIN, 11f, 11f);
-        return PdfFormat.render(document, new ByteArrayOutputStream(), doc -> doc.add(content),
+        PdfFormat.render(document, output, doc -> doc.add(content),
             "No se pudo generar el ticket");
     }
 

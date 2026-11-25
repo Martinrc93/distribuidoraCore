@@ -2,10 +2,10 @@ package com.distribuidora.settings.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
+import com.distribuidora.shared.web.PageResponse;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -29,7 +29,20 @@ public class CommissionPlansService {
     public record Plan(UUID id, String name, long version, List<Rule> rules) { }
     public record Assignment(UUID sellerId, UUID planId) { }
     public record ResellerAssignment(UUID customerId, UUID planId) { }
+    public record AssignmentOverview(String type, UUID beneficiaryId, String name, String status, UUID planId, String planName) { }
     private record RuleTarget(Scope scope, UUID id) { }
+
+    private static final String ASSIGNMENTS = """
+        select 'SELLER' as type, s.id as beneficiary_id, s.display_name as name, s.status, p.id as plan_id, p.name as plan_name
+        from app.seller_commission_plans a
+        join seller.seller_profiles s on s.id = a.seller_id
+        join app.commission_plans p on p.id = a.plan_id
+        union all
+        select 'RESELLER', c.id, c.business_name, c.status, p.id, p.name
+        from app.reseller_commission_plans a
+        join customer.customers c on c.id = a.customer_id
+        join app.commission_plans p on p.id = a.plan_id
+        """;
 
     private final JdbcTemplate jdbc;
     private final CurrentUserAccess user;
@@ -50,6 +63,20 @@ public class CommissionPlansService {
             from app.commission_plans p order by lower(p.name), p.id
             """, (row, idx) -> new Overview(row.getObject(1, UUID.class), row.getString(2), row.getLong(3), row.getLong(4),
                 row.getLong(5)));
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public PageResponse<AssignmentOverview> listAssignments(int page, int size) {
+        requireAdmin();
+        int number = Math.max(0, page);
+        int limit = Math.min(100, Math.max(1, size));
+        String from = " from (" + ASSIGNMENTS + ") assignments";
+        long total = Objects.requireNonNullElse(jdbc.queryForObject("select count(*)" + from, Long.class), 0L);
+        var rows = jdbc.query("select *" + from + " order by lower(name), type, beneficiary_id limit ? offset ?",
+            (row, index) -> new AssignmentOverview(row.getString("type"), row.getObject("beneficiary_id", UUID.class),
+                row.getString("name"), row.getString("status"), row.getObject("plan_id", UUID.class), row.getString("plan_name")),
+            limit, (long) number * limit);
+        return PageResponse.of(rows, number, limit, total);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -78,8 +105,8 @@ public class CommissionPlansService {
         if (expectedVersion == null || expectedVersion < 1) {
             throw new IllegalArgumentException("Se requiere la versión del plan");
         }
-        long currentVersion = jdbc.queryForObject(
-            "select version from app.commission_plans where id = ? for update", Long.class, id);
+        long currentVersion = Objects.requireNonNull(jdbc.queryForObject(
+            "select version from app.commission_plans where id = ? for update", Long.class, id));
         if (currentVersion != expectedVersion) {
             throw new IllegalStateException("El plan cambió mientras lo editabas");
         }
@@ -103,7 +130,7 @@ public class CommissionPlansService {
     @Transactional
     public Assignment assign(UUID sellerId, UUID planId, UUID expectedPlanId) {
         requireAdmin();
-        jdbc.queryForObject("select id from seller.seller_profiles where id = ? for update", UUID.class, sellerId);
+        jdbc.queryForObject("select id from seller.seller_profiles where id = ? for no key update", UUID.class, sellerId);
         UUID before = assignment(sellerId).planId();
         if (!Objects.equals(before, expectedPlanId)) {
             throw new IllegalStateException("La asignación del vendedor cambió");

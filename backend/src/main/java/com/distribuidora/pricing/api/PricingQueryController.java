@@ -30,6 +30,7 @@ public class PricingQueryController {
     }
 
     @GetMapping("/lists")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'CUSTOMER_CREATE', 'CUSTOMER_EDIT', 'CUSTOMER_PRICE_LIST_CHANGE')")
     public PageResponse<Map<String, Object>> lists(
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size
@@ -49,7 +50,7 @@ public class PricingQueryController {
         @RequestParam(required = false) String search
     ) {
         return queries.prices(listId, page, size, new PricingQueryService.PriceFilter(
-            followStatus == null || followStatus.isBlank() ? null : followStatus, categoryId, brandId, search, access.isAdmin()));
+            followStatus == null || followStatus.isBlank() ? null : followStatus, categoryId, brandId, search, access.isAdmin(), !access.isAdmin()));
     }
 
     @GetMapping("/lists/{listId}/products/{productId}/history")

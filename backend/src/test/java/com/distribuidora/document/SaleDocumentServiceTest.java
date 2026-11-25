@@ -28,10 +28,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class SaleDocumentServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
-    private final SaleDocumentService service = new SaleDocumentService(jdbc);
+    private final SaleDocumentService service = new SaleDocumentService(jdbc, TestCurrentUserAccess.admin(jdbc));
 
     @Test
     void mapsCompletePersistedSnapshotWithoutRecalculatingOrCallingPricing() {
@@ -52,7 +53,7 @@ class SaleDocumentServiceTest {
                         "product_name", "First", "quantity", new BigDecimal("1.0000"), "unit_price", new BigDecimal("20.0000"),
                         "line_discount_percent", new BigDecimal("0.0000"), "line_total", new BigDecimal("20.0000"), "id", UUID.randomUUID())), 1));
             }
-            return List.of(mapper.mapRow(row(Map.of("method", "CASH", "amount", new BigDecimal("20.0123"), "id", UUID.randomUUID())), 0));
+            throw new AssertionError("Unexpected document query: " + sql);
         });
 
         SaleDocumentModel model = service.load(orderId);
@@ -64,12 +65,12 @@ class SaleDocumentServiceTest {
         assertThat(model.lines()).extracting(SaleDocumentModel.Line::description)
                 .containsExactly("Second", "First");
         assertThat(model.lines().get(0).discount()).isEqualByComparingTo("1.2500");
-        assertThat(model.payments()).extracting(SaleDocumentModel.Payment::method).containsExactly("CASH");
+        assertThat(model.payments()).isEmpty();
         assertThat(model.total()).isEqualByComparingTo("30.1234");
         assertThat(model.paid()).isEqualByComparingTo("20.0123");
         assertThat(model.orderDiscountPercent()).isEqualByComparingTo("5.5000");
         verify(jdbc).queryForMap(anyString(), any(Object[].class));
-        verify(jdbc, org.mockito.Mockito.times(2)).query(anyString(), any(RowMapper.class), any(Object[].class));
+        verify(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
         verifyNoMoreInteractions(jdbc);
     }
 
@@ -84,7 +85,7 @@ class SaleDocumentServiceTest {
         service.load(orderId);
 
         verify(jdbc).queryForMap(anyString(), any(Object[].class));
-        verify(jdbc, org.mockito.Mockito.times(2)).query(anyString(), any(RowMapper.class), any(Object[].class));
+        verify(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
         verifyNoMoreInteractions(jdbc);
     }
 

@@ -1,3 +1,4 @@
+#Requires -Version 7.2
 [CmdletBinding()]
 param(
     [string]$Database = $(if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { 'distribuidora' }),
@@ -22,11 +23,11 @@ $pgBin = $env:PG_BIN
 $pgDump = if ($pgBin) { Join-Path $pgBin 'pg_dump.exe' } else { (Get-Command pg_dump -ErrorAction Stop).Source }
 if (-not (Test-Path -LiteralPath $pgDump)) { throw "No se encontró pg_dump: $pgDump" }
 
+$OutputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputPath) | Out-Null
 $previousPassword = $env:PGPASSWORD
 try {
     if ($dbPassword) { $env:PGPASSWORD = $dbPassword }
-    else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
     $start = [Diagnostics.ProcessStartInfo]::new($pgDump)
     $start.UseShellExecute = $false
     $start.RedirectStandardOutput = $true
@@ -42,32 +43,37 @@ try {
 
 if ($ExternalOutputDirectory) {
     $externalPath = Join-Path $ExternalOutputDirectory (Split-Path -Leaf $OutputPath)
+    $externalPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($externalPath)
+    if ($externalPath -eq $OutputPath) { throw 'La copia externa debe ubicarse en otro directorio.' }
     New-Item -ItemType Directory -Force -Path $ExternalOutputDirectory | Out-Null
-    Copy-Item -LiteralPath $OutputPath -Destination $externalPath -Force
-    $localHash = (Get-FileHash -LiteralPath $OutputPath -Algorithm SHA256).Hash
-    $externalHash = (Get-FileHash -LiteralPath $externalPath -Algorithm SHA256).Hash
-    if ($localHash -ne $externalHash) {
-        Remove-Item -LiteralPath $externalPath -Force -ErrorAction SilentlyContinue
-        throw 'La copia externa no coincide con el backup cifrado local.'
-    }
-    $null = Test-BackupArchive -InputPath $externalPath
+    $temporaryCopy = "$externalPath.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        [IO.File]::Copy($OutputPath, $temporaryCopy, $false)
+        if ((Get-FileHash -LiteralPath $OutputPath).Hash -ne (Get-FileHash -LiteralPath $temporaryCopy).Hash) {
+            throw 'La copia externa no coincide con el backup cifrado local.'
+        }
+        $null = Test-BackupArchive -InputPath $temporaryCopy
+        [IO.File]::Move($temporaryCopy, $externalPath, $true)
+    } finally { [IO.File]::Delete($temporaryCopy) }
     Write-Output "Copia cifrada verificada: $externalPath"
 }
 
 if (-not $SkipRetention) {
     $retentionDirectories = @((Split-Path -Parent $OutputPath))
     if ($ExternalOutputDirectory) { $retentionDirectories += $ExternalOutputDirectory }
+    $backupName = '^{0}-\d{{8}}-\d{{6}}\.dcbak$' -f [regex]::Escape($Database)
     foreach ($retentionDirectory in ($retentionDirectories | Select-Object -Unique)) {
-    $files = @(Get-ChildItem -LiteralPath $retentionDirectory -Filter '*.dcbak' -File | Sort-Object LastWriteTime -Descending)
-    $keep = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $dailyCutoff = (Get-Date).Date.AddDays(-1)
-    $files | Where-Object LastWriteTime -ge $dailyCutoff | Group-Object { $_.LastWriteTime.ToString('yyyy-MM-dd') } |
-        ForEach-Object { $null = $keep.Add($_.Group[0].FullName) }
-    $monthlyCutoff = (Get-Date -Day 1).Date.AddMonths(-11)
-    $files | Where-Object LastWriteTime -ge $monthlyCutoff | Group-Object { $_.LastWriteTime.ToString('yyyy-MM') } |
-        ForEach-Object { $null = $keep.Add($_.Group[0].FullName) }
-    foreach ($file in $files) {
-        if (-not $keep.Contains($file.FullName)) { Remove-Item -LiteralPath $file.FullName -Force }
-    }
+        $files = @(Get-ChildItem -LiteralPath $retentionDirectory -Filter '*.dcbak' -File |
+            Where-Object Name -CMatch $backupName | Sort-Object LastWriteTime -Descending)
+        $keep = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $dailyCutoff = (Get-Date).Date.AddDays(-6)
+        $files | Where-Object LastWriteTime -ge $dailyCutoff | Group-Object { $_.LastWriteTime.ToString('yyyy-MM-dd') } |
+            ForEach-Object { $null = $keep.Add($_.Group[0].FullName) }
+        $monthlyCutoff = (Get-Date -Day 1).Date.AddMonths(-11)
+        $files | Where-Object LastWriteTime -ge $monthlyCutoff | Group-Object { $_.LastWriteTime.ToString('yyyy-MM') } |
+            ForEach-Object { $null = $keep.Add($_.Group[0].FullName) }
+        foreach ($file in $files) {
+            if (-not $keep.Contains($file.FullName)) { Remove-Item -LiteralPath $file.FullName -Force }
+        }
     }
 }

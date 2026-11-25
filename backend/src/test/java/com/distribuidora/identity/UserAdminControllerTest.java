@@ -145,7 +145,7 @@ class UserAdminControllerTest {
             .andExpect(status().isNoContent());
 
         verify(service).changeRole(userId, "SELLER");
-        assertEquals("hasAuthority('ADMIN_ALL')", UserAdminController.class
+        assertEquals("hasAuthority('ADMIN_ALL') and hasAuthority('USER_MANAGE')", UserAdminController.class
             .getAnnotation(PreAuthorize.class).value());
     }
 }

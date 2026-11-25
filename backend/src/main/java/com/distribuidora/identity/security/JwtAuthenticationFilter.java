@@ -9,6 +9,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,6 +26,8 @@ import java.util.UUID;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
     private final JwtService jwtService;
     private final UserAccountRepository users;
 
@@ -43,7 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UserAccount user = users.findById(userId).orElse(null);
                 Object tokenVersion = claims.get("sessionVersion");
                 if (user == null || user.getStatus() != UserStatus.ACTIVE
-                    || !(tokenVersion instanceof Number number) || user.getVersion() != number.longValue()) {
+                    || !(tokenVersion instanceof Number number) || user.getSessionVersion() != number.longValue()) {
                     throw new IllegalArgumentException("Invalid or revoked session");
                 }
                 Collection<SimpleGrantedAuthority> authorities = authorities(claims);
@@ -52,7 +56,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-            } catch (JwtException | IllegalArgumentException ignored) {
+            } catch (JwtException | IllegalArgumentException exception) {
+                log.debug("Rejected JWT authentication on {} {}: {}",
+                    request.getMethod(), request.getRequestURI(), exception.getClass().getSimpleName());
                 SecurityContextHolder.clearContext();
             }
         }

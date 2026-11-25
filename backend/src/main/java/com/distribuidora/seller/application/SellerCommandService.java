@@ -2,6 +2,8 @@ package com.distribuidora.seller.application;
 
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -9,8 +11,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,11 +44,19 @@ public class SellerCommandService {
     private final JdbcTemplate jdbc;
     private final AuditService audit;
     private final CurrentUserAccess currentUser;
+    private final SellerQueryService queries;
+
+    @Autowired
+    public SellerCommandService(JdbcTemplate jdbc, AuditService audit, CurrentUserAccess currentUser,
+                                SellerQueryService queries) {
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.audit = Objects.requireNonNull(audit, "audit");
+        this.currentUser = Objects.requireNonNull(currentUser, "currentUser");
+        this.queries = Objects.requireNonNull(queries, "queries");
+    }
 
     public SellerCommandService(JdbcTemplate jdbc, AuditService audit, CurrentUserAccess currentUser) {
-        this.jdbc = jdbc;
-        this.audit = audit;
-        this.currentUser = currentUser;
+        this(jdbc, audit, currentUser, new SellerQueryService(jdbc));
     }
 
     @Transactional
@@ -54,17 +67,24 @@ public class SellerCommandService {
 
         UUID userId = request.userId();
         String displayName = request.displayName().trim();
-
-        boolean userExists = Boolean.TRUE.equals(
-            jdbc.queryForObject("select exists(select 1 from identity.users where id = ?)", Boolean.class, userId)
-        );
-        if (!userExists) {
-            throw new EmptyResultDataAccessException("El usuario no existe", 1);
+        if (displayName.length() > 160) {
+            throw new IllegalArgumentException("displayName no puede superar los 160 caracteres");
         }
 
-        String userStatus = jdbc.queryForObject("select status from identity.users where id = ?", String.class, userId);
+        String userStatus;
+        try {
+            userStatus = jdbc.queryForObject("select status from identity.users where id = ? for update", String.class, userId);
+        } catch (EmptyResultDataAccessException missing) {
+            throw new EmptyResultDataAccessException("El usuario no existe", 1);
+        }
         if ("BLOCKED".equalsIgnoreCase(userStatus) || "DISABLED".equalsIgnoreCase(userStatus)) {
             throw new IllegalStateException("No se puede crear un perfil de vendedor para un usuario inactivo o bloqueado");
+        }
+        boolean isAdmin = Boolean.TRUE.equals(jdbc.queryForObject(
+            "select exists(select 1 from identity.user_roles ur join identity.roles r on r.id = ur.role_id where ur.user_id = ? and r.code = 'ADMIN')",
+            Boolean.class, userId));
+        if (isAdmin) {
+            throw new IllegalStateException("Un usuario ADMIN no puede tener perfil de vendedor");
         }
 
         boolean alreadyHasProfile = Boolean.TRUE.equals(
@@ -89,13 +109,19 @@ public class SellerCommandService {
         UUID sellerId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
 
-        jdbc.update(
-            "insert into seller.seller_profiles(id, user_id, display_name, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
-            sellerId, userId, displayName, now
-        );
+        try {
+            jdbc.update(
+                "insert into seller.seller_profiles(id, user_id, display_name, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
+                sellerId, userId, displayName, now
+            );
+        } catch (DuplicateKeyException e) {
+            throw new IllegalStateException("El usuario ya tiene un perfil de vendedor asignado", e);
+        }
+        jdbc.update("update identity.users set session_version = session_version + 1, version = version + 1, updated_at = ? where id = ?", now, userId);
+        jdbc.update("update identity.refresh_tokens set revoked_at = ? where user_id = ? and revoked_at is null", now, userId);
 
-        audit.record(
-            actorId(),
+        audit.recordWithinTransaction(
+            currentUser.actorIdOrSystem(),
             "SELLER_CREATE",
             "SELLER",
             sellerId.toString(),
@@ -112,6 +138,11 @@ public class SellerCommandService {
             throw new IllegalArgumentException("displayName es obligatorio");
         }
 
+        String displayName = request.displayName().trim();
+        if (displayName.length() > 160) {
+            throw new IllegalArgumentException("displayName no puede superar los 160 caracteres");
+        }
+
         boolean exists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from seller.seller_profiles where id = ?)", Boolean.class, id)
         );
@@ -119,11 +150,10 @@ public class SellerCommandService {
             throw new EmptyResultDataAccessException("El perfil de vendedor no existe", 1);
         }
 
-        String displayName = request.displayName().trim();
         jdbc.update("update seller.seller_profiles set display_name = ? where id = ?", displayName, id);
 
-        audit.record(
-            actorId(),
+        audit.recordWithinTransaction(
+            currentUser.actorIdOrSystem(),
             "SELLER_UPDATE",
             "SELLER",
             id.toString(),
@@ -138,19 +168,28 @@ public class SellerCommandService {
             throw new IllegalArgumentException("status debe ser ACTIVE o INACTIVE");
         }
 
-        int rows = jdbc.update("update seller.seller_profiles set status = ? where id = ?", status, id);
-        if (rows == 0) {
+        Map<String, Object> existing;
+        try {
+            existing = jdbc.queryForMap("select user_id, status from seller.seller_profiles where id = ? for update", id);
+        } catch (EmptyResultDataAccessException missing) {
             throw new EmptyResultDataAccessException("El perfil de vendedor no existe", 1);
         }
 
-        audit.record(
-            actorId(),
-            "SELLER_STATUS",
-            "SELLER",
-            id.toString(),
-            "SUCCESS",
-            Map.of("status", status)
-        );
+        if (!status.equals(existing.get("status"))) {
+            jdbc.update("update seller.seller_profiles set status = ? where id = ?", status, id);
+            Timestamp now = Timestamp.from(Instant.now());
+            UUID userId = (UUID) existing.get("user_id");
+            jdbc.update("update identity.users set session_version = session_version + 1, version = version + 1, updated_at = ? where id = ?", now, userId);
+            jdbc.update("update identity.refresh_tokens set revoked_at = ? where user_id = ? and revoked_at is null", now, userId);
+            audit.recordWithinTransaction(
+                currentUser.actorIdOrSystem(),
+                "SELLER_STATUS",
+                "SELLER",
+                id.toString(),
+                "SUCCESS",
+                Map.of("status", status)
+            );
+        }
     }
 
     @Transactional
@@ -164,35 +203,11 @@ public class SellerCommandService {
     }
 
     public Optional<UUID> findSellerIdByUserId(UUID userId) {
-        List<UUID> ids = jdbc.query(
-            "select id from seller.seller_profiles where user_id = ?",
-            (rs, i) -> rs.getObject(1, UUID.class),
-            userId
-        );
-        return ids.isEmpty() ? Optional.empty() : Optional.of(ids.getFirst());
+        return queries.findSellerIdByUserId(userId);
     }
 
     public Optional<SellerView> findSellerById(UUID id) {
-        List<SellerView> sellers = jdbc.query("""
-            select sp.id, sp.user_id as "userId", sp.display_name as "displayName",
-                   u.email, sp.status, sp.created_at as "createdAt",
-                   (select count(*) from customer.customers c where c.seller_id = sp.id) as "assignedCustomersCount"
-            from seller.seller_profiles sp
-            join identity.users u on u.id = sp.user_id
-            where sp.id = ?
-            """,
-            (rs, i) -> new SellerView(
-                rs.getObject("id", UUID.class),
-                rs.getObject("userId", UUID.class),
-                rs.getString("displayName"),
-                rs.getString("email"),
-                rs.getString("status"),
-                rs.getTimestamp("createdAt").toInstant(),
-                rs.getLong("assignedCustomersCount")
-            ),
-            id
-        );
-        return sellers.isEmpty() ? Optional.empty() : Optional.of(sellers.getFirst());
+        return queries.findSellerById(id);
     }
 
     @Transactional
@@ -202,6 +217,14 @@ public class SellerCommandService {
         }
         if (request.sourceSellerId().equals(request.targetSellerId())) {
             throw new IllegalArgumentException("El vendedor origen y el vendedor destino no pueden ser el mismo");
+        }
+        if (request.customerIds() != null) {
+            if (request.customerIds().isEmpty()) {
+                throw new IllegalArgumentException("customerIds no puede estar vacío; omitilo para reasignar toda la cartera");
+            }
+            if (request.customerIds().size() > 1000 || request.customerIds().stream().anyMatch(Objects::isNull)) {
+                throw new IllegalArgumentException("customerIds admite entre 1 y 1000 identificadores válidos");
+            }
         }
 
         boolean sourceExists = Boolean.TRUE.equals(
@@ -218,52 +241,76 @@ public class SellerCommandService {
             throw new EmptyResultDataAccessException("El vendedor destino no existe", 1);
         }
 
-        String targetStatus = jdbc.queryForObject("select status from seller.seller_profiles where id = ?", String.class, request.targetSellerId());
+        String targetStatus = jdbc.queryForObject("select status from seller.seller_profiles where id = ? for share", String.class, request.targetSellerId());
         if (!"ACTIVE".equalsIgnoreCase(targetStatus)) {
             throw new IllegalStateException("El vendedor destino debe estar activo");
         }
 
-        int reassignedCustomers;
-        if (request.customerIds() == null || request.customerIds().isEmpty()) {
-            reassignedCustomers = jdbc.update(
-                "update customer.customers set seller_id = ? where seller_id = ?",
-                request.targetSellerId(), request.sourceSellerId()
-            );
-        } else {
-            String placeholders = String.join(",", java.util.Collections.nCopies(request.customerIds().size(), "?"));
-            List<Object> params = new java.util.ArrayList<>();
-            params.add(request.targetSellerId());
-            params.add(request.sourceSellerId());
-            params.addAll(request.customerIds());
-            reassignedCustomers = jdbc.update(
-                "update customer.customers set seller_id = ? where seller_id = ? and id in (" + placeholders + ")",
-                params.toArray()
-            );
-        }
-
+        boolean hasCustomerFilter = request.customerIds() != null && !request.customerIds().isEmpty();
         int reassignedOrders = 0;
         boolean reassignOrders = request.reassignPendingOrders() == null || Boolean.TRUE.equals(request.reassignPendingOrders());
+        // Canonical lock order: lock and update orders.orders before customer.customers, each ordered by id.
         if (reassignOrders) {
-            if (request.customerIds() == null || request.customerIds().isEmpty()) {
-                reassignedOrders = jdbc.update(
-                    "update orders.orders set seller_id = ? where seller_id = ? and status = 'CONFIRMED'",
-                    request.targetSellerId(), request.sourceSellerId()
-                );
+            if (!hasCustomerFilter) {
+                reassignedOrders = jdbc.update("""
+                    with locked as (
+                        select id from orders.orders
+                        where seller_id = ? and status = 'CONFIRMED'
+                        order by id for update
+                    )
+                    update orders.orders o set seller_id = ?
+                    from locked where o.id = locked.id
+                    """, request.sourceSellerId(), request.targetSellerId());
             } else {
-                String placeholders = String.join(",", java.util.Collections.nCopies(request.customerIds().size(), "?"));
-                List<Object> params = new java.util.ArrayList<>();
-                params.add(request.targetSellerId());
+                String placeholders = String.join(",", Collections.nCopies(request.customerIds().size(), "?"));
+                List<Object> params = new ArrayList<>();
                 params.add(request.sourceSellerId());
                 params.addAll(request.customerIds());
-                reassignedOrders = jdbc.update(
-                    "update orders.orders set seller_id = ? where seller_id = ? and status = 'CONFIRMED' and customer_id in (" + placeholders + ")",
-                    params.toArray()
-                );
+                params.add(request.targetSellerId());
+                reassignedOrders = jdbc.update("""
+                    with locked as (
+                        select id from orders.orders
+                        where seller_id = ? and status = 'CONFIRMED' and customer_id in (""" + placeholders + """
+                        )
+                        order by id for update
+                    )
+                    update orders.orders o set seller_id = ?
+                    from locked where o.id = locked.id
+                    """, params.toArray());
             }
         }
 
-        audit.record(
-            actorId(),
+        int reassignedCustomers;
+        if (!hasCustomerFilter) {
+            reassignedCustomers = jdbc.update("""
+                with locked as (
+                    select id from customer.customers
+                    where seller_id = ?
+                    order by id for update
+                )
+                update customer.customers c set seller_id = ?
+                from locked where c.id = locked.id
+                """, request.sourceSellerId(), request.targetSellerId());
+        } else {
+            String placeholders = String.join(",", Collections.nCopies(request.customerIds().size(), "?"));
+            List<Object> params = new ArrayList<>();
+            params.add(request.sourceSellerId());
+            params.addAll(request.customerIds());
+            params.add(request.targetSellerId());
+            reassignedCustomers = jdbc.update("""
+                with locked as (
+                    select id from customer.customers
+                    where seller_id = ? and id in (""" + placeholders + """
+                    )
+                    order by id for update
+                )
+                update customer.customers c set seller_id = ?
+                from locked where c.id = locked.id
+                """, params.toArray());
+        }
+
+        audit.recordWithinTransaction(
+            currentUser.actorIdOrSystem(),
             "SELLER_CUSTOMER_REASSIGNMENT",
             "SELLER",
             request.targetSellerId().toString(),
@@ -289,6 +336,9 @@ public class SellerCommandService {
         if (request == null || request.targetSellerId() == null || request.orderIds() == null || request.orderIds().isEmpty()) {
             throw new IllegalArgumentException("targetSellerId y orderIds son obligatorios");
         }
+        if (request.orderIds().size() > 1000 || request.orderIds().stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("orderIds admite entre 1 y 1000 identificadores válidos");
+        }
 
         boolean targetExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from seller.seller_profiles where id = ?)", Boolean.class, request.targetSellerId())
@@ -297,7 +347,7 @@ public class SellerCommandService {
             throw new EmptyResultDataAccessException("El vendedor destino no existe", 1);
         }
 
-        String targetStatus = jdbc.queryForObject("select status from seller.seller_profiles where id = ?", String.class, request.targetSellerId());
+        String targetStatus = jdbc.queryForObject("select status from seller.seller_profiles where id = ? for share", String.class, request.targetSellerId());
         if (!"ACTIVE".equalsIgnoreCase(targetStatus)) {
             throw new IllegalStateException("El vendedor destino debe estar activo");
         }
@@ -306,17 +356,25 @@ public class SellerCommandService {
         if (!onlyPending) {
             throw new IllegalArgumentException("Solo se pueden reasignar pedidos CONFIRMED");
         }
-        String placeholders = String.join(",", java.util.Collections.nCopies(request.orderIds().size(), "?"));
-        List<Object> params = new java.util.ArrayList<>();
+        String placeholders = String.join(",", Collections.nCopies(request.orderIds().size(), "?"));
+        List<Object> params = new ArrayList<>(request.orderIds());
         params.add(request.targetSellerId());
-        params.addAll(request.orderIds());
 
-        String sql = "update orders.orders set seller_id = ? where id in (" + placeholders + ") and status = 'CONFIRMED'";
+        String sql = """
+            with locked as (
+                select id from orders.orders
+                where id in (""" + placeholders + """
+                ) and status = 'CONFIRMED'
+                order by id for update
+            )
+            update orders.orders o set seller_id = ?
+            from locked where o.id = locked.id
+            """;
 
         int reassignedOrders = jdbc.update(sql, params.toArray());
 
-        audit.record(
-            actorId(),
+        audit.recordWithinTransaction(
+            currentUser.actorIdOrSystem(),
             "SELLER_ORDER_REASSIGNMENT",
             "SELLER",
             request.targetSellerId().toString(),
@@ -331,15 +389,5 @@ public class SellerCommandService {
             request.targetSellerId(),
             reassignedOrders
         );
-    }
-
-    private UUID actorId() {
-        if (currentUser != null) {
-            try {
-                return currentUser.userId();
-            } catch (Exception ignored) {
-            }
-        }
-        return UUID.fromString("00000000-0000-0000-0000-000000000000");
     }
 }

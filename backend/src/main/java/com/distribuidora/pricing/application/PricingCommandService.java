@@ -4,7 +4,6 @@ import com.distribuidora.audit.application.AuditService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import com.distribuidora.shared.security.CurrentUserAccess;
 
 @Service
 public class PricingCommandService {
@@ -54,7 +54,7 @@ public class PricingCommandService {
         int copied = follows.copyDefaultPricesIntoList(id);
         Map<String, Object> details = new HashMap<>(Map.of("code", normalizedCode));
         if (copied > 0) details.put("copiedFromDefault", copied);
-        audit.record(actorId(), "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS", details);
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRICELIST_CREATE", "PRICE_LIST", id.toString(), "SUCCESS", details);
         return id;
     }
 
@@ -99,9 +99,9 @@ public class PricingCommandService {
         if (productIds != null && productIds.size() > 1000) {
             throw new IllegalArgumentException("Se pueden confirmar hasta 1000 productos por vez");
         }
-        jdbc.queryForObject("select id from catalog.price_lists where id = ?", UUID.class, listId);
-        int confirmed = follows.confirm(listId, productIds, actorId(), timestamp());
-        audit.record(actorId(), "PRICELIST_REVIEW_CONFIRM", "PRICE_LIST", listId.toString(), "SUCCESS",
+        jdbc.queryForObject("select id from catalog.price_lists where id = ? for share", UUID.class, listId);
+        int confirmed = follows.confirm(listId, productIds, CurrentUserAccess.resolveActorIdOrSystem(), timestamp());
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRICELIST_REVIEW_CONFIRM", "PRICE_LIST", listId.toString(), "SUCCESS",
             Map.of("confirmed", confirmed, "scope", productIds == null || productIds.isEmpty() ? "ALL_PENDING" : "SELECTED"));
         return confirmed;
     }
@@ -120,7 +120,7 @@ public class PricingCommandService {
             normalizedName, timestamp(), listId) == 0) {
             throw new EmptyResultDataAccessException(1);
         }
-        audit.record(actorId(), "PRICELIST_UPDATE", "PRICE_LIST", listId.toString(), "SUCCESS",
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRICELIST_UPDATE", "PRICE_LIST", listId.toString(), "SUCCESS",
             Map.of("name", normalizedName));
     }
 
@@ -142,7 +142,7 @@ public class PricingCommandService {
         int copied = "ACTIVE".equals(status) ? follows.copyDefaultPricesIntoList(listId) : 0;
         Map<String, Object> details = new HashMap<>(Map.of("status", status));
         if (copied > 0) details.put("copiedFromDefault", copied);
-        audit.record(actorId(), "PRICELIST_STATUS", "PRICE_LIST", listId.toString(), "SUCCESS", details);
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRICELIST_STATUS", "PRICE_LIST", listId.toString(), "SUCCESS", details);
     }
 
     @Transactional
@@ -168,7 +168,7 @@ public class PricingCommandService {
         validatePrice(price);
         jdbc.queryForObject("select id from catalog.products where id = ? for update", UUID.class, productId);
         String listStatus = jdbc.queryForObject(
-            "select status from catalog.price_lists where id = ?", String.class, listId);
+            "select status from catalog.price_lists where id = ? for share", String.class, listId);
         if (!"ACTIVE".equals(listStatus)) {
             throw new IllegalStateException("La lista de precios no está activa");
         }
@@ -202,7 +202,7 @@ public class PricingCommandService {
         } else if (follows.stopFollowing(listId, productId)) {
             details.put("stoppedFollowingDefault", true);
         }
-        audit.record(actorId(), "PRODUCT_PRICE_UPDATE", "PRODUCT_PRICE", listId + ":" + productId, "SUCCESS", details);
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRODUCT_PRICE_UPDATE", "PRODUCT_PRICE", listId + ":" + productId, "SUCCESS", details);
     }
 
     @Transactional
@@ -216,7 +216,7 @@ public class PricingCommandService {
             throw new IllegalArgumentException("Solo se pueden cancelar precios con vigencia futura");
         }
         jdbc.queryForObject("select id from catalog.products where id = ? for update", UUID.class, productId);
-        jdbc.queryForObject("select id from catalog.price_lists where id = ?", UUID.class, listId);
+        jdbc.queryForObject("select id from catalog.price_lists where id = ? for share", UUID.class, listId);
         int deleted = jdbc.update("""
             delete from catalog.product_price_history
             where price_list_id = ? and product_id = ? and effective_on = ?
@@ -230,7 +230,7 @@ public class PricingCommandService {
         } else if (follows.stopFollowing(listId, productId)) {
             details.put("stoppedFollowingDefault", true);
         }
-        audit.record(actorId(), "PRODUCT_PRICE_SCHEDULE_CANCEL", "PRODUCT_PRICE",
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRODUCT_PRICE_SCHEDULE_CANCEL", "PRODUCT_PRICE",
             listId + ":" + productId, "SUCCESS", details);
     }
 
@@ -251,14 +251,6 @@ public class PricingCommandService {
     private void requireId(UUID id, String field) {
         if (id == null) {
             throw new IllegalArgumentException(field + " es obligatorio");
-        }
-    }
-
-    private UUID actorId() {
-        try {
-            return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName());
-        } catch (Exception exception) {
-            throw new IllegalArgumentException("El actor autenticado no tiene un UUID válido", exception);
         }
     }
 

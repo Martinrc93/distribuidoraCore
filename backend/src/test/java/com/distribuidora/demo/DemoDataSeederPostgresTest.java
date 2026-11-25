@@ -9,9 +9,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import com.distribuidora.testinfra.SharedPostgres;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -26,11 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@Testcontainers
 class DemoDataSeederPostgresTest {
     private static final ZoneId ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    private static final SharedPostgres.Database POSTGRES = SharedPostgres.databaseFor(DemoDataSeederPostgresTest.class);
 
     @Test
     void refreshesSeedDatesWithoutDuplicatesOrChangesToRealActivity() {
@@ -40,11 +36,12 @@ class DemoDataSeederPostgresTest {
         var jdbc = new JdbcTemplate(dataSource);
         var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         var passwordEncoder = mock(PasswordEncoder.class);
-        when(passwordEncoder.encode("secret")).thenReturn("hash");
+        when(passwordEncoder.encode("demo-password")).thenReturn("hash");
         var originalClock = Clock.fixed(Instant.parse("2026-10-02T01:00:00Z"), ZoneOffset.UTC);
-        var seeder = new DemoDataSeeder(jdbc, passwordEncoder, true, "secret", originalClock);
+        var seeder = new DemoDataSeeder(jdbc, passwordEncoder, true, "demo-password", originalClock);
         transaction.executeWithoutResult(status -> seeder.run(new DefaultApplicationArguments()));
         assertDateWindow(jdbc, LocalDate.of(2026, 10, 1));
+        assertThat(jdbc.queryForObject("select count(*) from sale.sales s join orders.orders o on o.id = s.order_id where s.sale_number <> o.order_number", Integer.class)).isZero();
         assertReferenceData(jdbc);
         assertPurchasingData(jdbc, LocalDate.of(2026, 10, 1));
 
@@ -78,7 +75,7 @@ class DemoDataSeederPostgresTest {
         jdbc.update("update catalog.products set category_id = null, brand_id = null");
         jdbc.update("update customer.customers set zone = null");
 
-        UUID seedSaleId = jdbc.queryForObject("select id from sale.sales where sale_number = 'V-000003'", UUID.class);
+        UUID seedSaleId = jdbc.queryForObject("select id from sale.sales where legacy_sale_number = 'V-000003'", UUID.class);
         UUID customerId = jdbc.queryForObject("select customer_id from sale.sales where id = ?", UUID.class, seedSaleId);
         UUID realOrderId = UUID.randomUUID();
         UUID realSaleId = UUID.randomUUID();
@@ -92,7 +89,7 @@ class DemoDataSeederPostgresTest {
             """, realOrderId, realDate);
         jdbc.update("""
             insert into sale.sales(id, sale_number, order_id, customer_id, status, total, paid, created_at, account_customer_id)
-            values (?, 'SAL-REAL', ?, ?, 'CONFIRMED', 10, 10, ?, ?)
+            values (?, 'V-00001001', ?, ?, 'CONFIRMED', 10, 0, ?, ?)
             """, realSaleId, realOrderId, customerId, realDate, customerId);
         jdbc.update("""
             insert into payment.payments(id, sale_id, customer_id, amount, method, created_at)
@@ -113,12 +110,12 @@ class DemoDataSeederPostgresTest {
 
         // Simulate the old seed's historical dates before using the explicit refresh command.
         jdbc.update("update orders.orders set created_at = created_at - interval '90 days' where legacy_order_number like 'PED-%'");
-        jdbc.update("update sale.sales set created_at = created_at - interval '90 days' where sale_number like 'V-%'");
+        jdbc.update("update sale.sales set created_at = created_at - interval '90 days' where legacy_sale_number ~ '^V-[0-9]{6}$'");
         jdbc.update("update payment.payments set created_at = created_at - interval '90 days' where id <> ?", extraPaymentId);
         jdbc.update("update customer.account_ledger set created_at = created_at - interval '90 days' where id <> ?", extraLedgerId);
         jdbc.update("update inventory.stock_movements set created_at = created_at - interval '90 days' where movement_type = 'SALE'");
         var newClock = Clock.fixed(Instant.parse("2026-11-02T15:00:00Z"), ZoneOffset.UTC);
-        var refresher = new DemoDataSeeder(jdbc, passwordEncoder, true, "secret", newClock);
+        var refresher = new DemoDataSeeder(jdbc, passwordEncoder, true, "demo-password", newClock);
         var refreshArgs = new DefaultApplicationArguments("--refresh-demo-dates");
         transaction.executeWithoutResult(status -> refresher.run(refreshArgs));
         transaction.executeWithoutResult(status -> refresher.run(refreshArgs));
@@ -233,7 +230,7 @@ class DemoDataSeederPostgresTest {
     }
 
     private void assertDateWindow(JdbcTemplate jdbc, LocalDate today) {
-        var dates = jdbc.queryForList("select created_at from sale.sales where sale_number like 'V-%'", Timestamp.class)
+        var dates = jdbc.queryForList("select created_at from sale.sales where legacy_sale_number ~ '^V-[0-9]{6}$'", Timestamp.class)
             .stream().map(date -> date.toInstant().atZone(ZONE).toLocalDate()).distinct().sorted().toList();
         assertThat(dates).containsExactlyElementsOf(today.minusDays(30).datesUntil(today.plusDays(31)).toList());
         assertThat(jdbc.queryForObject("""

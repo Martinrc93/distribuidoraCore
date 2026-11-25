@@ -1,6 +1,6 @@
 package com.distribuidora.document.rendering;
 
-import com.distribuidora.purchasing.application.SupplierOrderService.OrderDocument;
+import com.distribuidora.purchasing.application.SupplierOrderQueryService.OrderDocument;
 import org.openpdf.text.Document;
 import org.openpdf.text.DocumentException;
 import org.openpdf.text.Element;
@@ -10,6 +10,7 @@ import org.openpdf.text.pdf.PdfPTable;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.Locale;
@@ -21,8 +22,14 @@ import static com.distribuidora.document.rendering.PdfFormat.cell;
 @Component
 public class SupplierOrderPdfRenderer {
     public byte[] render(OrderDocument order) {
+        var output = new ByteArrayOutputStream();
+        render(order, output);
+        return output.toByteArray();
+    }
+
+    public void render(OrderDocument order, OutputStream output) {
         Document document = new Document(PageSize.A4, 36f, 36f, 36f, 36f);
-        return PdfFormat.render(document, new ByteArrayOutputStream(), doc -> {
+        PdfFormat.render(document, output, doc -> {
             try {
                 doc.add(new Paragraph("Proveedor: " + order.supplier(), NORMAL));
                 doc.add(new Paragraph("Fecha: " + PdfFormat.date(order.date()), NORMAL));

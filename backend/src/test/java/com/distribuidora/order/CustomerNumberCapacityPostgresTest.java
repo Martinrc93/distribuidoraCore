@@ -10,16 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import com.distribuidora.testinfra.SharedPostgres;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
-@Testcontainers
 class CustomerNumberCapacityPostgresTest {
     @org.junit.jupiter.api.BeforeEach void authenticate() {
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
@@ -28,7 +26,7 @@ class CustomerNumberCapacityPostgresTest {
     @org.junit.jupiter.api.AfterEach void clearAuthentication() {
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
-    @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    private static final SharedPostgres.Database POSTGRES = SharedPostgres.databaseFor(CustomerNumberCapacityPostgresTest.class);
 
     @Test void upgradesWithoutRenumberingAndPreservesLongNumbersInCreationReadsAndOrders() {
         var source = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -46,7 +44,7 @@ class CustomerNumberCapacityPostgresTest {
         Flyway.configure().dataSource(source).load().migrate();
         var commands = new CustomerCommandService(jdbc, mock(AuditService.class), new CurrentUserAccess(jdbc));
         var details = new CustomerReadService(jdbc, new CurrentUserAccess(jdbc));
-        var reads = new ReadQueryService(jdbc);
+        var reads = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
         assertThat(details.customer(smallCustomer).get("number")).isEqualTo("0001");
         assertThat(details.customer(existingCustomer).get("number")).isEqualTo("9999");
         assertThat(jdbc.queryForObject("select last_value from customer.customer_number_seq", Long.class)).isEqualTo(9999);

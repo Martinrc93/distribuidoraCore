@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.distribuidora.shared.security.CurrentUserAccess;
 
 @Service
 public class ProductCommandService {
@@ -145,7 +146,7 @@ public class ProductCommandService {
         follows.copyDefaultPricesForProduct(id);
 
         replaceSuppliers(id, input.supplierIds());
-        audit.recordWithinTransaction(actorId(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS",
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRODUCT_CREATE", "PRODUCT", id.toString(), "SUCCESS",
             Map.of("name", name, "initialStock", initialStock));
         return id;
     }
@@ -232,7 +233,15 @@ public class ProductCommandService {
             input.cost(), input.categoryId(), input.brandId(), id);
 
         UUID defaultListId = followers.isEmpty() && (input.prices() == null || input.prices().isEmpty()) ? null : follows.defaultListId();
-        if (input.prices() != null) {
+        if (input.prices() != null && !input.prices().isEmpty()) {
+            List<UUID> distinctListIds = input.prices().stream().map(ProductPriceInput::priceListId).distinct().toList();
+            String placeholders = String.join(",", java.util.Collections.nCopies(distinctListIds.size(), "?"));
+            Integer activeCount = jdbc.queryForObject(
+                "select count(*) from catalog.price_lists where id in (%s) and status = 'ACTIVE'".formatted(placeholders),
+                Integer.class, distinctListIds.toArray());
+            if (activeCount == null || activeCount != distinctListIds.size()) {
+                throw new IllegalArgumentException("Los precios solo pueden pertenecer a listas activas");
+            }
             for (ProductPriceInput priceInput : input.prices()) {
                 storeCurrentPrice(priceInput.priceListId(), id, priceInput.price());
                 if (priceInput.priceListId().equals(defaultListId)) {
@@ -247,7 +256,7 @@ public class ProductCommandService {
         }
 
         replaceSuppliers(id, input.supplierIds());
-        audit.record(actorId(), "PRODUCT_UPDATE", "PRODUCT", id.toString(), "SUCCESS", Map.of());
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRODUCT_UPDATE", "PRODUCT", id.toString(), "SUCCESS", Map.of());
     }
 
     @Transactional
@@ -256,33 +265,40 @@ public class ProductCommandService {
         if (jdbc.update("update catalog.products set status = ? where id = ?", status, id) == 0) throw new EmptyResultDataAccessException(1);
         // A reactivated product gets the default price in lists created while it was inactive.
         if ("ACTIVE".equals(status)) follows.copyDefaultPricesForProduct(id);
-        audit.record(actorId(), "PRODUCT_STATUS", "PRODUCT", id.toString(), "SUCCESS", Map.of("status", status));
+        audit.recordWithinTransaction(CurrentUserAccess.resolveActorIdOrSystem(), "PRODUCT_STATUS", "PRODUCT", id.toString(), "SUCCESS", Map.of("status", status));
     }
 
     private boolean exists(String sql, Object... args) { return Boolean.TRUE.equals(jdbc.queryForObject(sql, Boolean.class, args)); }
     private void validateSuppliers(List<UUID> supplierIds) {
-        if (supplierIds == null) return;
-        for (UUID supplierId : supplierIds) {
-            if (!exists("select exists(select 1 from supplier.suppliers where id = ?)", supplierId)) {
-                throw new IllegalArgumentException("Uno de los proveedores seleccionados no existe");
-            }
+        if (supplierIds == null || supplierIds.isEmpty()) return;
+        String placeholders = String.join(",", java.util.Collections.nCopies(supplierIds.size(), "?"));
+        Integer count = jdbc.queryForObject(
+            "select count(*) from supplier.suppliers where id in (" + placeholders + ")",
+            Integer.class, supplierIds.toArray());
+        if (count == null || count != supplierIds.size()) {
+            throw new IllegalArgumentException("Uno de los proveedores seleccionados no existe");
         }
     }
 
     private void replaceSuppliers(UUID productId, List<UUID> supplierIds) {
         if (supplierIds == null) return;
         jdbc.update("delete from catalog.product_suppliers where product_id = ?", productId);
-        for (UUID supplierId : supplierIds) jdbc.update(
-            "insert into catalog.product_suppliers(product_id, supplier_id) values (?, ?)", productId, supplierId);
+        if (supplierIds.isEmpty()) return;
+        jdbc.batchUpdate(
+            "insert into catalog.product_suppliers(product_id, supplier_id) values (?, ?)",
+            supplierIds.stream().map(supplierId -> new Object[]{productId, supplierId}).toList());
     }
     private void validateCreatePrices(List<ProductPriceInput> prices) {
         if (prices == null || prices.isEmpty()) {
             throw new IllegalArgumentException("Se requiere al menos un precio para una lista activa");
         }
-        for (ProductPriceInput price : prices) {
-            if (!exists("select exists(select 1 from catalog.price_lists where id = ? and status = 'ACTIVE')", price.priceListId())) {
-                throw new IllegalArgumentException("Los precios iniciales solo pueden pertenecer a listas activas");
-            }
+        List<UUID> listIds = prices.stream().map(ProductPriceInput::priceListId).toList();
+        String placeholders = String.join(",", java.util.Collections.nCopies(listIds.size(), "?"));
+        Integer count = jdbc.queryForObject(
+            "select count(*) from catalog.price_lists where id in (" + placeholders + ") and status = 'ACTIVE'",
+            Integer.class, listIds.toArray());
+        if (count == null || count != listIds.size()) {
+            throw new IllegalArgumentException("Los precios iniciales solo pueden pertenecer a listas activas");
         }
     }
 
@@ -313,7 +329,6 @@ public class ProductCommandService {
         if (names.isEmpty()) throw new IllegalArgumentException("La marca seleccionada no existe o está inactiva");
         return names.getFirst().trim() + " " + input.description().trim();
     }
-    private UUID actorId() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch (Exception ignored) { return null; } }
     private Timestamp timestamp() { return Timestamp.from(Instant.now()); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
     private static String nullable(String value) { return blank(value) ? null : value.trim(); }

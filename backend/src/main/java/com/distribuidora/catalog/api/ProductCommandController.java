@@ -9,7 +9,13 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,24 +41,24 @@ public class ProductCommandController {
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
-    public ResponseEntity<Void> status(@PathVariable UUID id, @RequestBody StatusPayload body) {
+    public ResponseEntity<Void> status(@PathVariable UUID id, @Valid @RequestBody StatusPayload body) {
         service.setStatus(id, body.status()); return ResponseEntity.noContent().build();
     }
 
     public record ProductPricePayload(
         @NotNull UUID priceListId,
-        @NotNull @DecimalMin("0") BigDecimal price
+        @NotNull @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal price
     ) { }
 
     public record ProductPayload(
         @NotBlank @Size(max = 200) String description,
-        String category,
-        String presentation,
-        @NotNull @DecimalMin("0") BigDecimal cost,
-        @Valid List<ProductPricePayload> prices,
+        @Size(max = 100) String category,
+        @Size(max = 120) String presentation,
+        @NotNull @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal cost,
+        @Valid @Size(max = 200) List<ProductPricePayload> prices,
         @NotNull UUID categoryId,
         @NotNull UUID brandId,
-        List<@NotNull UUID> supplierIds,
+        @Size(max = 200) List<@NotNull UUID> supplierIds,
         @DecimalMin("0") @Digits(integer = 15, fraction = 4) BigDecimal initialStock,
         /** True when the user accepted the warning about lists following the default list price. */
         Boolean acknowledgeFollowers
@@ -67,6 +73,6 @@ public class ProductCommandController {
         }
     }
 
-    public record StatusPayload(String status) { }
+    public record StatusPayload(@NotBlank @jakarta.validation.constraints.Pattern(regexp = "ACTIVE|INACTIVE") String status) { }
     public record IdResponse(UUID id) { }
 }

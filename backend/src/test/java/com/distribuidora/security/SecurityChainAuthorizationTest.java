@@ -21,6 +21,8 @@ import com.distribuidora.inventory.api.InventoryCommandController;
 import com.distribuidora.inventory.application.InventoryCommandService;
 import com.distribuidora.order.api.DeliveryLifecycleController;
 import com.distribuidora.order.application.DeliveryLifecycleService;
+import com.distribuidora.settings.api.BusinessSettingsController;
+import com.distribuidora.settings.application.BusinessSettingsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -36,14 +38,19 @@ import java.util.Optional;
 import java.util.UUID;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.io.OutputStream;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -56,6 +63,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     com.distribuidora.order.api.OrderFulfillmentController.class,
     InventoryCommandController.class,
     UserAdminController.class,
+    BusinessSettingsController.class,
     com.distribuidora.identity.api.RoleAdminController.class
 })
 @Import({SecurityConfig.class, JwtAuthenticationFilter.class, JwtService.class})
@@ -90,6 +98,31 @@ class SecurityChainAuthorizationTest {
     private AccountPaymentService accountPaymentService;
 
     @MockitoBean
+    private BusinessSettingsService businessSettingsService;
+
+    @Test
+    void authenticatedUsersCanReadTheBrandButOnlyAdminsCanChangeIt() throws Exception {
+        String logoPath = "/api/settings/business-logo";
+        UserAccount user = activeUser();
+        String seller = "Bearer " + jwtService.issue(user, List.of("ORDER_CREATE"));
+        String admin = "Bearer " + jwtService.issue(user, List.of("ADMIN_ALL"));
+        when(businessSettingsService.businessLogo()).thenReturn(new byte[]{1, 2, 3});
+        when(businessSettingsService.updateBusinessLogo("AQID")).thenReturn(new byte[]{1, 2, 3});
+
+        mockMvc.perform(get(logoPath)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get(logoPath).header("Authorization", seller))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.content").value("AQID"));
+        mockMvc.perform(put(logoPath).header("Authorization", seller).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"content\":\"AQID\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(delete(logoPath).header("Authorization", seller)).andExpect(status().isForbidden());
+        mockMvc.perform(put(logoPath).header("Authorization", admin).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"content\":\"AQID\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.content").value("AQID"));
+        mockMvc.perform(delete(logoPath).header("Authorization", admin)).andExpect(status().isNoContent());
+        verify(businessSettingsService).updateBusinessLogo("AQID");
+        verify(businessSettingsService).removeBusinessLogo();
+    }
+
+    @MockitoBean
     private DeliveryLifecycleService deliveryLifecycleService;
 
     @MockitoBean
@@ -108,8 +141,10 @@ class SecurityChainAuthorizationTest {
         mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + preparation)).andExpect(status().isForbidden());
         String reviewOnly = jwtService.issue(user, List.of("ORDER_REVIEW"));
         mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + reviewOnly)).andExpect(status().isForbidden());
-        String admin = jwtService.issue(user, List.of("ADMIN_ALL"));
-        mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + admin)).andExpect(status().isNoContent());
+        String adminOnly = jwtService.issue(user, List.of("ADMIN_ALL"));
+        mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + adminOnly)).andExpect(status().isForbidden());
+        String reviewer = jwtService.issue(user, List.of("ADMIN_ALL", "ORDER_REVIEW"));
+        mockMvc.perform(post("/api/orders/{id}/review", order).header("Authorization", "Bearer " + reviewer)).andExpect(status().isNoContent());
         verify(fulfillmentService).review(order);
     }
 
@@ -175,17 +210,19 @@ class SecurityChainAuthorizationTest {
             List.of(), List.of(), BigDecimal.TEN, BigDecimal.ZERO);
         byte[] pdf = "%PDF-security-test".getBytes();
         when(documentService.load(orderId)).thenReturn(model);
-        when(a4Renderer.render(model)).thenReturn(pdf);
+        doAnswer(call -> { call.getArgument(1, OutputStream.class).write(pdf); return null; })
+            .when(a4Renderer).render(eq(model), any(OutputStream.class));
 
-        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
-                .header("Authorization", "Bearer " + token))
+        var download = mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
+                .header("Authorization", "Bearer " + token)).andReturn();
+        mockMvc.perform(asyncDispatch(download))
             .andExpect(status().isOk())
             .andExpect(content().contentType(MediaType.APPLICATION_PDF))
             .andExpect(content().bytes(pdf));
 
         verify(users).findById(user.getId());
         verify(documentService).load(orderId);
-        verify(a4Renderer).render(model);
+        verify(a4Renderer).render(eq(model), any(OutputStream.class));
     }
 
     @Test
@@ -244,13 +281,22 @@ class SecurityChainAuthorizationTest {
         mockMvc.perform(post("/api/users/{id}/block", managedUserId)
                 .header("Authorization", bearer(userManager, "USER_MANAGE")))
             .andExpect(status().isForbidden());
-
         mockMvc.perform(post("/api/users/{id}/block", adminTargetId)
                 .header("Authorization", bearer(administrator, "ADMIN_ALL")))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/users/{id}/block", adminTargetId)
+                .header("Authorization", bearer(administrator, "ADMIN_ALL", "USER_MANAGE")))
             .andExpect(status().isNoContent());
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
                 "/api/users/{id}/role", adminTargetId)
                 .header("Authorization", bearer(administrator, "ADMIN_ALL"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"ADMIN\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
+                "/api/users/{id}/role", adminTargetId)
+                .header("Authorization", bearer(administrator, "ADMIN_ALL", "USER_MANAGE"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"role\":\"ADMIN\"}"))
             .andExpect(status().isNoContent());
@@ -308,15 +354,15 @@ class SecurityChainAuthorizationTest {
             inventoryCommandService, userAdminService, roleAdminService);
     }
 
-    private String bearer(UserAccount user, String authority) {
-        return "Bearer " + jwtService.issue(user, List.of(authority));
+    private String bearer(UserAccount user, String... authorities) {
+        return "Bearer " + jwtService.issue(user, List.of(authorities));
     }
 
     private UserAccount activeUser() {
         UUID id = UUID.randomUUID();
         UserAccount user = new UserAccount("security-test@example.com", "not-used-in-this-test");
         ReflectionTestUtils.setField(user, "id", id);
-        ReflectionTestUtils.setField(user, "version", 2L);
+        ReflectionTestUtils.setField(user, "sessionVersion", 2L);
         when(users.findById(id)).thenReturn(Optional.of(user));
         return user;
     }

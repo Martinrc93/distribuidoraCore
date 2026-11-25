@@ -102,7 +102,7 @@ public class PriceListFollowService {
             select price_list_id from catalog.price_list_follows
             where product_id = ? order by price_list_id for update
             """, UUID.class, productId);
-        return ids == null ? List.of() : ids;
+        return ids;
     }
 
     /** The list gets a price of its own for the product, so it stops following the default list. */
@@ -121,7 +121,7 @@ public class PriceListFollowService {
             order by pl.code, pl.id
             """, (rs, row) -> new Follower(rs.getObject("id", UUID.class), rs.getString("code"), rs.getString("name")),
             productId);
-        return followers == null ? List.of() : followers;
+        return followers;
     }
 
     /** Never warn again for these product/list pairs; they keep following the default list. */
@@ -159,7 +159,7 @@ public class PriceListFollowService {
     public int copyDefaultPricesIntoList(UUID targetListId) {
         UUID defaultId = defaultListId();
         if (defaultId == null || defaultId.equals(targetListId)) return 0;
-        jdbc.queryForList("select id from catalog.products where status = 'ACTIVE' order by id for update", UUID.class);
+        jdbc.queryForList("select id from catalog.products where status = 'ACTIVE' order by id for share", UUID.class);
         return copy(defaultId, "t.id = ?", targetListId, "true", null);
     }
 

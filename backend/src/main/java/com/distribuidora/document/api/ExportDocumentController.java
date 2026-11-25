@@ -6,8 +6,6 @@ import com.distribuidora.document.rendering.AccountStatementModel;
 import com.distribuidora.document.rendering.AccountStatementPdfRenderer;
 import com.distribuidora.document.rendering.PriceListDocumentModel;
 import com.distribuidora.document.rendering.PriceListPdfRenderer;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.UUID;
 
@@ -37,37 +36,35 @@ public class ExportDocumentController {
 
     @GetMapping("/price-lists")
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
-    public ResponseEntity<byte[]> allPriceLists() {
-        return pdf(priceListRenderer.renderAll(priceLists.loadActiveLists()), "listas-de-precios.pdf");
+    public ResponseEntity<StreamingResponseBody> allPriceLists() {
+        var lists = priceLists.loadActiveLists();
+        return PdfDownload.attachment("listas-de-precios.pdf", output -> priceListRenderer.renderAll(lists, output));
     }
 
     /** A4 price list with current prices, optionally filtered; sellers can download it for offline use. */
     @GetMapping("/price-lists/{listId}")
     @PreAuthorize("hasAnyAuthority('ORDER_CREATE', 'ADMIN_ALL')")
-    public ResponseEntity<byte[]> priceList(@PathVariable UUID listId,
+    public ResponseEntity<StreamingResponseBody> priceList(@PathVariable UUID listId,
                                             @RequestParam(required = false) UUID categoryId,
                                             @RequestParam(required = false) UUID brandId,
                                             @RequestParam(required = false) String search) {
         PriceListDocumentModel model = priceLists.load(listId, categoryId, brandId, search);
-        return pdf(priceListRenderer.render(model), "lista-" + sanitize(model.listCode()) + ".pdf");
+        return PdfDownload.attachment("lista-" + sanitize(model.listCode()) + ".pdf",
+            output -> priceListRenderer.render(model, output));
     }
 
     /** Customer debt statement in A4 ({@code format=a4}, default) or 80 mm ticket ({@code format=ticket}). */
     @GetMapping("/customers/{customerId}/statement")
     @PreAuthorize("hasAnyAuthority('CUSTOMER_STATEMENT_EXPORT', 'ADMIN_ALL')")
-    public ResponseEntity<byte[]> statement(@PathVariable UUID customerId, @RequestParam(defaultValue = "a4") String format) {
+    public ResponseEntity<StreamingResponseBody> statement(@PathVariable UUID customerId, @RequestParam(defaultValue = "a4") String format) {
         if (!"a4".equals(format) && !"ticket".equals(format)) throw new IllegalArgumentException("format debe ser a4 o ticket");
         AccountStatementModel model = statements.load(customerId);
-        byte[] pdf = "ticket".equals(format) ? statementRenderer.renderTicket(model) : statementRenderer.renderA4(model);
-        return pdf(pdf, "estado-deuda-" + sanitize(model.customerName()) + ("ticket".equals(format) ? "-ticket" : "") + ".pdf");
-    }
-
-    private ResponseEntity<byte[]> pdf(byte[] pdf, String filename) {
-        return ResponseEntity.ok()
-            .contentType(MediaType.APPLICATION_PDF)
-            .contentLength(pdf.length)
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-            .body(pdf);
+        boolean ticket = "ticket".equals(format);
+        String filename = "estado-deuda-" + sanitize(model.customerName()) + (ticket ? "-ticket" : "") + ".pdf";
+        return PdfDownload.attachment(filename, output -> {
+            if (ticket) statementRenderer.renderTicket(model, output);
+            else statementRenderer.renderA4(model, output);
+        });
     }
 
     private String sanitize(String value) {

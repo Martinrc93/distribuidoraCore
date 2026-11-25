@@ -3,9 +3,7 @@ package com.distribuidora.inventory;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import com.distribuidora.testinfra.SharedPostgres;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -14,10 +12,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Testcontainers(disabledWithoutDocker = true)
 class SingleInventoryMigrationIntegrationTest {
-    @Container
-    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    private static final SharedPostgres.Database POSTGRES = SharedPostgres.databaseFor(SingleInventoryMigrationIntegrationTest.class);
 
     @Test
     void consolidatesBalancesAndPreservesBusinessRecordsWithoutDepotAttribution() {
@@ -55,6 +51,7 @@ class SingleInventoryMigrationIntegrationTest {
         Flyway.configure()
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .locations("classpath:db/migration")
+            .target(MigrationVersion.fromVersion("24"))
             .load()
             .migrate();
 

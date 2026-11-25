@@ -38,6 +38,7 @@ class BrandServiceTest {
         currentUser = mock(CurrentUserAccess.class);
         adminUserId = UUID.randomUUID();
         when(currentUser.userId()).thenReturn(adminUserId);
+        when(currentUser.actorIdOrSystem()).thenReturn(adminUserId);
         service = new BrandService(jdbc, audit, currentUser);
     }
 
@@ -59,6 +60,15 @@ class BrandServiceTest {
         assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("Coca Cola")))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("nombre");
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("a".repeat(101))))
+            .isInstanceOf(IllegalArgumentException.class);
+        when(jdbc.queryForObject(eq("select exists(select 1 from catalog.brands where lower(name) = ?)"), eq(Boolean.class), eq("nueva")))
+            .thenReturn(false);
+        when(jdbc.update(org.mockito.ArgumentMatchers.startsWith("insert into catalog.brands"), any(), eq("Nueva"), any(), any()))
+            .thenThrow(new org.springframework.dao.DuplicateKeyException("ux"));
+        assertThatThrownBy(() -> service.create(new CatalogAdminDtos.CreateBrandRequest("Nueva")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("nombre");
     }
 
     @Test
@@ -73,7 +83,7 @@ class BrandServiceTest {
             eq("insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)"),
             eq(brandId), eq("Coca Cola"), eq(brandId.toString()), any(Timestamp.class)
         );
-        verify(audit).record(eq(adminUserId), eq("BRAND_CREATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("BRAND_CREATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -121,7 +131,7 @@ class BrandServiceTest {
 
         verify(jdbc).update(eq("update catalog.brands set name = ? where id = ?"), eq("Pepsi"), eq(brandId));
         verify(jdbc).update(eq("update catalog.products set name = ? || ' ' || description where brand_id = ? and description is not null"), eq("Pepsi"), eq(brandId));
-        verify(audit).record(eq(adminUserId), eq("BRAND_UPDATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("BRAND_UPDATE"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
@@ -143,7 +153,7 @@ class BrandServiceTest {
         service.setStatus(brandId, "INACTIVE");
 
         verify(jdbc).update(eq("update catalog.brands set status = ? where id = ?"), eq("INACTIVE"), eq(brandId));
-        verify(audit).record(eq(adminUserId), eq("BRAND_STATUS"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
+        verify(audit).recordWithinTransaction(eq(adminUserId), eq("BRAND_STATUS"), eq("BRAND"), eq(brandId.toString()), eq("SUCCESS"), any());
     }
 
     @Test

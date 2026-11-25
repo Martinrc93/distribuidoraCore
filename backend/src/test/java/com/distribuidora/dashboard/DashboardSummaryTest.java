@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class DashboardSummaryTest {
     private JdbcTemplate jdbc;
@@ -39,7 +40,7 @@ class DashboardSummaryTest {
         jdbc.execute("create table customer.account_ledger(sale_id uuid, entry_type varchar, amount decimal(19,4))");
         jdbc.execute("create table payment.payments(sale_id uuid, method varchar, amount decimal(19,4))");
         jdbc.update("insert into seller.seller_profiles values (?, 'Lucía', 'ACTIVE'), (?, 'Lucía', 'INACTIVE')", seller, otherSeller);
-        service = new ReadQueryService(jdbc);
+        service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
     }
 
     @Test

@@ -18,7 +18,8 @@ public record SaleDocumentModel(
         BigDecimal total,
         BigDecimal paid,
         BigDecimal orderDiscountPercent,
-        BusinessProfile businessProfile
+        BusinessProfile businessProfile,
+        byte[] businessLogo
 ) {
 
     public SaleDocumentModel(String saleNumber, LocalDate saleDate, String customerName, String sellerName,
@@ -31,6 +32,13 @@ public record SaleDocumentModel(
                              BigDecimal orderDiscountPercent) {
         this(saleNumber, saleDate, customerName, sellerName, lines, payments, total, paid, orderDiscountPercent,
             BusinessProfile.EMPTY);
+    }
+
+    public SaleDocumentModel(String saleNumber, LocalDate saleDate, String customerName, String sellerName,
+                             List<Line> lines, List<Payment> payments, BigDecimal total, BigDecimal paid,
+                             BigDecimal orderDiscountPercent, BusinessProfile businessProfile) {
+        this(saleNumber, saleDate, customerName, sellerName, lines, payments, total, paid, orderDiscountPercent,
+            businessProfile, null);
     }
 
     public SaleDocumentModel {

@@ -1,5 +1,17 @@
 package com.distribuidora.notification;
 
+import com.distribuidora.notification.api.NotificationController;
+import com.distribuidora.notification.api.NotificationExceptionHandler;
+import com.distribuidora.notification.application.NotificationRequestService;
+import com.distribuidora.shared.error.ApiExceptionHandler;
+import org.mockito.Mockito;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.distribuidora.notification.application.NonRetryableOutboxException;
+import com.distribuidora.notification.application.NotificationChannelNotConfiguredException;
 import com.distribuidora.notification.infrastructure.WebhookNotificationSender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
@@ -64,5 +76,48 @@ class WebhookNotificationSenderTest {
         assertThat(insecure.isConfigured("EMAIL")).isFalse();
         assertThatThrownBy(() -> sender.sendEmail("a@example.test", "subject", "text", UUID.randomUUID()))
             .isInstanceOf(IllegalStateException.class);
+        WebhookNotificationSender ipv6Loopback = new WebhookNotificationSender(new ObjectMapper(),
+            "http://[::1]:8089/email", "token", "", "", 10000);
+        assertThat(ipv6Loopback.isConfigured("EMAIL")).isTrue();
+        WebhookNotificationSender userInfoUrl = new WebhookNotificationSender(new ObjectMapper(),
+            "https://user:pass@provider.example/send", "token", "", "", 10000);
+        assertThat(userInfoUrl.isConfigured("EMAIL")).isFalse();
+    }
+
+    @Test
+    void treatsPermanent4xxAsNonRetryableAnd429Or500AsRetryableAndMaps503Handler() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger statusCode = new java.util.concurrent.atomic.AtomicInteger(400);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/email", exchange -> {
+            exchange.sendResponseHeaders(statusCode.get(), -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            WebhookNotificationSender sender = new WebhookNotificationSender(new ObjectMapper(),
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/email", "secret", "", "", 2000);
+            assertThatThrownBy(() -> sender.sendEmail("a@example.test", "Subj", "Body", UUID.randomUUID()))
+                .isInstanceOf(NonRetryableOutboxException.class);
+            statusCode.set(429);
+            assertThatThrownBy(() -> sender.sendEmail("a@example.test", "Subj", "Body", UUID.randomUUID()))
+                .isExactlyInstanceOf(IllegalStateException.class);
+            statusCode.set(500);
+            assertThatThrownBy(() -> sender.sendEmail("a@example.test", "Subj", "Body", UUID.randomUUID()))
+                .isExactlyInstanceOf(IllegalStateException.class);
+        } finally {
+            server.stop(0);
+        }
+
+        NotificationRequestService requestService = Mockito.mock(NotificationRequestService.class);
+        Mockito.when(requestService.request(Mockito.any(), Mockito.any()))
+            .thenThrow(new NotificationChannelNotConfiguredException("WHATSAPP"));
+        var mvc = MockMvcBuilders.standaloneSetup(new NotificationController(requestService))
+            .setControllerAdvice(new NotificationExceptionHandler(), new ApiExceptionHandler())
+            .build();
+        mvc.perform(post("/api/orders/{id}/notifications", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"channel\":\"WHATSAPP\",\"format\":\"TICKET\",\"recipient\":\"+5491112345678\",\"idempotencyKey\":\"k-503\"}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.code").value("NOTIFICATION_CHANNEL_NOT_CONFIGURED"));
     }
 }

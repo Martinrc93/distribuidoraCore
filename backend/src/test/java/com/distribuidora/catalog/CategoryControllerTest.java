@@ -56,6 +56,10 @@ class CategoryControllerTest {
 
         Method permanentDelete = CategoryController.class.getDeclaredMethod("deletePermanently", UUID.class);
         assertThat(permanentDelete.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+        Method list = CategoryController.class.getDeclaredMethod("list", String.class, String.class);
+        assertThat(list.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
+        Method getById = CategoryController.class.getDeclaredMethod("getById", UUID.class);
+        assertThat(getById.getAnnotation(PreAuthorize.class).value()).isEqualTo("hasAuthority('ADMIN_ALL')");
     }
 
     @Test

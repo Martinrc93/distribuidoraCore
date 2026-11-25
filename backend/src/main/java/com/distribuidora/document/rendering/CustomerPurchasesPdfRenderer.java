@@ -11,6 +11,7 @@ import org.openpdf.text.pdf.PdfPTable;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.ZoneId;
@@ -21,17 +22,24 @@ import static com.distribuidora.document.rendering.PdfFormat.NORMAL;
 import static com.distribuidora.document.rendering.PdfFormat.SMALL;
 import static com.distribuidora.document.rendering.PdfFormat.TITLE;
 import static com.distribuidora.document.rendering.PdfFormat.cell;
+import com.distribuidora.shared.time.BusinessTime;
 
 @Component
 public class CustomerPurchasesPdfRenderer {
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final ZoneId BUSINESS_ZONE = BusinessTime.ZONE;
 
     public byte[] render(Export report) {
+        var output = new ByteArrayOutputStream();
+        render(report, output);
+        return output.toByteArray();
+    }
+
+    public void render(Export report, OutputStream output) {
         var symbols = DecimalFormatSymbols.getInstance(Locale.forLanguageTag("es-AR"));
         var amount = new DecimalFormat("#,##0.00##", symbols);
         var units = new DecimalFormat("#,##0.####", symbols);
         Document document = new Document(PageSize.A4, 36f, 36f, 36f, 36f);
-        return PdfFormat.render(document, new ByteArrayOutputStream(), opened -> {
+        PdfFormat.render(document, output, opened -> {
             try {
                 var summary = report.summary();
                 opened.add(new Paragraph("Compras del cliente", TITLE));

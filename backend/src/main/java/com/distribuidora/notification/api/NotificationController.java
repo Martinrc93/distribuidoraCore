@@ -1,6 +1,7 @@
 package com.distribuidora.notification.api;
 
 import com.distribuidora.notification.application.NotificationRequestService;
+import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,10 +21,16 @@ public class NotificationController {
         this.service = service;
     }
 
+    @GetMapping("/contact")
+    @PreAuthorize("hasAnyAuthority('ORDER_NOTIFY', 'ADMIN_ALL')")
+    public NotificationRequestService.CustomerContact contact(@PathVariable UUID orderId) {
+        return service.contact(orderId);
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ORDER_NOTIFY', 'ADMIN_ALL')")
     public NotificationDtos.CreateResponse create(@PathVariable UUID orderId,
-                                                   @RequestBody NotificationDtos.CreateRequest request) {
+                                                   @Valid @RequestBody NotificationDtos.CreateRequest request) {
         NotificationRequestService.CreateNotificationResult result = service.request(orderId, request);
         return new NotificationDtos.CreateResponse(result.requestId(), result.status());
     }

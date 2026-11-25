@@ -1,0 +1,16 @@
+# Apply after compose.yaml. Publish the frontend through a trusted TLS proxy.
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD for production}
+    ports: !reset []
+
+  backend:
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD for production}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET for production}
+      JWT_ISSUER: ${JWT_ISSUER:-distribuidora}
+      SEED_DEMO: "false"
+      DEMO_PASSWORD: ""
+    ports: !reset []

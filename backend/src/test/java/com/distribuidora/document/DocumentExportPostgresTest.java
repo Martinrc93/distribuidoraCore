@@ -1,9 +1,12 @@
 package com.distribuidora.document;
 
+import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.document.application.AccountStatementDocumentService;
 import com.distribuidora.document.application.PriceListDocumentService;
 import com.distribuidora.document.rendering.AccountStatementPdfRenderer;
 import com.distribuidora.document.rendering.PriceListPdfRenderer;
+import com.distribuidora.settings.application.BusinessProfile;
+import com.distribuidora.settings.application.BusinessSettingsService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -14,17 +17,26 @@ import org.openpdf.text.pdf.parser.PdfTextExtractor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 class DocumentExportPostgresTest {
@@ -60,6 +72,35 @@ class DocumentExportPostgresTest {
     }
 
     @Test
+    void storesAndRemovesTheLogoIndependentlyOfBusinessContactDetails() throws IOException {
+        var source = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB), "png", source);
+        String content = Base64.getEncoder().encodeToString(source.toByteArray());
+        var settings = new BusinessSettingsService(jdbc, mock(AuditService.class));
+        var context = SecurityContextHolder.createEmptyContext();
+        UUID actor = UUID.randomUUID();
+        context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(actor.toString(), null,
+            List.of(new SimpleGrantedAuthority("ADMIN_ALL"))));
+        SecurityContextHolder.setContext(context);
+        try {
+            rollback(() -> {
+                jdbc.update("insert into identity.users(id, email, password_hash, status, created_at, updated_at) values (?, ?, 'test-hash', 'ACTIVE', now(), now())",
+                    actor, actor + "@example.test");
+                byte[] saved = settings.updateBusinessLogo(content);
+                settings.updateBusinessProfile(new BusinessProfile("Comercio", "", "123456"));
+                assertThat(settings.businessLogo()).containsExactly(saved);
+                settings.removeBusinessLogo();
+                assertThat(settings.businessLogo()).isNull();
+                assertThat(settings.businessProfile().phone()).isEqualTo("123456");
+                assertThat(jdbc.queryForObject("select updated_by from app.business_settings where id = 1", UUID.class))
+                    .isEqualTo(actor);
+            });
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
     void priceListDocumentGroupsCurrentPricesByCategoryAndAppliesFilters() {
         rollback(() -> {
             UUID drinks = UUID.randomUUID();
@@ -70,7 +111,7 @@ class DocumentExportPostgresTest {
             product("Harina 000", grocery, "900", "ACTIVE");
             product("Gaseosa vieja", drinks, "10", "INACTIVE");
 
-            var service = new PriceListDocumentService(jdbc);
+            var service = new PriceListDocumentService(jdbc, TestCurrentUserAccess.admin(jdbc));
             var model = service.load(GENERAL, drinks, null, null);
             assertThat(model.lines()).extracting(line -> line.product()).containsExactly("Gaseosa cola");
             assertThat(model.filters()).contains("Bebidas");
@@ -107,7 +148,7 @@ class DocumentExportPostgresTest {
                        (?, ?, ?, 3600, current_date - 1, now(), now())
                 """, UUID.randomUUID(), inactive, anise, UUID.randomUUID(), active, anise);
 
-            var service = new PriceListDocumentService(jdbc);
+            var service = new PriceListDocumentService(jdbc, TestCurrentUserAccess.admin(jdbc));
             var lists = service.loadActiveLists();
             var general = lists.stream().filter(list -> list.listCode().equals("GENERAL")).findFirst().orElseThrow();
             assertThat(general).isEqualTo(service.load(GENERAL, null, null, null));

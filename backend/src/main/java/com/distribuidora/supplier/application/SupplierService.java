@@ -10,12 +10,14 @@ import jakarta.validation.constraints.Size;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -52,14 +54,21 @@ public class SupplierService {
         this.validator = validator;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResponse<Supplier> list(int page, int size, String search) {
         if (page < 0 || size < 1 || size > 100) throw new IllegalArgumentException("Paginación inválida");
         String term = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
         if (term.length() > 200) throw new IllegalArgumentException("La búsqueda no puede superar los 200 caracteres");
+        if (term.isEmpty()) {
+            long total = Objects.requireNonNullElse(jdbc.queryForObject("select count(*) from supplier.suppliers", Long.class), 0L);
+            var suppliers = jdbc.query("select id, name, phone, email, address from supplier.suppliers order by name, id limit ? offset ?",
+                (rs, row) -> new Supplier(rs.getObject("id", UUID.class), rs.getString("name"),
+                    rs.getString("phone"), rs.getString("email"), rs.getString("address")), size, (long) page * size);
+            return PageResponse.of(suppliers, page, size, total);
+        }
         String pattern = "%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
         String filter = " where lower(name) like ? escape '!'";
-        long total = jdbc.queryForObject("select count(*) from supplier.suppliers" + filter, Long.class, pattern);
+        long total = Objects.requireNonNullElse(jdbc.queryForObject("select count(*) from supplier.suppliers" + filter, Long.class, pattern), 0L);
         var suppliers = jdbc.query("select id, name, phone, email, address from supplier.suppliers" + filter
                 + " order by name, id limit ? offset ?",
             (rs, row) -> new Supplier(rs.getObject("id", UUID.class), rs.getString("name"),
@@ -74,7 +83,7 @@ public class SupplierService {
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("insert into supplier.suppliers(id, name, phone, email, address, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
             id, input.name(), input.phone(), input.email(), input.address(), now, now);
-        audit.record(currentUser.userId(), "SUPPLIER_CREATE", "SUPPLIER", id.toString(), "SUCCESS", Map.of("name", input.name()));
+        audit.recordWithinTransaction(currentUser.userId(), "SUPPLIER_CREATE", "SUPPLIER", id.toString(), "SUCCESS", Map.of("name", input.name()));
         return id;
     }
 
@@ -84,7 +93,7 @@ public class SupplierService {
         int changed = jdbc.update("update supplier.suppliers set name = ?, phone = ?, email = ?, address = ?, updated_at = ? where id = ?",
             input.name(), input.phone(), input.email(), input.address(), Timestamp.from(Instant.now()), id);
         if (changed == 0) throw new EmptyResultDataAccessException(1);
-        audit.record(currentUser.userId(), "SUPPLIER_UPDATE", "SUPPLIER", id.toString(), "SUCCESS", Map.of("name", input.name()));
+        audit.recordWithinTransaction(currentUser.userId(), "SUPPLIER_UPDATE", "SUPPLIER", id.toString(), "SUCCESS", Map.of("name", input.name()));
     }
 
     private void validate(SupplierInput input) {

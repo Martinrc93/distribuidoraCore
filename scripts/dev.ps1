@@ -16,6 +16,12 @@ if (-not (Test-Path -LiteralPath $BackendPom)) {
     throw "No se encontró el backend Maven: $BackendPom"
 }
 
+function Set-DevEnvironmentDefault([string]$Name, [string]$Value) {
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, 'Process'))) {
+        [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
+    }
+}
+
 function Start-Frontend {
     Start-Process powershell.exe `
         -WorkingDirectory $Frontend `
@@ -30,37 +36,32 @@ function Start-Backend {
 
 switch ($Mode) {
     'start' {
-        Write-Host 'Iniciando PostgreSQL con Docker Compose y esperando que esté listo...'
-        docker compose up -d --wait db
-        if ($LASTEXITCODE -ne 0) {
-            throw 'No se pudo iniciar PostgreSQL. Revisá Docker Desktop y docker compose.'
+        if ([string]::IsNullOrWhiteSpace($env:DB_URL)) {
+            Write-Host 'Iniciando PostgreSQL con Docker Compose y esperando que esté listo...'
+            docker compose up -d --wait db
+            if ($LASTEXITCODE -ne 0) {
+                throw 'No se pudo iniciar PostgreSQL. Revisá Docker Desktop y docker compose.'
+            }
+            $composeConfig = docker compose config --format json | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) {
+                throw 'No se pudo leer la configuración efectiva de Docker Compose.'
+            }
+            $database = $composeConfig.services.db.environment
+            Set-DevEnvironmentDefault DB_URL "jdbc:postgresql://localhost:5433/$($database.POSTGRES_DB)"
+            Set-DevEnvironmentDefault DB_USERNAME $database.POSTGRES_USER
+            Set-DevEnvironmentDefault DB_PASSWORD $database.POSTGRES_PASSWORD
         }
-        $composeConfig = docker compose config --format json | ConvertFrom-Json
-        if ($LASTEXITCODE -ne 0) {
-            throw 'No se pudo leer la configuración efectiva de Docker Compose.'
+        Set-DevEnvironmentDefault SPRING_PROFILES_ACTIVE 'local'
+        if ($env:SPRING_PROFILES_ACTIVE -eq 'local') {
+            Set-DevEnvironmentDefault SEED_DEMO 'true'
+            Set-DevEnvironmentDefault DEMO_PASSWORD 'ChangeMe123!'
+            Set-DevEnvironmentDefault ADMIN_EMAIL 'dev-admin@distribuidora.local'
+            Set-DevEnvironmentDefault ADMIN_PASSWORD 'ChangeMe123!'
         }
-        $database = $composeConfig.services.db.environment.POSTGRES_DB
-        $dbUsername = $composeConfig.services.db.environment.POSTGRES_USER
-        $dbPassword = $composeConfig.services.db.environment.POSTGRES_PASSWORD
-        $quotedUsername = '"' + $dbUsername.Replace('"', '""') + '"'
-        $quotedPassword = "'" + $dbPassword.Replace("'", "''") + "'"
-        $passwordSyncSql = "ALTER ROLE $quotedUsername WITH PASSWORD $quotedPassword;"
-        docker compose exec -T db psql -v ON_ERROR_STOP=1 -U $dbUsername -d $database -c $passwordSyncSql
-        if ($LASTEXITCODE -ne 0) {
-            throw 'No se pudo sincronizar la contraseña del usuario PostgreSQL con Docker Compose.'
-        }
-        $env:DB_URL = "jdbc:postgresql://localhost:5433/$database"
-        $env:DB_USERNAME = $dbUsername
-        $env:DB_PASSWORD = $dbPassword
-        $env:SPRING_PROFILES_ACTIVE = 'local'
-        $env:SEED_DEMO = 'true'
-        $env:DEMO_PASSWORD = 'ChangeMe123!'
-        $env:ADMIN_EMAIL = 'dev-admin@distribuidora.local'
-        $env:ADMIN_PASSWORD = 'ChangeMe123!'
         Write-Host 'PostgreSQL listo. Iniciando backend y frontend en ventanas separadas...'
         Start-Backend
         Start-Frontend
-        Write-Host 'Frontend: http://localhost:5173 | Backend: http://localhost:8080 | PostgreSQL Docker: localhost:5433'
+        Write-Host 'Frontend: http://localhost:5173 | Backend: http://localhost:8080'
     }
     'front' {
         Write-Host 'Iniciando frontend en una nueva ventana...'

@@ -4,6 +4,8 @@ import com.distribuidora.shared.web.PageResponse;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -12,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class PricingQueryService {
     private static final String RESOLVED_PRICE_CTE = """
         with resolved_prices as (
@@ -45,17 +48,18 @@ public class PricingQueryService {
         return lists(page, size, true);
     }
 
-    public PageResponse<Map<String, Object>> lists(int page, int size, boolean includeReviewCount) {
-        String reviewCount = includeReviewCount ? """
+    public PageResponse<Map<String, Object>> lists(int page, int size, boolean includeAdminDetails) {
+        String reviewCount = includeAdminDetails ? """
             , (select count(*) from catalog.price_list_follows f
                where f.price_list_id = catalog.price_lists.id and f.review_status = 'PENDING') as "pendingReviewCount"
             """ : "";
+        String filter = includeAdminDetails ? "" : " where status = 'ACTIVE'";
         return page("""
             select id, code, name, status, is_default as "isDefault",
                    created_at as "createdAt", updated_at as "updatedAt"%s
-            from catalog.price_lists
+            from catalog.price_lists%s
             order by code
-            """.formatted(reviewCount), "select count(*) from catalog.price_lists", page, size);
+            """.formatted(reviewCount, filter), "select count(*) from catalog.price_lists" + filter, page, size);
     }
 
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size) {
@@ -72,14 +76,26 @@ public class PricingQueryService {
 
     /** Optional filters for a list's prices: follow status, category (rubro), brand and product name. */
     /** {@code includeCost} adds the product cost to each row; only for administrators. */
-    public record PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search, boolean includeCost) {
+    public record PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search, boolean includeCost, boolean activeListOnly) {
         public PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search) {
-            this(followStatus, categoryId, brandId, search, false);
+            this(followStatus, categoryId, brandId, search, false, false);
+        }
+
+        public PriceFilter(String followStatus, UUID categoryId, UUID brandId, String search, boolean includeCost) {
+            this(followStatus, categoryId, brandId, search, includeCost, false);
         }
     }
 
     public PageResponse<Map<String, Object>> prices(UUID listId, int page, int size, PriceFilter priceFilter) {
         PriceFilter criteria = priceFilter == null ? new PriceFilter(null, null, null, null) : priceFilter;
+        if (criteria.activeListOnly()) {
+            boolean active = Boolean.TRUE.equals(jdbc.queryForObject(
+                "select exists(select 1 from catalog.price_lists where id = ? and status = 'ACTIVE')",
+                Boolean.class, listId));
+            if (!active) {
+                throw new EmptyResultDataAccessException(1);
+            }
+        }
         StringBuilder filter = new StringBuilder(switch (criteria.followStatus() == null ? "" : criteria.followStatus()) {
             case "" -> "";
             case "PENDING" -> " and \"followStatus\" = 'PENDING'";
@@ -135,21 +151,15 @@ public class PricingQueryService {
         try {
             return findPrice(resolvedListId, productId, asOf);
         } catch (EmptyResultDataAccessException missingPrice) {
-            List<Map<String, Object>> previousLists = jdbc.queryForList("""
-                select id, code, status
-                from catalog.price_lists
-                where status = 'ACTIVE' and id < ?
-                order by id desc
-                """, resolvedListId);
-
-            for (Map<String, Object> previousList : previousLists) {
-                try {
-                    return findPrice((UUID) previousList.get("id"), productId, asOf);
-                } catch (EmptyResultDataAccessException ignored) {
-                    // Continue with the next previous active list.
-                }
+            if (Boolean.TRUE.equals(selectedList.get("is_default"))) {
+                throw missingPrice;
             }
-            throw missingPrice;
+            List<UUID> defaults = jdbc.queryForList(
+                "select id from catalog.price_lists where is_default = true and status = 'ACTIVE'", UUID.class);
+            if (defaults == null || defaults.isEmpty() || resolvedListId.equals(defaults.getFirst())) {
+                throw missingPrice;
+            }
+            return findPrice(defaults.getFirst(), productId, asOf);
         }
     }
 
@@ -160,11 +170,10 @@ public class PricingQueryService {
         UUID listId = (UUID) selectedList(customerId, explicitListId).get("id");
         List<UUID> distinctProducts = productIds.stream().distinct().toList();
         String placeholders = String.join(",", java.util.Collections.nCopies(distinctProducts.size(), "?"));
-        Object[] parameters = new Object[distinctProducts.size() + 3];
+        Object[] parameters = new Object[distinctProducts.size() + 2];
         parameters[0] = listId;
         parameters[1] = listId;
-        parameters[2] = listId;
-        for (int i = 0; i < distinctProducts.size(); i++) parameters[i + 3] = distinctProducts.get(i);
+        for (int i = 0; i < distinctProducts.size(); i++) parameters[i + 2] = distinctProducts.get(i);
         return jdbc.queryForList("""
             select p.id as "productId", resolved."priceListId", resolved."priceListCode", resolved."unitPrice"
             from catalog.products p
@@ -179,8 +188,8 @@ public class PricingQueryService {
                     order by h.effective_on desc, h.created_at desc, h.id desc
                     limit 1
                 ) history on true
-                where candidate.status = 'ACTIVE' and (candidate.id = ? or candidate.id < ?)
-                order by (candidate.id = ?) desc, candidate.id desc
+                where candidate.status = 'ACTIVE' and (candidate.id = ? or candidate.is_default = true)
+                order by (candidate.id = ?) desc, candidate.is_default desc
                 limit 1
             ) resolved on true
             where p.id in (%s)
@@ -194,8 +203,8 @@ public class PricingQueryService {
         UUID selectedListId = explicitListId != null ? explicitListId : assignedListId;
 
         Map<String, Object> selectedList = selectedListId == null
-            ? jdbc.queryForMap("select id, code, status from catalog.price_lists where code = 'GENERAL' and status = 'ACTIVE'", new Object[0])
-            : jdbc.queryForMap("select id, code, status from catalog.price_lists where id = ?", selectedListId);
+            ? jdbc.queryForMap("select id, code, status, is_default from catalog.price_lists where is_default = true and status = 'ACTIVE'", new Object[0])
+            : jdbc.queryForMap("select id, code, status, is_default from catalog.price_lists where id = ?", selectedListId);
         if (!"ACTIVE".equals(selectedList.get("status"))) {
             throw new IllegalStateException("La lista de precios no está activa");
         }
@@ -237,7 +246,7 @@ public class PricingQueryService {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
         List<Map<String, Object>> rows = jdbc.queryForList(
-            sql + " limit ? offset ?", append(parameters, safeSize, safePage * safeSize));
+            sql + " limit ? offset ?", append(parameters, safeSize, (long) safePage * safeSize));
         Number total = jdbc.queryForObject(countSql, Number.class, parameters);
         return PageResponse.of(rows, safePage, safeSize, total == null ? 0 : total.longValue());
     }

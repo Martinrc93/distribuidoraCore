@@ -18,6 +18,8 @@ app:
   security:
     jwt-secret: test-secret-that-is-at-least-32-bytes-long
     jwt-issuer: test
+    rate-limit:
+      enabled: false
   seed-demo: false
   demo-password:
 

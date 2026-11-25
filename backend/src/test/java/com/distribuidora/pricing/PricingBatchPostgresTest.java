@@ -61,7 +61,7 @@ class PricingBatchPostgresTest {
                         .containsEntry("priceListCode", individual.get("priceListCode"))
                         .containsEntry("unitPrice", individual.get("unitPrice"));
                 }
-                assertThat((BigDecimal) batch.stream().filter(row -> row.get("productId").equals(first)).findFirst().orElseThrow().get("unitPrice")).isEqualByComparingTo("30");
+                assertThat((BigDecimal) batch.stream().filter(row -> row.get("productId").equals(first)).findFirst().orElseThrow().get("unitPrice")).isEqualByComparingTo("20");
                 assertThat((BigDecimal) batch.stream().filter(row -> row.get("productId").equals(second)).findFirst().orElseThrow().get("unitPrice")).isZero();
                 jdbc.update("update catalog.price_lists set status = 'INACTIVE' where id = ?", previous);
                 assertThat(service.resolveBatch(customerId, List.of(first), selected).getFirst())

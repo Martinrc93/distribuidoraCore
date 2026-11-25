@@ -3,6 +3,7 @@ package com.distribuidora.catalog.application;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.shared.security.CurrentUserAccess;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 public class BrandService {
@@ -28,9 +30,9 @@ public class BrandService {
     private final CurrentUserAccess currentUser;
 
     public BrandService(JdbcTemplate jdbc, AuditService audit, CurrentUserAccess currentUser) {
-        this.jdbc = jdbc;
-        this.audit = audit;
-        this.currentUser = currentUser;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.audit = Objects.requireNonNull(audit, "audit");
+        this.currentUser = Objects.requireNonNull(currentUser, "currentUser");
     }
 
     @Transactional
@@ -40,6 +42,9 @@ public class BrandService {
         }
 
         String name = request.name().trim();
+        if (name.length() > 100) {
+            throw new IllegalArgumentException("name no puede superar 100 caracteres");
+        }
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.brands where lower(name) = ?)", Boolean.class, name.toLowerCase(Locale.ROOT))
@@ -51,12 +56,16 @@ public class BrandService {
         UUID id = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
 
-        jdbc.update(
-            "insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
-            id, name, id.toString(), now
-        );
+        try {
+            jdbc.update(
+                "insert into catalog.brands(id, name, code, status, created_at) values (?, ?, ?, 'ACTIVE', ?)",
+                id, name, id.toString(), now
+            );
+        } catch (DuplicateKeyException e) {
+            throw new IllegalStateException("Ya existe una marca con ese nombre", e);
+        }
 
-        audit.record(actorId(), "BRAND_CREATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "BRAND_CREATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
         return id;
     }
 
@@ -74,6 +83,9 @@ public class BrandService {
         }
 
         String name = request.name().trim();
+        if (name.length() > 100) {
+            throw new IllegalArgumentException("name no puede superar 100 caracteres");
+        }
 
         boolean nameExists = Boolean.TRUE.equals(
             jdbc.queryForObject("select exists(select 1 from catalog.brands where lower(name) = ? and id <> ?)",
@@ -83,10 +95,14 @@ public class BrandService {
             throw new IllegalStateException("Ya existe una marca con ese nombre");
         }
 
-        jdbc.update("update catalog.brands set name = ? where id = ?", name, id);
+        try {
+            jdbc.update("update catalog.brands set name = ? where id = ?", name, id);
+        } catch (DuplicateKeyException e) {
+            throw new IllegalStateException("Ya existe una marca con ese nombre", e);
+        }
         jdbc.update("update catalog.products set name = ? || ' ' || description where brand_id = ? and description is not null",
             name, id);
-        audit.record(actorId(), "BRAND_UPDATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "BRAND_UPDATE", "BRAND", id.toString(), "SUCCESS", Map.of("name", name));
     }
 
     @Transactional
@@ -100,7 +116,7 @@ public class BrandService {
             throw new EmptyResultDataAccessException("La marca no existe", 1);
         }
 
-        audit.record(actorId(), "BRAND_STATUS", "BRAND", id.toString(), "SUCCESS", Map.of("status", status));
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "BRAND_STATUS", "BRAND", id.toString(), "SUCCESS", Map.of("status", status));
     }
 
     @Transactional
@@ -128,7 +144,7 @@ public class BrandService {
             getById(id);
             throw new CatalogEntryInUseException("La marca tiene productos asociados.");
         }
-        audit.record(actorId(), "BRAND_DELETE", "BRAND", id.toString(), "SUCCESS", Map.of());
+        audit.recordWithinTransaction(currentUser.actorIdOrSystem(), "BRAND_DELETE", "BRAND", id.toString(), "SUCCESS", Map.of());
     }
 
     public BrandView getById(UUID id) {
@@ -154,17 +170,26 @@ public class BrandService {
     }
 
     public List<BrandView> list(String search, String status) {
-        String term = "%" + (search == null ? "" : search.trim().toLowerCase(Locale.ROOT)) + "%";
-        String state = status == null || status.isBlank() ? "%" : status.trim();
-
-        return jdbc.query("""
+        String term = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
+        String state = status == null ? "" : status.trim();
+        StringBuilder sql = new StringBuilder("""
             select b.id, b.name, b.status, b.created_at as "createdAt",
                    (select count(*) from catalog.products p where p.brand_id = b.id) as "productCount"
             from catalog.brands b
-            where lower(b.name) like ?
-              and b.status like ?
-            order by b.name
-            """,
+            where 1 = 1
+            """);
+        List<Object> params = new java.util.ArrayList<>();
+        if (!term.isEmpty()) {
+            sql.append(" and lower(b.name) like ? escape '!'");
+            params.add("%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%");
+        }
+        if (!state.isEmpty()) {
+            sql.append(" and b.status = ?");
+            params.add(state);
+        }
+        sql.append(" order by b.name");
+
+        return jdbc.query(sql.toString(),
             (rs, i) -> new BrandView(
                 rs.getObject("id", UUID.class),
                 rs.getString("name"),
@@ -172,17 +197,8 @@ public class BrandService {
                 rs.getTimestamp("createdAt").toInstant(),
                 rs.getLong("productCount")
             ),
-            term, state
+            params.toArray()
         );
     }
 
-    private UUID actorId() {
-        if (currentUser != null) {
-            try {
-                return currentUser.userId();
-            } catch (Exception ignored) {
-            }
-        }
-        return UUID.fromString("00000000-0000-0000-0000-000000000000");
-    }
 }

@@ -9,16 +9,18 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Centralizes resource ownership checks so controllers cannot bypass seller scope. */
+/** Centralizes resource ownership checks and authenticated actor resolution. */
 @Component
 public class CurrentUserAccess {
+    public static final UUID SYSTEM_ACTOR_ID = new UUID(0L, 0L);
+
     private final JdbcTemplate jdbc;
 
     public CurrentUserAccess(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    public UUID userId() {
+    public static UUID requireAuthenticatedUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || authentication.getName() == null) {
             throw new IllegalStateException("No se pudo identificar al usuario actual");
@@ -28,6 +30,39 @@ public class CurrentUserAccess {
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException("La identidad autenticada no es válida", exception);
         }
+    }
+
+    public static UUID resolveAuthenticatedUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(authentication.getName());
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    public static UUID resolveActorIdOrSystem() {
+        UUID resolved = resolveAuthenticatedUserId();
+        return resolved != null ? resolved : SYSTEM_ACTOR_ID;
+    }
+
+    public UUID userId() {
+        return requireAuthenticatedUserId();
+    }
+
+    public UUID actorIdOrSystem() {
+        try {
+            return userId();
+        } catch (IllegalStateException exception) {
+            return SYSTEM_ACTOR_ID;
+        }
+    }
+
+    public UUID actorIdOrNull() {
+        return resolveAuthenticatedUserId();
     }
 
     public boolean isAdmin() {

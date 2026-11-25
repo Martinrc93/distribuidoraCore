@@ -4,6 +4,7 @@ import com.distribuidora.sale.application.CommissionSettlementService;
 import com.distribuidora.sale.application.CommissionSettlementService.Beneficiary;
 import com.distribuidora.sale.application.CommissionSettlementService.Settlement;
 import com.distribuidora.sale.application.CommissionSettlementService.Statement;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,7 +24,7 @@ import java.util.UUID;
 @RequestMapping("/api/commissions")
 @PreAuthorize("hasAuthority('ADMIN_ALL')")
 public class CommissionSettlementController {
-    public record SettleRequest(String token) { }
+    public record SettleRequest(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 128) String token) { }
 
     private final CommissionSettlementService commissions;
 
@@ -44,7 +45,7 @@ public class CommissionSettlementController {
 
     @PostMapping("/sellers/{sellerId}/settlements")
     @ResponseStatus(HttpStatus.CREATED)
-    public Settlement settleSeller(@PathVariable UUID sellerId, @RequestBody SettleRequest request) {
+    public Settlement settleSeller(@PathVariable UUID sellerId, @Valid @RequestBody SettleRequest request) {
         return commissions.settle(Beneficiary.SELLER, sellerId, request.token());
     }
 
@@ -61,7 +62,7 @@ public class CommissionSettlementController {
 
     @PostMapping("/resellers/{customerId}/settlements")
     @ResponseStatus(HttpStatus.CREATED)
-    public Settlement settleReseller(@PathVariable UUID customerId, @RequestBody SettleRequest request) {
+    public Settlement settleReseller(@PathVariable UUID customerId, @Valid @RequestBody SettleRequest request) {
         return commissions.settle(Beneficiary.RESELLER, customerId, request.token());
     }
 }

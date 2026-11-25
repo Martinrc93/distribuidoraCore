@@ -18,6 +18,9 @@ import java.util.UUID;
 
 @Service
 public class CustomerPurchasesReportService {
+    private static final int MAX_EXPORT_SALES = 2_000;
+    private static final int MAX_EXPORT_ROWS = 25_000;
+
     public record Summary(UUID customerId, String customer, LocalDate dateMin, LocalDate dateMax,
                           long salesCount, BigDecimal totalAmount) { }
     public record Item(UUID id, String product, BigDecimal soldUnits, BigDecimal returnedUnits,
@@ -51,7 +54,9 @@ public class CustomerPurchasesReportService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Export export(UUID customerId, LocalDate dateMin, LocalDate dateMax) {
         Criteria criteria = criteria(customerId, dateMin, dateMax);
-        return new Export(summarize(criteria), load(criteria.sales(), null));
+        Summary summary = summarize(criteria);
+        if (summary.salesCount() > MAX_EXPORT_SALES) throw exportLimitExceeded();
+        return new Export(summary, load(criteria.sales(), null));
     }
 
     private Criteria criteria(UUID customerId, LocalDate dateMin, LocalDate dateMax) {
@@ -82,8 +87,14 @@ public class CustomerPurchasesReportService {
             from eligible_sales s left join allocated_lines line on line.sale_id = s.id
             order by s.created_at desc, s.id desc, lower(line.product_name), line.item_id
             """;
+        if (page == null) {
+            query += " limit ?";
+            args.add(MAX_EXPORT_ROWS + 1);
+        }
         var purchases = new LinkedHashMap<UUID, Purchase>();
+        int[] rows = {0};
         jdbc.query(query, (RowCallbackHandler) row -> {
+            if (page == null && ++rows[0] > MAX_EXPORT_ROWS) throw exportLimitExceeded();
             UUID id = row.getObject("id", UUID.class);
             Purchase sale = purchases.get(id);
             if (sale == null) {
@@ -101,5 +112,9 @@ public class CustomerPurchasesReportService {
             }
         }, args.toArray());
         return List.copyOf(purchases.values());
+    }
+
+    private IllegalArgumentException exportLimitExceeded() {
+        return new IllegalArgumentException("El reporte supera el límite de exportación. Seleccioná un período más corto.");
     }
 }

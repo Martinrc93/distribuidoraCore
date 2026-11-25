@@ -169,9 +169,9 @@ class UserAdminServiceTest {
 
         ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).update(updateSql.capture(), any(), eq(targetUserId));
-        org.assertj.core.api.Assertions.assertThat(updateSql.getValue()).contains("version = version + 1");
+        org.assertj.core.api.Assertions.assertThat(updateSql.getValue()).contains("session_version = session_version + 1", "version = version + 1");
         verify(refreshTokens).revokeAllByUserId(eq(targetUserId), any());
-        verify(audit).record(eq(currentAdminId), eq("REVOKE_SESSIONS"), eq("USER"),
+        verify(audit).recordWithinTransaction(eq(currentAdminId), eq("REVOKE_SESSIONS"), eq("USER"),
             eq(targetUserId.toString()), eq("SUCCESS"), any());
     }
 
@@ -188,24 +188,34 @@ class UserAdminServiceTest {
 
         ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).update(updateSql.capture(), any(Object[].class));
-        assertThat(updateSql.getValue()).contains("status = 'BLOCKED'", "version = version + 1");
+        assertThat(updateSql.getValue()).contains("status = 'BLOCKED'", "session_version = session_version + 1", "version = version + 1");
         verify(refreshTokens).revokeAllByUserId(eq(targetUserId), any());
-        verify(audit).record(eq(currentAdminId), eq("USER_BLOCK"), eq("USER"),
+        verify(audit).recordWithinTransaction(eq(currentAdminId), eq("USER_BLOCK"), eq("USER"),
             eq(targetUserId.toString()), eq("SUCCESS"), any());
     }
 
     @Test
     void unblockUserUpdatesStatusAndClearsLock() {
         UUID targetUserId = UUID.randomUUID();
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(targetUserId)))
-            .thenReturn(true);
+        when(jdbc.queryForObject(anyString(), eq(String.class), eq(targetUserId)))
+            .thenReturn("BLOCKED");
 
         service.unblockUser(targetUserId);
 
         ArgumentCaptor<String> updateSql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).update(updateSql.capture(), any(Object[].class));
-        assertThat(updateSql.getValue()).contains("status = 'ACTIVE'", "version = version + 1");
-        verify(audit).record(eq(currentAdminId), eq("USER_UNBLOCK"), eq("USER"),
+        assertThat(updateSql.getValue()).contains("status = 'ACTIVE'", "session_version = session_version + 1", "version = version + 1");
+        verify(audit).recordWithinTransaction(eq(currentAdminId), eq("USER_UNBLOCK"), eq("USER"),
             eq(targetUserId.toString()), eq("SUCCESS"), any());
+    }
+
+    @Test
+    void unblockUserRejectsNonBlockedUsers() {
+        UUID targetUserId = UUID.randomUUID();
+        for (String status : List.of("ACTIVE", "PENDING_ACTIVATION")) {
+            when(jdbc.queryForObject(anyString(), eq(String.class), eq(targetUserId))).thenReturn(status);
+            assertThatThrownBy(() -> service.unblockUser(targetUserId))
+                .isInstanceOf(IllegalStateException.class);
+        }
     }
 }

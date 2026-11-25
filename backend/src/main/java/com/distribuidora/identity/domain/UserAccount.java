@@ -46,6 +46,12 @@ public class UserAccount {
     @Column(nullable = false)
     private long version;
 
+    @Column(name = "session_version", nullable = false)
+    private long sessionVersion;
+
+    public static final int MAX_FAILED_LOGIN_ATTEMPTS = 3;
+    public static final long LOCK_DURATION_SECONDS = 900L;
+
     protected UserAccount() {
     }
 
@@ -77,18 +83,37 @@ public class UserAccount {
     public short getFailedLoginAttempts() { return failedLoginAttempts; }
     public Instant getLockedUntil() { return lockedUntil; }
     public long getVersion() { return version; }
+    public long getSessionVersion() { return sessionVersion; }
+
+    public boolean isLocked(Instant now) {
+        return lockedUntil != null && lockedUntil.isAfter(now);
+    }
 
     public void registerFailedLogin() {
-        failedLoginAttempts++;
-        if (failedLoginAttempts >= 3) {
-            status = UserStatus.BLOCKED;
-            lockedUntil = Instant.now().plusSeconds(900);
+        registerFailedLogin(Instant.now());
+    }
+
+    public void registerFailedLogin(Instant now) {
+        if (status != UserStatus.ACTIVE) {
+            return;
+        }
+        if (lockedUntil != null && !lockedUntil.isAfter(now)) {
+            failedLoginAttempts = 0;
+            lockedUntil = null;
+        }
+        if (failedLoginAttempts < MAX_FAILED_LOGIN_ATTEMPTS) {
+            failedLoginAttempts++;
+        }
+        if (failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+            lockedUntil = now.plusSeconds(LOCK_DURATION_SECONDS);
         }
     }
 
     public void resetFailedLogins() {
-        failedLoginAttempts = 0;
-        lockedUntil = null;
+        if (failedLoginAttempts != 0 || lockedUntil != null) {
+            failedLoginAttempts = 0;
+            lockedUntil = null;
+        }
     }
 
     public void activate(String newPasswordHash) {

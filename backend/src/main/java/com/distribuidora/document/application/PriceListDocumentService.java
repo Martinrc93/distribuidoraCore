@@ -1,6 +1,8 @@
 package com.distribuidora.document.application;
 
 import com.distribuidora.document.rendering.PriceListDocumentModel;
+import com.distribuidora.shared.security.CurrentUserAccess;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -11,9 +13,11 @@ import java.text.Collator;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.Objects;
 
 /**
  * Builds the printable price list: current prices (Buenos Aires business date) of active products,
@@ -21,21 +25,27 @@ import java.util.UUID;
  */
 @Service
 public class PriceListDocumentService {
-    private record PriceList(UUID id, String name, String code) { }
+    private record PriceList(UUID id, String name, String code, String status) { }
 
     private final JdbcTemplate jdbc;
+    private final CurrentUserAccess currentUser;
 
-    public PriceListDocumentService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    @Autowired
+    public PriceListDocumentService(JdbcTemplate jdbc, CurrentUserAccess currentUser) {
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.currentUser = Objects.requireNonNull(currentUser, "currentUser");
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PriceListDocumentModel load(UUID listId, UUID categoryId, UUID brandId, String search) {
         PriceList list;
         try {
-            list = jdbc.queryForObject("select name, code from catalog.price_lists where id = ?",
-                (rs, row) -> new PriceList(listId, rs.getString("name"), rs.getString("code")), listId);
+            list = jdbc.queryForObject("select name, code, status from catalog.price_lists where id = ?",
+                (rs, row) -> new PriceList(listId, rs.getString("name"), rs.getString("code"), rs.getString("status")), listId);
         } catch (EmptyResultDataAccessException exception) {
+            throw new DocumentNotFoundException("Lista de precios inexistente");
+        }
+        if (!currentUser.isAdmin() && !"ACTIVE".equals(list.status())) {
             throw new DocumentNotFoundException("Lista de precios inexistente");
         }
         String normalizedSearch = search == null ? "" : search.trim();
@@ -64,11 +74,47 @@ public class PriceListDocumentService {
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<PriceListDocumentModel> loadActiveLists() {
-        LocalDate today = businessDate();
-        return jdbc.query("select id, name, code from catalog.price_lists where status = 'ACTIVE' order by lower(name), code",
-                (rs, row) -> new PriceList(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("code")))
-            .stream()
-            .map(list -> new PriceListDocumentModel(list.name(), list.code(), today, "", loadLines("", list.id())))
+        record ExportList(String name, String code, LocalDate date, List<PriceListDocumentModel.Line> lines) { }
+        var lists = new LinkedHashMap<UUID, ExportList>();
+        jdbc.query("""
+            select l.id, l.name as list_name, l.code,
+                   (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date as business_date,
+                   products.product, products.category, products.price
+            from catalog.price_lists l
+            left join lateral (
+                select p.name as product, coalesce(nullif(trim(coalesce(c.name, p.category)), ''), 'Sin categoría') as category,
+                       h.price
+                from catalog.products p
+                left join catalog.categories c on c.id = p.category_id
+                join lateral (
+                    select history.price from catalog.product_price_history history
+                    where history.price_list_id = l.id and history.product_id = p.id
+                      and history.effective_on <= (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date
+                    order by history.effective_on desc, history.created_at desc, history.id desc
+                    limit 1
+                ) h on true
+                where p.status = 'ACTIVE'
+            ) products on true
+            where l.status = 'ACTIVE'
+            order by lower(l.name), l.code, products.category collate "C", products.product collate "C"
+            """, result -> {
+            while (result.next()) {
+                UUID id = result.getObject("id", UUID.class);
+                ExportList list = lists.get(id);
+                if (list == null) {
+                    list = new ExportList(result.getString("list_name"), result.getString("code"),
+                        result.getObject("business_date", LocalDate.class), new ArrayList<>());
+                    lists.put(id, list);
+                }
+                if (result.getString("product") != null) {
+                    list.lines().add(new PriceListDocumentModel.Line(
+                        result.getString("category"), result.getString("product"), result.getBigDecimal("price")));
+                }
+            }
+            return null;
+        });
+        return lists.values().stream()
+            .map(list -> new PriceListDocumentModel(list.name(), list.code(), list.date(), "", sortLines(list.lines())))
             .toList();
     }
 
@@ -93,6 +139,10 @@ public class PriceListDocumentService {
             """ + filters + " order by p.id",
             (rs, row) -> new PriceListDocumentModel.Line(rs.getString("category"), rs.getString("name"), rs.getBigDecimal("price")),
             parameters);
+        return sortLines(lines);
+    }
+
+    private List<PriceListDocumentModel.Line> sortLines(List<PriceListDocumentModel.Line> lines) {
         Collator spanish = Collator.getInstance(Locale.forLanguageTag("es-AR"));
         spanish.setStrength(Collator.SECONDARY);
         lines.sort(Comparator.comparing(PriceListDocumentModel.Line::category, spanish)

@@ -1,0 +1,39 @@
+name: Docker builds
+
+on:
+  push:
+    branches: [main, support, "feature/**"]
+  pull_request:
+    branches: [main, support, "feature/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: backend, dockerfile: backend/Dockerfile, context: backend }
+          - { image: frontend, dockerfile: frontend/Dockerfile, context: frontend }
+          - { image: gateway, dockerfile: tools/development-gateway/Dockerfile, context: "." }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build and verify runtime user
+        env:
+          IMAGE: ${{ matrix.image }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          CONTEXT: ${{ matrix.context }}
+        run: |
+          docker build --file "$DOCKERFILE" --tag "distribuidora-$IMAGE:ci" "$CONTEXT"
+          uid=$(docker run --rm --entrypoint id "distribuidora-$IMAGE:ci" -u)
+          test "$uid" -gt 0

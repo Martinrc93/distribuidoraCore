@@ -1,6 +1,8 @@
 package com.distribuidora.catalog.api;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import com.distribuidora.catalog.application.BrandService;
 import com.distribuidora.catalog.application.CategoryService;
 
@@ -12,12 +14,12 @@ public final class CatalogAdminDtos {
     }
 
     public record CreateBrandRequest(
-        @NotBlank(message = "name es obligatorio") String name
+        @NotBlank(message = "name es obligatorio") @Size(max = 100) String name
     ) implements BrandService.BrandCommand {
     }
 
     public record UpdateBrandRequest(
-        @NotBlank(message = "name es obligatorio") String name
+        @NotBlank(message = "name es obligatorio") @Size(max = 100) String name
     ) implements BrandService.BrandCommand {
     }
 
@@ -31,12 +33,12 @@ public final class CatalogAdminDtos {
     }
 
     public record CreateCategoryRequest(
-        @NotBlank(message = "name es obligatorio") String name
+        @NotBlank(message = "name es obligatorio") @Size(max = 100) String name
     ) implements CategoryService.CategoryCommand {
     }
 
     public record UpdateCategoryRequest(
-        @NotBlank(message = "name es obligatorio") String name
+        @NotBlank(message = "name es obligatorio") @Size(max = 100) String name
     ) implements CategoryService.CategoryCommand {
     }
 
@@ -50,7 +52,7 @@ public final class CatalogAdminDtos {
     }
 
     public record StatusRequest(
-        @NotBlank(message = "status es obligatorio") String status
+        @NotBlank(message = "status es obligatorio") @Pattern(regexp = "ACTIVE|INACTIVE") String status
     ) {
     }
 

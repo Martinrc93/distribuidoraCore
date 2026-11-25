@@ -15,7 +15,7 @@ import com.distribuidora.shared.error.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -32,16 +32,22 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.UUID;
 
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = DocumentController.class)
@@ -50,19 +56,19 @@ class DocumentControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private SaleDocumentService service;
 
-    @MockBean
+    @MockitoBean
     private OpenPdfA4Renderer renderer;
 
-    @MockBean
+    @MockitoBean
     private OpenPdfTicketRenderer ticketRenderer;
 
-    @MockBean
+    @MockitoBean
     private JwtService jwtService;
 
-    @MockBean
+    @MockitoBean
     private UserAccountRepository userAccountRepository;
 
     @TestConfiguration
@@ -89,19 +95,21 @@ class DocumentControllerTest {
         SaleDocumentModel model = model("V-2026/001\r\n");
         byte[] pdf = "%PDF-test".getBytes();
         when(service.load(orderId)).thenReturn(model);
-        when(renderer.render(model)).thenReturn(pdf);
+        doAnswer(call -> { call.getArgument(1, OutputStream.class).write(pdf); return null; })
+            .when(renderer).render(eq(model), any(OutputStream.class));
 
-        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
+        var download = mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
                 .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
+            .andExpect(request().asyncStarted()).andReturn();
+        mockMvc.perform(asyncDispatch(download))
             .andExpect(status().isOk())
             .andExpect(content().contentType(MediaType.APPLICATION_PDF))
-            .andExpect(header().string(HttpHeaders.CONTENT_LENGTH, String.valueOf(pdf.length)))
             .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"venta-V-2026_001__.pdf\""))
             .andExpect(content().bytes(pdf));
 
         verify(service).load(orderId);
-        verify(renderer).render(model);
+        verify(renderer).render(eq(model), any(OutputStream.class));
     }
 
     @Test
@@ -109,10 +117,11 @@ class DocumentControllerTest {
         UUID orderId = UUID.randomUUID();
         SaleDocumentModel model = model("V-2");
         when(service.load(orderId)).thenReturn(model);
-        when(renderer.render(model)).thenReturn("%PDF".getBytes());
 
-        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
+        var download = mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
                 .with(user("admin").authorities(() -> "ADMIN_ALL")))
+            .andExpect(request().asyncStarted()).andReturn();
+        mockMvc.perform(asyncDispatch(download))
             .andExpect(status().isOk());
     }
 
@@ -122,16 +131,19 @@ class DocumentControllerTest {
         SaleDocumentModel model = model("V-3");
         byte[] pdf = "%PDF-ticket".getBytes();
         when(service.load(orderId)).thenReturn(model);
-        when(ticketRenderer.render(model)).thenReturn(pdf);
+        doAnswer(call -> { call.getArgument(1, OutputStream.class).write(pdf); return null; })
+            .when(ticketRenderer).render(eq(model), any(OutputStream.class));
 
-        mockMvc.perform(get("/api/orders/{orderId}/documents/ticket", orderId)
+        var download = mockMvc.perform(get("/api/orders/{orderId}/documents/ticket", orderId)
                 .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
+            .andExpect(request().asyncStarted()).andReturn();
+        mockMvc.perform(asyncDispatch(download))
             .andExpect(status().isOk())
             .andExpect(content().contentType(MediaType.APPLICATION_PDF))
             .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ticket-V-3.pdf\""))
             .andExpect(content().bytes(pdf));
         verify(service).load(orderId);
-        verify(ticketRenderer).render(model);
+        verify(ticketRenderer).render(eq(model), any(OutputStream.class));
     }
 
     @Test
@@ -172,11 +184,18 @@ class DocumentControllerTest {
         UUID orderId = UUID.randomUUID();
         SaleDocumentModel model = model("V-3");
         when(service.load(orderId)).thenReturn(model);
-        doThrow(new RuntimeException("renderer failed")).when(renderer).render(model);
+        doAnswer(call -> {
+            call.getArgument(1, OutputStream.class).write(new byte[16_384]);
+            throw new IllegalStateException("renderer failed");
+        }).when(renderer).render(eq(model), any(OutputStream.class));
 
-        mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
+        var download = mockMvc.perform(get("/api/orders/{orderId}/documents/a4", orderId)
                 .with(user("seller").authorities(() -> "ORDER_DOCUMENT_EXPORT")))
-            .andExpect(status().isInternalServerError());
+            .andExpect(request().asyncStarted()).andReturn();
+        mockMvc.perform(asyncDispatch(download))
+            .andExpect(status().isInternalServerError())
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.code").value("DOCUMENT_RENDERING_FAILED"));
     }
 
     @Test

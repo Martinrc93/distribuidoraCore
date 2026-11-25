@@ -47,8 +47,8 @@ class PricingQueryServiceTest {
         var sql = ArgumentCaptor.forClass(String.class);
         var parameters = ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).queryForList(sql.capture(), parameters.capture());
-        assertThat(parameters.getValue()).containsExactly(listId, listId, listId, productId);
-        assertThat(sql.getValue()).contains("candidate.status = 'ACTIVE'", "candidate.id < ?", "order by (candidate.id = ?) desc, candidate.id desc", "America/Argentina/Buenos_Aires", "h.effective_on desc, h.created_at desc, h.id desc");
+        assertThat(parameters.getValue()).containsExactly(listId, listId, productId);
+        assertThat(sql.getValue()).contains("candidate.status = 'ACTIVE'", "candidate.is_default = true", "order by (candidate.id = ?) desc", "America/Argentina/Buenos_Aires", "h.effective_on desc, h.created_at desc, h.id desc");
     }
 
     @Test
@@ -170,13 +170,32 @@ class PricingQueryServiceTest {
             .thenThrow(new EmptyResultDataAccessException(1))
             .thenReturn(Map.of("priceListId", previousListId, "priceListCode", "LISTA_2",
                 "productId", productId, "unitPrice", new BigDecimal("11.0000")));
-        when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("price_lists"), any(Object[].class)))
-            .thenReturn(List.of(Map.of("id", previousListId, "code", "LISTA_2", "status", "ACTIVE")));
+        when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("price_lists"), eq(UUID.class)))
+            .thenReturn(List.of(previousListId));
 
         Map<String, Object> result = service.resolve(customerId, productId, null);
 
         assertThat(result).containsEntry("priceListId", previousListId)
             .containsEntry("priceListCode", "LISTA_2")
             .containsEntry("unitPrice", new BigDecimal("11.0000"));
+    }
+
+    @Test
+    void nonAdminListsFilterToActiveStatusWithoutPendingCountAndRejectInactiveListPrices() {
+        UUID listId = UUID.randomUUID();
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.queryForObject(anyString(), eq(Number.class), any(Object[].class))).thenReturn(0);
+
+        service.lists(0, 20, false);
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).queryForList(sql.capture(), any(Object[].class));
+        assertThat(sql.getValue()).contains("where status = 'ACTIVE'").doesNotContain("pendingReviewCount");
+
+        when(jdbc.queryForObject("select exists(select 1 from catalog.price_lists where id = ? and status = 'ACTIVE')",
+            Boolean.class, listId)).thenReturn(false);
+        assertThatThrownBy(() -> service.prices(listId, 0, 20,
+            new PricingQueryService.PriceFilter(null, null, null, null, false, true)))
+            .isInstanceOf(EmptyResultDataAccessException.class);
     }
 }

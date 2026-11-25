@@ -1,11 +1,13 @@
 package com.distribuidora.identity.api;
 
+import com.distribuidora.identity.application.AuthRateLimitExceededException;
 import com.distribuidora.identity.application.InvalidActivationTokenException;
 import com.distribuidora.identity.application.InvalidRefreshTokenException;
 import com.distribuidora.identity.application.InvitationEmailUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,20 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {AuthController.class, UserAdminController.class})
 public class IdentityExceptionHandler {
+
+    @ExceptionHandler(AuthRateLimitExceededException.class)
+    ResponseEntity<ProblemDetail> handleRateLimitExceeded(
+        AuthRateLimitExceededException exception,
+        HttpServletRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage());
+        problem.setTitle("Too Many Requests");
+        problem.setProperty("code", "RATE_LIMIT_EXCEEDED");
+        problem.setInstance(java.net.URI.create(request.getRequestURI()));
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, String.valueOf(exception.getRetryAfterSeconds()))
+            .body(problem);
+    }
 
     @ExceptionHandler(InvitationEmailUnavailableException.class)
     ResponseEntity<ProblemDetail> handleInvitationUnavailable(

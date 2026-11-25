@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -30,12 +31,32 @@ public class InventoryMovementService {
     @Transactional
     public void apply(UUID productId, BigDecimal delta, String movementType, UUID referenceId, String reason) {
         validate(productId, delta, movementType, reason);
-        requireActiveProductForNewMovement(productId, movementType);
+        boolean requireActive = !isHistoricalReversal(movementType)
+            && !("PURCHASE_ADJUSTMENT".equals(movementType) && delta.signum() < 0);
+        applyInternal(productId, delta, movementType, referenceId, reason, requireActive);
+    }
+
+    /**
+     * Deducts stock for an already confirmed order whose products were validated as active when confirmed,
+     * allowing fulfillment to finish even if a product was later deactivated.
+     */
+    @Transactional
+    public void applyConfirmedOrderSale(UUID productId, BigDecimal delta, UUID orderId, String reason) {
+        if (orderId == null || delta == null || delta.signum() >= 0) {
+            throw new IllegalArgumentException("La preparación requiere un pedido válido y una cantidad negativa");
+        }
+        applyInternal(productId, delta, "SALE", orderId, reason, false);
+    }
+
+    private void applyInternal(UUID productId, BigDecimal delta, String movementType,
+                               UUID referenceId, String reason, boolean requireActive) {
+        validate(productId, delta, movementType, reason);
+        if (requireActive) {
+            requireActiveProduct(productId);
+        }
 
         Timestamp now = Timestamp.from(Instant.now());
-        if (!isHistoricalReversal(movementType)) {
-            ensureBalance(productId, now);
-        }
+        ensureBalance(productId, now);
         updateBalance(productId, delta, now);
         insertMovement(productId, delta, movementType, referenceId, reason, now);
     }
@@ -82,9 +103,9 @@ public class InventoryMovementService {
     }
 
     private void updateBalance(UUID productId, BigDecimal delta, Timestamp now) {
-        BigDecimal current = jdbc.queryForObject(
+        BigDecimal current = Objects.requireNonNull(jdbc.queryForObject(
             "select quantity from inventory.inventory_balances where product_id = ? for update",
-            BigDecimal.class, productId);
+            BigDecimal.class, productId), "Saldo de inventario inexistente");
         BigDecimal updated = current.add(delta);
         if (updated.abs().compareTo(MAX_QUANTITY) > 0) {
             throw new IllegalArgumentException("El saldo resultante supera el rango admitido");
@@ -108,10 +129,13 @@ public class InventoryMovementService {
         requireActiveProductForNewMovement(productId, movementType);
         Timestamp now = Timestamp.from(Instant.now());
         ensureBalance(productId, now);
-        BigDecimal current = jdbc.queryForObject(
+        BigDecimal current = Objects.requireNonNull(jdbc.queryForObject(
             "select quantity from inventory.inventory_balances where product_id = ? for update",
-            BigDecimal.class, productId);
+            BigDecimal.class, productId), "Saldo de inventario inexistente");
         BigDecimal delta = targetQuantity.subtract(current);
+        if (targetQuantity.abs().compareTo(MAX_QUANTITY) > 0) {
+            throw new IllegalArgumentException("La cantidad supera el máximo permitido");
+        }
         if (delta.signum() == 0) {
             throw new IllegalStateException("El stock ya tiene esa cantidad");
         }
@@ -137,13 +161,17 @@ public class InventoryMovementService {
             referenceId == null ? null : movementType, referenceId, now);
     }
 
+    private void requireActiveProduct(UUID productId) {
+        String status = jdbc.queryForObject(
+            "select status from catalog.products where id = ?", String.class, productId);
+        if (!"ACTIVE".equals(status)) {
+            throw new IllegalStateException("El producto no está activo");
+        }
+    }
+
     private void requireActiveProductForNewMovement(UUID productId, String movementType) {
         if (!isHistoricalReversal(movementType)) {
-            String status = jdbc.queryForObject(
-                "select status from catalog.products where id = ?", String.class, productId);
-            if (!"ACTIVE".equals(status)) {
-                throw new IllegalStateException("El producto no está activo");
-            }
+            requireActiveProduct(productId);
         }
     }
 
@@ -163,6 +191,7 @@ public class InventoryMovementService {
     private void validateMovement(UUID productId, BigDecimal delta, String reason) {
         if (productId == null || delta == null || delta.signum() == 0
             || delta.remainder(HALF).signum() != 0
+            || delta.abs().compareTo(MAX_QUANTITY) > 0
             || reason == null || reason.isBlank() || reason.length() > 500) {
             throw new IllegalArgumentException("La cantidad debe ser un múltiplo distinto de cero de 0.5 y el motivo es obligatorio (máximo 500 caracteres)");
         }

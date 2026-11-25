@@ -15,7 +15,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")
-@PreAuthorize("hasAuthority('ADMIN_ALL')")
+@PreAuthorize("hasAuthority('ADMIN_ALL') and hasAuthority('USER_MANAGE')")
 public class UserAdminController {
     private final UserAdminService service;
 

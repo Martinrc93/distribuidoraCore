@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class OrdersDateFilterTest {
     private JdbcTemplate jdbc;
@@ -37,7 +38,7 @@ class OrdersDateFilterTest {
         jdbc.execute("create schema if not exists sale");
         jdbc.execute("create table sale.sales(id uuid primary key, order_id uuid, total decimal, paid decimal)");
         jdbc.update("insert into customer.customers values (?, 'Almacén Norte', ?)", customerId, sellerId);
-        service = new ReadQueryService(jdbc);
+        service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
     }
 
     @Test

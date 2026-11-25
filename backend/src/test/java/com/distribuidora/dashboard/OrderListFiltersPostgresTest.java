@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 class OrderListFiltersPostgresTest {
@@ -43,7 +44,7 @@ class OrderListFiltersPostgresTest {
                 UUID sellerPartial = order(customer, tag + "-B", false, "CONFIRMED", "100", "40");
                 UUID sellerDelivered = order(customer, tag + "-C", false, "DELIVERED", "50", "50");
                 order(customer, tag + "-D", null, "CONFIRMED", "10", "0");
-                var queries = new ReadQueryService(jdbc);
+                var queries = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
 
                 assertThat(ids(queries.orders(0, 100, tag, "", null, null, "ADMIN", false).content())).containsExactly(adminPaid);
                 assertThat(ids(queries.orders(0, 100, tag, "", null, null, "SELLER", false).content())).containsExactlyInAnyOrder(sellerPartial, sellerDelivered);

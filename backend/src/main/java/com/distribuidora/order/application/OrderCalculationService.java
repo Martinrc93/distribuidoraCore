@@ -11,6 +11,7 @@ import java.util.UUID;
 public class OrderCalculationService {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final BigDecimal HALF = new BigDecimal("0.5");
+    private static final BigDecimal MAX_AMOUNT = new BigDecimal("999999999999999.9999");
     private static final int SCALE = 4;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
@@ -26,19 +27,19 @@ public class OrderCalculationService {
         List<CalculatedLineResult> results = new java.util.ArrayList<>(lines.size());
         for (CalculatedLine line : lines) {
             validateLine(line);
-            BigDecimal base = scale(line.quantity().multiply(line.unitPrice()));
+            BigDecimal base = ensureWithinLimit(scale(line.quantity().multiply(line.unitPrice())), "base");
             BigDecimal discount = percentage(base, line.lineDiscountPercent());
-            BigDecimal lineTotal = scale(base.subtract(discount));
+            BigDecimal lineTotal = ensureWithinLimit(scale(base.subtract(discount)), "lineTotal");
             results.add(new CalculatedLineResult(
                 line.productId(), line.quantity(), scale(line.unitPrice()),
                 scale(line.lineDiscountPercent()), base, discount, lineTotal));
-            subtotal = scale(subtotal.add(base));
-            discountedSubtotal = scale(discountedSubtotal.add(lineTotal));
+            subtotal = ensureWithinLimit(scale(subtotal.add(base)), "subtotal");
+            discountedSubtotal = ensureWithinLimit(scale(discountedSubtotal.add(lineTotal)), "discountedSubtotal");
             lineDiscount = scale(lineDiscount.add(discount));
         }
 
         BigDecimal orderDiscount = percentage(discountedSubtotal, orderDiscountPercent);
-        BigDecimal total = scale(discountedSubtotal.subtract(orderDiscount));
+        BigDecimal total = ensureWithinLimit(scale(discountedSubtotal.subtract(orderDiscount)), "total");
         if (total.signum() < 0) {
             throw new IllegalArgumentException("El total no puede ser negativo");
         }
@@ -59,7 +60,8 @@ public class OrderCalculationService {
                 if (payment == null || payment.amount() == null || payment.amount().signum() <= 0) {
                     throw new IllegalArgumentException("El importe del pago debe ser positivo");
                 }
-                paymentTotal = scale(paymentTotal.add(payment.amount()));
+                ensureWithinLimit(payment.amount(), "payment.amount");
+                paymentTotal = ensureWithinLimit(scale(paymentTotal.add(payment.amount())), "paymentTotal");
                 if (!"CUSTOMER_ACCOUNT".equals(payment.method())) {
                     paid = scale(paid.add(payment.amount()));
                 }
@@ -82,7 +84,15 @@ public class OrderCalculationService {
         if (line.unitPrice().signum() < 0) {
             throw new IllegalArgumentException("unitPrice no puede ser negativo");
         }
+        ensureWithinLimit(line.unitPrice(), "unitPrice");
         validateDiscount(line.lineDiscountPercent(), "lineDiscountPercent");
+    }
+
+    private static BigDecimal ensureWithinLimit(BigDecimal value, String field) {
+        if (value.compareTo(MAX_AMOUNT) > 0) {
+            throw new IllegalArgumentException(field + " supera el máximo permitido");
+        }
+        return value;
     }
 
     private void validateDiscount(BigDecimal discount, String field) {

@@ -25,7 +25,7 @@ public class OrderFulfillmentController {
     }
 
     @PostMapping("/{orderId}/review")
-    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    @PreAuthorize("hasAuthority('ADMIN_ALL') and hasAuthority('ORDER_REVIEW')")
     public ResponseEntity<Void> review(@PathVariable UUID orderId) {
         service.review(orderId);
         return ResponseEntity.noContent().build();

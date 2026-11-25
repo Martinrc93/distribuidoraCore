@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Invoke-DbQuery([string]$Query) {
-    $result = @(docker compose exec -T db psql -U $DbUser -d $DbName -At -c $Query)
+    $result = @(docker compose exec -T db psql -v ON_ERROR_STOP=1 -X -U $DbUser -d $DbName -At -c $Query)
     if ($LASTEXITCODE -ne 0) {
         throw "PostgreSQL query failed: $Query"
     }
@@ -45,7 +45,7 @@ if ($LASTEXITCODE -ne 0) { throw "docker compose up failed." }
 $health = $null
 for ($attempt = 1; $attempt -le 30; $attempt++) {
     try {
-        $health = Invoke-RestMethod -Uri "$BaseUrl/actuator/health" -Method Get
+        $health = Invoke-RestMethod -Uri "$BaseUrl/actuator/health/readiness" -Method Get
         if ($health.status -eq "UP") { break }
     } catch {
         if ($attempt -eq 30) { throw "Backend health did not become available: $($_.Exception.Message)" }
@@ -140,27 +140,28 @@ CREATE TRIGGER smoke_force_order_failure
 AFTER INSERT ON orders.orders
 FOR EACH ROW EXECUTE FUNCTION smoke_force_order_failure();
 "@
-$rollbackPayload = @{
-    idempotencyKey = "rollback-$key"
-    customerId = $customerId
-    priceListId = $null
-    lines = @(@{
-        productId = $productId
-        quantity = 1.0
-        lineDiscountPercent = 0.0
-        unitPriceOverride = $null
-    })
-    orderDiscountPercent = 0.0
-    payments = @(@{ method = "CASH"; amount = $total })
-} | ConvertTo-Json -Depth 6
-$rollbackFailed = $false
 try {
-    Invoke-RestMethod -Uri "$BaseUrl/api/orders/confirm" -Method Post -Headers $headers -ContentType "application/json" -Body $rollbackPayload | Out-Null
-} catch {
-    $rollbackFailed = $true
-}
-if (-not $rollbackFailed) { throw "Expected post-write database failure to roll back." }
-$rollbackAfter = Invoke-DbQuery @"
+    $rollbackPayload = @{
+        idempotencyKey = "rollback-$key"
+        customerId = $customerId
+        priceListId = $null
+        lines = @(@{
+            productId = $productId
+            quantity = 1.0
+            lineDiscountPercent = 0.0
+            unitPriceOverride = $null
+        })
+        orderDiscountPercent = 0.0
+        payments = @(@{ method = "CASH"; amount = $total })
+    } | ConvertTo-Json -Depth 6
+    $rollbackFailed = $false
+    try {
+        Invoke-RestMethod -Uri "$BaseUrl/api/orders/confirm" -Method Post -Headers $headers -ContentType "application/json" -Body $rollbackPayload | Out-Null
+    } catch {
+        $rollbackFailed = $true
+    }
+    if (-not $rollbackFailed) { throw "Expected post-write database failure to roll back." }
+    $rollbackAfter = Invoke-DbQuery @"
 SELECT
   (SELECT count(*) FROM orders.orders),
   (SELECT count(*) FROM sale.sales),
@@ -172,17 +173,19 @@ SELECT
   (SELECT balance FROM customer.customers WHERE id = '$customerId'),
   (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId')
 "@
-$rollbackBeforeParts = $rollbackBefore.Split('|')
-$rollbackAfterParts = $rollbackAfter.Split('|')
-for ($index = 0; $index -lt 7; $index++) {
-    Assert-Equal ([int]$rollbackBeforeParts[$index]) ([int]$rollbackAfterParts[$index]) "Rollback changed persisted count index $index"
-}
-Assert-Equal ([decimal]$rollbackBeforeParts[7]) ([decimal]$rollbackAfterParts[7]) "Rollback changed customer balance"
-Assert-Equal ([decimal]$rollbackBeforeParts[8]) ([decimal]$rollbackAfterParts[8]) "Rollback changed product stock"
-$null = Invoke-DbQuery @"
+    $rollbackBeforeParts = $rollbackBefore.Split('|')
+    $rollbackAfterParts = $rollbackAfter.Split('|')
+    for ($index = 0; $index -lt 7; $index++) {
+        Assert-Equal ([int]$rollbackBeforeParts[$index]) ([int]$rollbackAfterParts[$index]) "Rollback changed persisted count index $index"
+    }
+    Assert-Equal ([decimal]$rollbackBeforeParts[7]) ([decimal]$rollbackAfterParts[7]) "Rollback changed customer balance"
+    Assert-Equal ([decimal]$rollbackBeforeParts[8]) ([decimal]$rollbackAfterParts[8]) "Rollback changed product stock"
+} finally {
+    $null = Invoke-DbQuery @"
 DROP TRIGGER IF EXISTS smoke_force_order_failure ON orders.orders;
 DROP FUNCTION IF EXISTS smoke_force_order_failure();
 "@
+}
 
 $jobs = @(
     Start-Job -ScriptBlock {
@@ -226,7 +229,7 @@ Assert-Equal ([int]$beforeParts[0] + 1) ([int]$createdParts[0]) "Order count did
 Assert-Equal ([int]$beforeParts[1] + 1) ([int]$createdParts[1]) "Sale count did not increase by one"
 Assert-Equal ([int]$beforeParts[2] + 1) ([int]$createdParts[2]) "Order item count did not increase by one"
 Assert-Equal ([int]$beforeParts[3] + 1) ([int]$createdParts[3]) "Sale item count did not increase by one"
-Assert-Equal ([int]$beforeParts[4] + 1) ([int]$createdParts[4]) "Concurrent confirmations changed SALE movement count more than once"
+Assert-Equal ([int]$beforeParts[4]) ([int]$createdParts[4]) "Concurrent confirmations unexpectedly changed stock movement count before preparation"
 Assert-Equal ([int]$beforeParts[5] + 1) ([int]$createdParts[5]) "Concurrent confirmations changed payment count more than once"
 Assert-Equal ([int]$beforeParts[6] + 1) ([int]$createdParts[6]) "Concurrent confirmations changed ledger count more than once"
 Assert-Equal ([decimal]$beforeParts[7] + $account) ([decimal]$createdParts[7]) "Customer balance did not increase by account amount"
@@ -295,7 +298,9 @@ Assert-Equal 0 ([int]$deliveredBeforeParts[2]) "DELIVERED precondition already h
 Assert-Equal "DELIVERED" $deliveredAfterParts[0] "DELIVERED did not update the order"
 Assert-Equal "DELIVERED" $deliveredAfterParts[1] "DELIVERED did not update the sale"
 Assert-Equal 1 ([int]$deliveredAfterParts[2]) "DELIVERED did not persist one delivery attempt"
-for ($index = 3; $index -lt $deliveredBeforeParts.Count; $index++) {
+Assert-Equal ([decimal]$deliveredBeforeParts[3] - $lifecycleQuantity) ([decimal]$deliveredAfterParts[3]) "DELIVERED from PENDING did not deduct stock"
+Assert-Equal ([int]$deliveredBeforeParts[4] + 1) ([int]$deliveredAfterParts[4]) "DELIVERED from PENDING did not record one SALE stock movement"
+for ($index = 5; $index -lt $deliveredBeforeParts.Count; $index++) {
     Assert-Equal $deliveredBeforeParts[$index] $deliveredAfterParts[$index] "DELIVERED changed persisted value index $index"
 }
 Assert-HttpStatus $deliveredUri "Post" $headers (@{ result = "FAILED"; observation = "Terminal retry" } | ConvertTo-Json) 409 "Retrying a delivered order was not rejected"
@@ -323,8 +328,24 @@ SELECT
   (SELECT count(*) FROM inventory.stock_movements),
   (SELECT count(*) FROM customer.account_ledger)
 "@
+$cancelBeforeParts = $cancelBefore.Split('|')
+$cancelAfterConfirmParts = $cancelAfterConfirm.Split('|')
+Assert-Equal ([decimal]$cancelBeforeParts[0]) ([decimal]$cancelAfterConfirmParts[0]) "Order confirmation changed stock before preparation"
+Assert-Equal ([decimal]$cancelBeforeParts[1] + $lifecycleTotal) ([decimal]$cancelAfterConfirmParts[1]) "Cancellation confirmation did not create account debt"
+$prepareUri = "$BaseUrl/api/orders/$($cancelConfirmation.orderId)/prepare"
+Assert-HttpStatus $prepareUri "Post" $headers $null 204 "Preparing a confirmed order did not return 204"
+$cancelAfterPrepare = Invoke-DbQuery @"
+SELECT
+  (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId'),
+  (SELECT balance FROM customer.customers WHERE id = '$customerId'),
+  (SELECT count(*) FROM inventory.stock_movements),
+  (SELECT count(*) FROM customer.account_ledger)
+"@
+$cancelAfterPrepareParts = $cancelAfterPrepare.Split('|')
+Assert-Equal ([decimal]$cancelBeforeParts[0] - $lifecycleQuantity) ([decimal]$cancelAfterPrepareParts[0]) "Preparing an order did not deduct stock"
+Assert-Equal ([int]$cancelAfterConfirmParts[2] + 1) ([int]$cancelAfterPrepareParts[2]) "Preparing an order did not add one stock movement"
 $cancelUri = "$BaseUrl/api/orders/$($cancelConfirmation.orderId)/cancel"
-Assert-HttpStatus $cancelUri "Post" $headers $null 204 "Cancelling a confirmed order did not return 204"
+Assert-HttpStatus $cancelUri "Post" $headers $null 204 "Cancelling a prepared order did not return 204"
 $cancelAfter = Invoke-DbQuery @"
 SELECT
   (SELECT o.status FROM orders.orders o WHERE o.id = '$($cancelConfirmation.orderId)'),
@@ -338,17 +359,13 @@ SELECT
   (SELECT count(*) FROM inventory.stock_movements WHERE reference_id = '$($cancelConfirmation.orderId)' AND movement_type = 'SALE_CANCELLATION'),
   (SELECT count(*) FROM customer.account_ledger WHERE sale_id = '$($cancelConfirmation.saleId)' AND entry_type = 'CREDIT')
 "@
-$cancelBeforeParts = $cancelBefore.Split('|')
-$cancelAfterConfirmParts = $cancelAfterConfirm.Split('|')
 $cancelAfterParts = $cancelAfter.Split('|')
-Assert-Equal ([decimal]$cancelBeforeParts[0] - $lifecycleQuantity) ([decimal]$cancelAfterConfirmParts[0]) "Cancellation confirmation did not reserve stock"
-Assert-Equal ([decimal]$cancelBeforeParts[1] + $lifecycleTotal) ([decimal]$cancelAfterConfirmParts[1]) "Cancellation confirmation did not create account debt"
 Assert-Equal "CANCELLED" $cancelAfterParts[0] "Cancellation did not update the order"
 Assert-Equal "CANCELLED" $cancelAfterParts[1] "Cancellation did not update the sale"
 Assert-Equal ([decimal]$cancelBeforeParts[0]) ([decimal]$cancelAfterParts[2]) "Cancellation did not restore stock"
 Assert-Equal ([decimal]$cancelBeforeParts[1]) ([decimal]$cancelAfterParts[3]) "Cancellation did not restore customer balance"
-Assert-Equal ([int]$cancelAfterConfirmParts[2] + 1) ([int]$cancelAfterParts[4]) "Cancellation did not add one stock reversal"
-Assert-Equal ([int]$cancelAfterConfirmParts[3] + 1) ([int]$cancelAfterParts[6]) "Cancellation did not add the credit ledger entry"
+Assert-Equal ([int]$cancelAfterPrepareParts[2] + 1) ([int]$cancelAfterParts[4]) "Cancellation did not add one stock reversal"
+Assert-Equal ([int]$cancelAfterPrepareParts[3] + 1) ([int]$cancelAfterParts[6]) "Cancellation did not add the credit ledger entry"
 Assert-Equal 1 ([int]$cancelAfterParts[7]) "Cancellation SALE movement count was unexpected"
 Assert-Equal 1 ([int]$cancelAfterParts[8]) "Cancellation SALE_CANCELLATION movement count was unexpected"
 Assert-Equal 1 ([int]$cancelAfterParts[9]) "Cancellation CREDIT ledger count was unexpected"
@@ -378,7 +395,7 @@ docker compose restart backend frontend
 if ($LASTEXITCODE -ne 0) { throw "docker compose restart failed." }
 for ($attempt = 1; $attempt -le 30; $attempt++) {
     try {
-        $health = Invoke-RestMethod -Uri "$BaseUrl/actuator/health" -Method Get
+        $health = Invoke-RestMethod -Uri "$BaseUrl/actuator/health/readiness" -Method Get
         if ($health.status -eq "UP") { break }
     } catch {
         if ($attempt -eq 30) { throw "Backend health did not recover after restart: $($_.Exception.Message)" }
@@ -399,14 +416,16 @@ Assert-Equal "CANCELLED" $persistedLifecycle.sale.status "Persisted sale lifecyc
 $documentBefore = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || c.balance || '|' || (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId') || '|' || (SELECT count(*) FROM inventory.stock_movements) || '|' || (SELECT count(*) FROM payment.payments) || '|' || (SELECT coalesce(sum(amount), 0) FROM payment.payments) || '|' || (SELECT count(*) FROM customer.account_ledger) || '|' || (SELECT coalesce(sum(amount), 0) FROM customer.account_ledger) FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id JOIN customer.customers c ON c.id = o.customer_id WHERE o.id = '$($cancelConfirmation.orderId)'"
 $documentResponse = Invoke-WebRequest -Uri "$BaseUrl/api/orders/$($cancelConfirmation.orderId)/documents/a4" -Method Get -Headers $restartHeaders -UseBasicParsing
 Assert-Equal 200 ([int]$documentResponse.StatusCode) "A4 document request did not return 200"
-if (-not $documentResponse.Headers["Content-Type"].StartsWith("application/pdf")) {
+$contentType = ($documentResponse.Headers["Content-Type"] -join ",")
+if (-not $contentType.StartsWith("application/pdf")) {
     throw "A4 document did not return application/pdf content type."
 }
 $documentBytes = $documentResponse.RawContentStream.ToArray()
 if ($documentBytes.Length -le 0 -or $documentBytes.Length -lt 4 -or [System.Text.Encoding]::ASCII.GetString($documentBytes, 0, 4) -ne "%PDF") {
     throw "A4 document was empty or did not start with %PDF."
 }
-if ($documentResponse.Headers["Content-Disposition"] -notlike 'attachment; filename="venta-*.pdf"') {
+$contentDisposition = ($documentResponse.Headers["Content-Disposition"] -join ",")
+if ($contentDisposition -notlike 'attachment; filename="venta-*.pdf"') {
     throw "A4 document disposition did not contain a venta-*.pdf filename."
 }
 $documentAfter = Invoke-DbQuery "SELECT o.status || '|' || s.status || '|' || c.balance || '|' || (SELECT quantity FROM inventory.inventory_balances WHERE product_id = '$productId') || '|' || (SELECT count(*) FROM inventory.stock_movements) || '|' || (SELECT count(*) FROM payment.payments) || '|' || (SELECT coalesce(sum(amount), 0) FROM payment.payments) || '|' || (SELECT count(*) FROM customer.account_ledger) || '|' || (SELECT coalesce(sum(amount), 0) FROM customer.account_ledger) FROM orders.orders o JOIN sale.sales s ON s.order_id = o.id JOIN customer.customers c ON c.id = o.customer_id WHERE o.id = '$($cancelConfirmation.orderId)'"

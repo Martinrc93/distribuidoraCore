@@ -29,7 +29,7 @@ import java.time.ZoneOffset;
 class DemoDataSeederTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-    private final DemoDataSeeder seeder = new DemoDataSeeder(jdbc, passwordEncoder, true, "secret");
+    private final DemoDataSeeder seeder = new DemoDataSeeder(jdbc, passwordEncoder, true, "demo-password");
 
     @BeforeEach
     void numberOrders() {
@@ -49,11 +49,16 @@ class DemoDataSeederTest {
     void ensuresThreeCategoriesSixBrandsAndTenZonesForNewAndExistingSeeds(boolean alreadySeeded) {
         when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(alreadySeeded);
         when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
-        when(passwordEncoder.encode("secret")).thenReturn("hash");
+        when(passwordEncoder.encode("demo-password")).thenReturn("hash");
         when(jdbc.queryForMap(anyString(), any(Object[].class)))
             .thenReturn(java.util.Map.of("name", "Product", "price", new java.math.BigDecimal("10.0000")));
 
         seeder.run(mock(ApplicationArguments.class));
+
+        if (alreadySeeded) {
+            verify(jdbc, never()).update(org.mockito.ArgumentMatchers.contains("identity.user_roles"), any(Object[].class));
+            verify(jdbc, never()).update(org.mockito.ArgumentMatchers.contains("identity.role_permissions"), any(Object[].class));
+        }
 
         ArgumentCaptor<Object[]> categories = ArgumentCaptor.forClass(Object[].class);
         verify(jdbc, org.mockito.Mockito.times(3)).update(
@@ -92,10 +97,10 @@ class DemoDataSeederTest {
         LocalDate today = LocalDate.now(clock.withZone(zone));
         when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(false);
         when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
-        when(passwordEncoder.encode("secret")).thenReturn("hash");
+        when(passwordEncoder.encode("demo-password")).thenReturn("hash");
         when(jdbc.queryForMap(anyString(), any(Object[].class)))
             .thenReturn(java.util.Map.of("name", "Product", "price", new java.math.BigDecimal("10.0000")));
-        new DemoDataSeeder(jdbc, passwordEncoder, true, "secret", clock).run(mock(ApplicationArguments.class));
+        new DemoDataSeeder(jdbc, passwordEncoder, true, "demo-password", clock).run(mock(ApplicationArguments.class));
 
         ArgumentCaptor<Object[]> arguments = ArgumentCaptor.forClass(Object[].class);
         verify(jdbc, org.mockito.Mockito.times(1000)).update(
@@ -129,7 +134,7 @@ class DemoDataSeederTest {
     }
 
     @Test
-    void repairsCanonicalRoleAssignmentsWithoutCreatingDefinitions() {
+    void assignsCanonicalRolesOnTheFirstSeedWithoutCreatingDefinitions() {
         UUID adminRole = UUID.randomUUID();
         UUID sellerRole = UUID.randomUUID();
         UUID adminAll = UUID.randomUUID();
@@ -137,7 +142,11 @@ class DemoDataSeederTest {
         UUID stockAdjust = UUID.randomUUID();
         UUID orderCreate = UUID.randomUUID();
         UUID saleDeliver = UUID.randomUUID();
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(true);
+        UUID generalPriceList = UUID.randomUUID();
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(false);
+        when(passwordEncoder.encode("demo-password")).thenReturn("hash");
+        when(jdbc.queryForMap(anyString(), any(Object[].class)))
+            .thenReturn(java.util.Map.of("name", "Product", "price", new java.math.BigDecimal("10.0000")));
         when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenAnswer(invocation -> {
             String sql = invocation.getArgument(0);
             if (sql.contains("code = 'ADMIN'")) return adminRole;
@@ -147,6 +156,7 @@ class DemoDataSeederTest {
             if (sql.contains("code = 'STOCK_ADJUST'")) return stockAdjust;
             if (sql.contains("code = 'ORDER_CREATE'")) return orderCreate;
             if (sql.contains("code = 'SALE_DELIVER'")) return saleDeliver;
+            if (sql.contains("code = 'GENERAL'")) return generalPriceList;
             throw new AssertionError("Unexpected UUID query: " + sql);
         });
 
@@ -208,7 +218,7 @@ class DemoDataSeederTest {
     void seedsV6ItemSnapshots() {
         when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("demo-v1"))).thenReturn(false);
         when(jdbc.queryForObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
-        when(passwordEncoder.encode("secret")).thenReturn("hash");
+        when(passwordEncoder.encode("demo-password")).thenReturn("hash");
         when(jdbc.queryForMap(anyString(), any(Object[].class)))
             .thenReturn(java.util.Map.of("name", "Producto", "price", new java.math.BigDecimal("10.0000")));
 

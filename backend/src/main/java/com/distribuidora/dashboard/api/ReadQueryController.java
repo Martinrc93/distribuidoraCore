@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDate;
@@ -43,6 +44,7 @@ public class ReadQueryController {
     }
 
     @GetMapping("/customers")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'CUSTOMER_VIEW', 'CUSTOMER_CREATE', 'CUSTOMER_EDIT', 'CUSTOMER_STATUS_CHANGE', 'CUSTOMER_PRICE_LIST_CHANGE', 'ACCOUNT_SETTLE', 'CUSTOMER_STATEMENT_EXPORT', 'ORDER_CREATE', 'ORDER_EDIT', 'SALE_PAYMENT')")
     public PageResponse<Map<String, Object>> customers(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
             @RequestParam(required = false) UUID sellerId, @RequestParam(defaultValue = "false") boolean hasBalance,
@@ -52,6 +54,7 @@ public class ReadQueryController {
     }
 
     @GetMapping("/customers/filter-options")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'CUSTOMER_VIEW', 'CUSTOMER_CREATE', 'CUSTOMER_EDIT', 'CUSTOMER_STATUS_CHANGE', 'CUSTOMER_PRICE_LIST_CHANGE', 'ACCOUNT_SETTLE', 'CUSTOMER_STATEMENT_EXPORT', 'ORDER_CREATE', 'ORDER_EDIT', 'SALE_PAYMENT')")
     public Map<String, Object> customerFilterOptions() { return queries.customerFilterOptions(); }
 
     @GetMapping("/customers/{customerId}/debts")
@@ -68,6 +71,7 @@ public class ReadQueryController {
     }
 
     @GetMapping("/products")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'CUSTOMER_VIEW', 'REPORTS_VIEW')")
     public PageResponse<Map<String, Object>> products(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
             @RequestParam(defaultValue = "true") boolean includeStock,
@@ -85,6 +89,7 @@ public class ReadQueryController {
     public PageResponse<Map<String, Object>> movements(@PathVariable UUID productId, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) { return queries.movements(productId, page, size); }
 
     @GetMapping("/orders")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'ORDER_PREPARE', 'ORDER_CANCEL', 'ORDER_REACTIVATE', 'ORDER_DOCUMENT_EXPORT', 'ORDER_NOTIFY', 'SALE_DELIVER', 'SALE_PAYMENT', 'SALE_RETURN', 'REPORTS_VIEW')")
     public PageResponse<Map<String, Object>> orders(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
             @RequestParam(defaultValue = "") String status,
@@ -98,15 +103,19 @@ public class ReadQueryController {
     }
 
     @GetMapping("/orders/{orderId}")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'ORDER_PREPARE', 'ORDER_CANCEL', 'ORDER_REACTIVATE', 'ORDER_DOCUMENT_EXPORT', 'ORDER_NOTIFY', 'SALE_DELIVER', 'SALE_PAYMENT', 'SALE_RETURN', 'REPORTS_VIEW')")
     public Map<String, Object> order(@PathVariable UUID orderId) { return queries.orderDetail(orderId); }
 
     @GetMapping("/orders/by-number/{orderNumber}")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'ORDER_PREPARE', 'ORDER_CANCEL', 'ORDER_REACTIVATE', 'ORDER_DOCUMENT_EXPORT', 'ORDER_NOTIFY', 'SALE_DELIVER', 'SALE_PAYMENT', 'SALE_RETURN', 'REPORTS_VIEW')")
     public Map<String, Object> orderByNumber(@PathVariable String orderNumber) { return queries.orderDetailByNumber(orderNumber); }
 
     @GetMapping("/sales/{saleId}")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'SALE_DELIVER', 'SALE_PAYMENT', 'SALE_RETURN', 'ACCOUNT_SETTLE', 'REPORTS_VIEW')")
     public Map<String, Object> sale(@PathVariable UUID saleId) { return queries.saleDetail(saleId); }
 
     @GetMapping("/sales")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'SALE_DELIVER', 'SALE_PAYMENT', 'SALE_RETURN', 'ACCOUNT_SETTLE', 'REPORTS_VIEW')")
     public PageResponse<Map<String, Object>> sales(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search,
             @RequestParam(required = false) UUID customerId, @RequestParam(required = false) UUID accountCustomerId,
@@ -118,11 +127,13 @@ public class ReadQueryController {
     }
 
     @GetMapping("/sales/filter-options")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'ORDER_CREATE', 'ORDER_EDIT', 'SALE_DELIVER', 'SALE_PAYMENT', 'SALE_RETURN', 'ACCOUNT_SETTLE', 'REPORTS_VIEW')")
     public Map<String, Object> saleFilterOptions() {
         return queries.saleFilterOptions();
     }
 
     @GetMapping("/payments")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ALL', 'SALE_PAYMENT', 'ACCOUNT_SETTLE')")
     public PageResponse<Map<String, Object>> payments(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "") String search) { return queries.payments(page, size, search); }
 
     @GetMapping("/audit")
@@ -152,6 +163,20 @@ public class ReadQueryController {
     @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public PageResponse<Map<String, Object>> sellers(int page, int size) {
         return queries.sellers(page, size);
+    }
+
+    @GetMapping("/sellers/profiles")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
+    public PageResponse<Map<String, Object>> commercialProfiles(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "") String status,
+            @RequestParam(defaultValue = "") String kind,
+            Authentication authentication) {
+        boolean canViewResellers = authentication.getAuthorities().stream()
+            .anyMatch(authority -> "RESELLER_MANAGE".equals(authority.getAuthority()));
+        return queries.commercialProfiles(page, size, search, status, kind, canViewResellers);
     }
 
     @GetMapping("/sellers/{id}")

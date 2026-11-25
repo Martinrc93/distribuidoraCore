@@ -101,6 +101,30 @@ class InventoryMovementServiceTest {
             eq("RETURN"), eq(returnId), any());
     }
 
+    @Test
+    void permitsConfirmedOrderSaleAndNegativePurchaseAdjustmentOnInactiveProduct() {
+        UUID productId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID purchaseId = UUID.randomUUID();
+        when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), eq(productId)))
+            .thenReturn("INACTIVE");
+        when(jdbc.queryForObject(
+            eq("select quantity from inventory.inventory_balances where product_id = ? for update"),
+            eq(BigDecimal.class), eq(productId))).thenReturn(new BigDecimal("5.0"), new BigDecimal("4.0"));
+
+        service.applyConfirmedOrderSale(productId, new BigDecimal("-1.0"), orderId, "Pedido confirmado");
+        service.apply(productId, new BigDecimal("-2.0"), "PURCHASE_ADJUSTMENT", purchaseId, "Reducción de compra");
+
+        verify(jdbc).update(
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
+            eq(new BigDecimal("4.0")), any(), eq(productId));
+        verify(jdbc).update(
+            eq("update inventory.inventory_balances set quantity = ?, updated_at = ? where product_id = ?"),
+            eq(new BigDecimal("2.0")), any(), eq(productId));
+        assertThatThrownBy(() -> service.apply(productId, new BigDecimal("1.0"), "PURCHASE_ADJUSTMENT", purchaseId, "Aumento"))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
     private void stubActive(UUID productId) {
         when(jdbc.queryForObject(eq("select status from catalog.products where id = ?"), eq(String.class), eq(productId)))
             .thenReturn("ACTIVE");

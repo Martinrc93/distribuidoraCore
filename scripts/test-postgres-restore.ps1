@@ -1,3 +1,4 @@
+#Requires -Version 7.2
 [CmdletBinding()]
 param(
     [string]$SourceDatabase,
@@ -13,20 +14,18 @@ $pgBin = $env:PG_BIN
 $createdb = if ($pgBin) { Join-Path $pgBin 'createdb.exe' } else { (Get-Command createdb -ErrorAction Stop).Source }
 $dropdb = if ($pgBin) { Join-Path $pgBin 'dropdb.exe' } else { (Get-Command dropdb -ErrorAction Stop).Source }
 $psql = if ($pgBin) { Join-Path $pgBin 'psql.exe' } else { (Get-Command psql -ErrorAction Stop).Source }
-$root = Split-Path -Parent $PSScriptRoot
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("distribuidora-restore-test-" + [guid]::NewGuid())
 $archive = Join-Path $temp 'source.dcbak'
-$plain = Join-Path $temp 'source.dump'
 $target = 'codex_restore_' + [guid]::NewGuid().ToString('N').Substring(0, 12)
 $tampered = Join-Path $temp 'tampered.dcbak'
 $previousPassword = $env:PGPASSWORD
+$targetCreated = $false
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
     if ([string]::IsNullOrWhiteSpace($SourceDatabase) -eq [string]::IsNullOrWhiteSpace($BackupPath)) {
         throw 'Indique exactamente uno de -SourceDatabase o -BackupPath.'
     }
     if ($dbPassword) { $env:PGPASSWORD = $dbPassword }
-    else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
     if ($BackupPath) {
         Copy-Item -LiteralPath $BackupPath -Destination $archive
     } else {
@@ -35,6 +34,7 @@ try {
     if (-not (Test-Path -LiteralPath $archive)) { throw 'La generación del backup de prueba falló.' }
     & $createdb --no-password "--host=$PgHost" "--port=$Port" "--username=$Username" "--owner=$Username" $target
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear la base descartable para restauración.' }
+    $targetCreated = $true
     Copy-Item -LiteralPath $archive -Destination $tampered
     $tamperStream = [IO.File]::Open($tampered, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
@@ -51,7 +51,7 @@ try {
     $targetUntouched = & $psql --no-password -At "--host=$PgHost" "--port=$Port" "--username=$Username" "--dbname=$target" -c "select to_regclass('public.flyway_schema_history') is null"
     if ($LASTEXITCODE -ne 0 -or $targetUntouched.Trim() -ne 't') { throw 'El intento de restaurar un backup alterado modificó la base descartable.' }
     & (Join-Path $PSScriptRoot 'restore-postgres.ps1') -BackupPath $archive -TargetDatabase $target -PgHost $PgHost -Port $Port -Username $Username -Force
-    $latest = & $psql --no-password -At "--host=$PgHost" "--port=$Port" "--username=$Username" "--dbname=$target" -c "select max(version::integer) from public.flyway_schema_history where success"
+    $latest = & $psql --no-password -At "--host=$PgHost" "--port=$Port" "--username=$Username" "--dbname=$target" -c "select max(version::integer) from public.flyway_schema_history where success and version ~ '^[0-9]+$'"
     if ($LASTEXITCODE -ne 0 -or [int]$latest -lt 1) { throw 'La base restaurada no contiene historial Flyway válido.' }
     if ([int]$latest -ge 20) {
         $notificationTable = & $psql --no-password -At "--host=$PgHost" "--port=$Port" "--username=$Username" "--dbname=$target" -c "select to_regclass('notification.delivery_requests') is not null"
@@ -59,7 +59,15 @@ try {
     }
     Write-Output "Restauración verificada en la base descartable $target (Flyway V$latest)."
 } finally {
-    if ($previousPassword) { $env:PGPASSWORD = $previousPassword } else { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
-    & $dropdb --no-password --if-exists "--host=$PgHost" "--port=$Port" "--username=$Username" $target 2>$null
-    Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        if ($targetCreated) {
+            & $dropdb --no-password --if-exists "--host=$PgHost" "--port=$Port" "--username=$Username" $target
+            if ($LASTEXITCODE -ne 0) { throw "No se pudo eliminar la base descartable $target." }
+        }
+    } finally {
+        $env:PGPASSWORD = $previousPassword
+        [IO.File]::Delete($archive)
+        [IO.File]::Delete($tampered)
+        [IO.Directory]::Delete($temp)
+    }
 }

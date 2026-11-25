@@ -18,6 +18,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 
 class ProductFiltersTest {
     private JdbcTemplate jdbc;
@@ -45,7 +46,7 @@ class ProductFiltersTest {
         addProduct("Flour Other Brand", UUID.randomUUID(), category, 10.0);
         addProduct("Flour Other Category", brand, null, 10.0);
         addProduct("Rice", brand, category, 10.0);
-        service = new ReadQueryService(jdbc);
+        service = new ReadQueryService(jdbc, TestCurrentUserAccess.admin(jdbc));
     }
 
     private void addProduct(String name, UUID brandId, UUID categoryId, Double stock) {

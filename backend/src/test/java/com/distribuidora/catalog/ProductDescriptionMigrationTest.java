@@ -3,6 +3,7 @@ package com.distribuidora.catalog;
 import com.distribuidora.audit.application.AuditService;
 import com.distribuidora.catalog.api.CatalogAdminDtos;
 import com.distribuidora.catalog.application.BrandService;
+import com.distribuidora.shared.security.TestCurrentUserAccess;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,7 +54,7 @@ class ProductDescriptionMigrationTest {
         assertThat(jdbc.queryForObject("select quantity from inventory.inventory_balances", BigDecimal.class)).isEqualByComparingTo("-0.5");
         assertThat(jdbc.queryForObject("select price from catalog.product_prices", BigDecimal.class)).isEqualByComparingTo("12");
 
-        var brands = new BrandService(jdbc, mock(AuditService.class), null);
+        var brands = new BrandService(jdbc, mock(AuditService.class), TestCurrentUserAccess.admin(jdbc));
         brands.update(brand, new CatalogAdminDtos.UpdateBrandRequest("New Brand"));
         assertThat(jdbc.queryForObject("select name from catalog.products where id = ?", String.class, plain)).isEqualTo("New Brand Flour");
         assertThat(jdbc.queryForObject("select name from catalog.products where id = ?", String.class, prefixed)).isEqualTo("New Brand Rice");

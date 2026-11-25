@@ -4,7 +4,16 @@ import com.distribuidora.catalog.application.CategoryService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.UUID;
@@ -19,6 +28,7 @@ public class CategoryController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<List<CatalogAdminDtos.CategoryResponse>> list(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status) {
@@ -26,6 +36,7 @@ public class CategoryController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN_ALL')")
     public ResponseEntity<CatalogAdminDtos.CategoryResponse> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(toResponse(service.getById(id)));
     }

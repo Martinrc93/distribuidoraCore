@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
@@ -13,20 +14,23 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import com.distribuidora.shared.time.BusinessTime;
 
 @Service
 public class DashboardAnalyticsService {
-    private static final ZoneId ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final ZoneId ZONE = BusinessTime.ZONE;
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
-    @Autowired
     public DashboardAnalyticsService(JdbcTemplate jdbc) {
         this(jdbc, Clock.system(ZONE));
     }
 
+    @Autowired
     public DashboardAnalyticsService(JdbcTemplate jdbc, Clock clock) {
         this.jdbc = jdbc;
         this.clock = clock;
@@ -51,38 +55,129 @@ public class DashboardAnalyticsService {
         Timestamp until = Timestamp.from(untilInstant);
         Timestamp previousFromSql = Timestamp.from(previousFrom);
         Timestamp previousUntilSql = Timestamp.from(previousUntil);
+
+        Map<String, Object> summary = jdbc.queryForMap("""
+            with sales_agg as (
+                select coalesce(sum(total) filter (where created_at >= ? and created_at < ?), 0) as amount,
+                       count(*) filter (where created_at >= ? and created_at < ?) as orders,
+                       coalesce(sum(total) filter (where created_at >= ? and created_at < ?), 0) as prev_amount,
+                       count(*) filter (where created_at >= ? and created_at < ?) as prev_orders
+                from sale.sales
+                where status in ('CONFIRMED', 'DELIVERED')
+                  and created_at >= ? and created_at < ?
+            ),
+            collections_agg as (
+                select coalesce(sum(amount) filter (where created_at >= ? and created_at < ?), 0) as amount,
+                       coalesce(sum(amount) filter (where created_at >= ? and created_at < ? and method = 'CASH'), 0) as cash,
+                       coalesce(sum(amount) filter (where created_at >= ? and created_at < ? and method = 'BANK_TRANSFER'), 0) as transfer,
+                       coalesce(sum(amount) filter (where created_at >= ? and created_at < ?), 0) as prev_amount,
+                       coalesce(sum(amount) filter (where created_at >= ? and created_at < ? and method = 'CASH'), 0) as prev_cash,
+                       coalesce(sum(amount) filter (where created_at >= ? and created_at < ? and method = 'BANK_TRANSFER'), 0) as prev_transfer
+                from payment.payments
+                where method in ('CASH', 'BANK_TRANSFER')
+                  and created_at >= ? and created_at < ?
+            ),
+            debts as (
+                select greatest(least(s.total - s.paid, coalesce(l.balance, 0)), 0) as balance,
+                       cast(? as date) - (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as age
+                from sale.sales s left join lateral (
+                    select sum(case when entry_type = 'DEBIT' then amount else -amount end) as balance
+                    from customer.account_ledger where sale_id = s.id and customer_id = s.account_customer_id
+                ) l on true where s.status in ('CONFIRMED', 'DELIVERED') and s.paid < s.total
+            ),
+            aging_agg as (
+                select coalesce(sum(balance) filter (where age <= 30), 0) as days_0_30,
+                       coalesce(sum(balance) filter (where age between 31 and 60), 0) as days_31_60,
+                       coalesce(sum(balance) filter (where age between 61 and 90), 0) as days_61_90,
+                       coalesce(sum(balance) filter (where age > 90), 0) as days_over_90
+                from debts
+            )
+            select sales_agg.amount as sales_amount, sales_agg.orders as sales_orders,
+                   sales_agg.prev_amount as prev_sales_amount, sales_agg.prev_orders as prev_sales_orders,
+                   collections_agg.amount as col_amount, collections_agg.cash as col_cash, collections_agg.transfer as col_transfer,
+                   collections_agg.prev_amount as prev_col_amount, collections_agg.prev_cash as prev_col_cash, collections_agg.prev_transfer as prev_col_transfer,
+                   aging_agg.days_0_30, aging_agg.days_31_60, aging_agg.days_61_90, aging_agg.days_over_90
+            from sales_agg cross join collections_agg cross join aging_agg
+            """,
+            from, until, from, until, previousFromSql, previousUntilSql, previousFromSql, previousUntilSql, previousFromSql, until,
+            from, until, from, until, from, until, previousFromSql, previousUntilSql, previousFromSql, previousUntilSql, previousFromSql, previousUntilSql, previousFromSql, until,
+            today);
+
+        List<Map<String, Object>> expenseRows = jdbc.queryForList("""
+            select id, amount, type, observation, created_at as "createdAt",
+                   sum(amount) over () as total_amount, count(*) over () as total_count
+            from expense.expenses where created_at >= ? and created_at < ?
+            order by created_at desc, id desc limit 5
+            """, from, until);
+        Map<String, Object> expenses = new LinkedHashMap<>();
+        expenses.put("amount", expenseRows.isEmpty() ? BigDecimal.ZERO : expenseRows.getFirst().get("total_amount"));
+        expenses.put("count", expenseRows.isEmpty() ? 0L : expenseRows.getFirst().get("total_count"));
+        expenses.put("recent", stripKeys(expenseRows, "total_amount", "total_count"));
+
+        List<Map<String, Object>> debtorRows = jdbc.queryForList("""
+            select id, business_name as name, balance,
+                   sum(balance) over () as total_debt, count(*) over () as debtor_count
+            from customer.customers where balance > 0 order by balance desc, id limit 5
+            """);
+
+        List<Map<String, Object>> stockAlertRows = jdbc.queryForList("""
+            select p.id, p.name, coalesce(ib.quantity, 0) as stock,
+                   count(*) over () as alert_count
+            from catalog.products p left join inventory.inventory_balances ib on ib.product_id = p.id
+            where p.status = 'ACTIVE' and coalesce(ib.quantity, 0) <= 0
+            order by stock, p.name, p.id limit 8
+            """);
+
+        List<Map<String, Object>> pendingRows = jdbc.queryForList("""
+            with confirmed_orders as (
+                select o.id, o.order_number as number, c.business_name as customer,
+                       coalesce(sp.display_name, 'Sin asignar') as seller, o.total, o.status, o.created_at as date,
+                       (select da.result from orders.delivery_attempts da
+                        where da.order_id = o.id order by da.attempt_number desc limit 1) as last_attempt
+                from orders.orders o join customer.customers c on c.id = o.customer_id
+                left join seller.seller_profiles sp on sp.id = o.seller_id
+                where o.status = 'CONFIRMED'
+            )
+            select id, number, customer, seller, total, status, date,
+                   count(*) over () as pending_orders_count,
+                   coalesce(sum(total) over (), 0) as pending_amount,
+                   min(date) over () as oldest_pending_at,
+                   count(*) filter (where last_attempt = 'FAILED') over () as failed_deliveries
+            from confirmed_orders
+            order by date, id limit 5
+            """);
+
+        Map<String, Object> current = new LinkedHashMap<>();
+        current.put("debt", debtorRows.isEmpty() ? BigDecimal.ZERO : debtorRows.getFirst().get("total_debt"));
+        current.put("debtorCount", debtorRows.isEmpty() ? 0L : debtorRows.getFirst().get("debtor_count"));
+        current.put("pendingOrders", pendingRows.isEmpty() ? 0L : pendingRows.getFirst().get("pending_orders_count"));
+        current.put("pendingAmount", pendingRows.isEmpty() ? BigDecimal.ZERO : pendingRows.getFirst().get("pending_amount"));
+        current.put("oldestPendingAt", pendingRows.isEmpty() ? null : pendingRows.getFirst().get("oldest_pending_at"));
+        current.put("failedDeliveries", pendingRows.isEmpty() ? 0L : pendingRows.getFirst().get("failed_deliveries"));
+        current.put("stockAlertCount", stockAlertRows.isEmpty() ? 0L : stockAlertRows.getFirst().get("alert_count"));
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("dateMin", start);
         result.put("dateMax", end);
         result.put("previousDateMin", previousStart);
         result.put("previousDateMax", start.minusDays(1));
         result.put("generatedAt", now);
-        result.put("sales", sales(from, until));
-        result.put("previousSales", sales(previousFromSql, previousUntilSql));
-        result.put("collections", collections(from, until));
-        result.put("previousCollections", collections(previousFromSql, previousUntilSql));
-        Map<String, Object> expenses = new LinkedHashMap<>(jdbc.queryForMap("""
-            select coalesce(sum(amount), 0) as amount, count(*) as count
-            from expense.expenses where created_at >= ? and created_at < ?
-            """, from, until));
-        expenses.put("recent", jdbc.queryForList("""
-            select id, amount, type, observation, created_at as "createdAt"
-            from expense.expenses where created_at >= ? and created_at < ?
-            order by created_at desc, id desc limit 5
-            """, from, until));
+        result.put("sales", Map.of(
+            "amount", valueOrZero(summary.get("sales_amount")),
+            "orders", valueOrZero(summary.get("sales_orders"))));
+        result.put("previousSales", Map.of(
+            "amount", valueOrZero(summary.get("prev_sales_amount")),
+            "orders", valueOrZero(summary.get("prev_sales_orders"))));
+        result.put("collections", Map.of(
+            "amount", valueOrZero(summary.get("col_amount")),
+            "cash", valueOrZero(summary.get("col_cash")),
+            "transfer", valueOrZero(summary.get("col_transfer"))));
+        result.put("previousCollections", Map.of(
+            "amount", valueOrZero(summary.get("prev_col_amount")),
+            "cash", valueOrZero(summary.get("prev_col_cash")),
+            "transfer", valueOrZero(summary.get("prev_col_transfer"))));
         result.put("expenses", expenses);
-        result.put("current", jdbc.queryForMap("""
-            select
-                (select coalesce(sum(balance), 0) from customer.customers where balance > 0) as debt,
-                (select count(*) from customer.customers where balance > 0) as "debtorCount",
-                count(*) as "pendingOrders", coalesce(sum(o.total), 0) as "pendingAmount",
-                min(o.created_at) as "oldestPendingAt",
-                count(*) filter (where (select da.result from orders.delivery_attempts da
-                    where da.order_id = o.id order by da.attempt_number desc limit 1) = 'FAILED') as "failedDeliveries",
-                (select count(*) from catalog.products p left join inventory.inventory_balances ib on ib.product_id = p.id
-                    where p.status = 'ACTIVE' and coalesce(ib.quantity, 0) <= 0) as "stockAlertCount"
-            from orders.orders o where o.status = 'CONFIRMED'
-            """));
+        result.put("current", current);
         result.put("trend", jdbc.queryForList("""
             with daily as (
                 select (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as day,
@@ -95,31 +190,13 @@ public class DashboardAnalyticsService {
             from generate_series(cast(? as date), cast(? as date), interval '1 day') d(day)
             left join daily on daily.day = d.day::date order by d.day
             """, from, until, start, end));
-        result.put("topDebtors", jdbc.queryForList("""
-            select id, business_name as name, balance
-            from customer.customers where balance > 0 order by balance desc, id limit 5
-            """));
-        result.put("debtAging", jdbc.queryForMap("""
-            with debts as (
-                select greatest(least(s.total - s.paid, coalesce(l.balance, 0)), 0) as balance,
-                    cast(? as date) - (s.created_at at time zone 'America/Argentina/Buenos_Aires')::date as age
-                from sale.sales s left join lateral (
-                    select sum(case when entry_type = 'DEBIT' then amount else -amount end) as balance
-                    from customer.account_ledger where sale_id = s.id and customer_id = s.account_customer_id
-                ) l on true where s.status in ('CONFIRMED', 'DELIVERED')
-            )
-            select coalesce(sum(balance) filter (where age <= 30), 0) as "days0to30",
-                coalesce(sum(balance) filter (where age between 31 and 60), 0) as "days31to60",
-                coalesce(sum(balance) filter (where age between 61 and 90), 0) as "days61to90",
-                coalesce(sum(balance) filter (where age > 90), 0) as "daysOver90"
-            from debts
-            """, today));
-        result.put("stockAlerts", jdbc.queryForList("""
-            select p.id, p.name, coalesce(ib.quantity, 0) as stock
-            from catalog.products p left join inventory.inventory_balances ib on ib.product_id = p.id
-            where p.status = 'ACTIVE' and coalesce(ib.quantity, 0) <= 0
-            order by stock, p.name, p.id limit 8
-            """));
+        result.put("topDebtors", stripKeys(debtorRows, "total_debt", "debtor_count"));
+        result.put("debtAging", Map.of(
+            "days0to30", valueOrZero(summary.get("days_0_30")),
+            "days31to60", valueOrZero(summary.get("days_31_60")),
+            "days61to90", valueOrZero(summary.get("days_61_90")),
+            "daysOver90", valueOrZero(summary.get("days_over_90"))));
+        result.put("stockAlerts", stripKeys(stockAlertRows, "alert_count"));
         result.put("stockCoverage", jdbc.queryForList("""
             with sold as (
                 select si.product_id, sum(greatest(si.quantity - coalesce(r.quantity, 0), 0)) as quantity
@@ -139,11 +216,18 @@ public class DashboardAnalyticsService {
             """, Timestamp.from(today.minusDays(30).atStartOfDay(ZONE).toInstant()),
             Timestamp.from(today.atStartOfDay(ZONE).toInstant())));
         result.put("topProducts", jdbc.queryForList("""
-            select si.product_id as id, max(si.product_name) as name, sum(si.quantity) as units,
-                sum(si.line_total * (1 - s.order_discount_percent / 100)) as amount
-            from sale.sale_items si join sale.sales s on s.id = si.sale_id
+            select si.product_id as id, coalesce(p.name, max(si.product_name)) as name,
+                sum(greatest(si.quantity - coalesce(r.quantity, 0), 0)) as units,
+                sum(greatest(si.quantity - coalesce(r.quantity, 0), 0) * si.unit_price
+                    * (1 - si.line_discount_percent / 100) * (1 - s.order_discount_percent / 100)) as amount
+            from sale.sale_items si
+            join sale.sales s on s.id = si.sale_id
+            left join catalog.products p on p.id = si.product_id
+            left join lateral (select sum(ri.quantity) as quantity from sale.return_items ri where ri.sale_item_id = si.id) r on true
             where s.status in ('CONFIRMED', 'DELIVERED') and s.created_at >= ? and s.created_at < ?
-            group by si.product_id order by units desc, si.product_id limit 5
+            group by si.product_id, p.name
+            having sum(greatest(si.quantity - coalesce(r.quantity, 0), 0)) > 0
+            order by units desc, si.product_id limit 5
             """, from, until));
         result.put("sellers", jdbc.queryForList("""
             select sp.id, coalesce(sp.display_name, 'Sin asignar') as name,
@@ -153,13 +237,8 @@ public class DashboardAnalyticsService {
             where s.status in ('CONFIRMED', 'DELIVERED') and s.created_at >= ? and s.created_at < ?
             group by sp.id, sp.display_name order by amount desc, sp.id nulls last limit 5
             """, from, until));
-        result.put("pendingOrders", jdbc.queryForList("""
-            select o.id, o.order_number as number, c.business_name as customer,
-                coalesce(sp.display_name, 'Sin asignar') as seller, o.total, o.status, o.created_at as date
-            from orders.orders o join customer.customers c on c.id = o.customer_id
-            left join seller.seller_profiles sp on sp.id = o.seller_id
-            where o.status = 'CONFIRMED' order by o.created_at, o.id limit 5
-            """));
+        result.put("pendingOrders", stripKeys(pendingRows,
+            "pending_orders_count", "pending_amount", "oldest_pending_at", "failed_deliveries"));
         result.put("recentOrders", jdbc.queryForList("""
             select o.id, o.order_number as number, c.business_name as customer,
                 coalesce(sp.display_name, 'Sin asignar') as seller, o.total, o.status, o.created_at as date
@@ -170,19 +249,17 @@ public class DashboardAnalyticsService {
         return result;
     }
 
-    private Map<String, Object> sales(Timestamp from, Timestamp until) {
-        return jdbc.queryForMap("""
-            select coalesce(sum(total), 0) as amount, count(*) as orders
-            from sale.sales where status in ('CONFIRMED', 'DELIVERED') and created_at >= ? and created_at < ?
-            """, from, until);
+    private static List<Map<String, Object>> stripKeys(List<Map<String, Object>> rows, String... excludedKeys) {
+        List<Map<String, Object>> cleaned = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> copy = new LinkedHashMap<>(row);
+            for (String key : excludedKeys) copy.remove(key);
+            cleaned.add(copy);
+        }
+        return cleaned;
     }
 
-    private Map<String, Object> collections(Timestamp from, Timestamp until) {
-        return jdbc.queryForMap("""
-            select coalesce(sum(amount), 0) as amount,
-                coalesce(sum(amount) filter (where method = 'CASH'), 0) as cash,
-                coalesce(sum(amount) filter (where method = 'BANK_TRANSFER'), 0) as transfer
-            from payment.payments where method in ('CASH', 'BANK_TRANSFER') and created_at >= ? and created_at < ?
-            """, from, until);
+    private static Object valueOrZero(Object value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 }

@@ -23,6 +23,8 @@ x-backend: &backend
     SEED_DEMO: "false"
     ADMIN_EMAIL: admin@demo
     ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-ChangeMe123!}
+    REQUIRE_BOOTSTRAP_PASSWORD_MATCH: ${DEV_TUNNEL_ENABLED:-false}
+    FORWARD_HEADERS_STRATEGY: framework
 
 x-frontend: &frontend
   pull_policy: never
@@ -45,7 +47,7 @@ services:
     environment:
       <<: *backend-environment
       DB_URL: jdbc:postgresql://db-a:5432/distribuidora
-      JWT_SECRET: development-system-a-secret-at-least-32-characters
+      JWT_SECRET: ${JWT_SECRET:-development-system-a-secret-at-least-32-characters}
       JWT_ISSUER: distribuidora-dev-a
     depends_on:
       db-a:
@@ -57,7 +59,7 @@ services:
     environment:
       <<: *backend-environment
       DB_URL: jdbc:postgresql://db-b:5432/distribuidora
-      JWT_SECRET: development-system-b-secret-at-least-32-characters
+      JWT_SECRET: ${DEV_JWT_SECRET_B:-development-system-b-secret-at-least-32-characters}
       JWT_ISSUER: distribuidora-dev-b
     depends_on:
       db-b:
@@ -88,19 +90,18 @@ services:
     image: distribuidora-main-gateway:${DISTRIBUIDORA_MAIN_IMAGE_TAG:?Run dev-instances.cmd update first}
     pull_policy: never
     ports:
-      - "${DEV_GATEWAY_BIND:-127.0.0.1}:${DEV_GATEWAY_PORT:-3100}:80"
-    depends_on: [frontend-a, frontend-b]
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - "${DEV_GATEWAY_BIND:-127.0.0.1}:${DEV_GATEWAY_PORT:-3100}:8080"
+    depends_on:
+      frontend-a:
+        condition: service_healthy
+      frontend-b:
+        condition: service_healthy
     networks: [entrance]
 
   ngrok:
-    image: ngrok/ngrok:latest
+    image: ngrok/ngrok:3-alpine@sha256:a51a7637a70be573615b01852af0419c4ab9dc857601b3d61ea2a082be3ec0d3
     profiles: [tunnel]
-    command: ["http", "http://gateway:80", "--url=${DEV_NGROK_URL:-}", "--inspect=false", "--log=stdout"]
+    command: ["http", "http://gateway:8080", "--url=${DEV_NGROK_URL:-}", "--inspect=false", "--log=stdout"]
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
     depends_on:
