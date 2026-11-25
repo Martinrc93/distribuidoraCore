@@ -1,4 +1,0 @@
-ALTER TABLE catalog.products
-    ALTER COLUMN sku DROP NOT NULL,
-    ALTER COLUMN category DROP NOT NULL,
-    ALTER COLUMN presentation DROP NOT NULL;
