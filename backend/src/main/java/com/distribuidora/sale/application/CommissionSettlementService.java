@@ -24,6 +24,17 @@ import com.distribuidora.shared.time.BusinessTime;
 @Service
 public class CommissionSettlementService {
     private static final ZoneId BUSINESS_ZONE = BusinessTime.ZONE;
+    private static final String BALANCES = """
+        with balances as (
+            select seller_id, reseller_id,
+                   count(*) filter (where settlement_id is null) as pending_count,
+                   count(*) filter (where settlement_id is not null) as paid_count,
+                   coalesce(sum(amount) filter (where settlement_id is null), 0) as pending_amount,
+                   coalesce(sum(amount) filter (where settlement_id is not null), 0) as paid_amount
+            from sale.commission_entries
+            group by seller_id, reseller_id
+        )
+        """;
 
     /** Who earns the commission. Each constant holds fixed SQL fragments, never request input. */
     public enum Beneficiary {
@@ -45,6 +56,20 @@ public class CommissionSettlementService {
         }
     }
 
+    public enum PaymentStatus {
+        ALL(""),
+        PENDING(" where b.pending_count > 0"),
+        PAID(" where b.pending_count = 0");
+
+        private final String filter;
+
+        PaymentStatus(String filter) {
+            this.filter = filter;
+        }
+    }
+
+    public record Balance(UUID id, Beneficiary beneficiary, String name, String pendingAmount, String paidAmount,
+                          long pendingCount, long paidCount) { }
     public record Pending(String token, long entryCount, String amount) { }
     public record Movement(UUID id, UUID orderId, String orderNumber, String customer, String product, boolean returned,
                            String amount, Instant occurredAt, Instant paidAt) { }
@@ -60,6 +85,31 @@ public class CommissionSettlementService {
         this.jdbc = jdbc;
         this.user = user;
         this.audit = audit;
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public PageResponse<Balance> balances(PaymentStatus status, int page, int size) {
+        requireAdmin();
+        int number = Math.max(0, page);
+        int limit = Math.max(1, Math.min(100, size));
+        long count = jdbc.queryForObject(BALANCES + "select count(*) from balances b" + status.filter, Long.class);
+        List<Balance> balances = jdbc.query(BALANCES + """
+            select coalesce(b.seller_id, b.reseller_id) as id, b.seller_id is not null as is_seller,
+                   coalesce(s.display_name, r.business_name) as name,
+                   b.pending_amount, b.paid_amount, b.pending_count, b.paid_count
+            from balances b
+            left join seller.seller_profiles s on s.id = b.seller_id
+            left join customer.customers r on r.id = b.reseller_id
+            %s
+            order by (b.pending_count > 0) desc, lower(coalesce(s.display_name, r.business_name)),
+                     b.seller_id, b.reseller_id
+            limit ? offset ?
+            """.formatted(status.filter), (row, index) -> new Balance(
+                row.getObject("id", UUID.class), row.getBoolean("is_seller") ? Beneficiary.SELLER : Beneficiary.RESELLER,
+                row.getString("name"), row.getBigDecimal("pending_amount").toPlainString(),
+                row.getBigDecimal("paid_amount").toPlainString(), row.getLong("pending_count"), row.getLong("paid_count")
+            ), limit, (long) limit * number);
+        return PageResponse.of(balances, number, limit, count);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

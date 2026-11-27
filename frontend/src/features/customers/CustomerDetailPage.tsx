@@ -99,8 +99,8 @@ export default function CustomerDetailPage() {
         <div className="self-start"><StatCard label={hasAuthority('ADMIN_ALL') ? 'Saldo de cuenta corriente' : 'Saldo de tus ventas'} value={money(balance)} detail={customer.resellerId ? `Deuda propia del cliente. Sus pedidos nuevos se cargan a la cuenta de ${customer.reseller ?? 'su revendedor'}.` : customer.kind === 'RESELLER' && hasAuthority('ADMIN_ALL') ? 'Incluye los pedidos de sus clientes asociados.' : hasAuthority('ADMIN_ALL') ? balance > 0 ? 'Saldo por cobrar al cliente.' : balance < 0 ? 'Saldo a favor del cliente.' : 'El cliente no tiene saldo pendiente.' : balance > 0 ? 'Deuda visible para tu usuario.' : 'No hay deuda asignada pendiente.'} />
           {hasPermission('CUSTOMER_STATEMENT_EXPORT') && <div className="customer-statement-actions" aria-label="Estado de deuda">
             <p className="helper-text m-0">Estado de deuda (ventas con saldo pendiente)</p>
-            <DocumentActions path={`/api/documents/customers/${customer.id}/statement?format=a4`} filename={`estado-deuda-${customer.name}.pdf`} printLabel="Imprimir estado A4" downloadLabel="Descargar A4" />
-            <DocumentActions path={`/api/documents/customers/${customer.id}/statement?format=ticket`} filename={`estado-deuda-${customer.name}-ticket.pdf`} printLabel="Imprimir ticket 80 mm" downloadLabel="Descargar ticket" />
+            <DocumentActions path={`/api/documents/customers/${customer.id}/statement?format=a4`} filename={`estado-deuda-${customer.name}.pdf`} format="a4" printLabel="Imprimir estado A4" downloadLabel="Descargar A4" />
+            <DocumentActions path={`/api/documents/customers/${customer.id}/statement?format=ticket`} filename={`estado-deuda-${customer.name}-ticket.pdf`} format="ticket" printLabel="Imprimir ticket 80 mm" downloadLabel="Descargar ticket" />
           </div>}</div>
       </div>
       {reseller && isAdmin && <Panel title="Clientes asociados" description="Sus pedidos se cargan a la cuenta corriente de este revendedor.">

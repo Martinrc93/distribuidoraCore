@@ -17,6 +17,7 @@ import { useUrlListState } from '../../shared/useUrlListState'
 import { displayDate, formatBusinessDateShort, parseDate, presetRange, rangeError, todayInArgentina } from '../../shared/dates'
 import { formatMoney } from '../../shared/format'
 import { OrderDateFilter } from '../orders/OrderDateFilter'
+import { CommissionBalances } from './CommissionBalances'
 import { commissionPlansPagePath } from './settingsPaths'
 
 type Seller = { id: string; displayName: string; status: string }
@@ -81,6 +82,16 @@ export default function CommissionSettlementsPage() {
   })
   const ready = !dateError && beneficiaryId && statement.isSuccess ? statement.data : undefined
 
+  function showBalances() {
+    const next = new URLSearchParams(params)
+    next.delete('sellerId')
+    next.delete('resellerId')
+    next.delete('page')
+    setError('')
+    setFeedback('')
+    setParams(next)
+  }
+
   function setFilter(key: string, value: string) {
     const next = new URLSearchParams(params)
     next.set(key, value)
@@ -99,15 +110,22 @@ export default function CommissionSettlementsPage() {
       const result = await apiPost<Settlement>(`${confirmation.path}/settlements`, { token: confirmation.pending.token })
       setConfirmation(undefined)
       setFeedback(`Pago de ${money(result.amount)} registrado para ${confirmation.name}.`)
-      await client.invalidateQueries({ queryKey: queryKeys.commissions.statement(confirmation.path) })
     } catch (cause) {
       const changed = cause instanceof ApiError && cause.status === 409
       setError(changed ? 'El saldo pendiente cambió. Revisá el nuevo importe antes de registrar el pago.'
         : cause instanceof Error ? cause.message : 'No se pudo registrar el pago.')
       if (changed) {
         setConfirmation(undefined)
-        await client.invalidateQueries({ queryKey: queryKeys.commissions.statement(confirmation.path) })
+      } else {
+        setSaving(false)
+        return
       }
+    }
+    try {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.commissions.statement(confirmation.path) }),
+        client.invalidateQueries({ queryKey: queryKeys.commissions.balances }),
+      ])
     } finally {
       setSaving(false)
     }
@@ -115,10 +133,14 @@ export default function CommissionSettlementsPage() {
 
   return <>
     <PageHeader title="Liquidación de comisiones"
-      actions={<Link className="button button-secondary" to={commissionPlansPagePath}>Planes de comisiones</Link>} />
+      actions={<>
+        {beneficiaryId && <Button variant="secondary" onClick={showBalances} disabled={saving}>Volver al resumen</Button>}
+        <Link className="button button-secondary" to={commissionPlansPagePath}>Planes de comisiones</Link>
+      </>} />
     {feedback && <p className="success-text" role="status">{feedback}</p>}
     {error && !confirmation && <p className="error-text" role="alert">{error}</p>}
     <div className="content-grid">
+      {!beneficiaryId && <CommissionBalances />}
       <Panel title="Beneficiario y período">
         <div className="form-grid commission-settlement-fields mb-0">
           <label className="field"><span>Comisiones de</span>
@@ -166,7 +188,7 @@ export default function CommissionSettlementsPage() {
             id: movement.id, orderId: movement.orderId, order: movement.orderNumber, customer: movement.customer, product: movement.product,
             date: formatBusinessDateShort(movement.occurredAt), type: movement.returned ? 'Devolución' : 'Entrega',
             amount: money(movement.amount), paidAt: movement.paidAt ?? '',
-            payment: movement.paidAt ? `Liquidado el ${formatBusinessDateShort(movement.paidAt)}` : 'Pendiente',
+            payment: movement.paidAt ? `Pagado el ${formatBusinessDateShort(movement.paidAt)}` : 'Pendiente',
           }))} emptyContent={<p className="table-empty-message">No hay movimientos en esta página.</p>} />
           {(ready.movements.totalElements > 0 || page > 0) && <Pagination label="Paginación de comisiones" summary={<>Página {page + 1} · {movementCount(ready.movements.totalElements)}</>} onPrevious={() => setPage(page - 1)} onNext={() => setPage(page + 1)} previousDisabled={page === 0} nextDisabled={page + 1 >= ready.movements.totalPages} />}
         </Panel>

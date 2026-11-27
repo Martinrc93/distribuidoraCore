@@ -2,6 +2,68 @@
 
 Ejecutar desde la raíz del proyecto `distribuidora`.
 
+## Reinicio y carga inicial del Docker local de `support`
+
+El script requiere Docker Compose, PowerShell 7.2 o posterior y el Chromium de
+Playwright. Desde `frontend`, instalar con `npm ci` y `npx playwright install chromium`.
+
+```powershell
+# Ensayo completo y capturas para un manual con datos ficticios.
+.\scripts\support-onboarding.ps1 -Mode Sample
+
+# Reinicio del Docker local. Ejecutar una vez acordado qué cuenta conservar.
+.\scripts\support-onboarding.ps1 -Mode Reset -AdminEmail admin@distribuidora.local -ConfirmReset
+
+# Reinicio del entorno de pruebas existente en el puerto 3200.
+.\scripts\support-onboarding.ps1 -Mode Reset -Target Support3200 -ConfirmReset
+
+# Carga ficticia y prueba de venta en el Docker del puerto 3200.
+.\scripts\support-onboarding.ps1 -Mode Load -Target Support3200 -ExampleData
+
+# Carga inicial. Usar una copia del ejemplo completada con los datos reales.
+.\scripts\support-onboarding.ps1 -Mode Load -DataPath .\output\carga-inicial.json
+```
+
+`Sample` crea su propio proyecto Compose con puertos de loopback dinámicos.
+Ejecuta el reinicio, carga el [ejemplo JSON](support-onboarding.example.json),
+confirma un pedido, lo prepara, lo entrega con un cobro y verifica stock y pago.
+Retira sus contenedores y volumen al terminar.
+
+`Reset` conserva el identificador y la contraseña actual del admin seleccionado.
+Pide la contraseña sin mostrarla y la comprueba iniciando sesión con la base
+nueva. Primero verifica un backup cifrado en `backups/` con la [clave de respaldo
+ya configurada](../docs/operations/postgres-backup-restore.md). Para preparar el
+almacén local por primera vez, ejecutar `.\scripts\initialize-backup-key.ps1`.
+Crea una base
+provisional con Flyway y cambia los nombres de ambas bases en una transacción.
+Conserva la original hasta verificar que la aplicación arranca, solo queda el
+admin y los datos comerciales están vacíos. Deja `SEED_DEMO=false` en `.env`.
+La variable de entorno de la sesión de PowerShell tiene precedencia sobre `.env`.
+
+`Support3200` usa los contenedores existentes de `distribuidora-support-tests`,
+su volumen y la contraseña configurada para `admin@demo`. Comprueba el acceso
+antes y después del reinicio y conserva las imágenes y el objetivo de Flyway
+del entorno. El backup de este modo lleva el prefijo
+`distribuidora-support-tests-before-onboarding-`.
+
+`Load` aplica la carga mediante la API. Requiere una base sin pedidos ni ventas.
+El archivo define datos del comercio, zonas, marcas, categorías, proveedores,
+listas, productos, vendedores y clientes. `business.logoPath` es opcional y se
+resuelve desde el archivo JSON. Las claves de `products.prices` y `customers.priceList`
+usan `GENERAL` o el nombre de una lista de `priceLists`. El campo `sellers.passwordEnv`
+indica la variable de entorno que contiene la contraseña del usuario a crear.
+Definir una variable por vendedor y mantener las contraseñas fuera del JSON. La
+carga se detiene ante un error y permite repetir el mismo archivo para completar
+registros faltantes. Los saldos de apertura se concilian aparte. El pedido de
+prueba se genera en `Sample` y al cargar `Support3200` con `-ExampleData`.
+En ese último caso, el pedido y su cobro quedan registrados en el Docker del
+puerto 3200.
+
+Cada ejecución escribe en `output/support-onboarding/<ejecución>/` un
+`verificacion.json` y dos PNG por etapa ejecutada. `01-verificacion` muestra el
+estado comprobado y `02-manual` muestra la pantalla o formulario a documentar.
+Para compartir capturas, usar las de `Sample`, que contienen datos ficticios.
+
 ## Seed demo con fechas actuales
 
 ```powershell

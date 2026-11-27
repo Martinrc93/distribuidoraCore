@@ -12,7 +12,7 @@ import { Badge } from '../../shared/components/Badge'
 import { DataTable, type TableColumn } from '../../shared/components/DataTable'
 import { EmptyState } from '../../shared/components/EmptyState'
 import { PageHeader } from '../../shared/components/PageHeader'
-import { OrderNavigator, readOrderNavigation } from './orderNavigation'
+import { readOrdersReturnPath } from './orderNavigation'
 import { Panel } from '../../shared/components/Panel'
 import { orderStatusLabel } from './orderStatus'
 import OrderLifecycleActions from './OrderLifecycleActions'
@@ -108,49 +108,50 @@ export default function OrderDetailPage() {
         <Badge tone={order.status === 'DELIVERED' ? 'strong' : order.status === 'CANCELLED' ? 'muted' : 'soft'}>
           <span className="sr-only">Estado del pedido: </span>{orderStatusLabel(order.status)}
         </Badge>
-      </span>} actions={<div className="page-actions"><Button variant="secondary" href={readOrderNavigation()?.returnTo ?? "/orders"}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} />
+      </span>} actions={<div className="page-actions"><Button variant="secondary" href={readOrdersReturnPath()}>Volver a pedidos</Button>{canEdit && <Button onClick={() => setEditing(true)}>Editar pedido</Button>}{hasPermission('ORDER_EDIT') && order.status === 'CONFIRMED' && !samePriceList && <span className="helper-text">Este pedido usa listas distintas entre líneas y no puede editarse con una única lista.</span>}</div>} />
     </div>
-    <OrderNavigator orderId={orderId} />
     {feedback && <p className="success-text" role="status"><CurrencyText>{feedback}</CurrencyText></p>}
-    <OrderLifecycleActions orderId={order.id} orderNumber={order.number} customerId={order.customerId} orderStatus={order.status} saleBalance={sale.balance}
-      previousDebtAvailable={sale.previousDebtAvailable} accountKind={order.accountKind} onChanged={() => { void query.refetch() }}
-      statusBadges={<>
-        {order.status !== 'CANCELLED' && <Badge tone={order.fulfillmentStatus === 'PREPARED' ? 'strong' : 'soft'}>{order.fulfillmentStatus === 'PREPARED' ? 'Preparado' : 'A preparar'}</Badge>}
-        {isAdmin && <OrderReviewBadge pending={order.reviewPending} />}
-      </>}
-      notes={<>
-        {order.legacyFulfillment && <p className="helper-text">Pedido histórico: el stock ya se descontó al confirmar.</p>}
-        {order.preparedAt && <p className="helper-text">Preparado el {date(order.preparedAt)}.</p>}
-        {order.reviewedAt && <p className="helper-text">Revisión administrativa confirmada el {date(order.reviewedAt)}.</p>}
-      </>}>
-      <OrderOperationalActions order={order} onSaved={setFeedback} />
-    </OrderLifecycleActions>
-    <div className="content-grid">
-      <Panel title="Productos del pedido"><DataTable columns={itemColumns} rows={itemRows} /></Panel>
-      {deliveryAttempts.some((attempt) => attempt.result === 'FAILED') && <Panel title="Intentos de entrega">
-        <DataTable
-          columns={[
-            { key: 'attempt', label: 'Intento', emphasis: true },
-            { key: 'result', label: 'Resultado', render: (value) => <Badge tone={value === 'DELIVERED' ? 'strong' : 'muted'}>{value === 'DELIVERED' ? 'Entregada' : 'No entregada'}</Badge> },
-            { key: 'date', label: 'Fecha' },
-            { key: 'observation', label: 'Observación' },
-          ]}
-          rows={deliveryAttempts.map((attempt) => ({ id: attempt.id, attempt: String(attempt.attemptNumber), result: attempt.result, date: date(attempt.attemptedAt), observation: attempt.observation || '—' }))}
-        />
-      </Panel>}
-      <div className="content-grid two-thirds items-start">
-        <Panel title="Pagos registrados">{paymentRows.length ? <DataTable className="compact-list-table min-w-0" columns={paymentColumns} rows={paymentRows} /> : <EmptyState compact title="Todavía no hay pagos" description={resellerAccount ? `El saldo permanece en la cuenta corriente de ${order.accountCustomer}.` : 'El saldo permanece en la cuenta corriente del cliente.'} />}</Panel>
-        <Panel title="Detalle del pedido" description={resellerAccount ? `Titular de la deuda: ${order.accountCustomer} (revendedor)` : undefined}>
-          <dl className="order-totals m-0 max-w-none">
-            <dt>Subtotal</dt><dd><CurrencyText>{money(order.subtotal)}</CurrencyText></dd>
-            <dt>Descuento general</dt><dd>{formatNumber(order.orderDiscountPercent ?? 0, 4)}%</dd>
-            <dt>Descuento total</dt><dd><CurrencyText>{money(order.discount ? -order.discount : 0)}</CurrencyText></dd>
-            {includesPreviousBalance && <><dt>Saldo anterior de cuenta corriente</dt><dd><CurrencyText>{money(previousBalance)}</CurrencyText></dd></>}
-            <dt className="total-label">{includesPreviousBalance ? 'Total a cobrar' : 'Total'}</dt>
-            <dd className="total-value"><CurrencyText>{money(total)}</CurrencyText></dd>
-          </dl>
-        </Panel>
+    <Panel>
+      <div className="order-detail-sections">
+        <OrderLifecycleActions orderId={order.id} orderNumber={order.number} customerId={order.customerId} orderStatus={order.status} saleBalance={sale.balance}
+          previousDebtAvailable={sale.previousDebtAvailable} accountKind={order.accountKind} onChanged={() => { void query.refetch() }}
+          statusBadges={<>
+            {order.status !== 'CANCELLED' && <Badge tone={order.fulfillmentStatus === 'PREPARED' ? 'strong' : 'soft'}>{order.fulfillmentStatus === 'PREPARED' ? 'Preparado' : 'A preparar'}</Badge>}
+            {isAdmin && <OrderReviewBadge pending={order.reviewPending} />}
+          </>}
+          notes={<>
+            {order.legacyFulfillment && <p className="helper-text">Pedido histórico: el stock ya se descontó al confirmar.</p>}
+            {order.preparedAt && <p className="helper-text">Preparado el {date(order.preparedAt)}.</p>}
+            {order.reviewedAt && <p className="helper-text">Revisión administrativa confirmada el {date(order.reviewedAt)}.</p>}
+          </>}>
+          <OrderOperationalActions order={order} onSaved={setFeedback} />
+        </OrderLifecycleActions>
+        <Panel title="Productos del pedido"><DataTable columns={itemColumns} rows={itemRows} /></Panel>
+        {deliveryAttempts.some((attempt) => attempt.result === 'FAILED') && <Panel title="Intentos de entrega">
+          <DataTable
+            columns={[
+              { key: 'attempt', label: 'Intento', emphasis: true },
+              { key: 'result', label: 'Resultado', render: (value) => <Badge tone={value === 'DELIVERED' ? 'strong' : 'muted'}>{value === 'DELIVERED' ? 'Entregada' : 'No entregada'}</Badge> },
+              { key: 'date', label: 'Fecha' },
+              { key: 'observation', label: 'Observación' },
+            ]}
+            rows={deliveryAttempts.map((attempt) => ({ id: attempt.id, attempt: String(attempt.attemptNumber), result: attempt.result, date: date(attempt.attemptedAt), observation: attempt.observation || '—' }))}
+          />
+        </Panel>}
+        <div className="content-grid two-thirds order-detail-financials">
+          <Panel title="Pagos registrados">{paymentRows.length ? <DataTable className="compact-list-table min-w-0" columns={paymentColumns} rows={paymentRows} /> : <EmptyState compact title="Todavía no hay pagos" description={resellerAccount ? `El saldo permanece en la cuenta corriente de ${order.accountCustomer}.` : 'El saldo permanece en la cuenta corriente del cliente.'} />}</Panel>
+          <Panel title="Detalle del pedido" description={resellerAccount ? `Titular de la deuda: ${order.accountCustomer} (revendedor)` : undefined}>
+            <dl className="order-totals m-0 max-w-none">
+              <dt>Subtotal</dt><dd><CurrencyText>{money(order.subtotal)}</CurrencyText></dd>
+              <dt>Descuento general</dt><dd>{formatNumber(order.orderDiscountPercent ?? 0, 4)}%</dd>
+              <dt>Descuento total</dt><dd><CurrencyText>{money(order.discount ? -order.discount : 0)}</CurrencyText></dd>
+              {includesPreviousBalance && <><dt>Saldo anterior de cuenta corriente</dt><dd><CurrencyText>{money(previousBalance)}</CurrencyText></dd></>}
+              <dt className="total-label">{includesPreviousBalance ? 'Total a cobrar' : 'Total'}</dt>
+              <dd className="total-value"><CurrencyText>{money(total)}</CurrencyText></dd>
+            </dl>
+          </Panel>
+        </div>
       </div>
-    </div>
+    </Panel>
   </>
 }

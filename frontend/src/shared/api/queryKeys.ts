@@ -105,6 +105,7 @@ export const queryKeys = {
     assignment: (path: string) => ['commissions', 'assignment', path] as const,
     options: (path: string) => ['commissions', 'options', path] as const,
     ruleOptions: (path: string) => ['commissions', 'rule-options', path] as const,
+    balances: ['commissions', 'balances'] as const,
     statement: (path: string, query?: string) =>
       query !== undefined ? (['commissions', 'statement', path, query] as const) : (['commissions', 'statement', path] as const),
   },

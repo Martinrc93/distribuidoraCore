@@ -10,12 +10,13 @@ import { Panel } from '../../shared/components/Panel'
 import { useDiscardChanges } from '../../shared/useDiscardChanges'
 
 export type NotificationChannel = 'EMAIL' | 'WHATSAPP'
+export type NotificationFormat = 'A4' | 'TICKET'
 type Contact = { email: string | null; phone: string | null }
-type Format = 'A4' | 'TICKET'
 type Props = {
   orderId: string
   customerId?: string
   channel: NotificationChannel
+  documentFormat?: NotificationFormat
   onClose: () => void
   onRequested: (request: { requestId: string; status: string }) => void
 }
@@ -27,7 +28,7 @@ const isValid = (value: string, isEmail: boolean) => isEmail
   : /^\+[1-9]\d{7,14}$/.test(value)
 const errorMessage = (cause: unknown, fallback: string) => cause instanceof ApiError ? cause.detail || fallback : fallback
 
-export function OrderNotificationDialog({ orderId, customerId, channel, onClose, onRequested }: Props) {
+export function OrderNotificationDialog({ orderId, customerId, channel, documentFormat, onClose, onRequested }: Props) {
   const isEmail = channel === 'EMAIL'
   const field = isEmail ? 'email' : 'phone'
   const channelName = isEmail ? 'email' : 'WhatsApp'
@@ -41,7 +42,7 @@ export function OrderNotificationDialog({ orderId, customerId, channel, onClose,
   const title = missing ? (isEmail ? 'Cargar email' : 'Cargar teléfono') : 'Enviar por ' + channelName
   const canSave = missing && Boolean(customerId) && hasPermission('CUSTOMER_EDIT')
   const [draft, setDraft] = useState<string | null>(null)
-  const [format, setFormat] = useState<Format>('A4')
+  const [selectedFormat, setSelectedFormat] = useState<NotificationFormat>('A4')
   const [key, setKey] = useState(newKey)
   const [pending, setPending] = useState<'save' | 'send' | null>(null)
   const [error, setError] = useState('')
@@ -50,7 +51,7 @@ export function OrderNotificationDialog({ orderId, customerId, channel, onClose,
   const input = useRef<HTMLInputElement>(null)
   const hintId = useId()
   const { requestDiscard, discardDialog } = useDiscardChanges({
-    hasChanges: recipient !== stored || format !== 'A4', disabled: Boolean(pending), onDiscard: onClose,
+    hasChanges: recipient !== stored || selectedFormat !== 'A4', disabled: Boolean(pending), onDiscard: onClose,
   })
 
   useEffect(() => { if (contact.isSuccess) input.current?.focus() }, [contact.isSuccess, saved])
@@ -73,7 +74,9 @@ export function OrderNotificationDialog({ orderId, customerId, channel, onClose,
         setDraft(null)
         setSaved(true)
       } else {
-        const result = await apiPost<{ requestId: string; status: string }>(path, { channel, recipient: value, format, idempotencyKey: key })
+        const result = await apiPost<{ requestId: string; status: string }>(path, {
+          channel, recipient: value, format: documentFormat ?? selectedFormat, idempotencyKey: key,
+        })
         onRequested(result)
       }
     } catch (cause) {
@@ -90,7 +93,7 @@ export function OrderNotificationDialog({ orderId, customerId, channel, onClose,
 
   return <>
     <FormModal label={title} size="compact" busy={Boolean(pending)} onClose={requestDiscard}>
-      <Panel title={title}>
+      <Panel title={title} description={documentFormat && (documentFormat === 'A4' ? 'Remito A4' : 'Ticket 80 mm')}>
         {contact.isPending && <p className="helper-text" role="status">Consultando el contacto del cliente…</p>}
         {contact.isError && <p className="error-text" role="alert">No se pudo consultar el contacto del cliente. <Button variant="link" onClick={() => void contact.refetch()}>Reintentar</Button></p>}
         {contact.isSuccess ? <form className="grid gap-[14px]" noValidate onSubmit={send}>
@@ -100,12 +103,12 @@ export function OrderNotificationDialog({ orderId, customerId, channel, onClose,
               onChange={(event) => { setDraft(event.target.value); setError(''); setKey(newKey()) }} />
           </label>
           {!isEmail && <p className="helper-text m-0" id={hintId}>Use el código de país. Por ejemplo, +5491112345678.</p>}
-          <label className="field"><span>Formato de comprobante</span>
-            <select className="select" value={format} disabled={Boolean(pending)}
-              onChange={(event) => { setFormat(event.target.value as Format); setError(''); setKey(newKey()) }}>
+          {!documentFormat && <label className="field"><span>Formato de comprobante</span>
+            <select className="select" value={selectedFormat} disabled={Boolean(pending)}
+              onChange={(event) => { setSelectedFormat(event.target.value as NotificationFormat); setError(''); setKey(newKey()) }}>
               <option value="A4">A4</option><option value="TICKET">Ticket</option>
             </select>
-          </label>
+          </label>}
           {error && <p className="error-text m-0" role="alert">{error}</p>}
           {saved && <p className="success-text m-0" role="status">Contacto guardado en la ficha del cliente.</p>}
           <div className="page-actions justify-end">

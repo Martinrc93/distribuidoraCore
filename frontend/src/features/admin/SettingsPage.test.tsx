@@ -21,9 +21,10 @@ function renderSettings(creditLimit: { creditLimit: number | null; enabled: bool
 
 describe('SettingsPage', () => {
   beforeEach(() => sessionStorage.setItem('distribuidora.accessToken', `header.${btoa(JSON.stringify({ sub: 'admin-1', authorities: ['ADMIN_ALL'] }))}.signature`))
-  afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear(); vi.restoreAllMocks() })
 
   it('renders all configuration sections, links and inactive credit limit status', async () => {
+    localStorage.setItem('distribuidora.printers', JSON.stringify({ a4: 'HP LaserJet', ticket: 'EPSON TM-T20III' }))
     renderSettings({ creditLimit: null, enabled: false })
 
     expect(screen.getByRole('heading', { name: /^Configuración$/ })).toBeInTheDocument()
@@ -31,7 +32,9 @@ describe('SettingsPage', () => {
     expect(nav.querySelector('a[href="/admin/settings/business-profile"]')).toBeInTheDocument()
     expect(nav.querySelector('a[href="/admin/settings/credit-limit"]')).toBeInTheDocument()
     expect(nav.querySelector('a[href="/admin/settings/commissions"]')).toBeInTheDocument()
+    expect(nav.querySelector('a[href="/admin/settings/printers"]')).toBeInTheDocument()
     expect(nav.querySelector('a[href="/admin/settings/shortcuts"]')).toBeInTheDocument()
+    expect(screen.getByText('A4 y ticket')).toBeInTheDocument()
     expect(await screen.findByText('Desactivado')).toBeInTheDocument()
   })
 

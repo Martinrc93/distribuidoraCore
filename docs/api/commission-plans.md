@@ -56,6 +56,14 @@ la parte proporcional de la comisión original. Si ya estaba liquidada, el
 ajuste queda en el saldo pendiente siguiente. Las entregas anteriores a V50
 conservan su historial comercial sin devengamiento retroactivo.
 
+`GET /api/commissions/balances?status=ALL&page=0&size=20` requiere
+`ADMIN_ALL` y devuelve un resumen acumulado de vendedores y revendedores
+con movimientos. Cada fila incluye el ID, el tipo de beneficiario, el nombre
+y los importes y cantidades de movimientos pagados y pendientes.
+`PENDING` incluye cualquier beneficiario con movimientos pendientes,
+incluidos ajustes. `PAID` incluye a quienes tienen todos sus movimientos
+pagados. El filtro se aplica antes de paginar.
+
 `GET /api/commissions/sellers/{sellerId}?dateMin=&dateMax=&page=0&size=20`
 devuelve el nombre del beneficiario (`name`), el saldo pendiente completo, el
 total del período y sus movimientos paginados. El período usa días inclusivos de

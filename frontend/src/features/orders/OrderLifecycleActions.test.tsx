@@ -21,8 +21,8 @@ describe('OrderLifecycleActions', () => {
     renderActions([permission])
     expect(Boolean(screen.queryByRole('button', { name: 'Cancelar pedido' }))).toBe(permission === 'ORDER_CANCEL')
     expect(Boolean(screen.queryByRole('button', { name: 'Descargar remito A4' }))).toBe(permission === 'ORDER_DOCUMENT_EXPORT')
-    expect(Boolean(screen.queryByRole('button', { name: 'Enviar por email' }))).toBe(permission === 'ORDER_NOTIFY')
-    expect(Boolean(screen.queryByRole('button', { name: 'Enviar por WhatsApp' }))).toBe(permission === 'ORDER_NOTIFY')
+    expect(screen.queryAllByRole('button', { name: /^Enviar .+ por email$/ })).toHaveLength(permission === 'ORDER_NOTIFY' ? 2 : 0)
+    expect(screen.queryAllByRole('button', { name: /^Enviar .+ por WhatsApp$/ })).toHaveLength(permission === 'ORDER_NOTIFY' ? 2 : 0)
   })
   afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks() })
   beforeEach(() => { sessionStorage.setItem('distribuidora.accessToken', token(['ADMIN_ALL', 'SALE_DELIVER'])) })
@@ -202,11 +202,12 @@ describe('OrderLifecycleActions', () => {
 
     await user.click(screen.getByRole('button', { name: /descargar ticket/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/orders/order-1/documents/ticket', expect.anything()))
-    await user.click(screen.getByRole('button', { name: 'Enviar por WhatsApp' }))
+    await user.click(screen.getByRole('button', { name: 'Enviar ticket 80 mm por WhatsApp' }))
     const dialog = await screen.findByRole('dialog', { name: 'Cargar teléfono' })
     expect(within(dialog).queryByRole('button', { name: 'Guardar en ficha' })).not.toBeInTheDocument()
     await user.type(within(dialog).getByLabelText('Teléfono de WhatsApp'), '+54 9 11 1234-5678')
-    await user.selectOptions(screen.getByLabelText('Formato de comprobante'), 'TICKET')
+    expect(within(dialog).getByText('Ticket 80 mm')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Formato de comprobante')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /solicitar envío/i }))
 
     await waitFor(() => {
@@ -228,11 +229,14 @@ describe('OrderLifecycleActions', () => {
         email = JSON.parse(String(init.body)).email
         return response(undefined, 204)
       }
+      if (String(input) === '/api/orders/order-1/notifications' && init?.method === 'POST') {
+        return response({ requestId: 'request-1', status: 'QUEUED' }, 201)
+      }
       return response({})
     })
     renderActions()
 
-    const sendEmail = screen.getByRole('button', { name: 'Enviar por email' })
+    const sendEmail = screen.getByRole('button', { name: 'Enviar remito A4 por email' })
     await user.click(sendEmail)
     const dialog = await screen.findByRole('dialog', { name: 'Cargar email' })
     await user.click(within(dialog).getByRole('button', { name: 'Guardar en ficha' }))
@@ -249,5 +253,12 @@ describe('OrderLifecycleActions', () => {
     await user.click(sendEmail)
     const sendDialog = await screen.findByRole('dialog', { name: 'Enviar por email' })
     expect(within(sendDialog).getByLabelText('Email del cliente')).toHaveValue('compras@example.test')
+    expect(within(sendDialog).getByText('Remito A4')).toBeInTheDocument()
+    await user.click(within(sendDialog).getByRole('button', { name: 'Solicitar envío' }))
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([path]) => path === '/api/orders/order-1/notifications')
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ channel: 'EMAIL', recipient: 'compras@example.test', format: 'A4' })
+    })
   })
 })

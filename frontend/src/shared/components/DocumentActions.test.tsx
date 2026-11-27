@@ -13,7 +13,7 @@ vi.mock('../api/client', async (original) => ({
 const { DocumentActions } = await import('./DocumentActions')
 const { ApiError } = await import('../api/client')
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); printPdf.mockReset(); getBlob.mockReset() })
+afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); printPdf.mockReset(); getBlob.mockReset() })
 
 describe('DocumentActions', () => {
   it('prints without downloading and downloads with the given filename', async () => {
@@ -46,5 +46,29 @@ describe('DocumentActions', () => {
     await waitFor(() => expect(printPdf).toHaveBeenCalledWith('/api/documents/y', tab))
     expect(await screen.findByRole('alert')).toHaveTextContent('Lista de precios inexistente')
     expect(screen.getByRole('button', { name: 'Imprimir' })).toBeEnabled()
+  })
+
+  it('uses the saved PC printer for the document format and reports direct or fallback printing', async () => {
+    localStorage.setItem('distribuidora.printers', JSON.stringify({ a4: 'HP LaserJet', ticket: 'EPSON TM-T20III' }))
+    printPdf
+      .mockResolvedValueOnce({ mode: 'agent', printer: 'EPSON TM-T20III' })
+      .mockResolvedValueOnce({ mode: 'browser-fallback', printer: 'HP LaserJet' })
+    const done = vi.fn()
+    const user = userEvent.setup()
+
+    render(<>
+      <DocumentActions path="/api/orders/1/documents/ticket" filename="0001-ticket.pdf" format="ticket" printLabel="Imprimir ticket 80 mm" onDone={done} />
+      <DocumentActions path="/api/orders/1/documents/a4" filename="0001-a4.pdf" format="a4" printLabel="Imprimir remito A4" onDone={done} />
+    </>)
+
+    const ticketButton = screen.getByRole('button', { name: 'Imprimir ticket 80 mm' })
+    expect(ticketButton).toHaveAttribute('title', 'Imprimir directo en EPSON TM-T20III')
+    await user.click(ticketButton)
+    await waitFor(() => expect(printPdf).toHaveBeenCalledWith('/api/orders/1/documents/ticket', null, { format: 'ticket', filename: '0001-ticket.pdf' }))
+    expect(done).toHaveBeenCalledWith('Documento enviado a EPSON TM-T20III.')
+
+    await user.click(screen.getByRole('button', { name: 'Imprimir remito A4' }))
+    await waitFor(() => expect(printPdf).toHaveBeenCalledWith('/api/orders/1/documents/a4', null, { format: 'a4', filename: '0001-a4.pdf' }))
+    expect(done).toHaveBeenLastCalledWith('Servicio de impresión local no disponible; se abrió el diálogo del navegador.')
   })
 })

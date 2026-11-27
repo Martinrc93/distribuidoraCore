@@ -25,6 +25,16 @@ async function setup(page: Page, admin: boolean, dark = false) {
     state.requests.push(pathname)
     if (pathname === '/api/settings/credit-limit') return route.fulfill({ json: { enabled: false, creditLimit: null } })
     if (pathname === '/api/brands') return route.fulfill({ json: [{ id: 'marca-1', name: 'Marlboro' }, { id: 'marca-2', name: 'Philip' }] })
+    if (pathname === '/api/commissions/balances') {
+      const status = searchParams.get('status')
+      const content = [
+        { id: sellerId, name: 'Lucía Vendedora', beneficiary: 'SELLER', paidAmount: state.paid ? '750.1250' : '0',
+          pendingAmount: state.paid ? '0' : '750.1250', paidCount: state.paid ? 1 : 0, pendingCount: state.paid ? 0 : 1 },
+        { id: resellerId, name: 'Distribuidora Sur', beneficiary: 'RESELLER', paidAmount: '1200',
+          pendingAmount: '90.0000', paidCount: 2, pendingCount: 2 },
+      ].filter(row => status === 'ALL' || (status === 'PENDING' ? row.pendingCount > 0 : row.pendingCount === 0))
+      return route.fulfill({ json: { content, totalPages: content.length ? 1 : 0, totalElements: content.length, page: 0, size: 20 } })
+    }
     if (pathname === statementPath) return route.fulfill({ json: {
       name: 'Lucía Vendedora',
       pending: { token: state.currentToken, entryCount: state.paid ? 0 : 1, amount: state.paid ? '0' : '750.1250' },
@@ -262,9 +272,13 @@ for (const width of [320, 1440]) {
     const state = await setup(page, true, width === 320)
     await page.goto('/admin/settings/commissions')
     await page.getByRole('link', { name: 'Liquidación de comisiones' }).click()
-    await page.getByRole('combobox', { name: 'Comisiones de' }).selectOption('seller')
-    await page.getByRole('combobox', { name: 'Vendedor', exact: true }).fill('Lucia')
-    await page.getByRole('option', { name: 'Lucía Vendedora' }).click()
+    const filter = page.getByRole('combobox', { name: 'Estado de pago' })
+    await expect(page.getByText('Pagado y pendiente', { exact: true })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await filter.selectOption('PAID')
+    await expect(page.getByText('No hay beneficiarios en este resultado.')).toBeVisible()
+    await filter.selectOption('PENDING')
+    await page.getByRole('link', { name: 'Ver movimientos de Lucía Vendedora' }).click()
     const pay = page.getByRole('button', { name: 'Registrar pago al vendedor' })
     await expect(page.getByText('Pendiente', { exact: true })).toBeVisible()
     expect(state.payoutTokens).toEqual([])
@@ -282,9 +296,16 @@ for (const width of [320, 1440]) {
     await pay.click()
     await confirmation.getByRole('button', { name: 'Registrar pago', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('registrado para Lucía Vendedora')
-    await expect(page.getByText(/^Liquidado el /)).toBeVisible()
+    await expect(page.getByText(/^Pagado el /)).toBeVisible()
     await expect(pay).toBeDisabled()
     expect(state.payoutTokens).toEqual(['saldo-inicial', 'saldo-actualizado'])
+    await page.getByRole('button', { name: 'Volver al resumen' }).click()
+    await expect(filter).toHaveValue('PENDING')
+    await expect(page.getByRole('link', { name: 'Ver movimientos de Distribuidora Sur' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Ver movimientos de Lucía Vendedora' })).toHaveCount(0)
+    await filter.selectOption('PAID')
+    const paid = page.getByRole('row').filter({ has: page.getByRole('link', { name: 'Ver movimientos de Lucía Vendedora' }) })
+    await expect(paid.getByText('Pagado', { exact: true })).toBeVisible()
   })
 
   test(`el administrador liquida las comisiones de un revendedor a ${width}px`, async ({ page }, info) => {

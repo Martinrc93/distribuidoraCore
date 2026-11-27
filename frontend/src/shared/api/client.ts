@@ -1,4 +1,5 @@
 import { appPath, instanceStorageKey } from '../appBase'
+import { getConfiguredPrinter, inferPrintFormat, PrintAgentError, printPdfWithLocalAgent, type PrintFormat } from '../printers'
 
 export type ApiPage<T> = {
   content: T[]
@@ -265,12 +266,23 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
   return response.json() as Promise<T>
 }
 
+export type PrintPdfOptions = {
+  format?: PrintFormat
+  filename?: string
+}
+
+export type PrintPdfResult = {
+  mode: 'agent' | 'browser' | 'browser-fallback'
+  printer?: string
+}
+
 /**
- * Prints an authenticated PDF without downloading it: loads it in a hidden iframe and opens the print dialog.
+ * Prints an authenticated PDF without downloading it: uses the local Windows print agent when a printer
+ * is configured on this PC for the document format, falling back to a hidden iframe print dialog.
  * Pass `target` (a window opened synchronously in the click handler) to show the PDF in a new tab instead,
  * for touch devices whose browsers cannot print PDFs from an iframe.
  */
-export async function apiPrintPdf(path: string, target?: Window | null): Promise<void> {
+export async function apiPrintPdf(path: string, target?: Window | null, options?: PrintPdfOptions): Promise<PrintPdfResult> {
   let frame: HTMLIFrameElement | undefined
   let objectUrl: string | undefined
   function cleanup() {
@@ -282,8 +294,28 @@ export async function apiPrintPdf(path: string, target?: Window | null): Promise
     if (!response.ok) {
       throw await apiErrorFromResponse(response, 'No se pudo preparar el documento para imprimir')
     }
-    const pdf = await response.blob()
-    objectUrl = URL.createObjectURL(pdf.type === 'application/pdf' ? pdf : pdf.slice(0, pdf.size, 'application/pdf'))
+    const rawPdf = await response.blob()
+    const pdf = rawPdf.type === 'application/pdf' ? rawPdf : rawPdf.slice(0, rawPdf.size, 'application/pdf')
+
+    let fallbackFromPrinter: string | undefined
+    if (!target) {
+      const format = options?.format ?? inferPrintFormat(path)
+      const configuredPrinter = getConfiguredPrinter(format)
+      if (configuredPrinter) {
+        try {
+          await printPdfWithLocalAgent(pdf, configuredPrinter, format, options?.filename)
+          return { mode: 'agent', printer: configuredPrinter }
+        } catch (cause) {
+          if (cause instanceof PrintAgentError && cause.unreachable) {
+            fallbackFromPrinter = configuredPrinter
+          } else {
+            throw cause
+          }
+        }
+      }
+    }
+
+    objectUrl = URL.createObjectURL(pdf)
     if (target) {
       target.location.href = objectUrl
     } else {
@@ -316,6 +348,9 @@ export async function apiPrintPdf(path: string, target?: Window | null): Promise
       }
     }
     window.setTimeout(cleanup, 60_000)
+    return fallbackFromPrinter
+      ? { mode: 'browser-fallback', printer: fallbackFromPrinter }
+      : { mode: 'browser' }
   } catch (error) {
     target?.close()
     cleanup()

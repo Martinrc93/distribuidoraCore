@@ -2,7 +2,7 @@ import { queryKeys } from '../../shared/api/queryKeys'
 import { Pagination } from '../../shared/components/Pagination'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { saveOrderNavigation } from './orderNavigation'
+import { saveOrdersReturnPath } from './orderNavigation'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { apiGet, type ApiPage } from '../../shared/api/client'
 import { hasAuthority, hasPermission } from '../../shared/auth/permissions'
@@ -201,11 +201,9 @@ export default function OrdersPage() {
     fullyPaid: order.status === 'CONFIRMED' && Number(order.paid ?? 0) >= Number(order.total) ? 'true' : '',
     action: order.number,
   }))
-  // The detail page moves between the orders of this page with ← and →.
   useEffect(() => {
-    const content = Array.isArray(query.data?.content) ? query.data.content : null
-    if (!content) return
-    saveOrderNavigation({ ids: content.map((order) => order.id), numbers: content.map((order) => order.number), returnTo: `${location.pathname}${location.search}` })
+    if (!Array.isArray(query.data?.content)) return
+    saveOrdersReturnPath(`${location.pathname}${location.search}`)
   }, [query.data, location.pathname, location.search])
 
   /** ↑/↓ move between the «Ver» links of the rows. */

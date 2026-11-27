@@ -1,9 +1,12 @@
 package com.distribuidora.sale.api;
 
 import com.distribuidora.sale.application.CommissionSettlementService;
+import com.distribuidora.sale.application.CommissionSettlementService.Balance;
 import com.distribuidora.sale.application.CommissionSettlementService.Beneficiary;
+import com.distribuidora.sale.application.CommissionSettlementService.PaymentStatus;
 import com.distribuidora.sale.application.CommissionSettlementService.Settlement;
 import com.distribuidora.sale.application.CommissionSettlementService.Statement;
+import com.distribuidora.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -30,6 +33,15 @@ public class CommissionSettlementController {
 
     public CommissionSettlementController(CommissionSettlementService commissions) {
         this.commissions = commissions;
+    }
+
+    @GetMapping("/balances")
+    public PageResponse<Balance> balances(
+        @RequestParam(defaultValue = "ALL") PaymentStatus status,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size
+    ) {
+        return commissions.balances(status, page, size);
     }
 
     @GetMapping("/sellers/{sellerId}")

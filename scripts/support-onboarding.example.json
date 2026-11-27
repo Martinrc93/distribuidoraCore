@@ -1,0 +1,32 @@
+{
+  "business": {
+    "name": "Distribuidora Ejemplo",
+    "address": "Av. Ejemplo 123, Buenos Aires",
+    "phone": "11 5555-0100"
+  },
+  "zones": ["Zona Centro"],
+  "brands": ["Marca Ejemplo"],
+  "categories": ["Almacén"],
+  "suppliers": [{ "name": "Proveedor Ejemplo" }],
+  "priceLists": ["Mayorista"],
+  "products": [
+    {
+      "description": "Arroz 1 kg",
+      "brand": "Marca Ejemplo",
+      "category": "Almacén",
+      "suppliers": ["Proveedor Ejemplo"],
+      "cost": 800,
+      "initialStock": 24,
+      "prices": { "GENERAL": 1200, "Mayorista": 1100 }
+    }
+  ],
+  "sellers": [{ "email": "vendedor@ejemplo.test", "displayName": "Vendedor Ejemplo", "passwordEnv": "ONBOARDING_SELLER_PASSWORD" }],
+  "customers": [
+    {
+      "businessName": "Almacén Ejemplo",
+      "zone": "Zona Centro",
+      "sellerEmail": "vendedor@ejemplo.test",
+      "priceList": "Mayorista"
+    }
+  ]
+}

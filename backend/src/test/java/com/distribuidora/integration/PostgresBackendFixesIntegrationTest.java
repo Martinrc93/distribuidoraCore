@@ -3129,13 +3129,18 @@ class PostgresBackendFixesIntegrationTest {
 
         String statement = "/api/commissions/sellers/{sellerId}";
         String settle = statement + "/settlements";
+        String balances = "/api/commissions/balances";
+        String sellerBalance = "$.content[?(@.id == '" + seller + "')]";
         String attempt = "/api/orders/{orderId}/delivery-attempts";
         mockMvc.perform(get(statement, seller).header("Authorization", sellerToken)).andExpect(status().isForbidden());
+        mockMvc.perform(get(balances).header("Authorization", sellerToken)).andExpect(status().isForbidden());
         mockMvc.perform(post(attempt, percentSale.orderId()).header("Authorization", token)
             .contentType(MediaType.APPLICATION_JSON).content("{\"result\":\"FAILED\",\"observation\":\"Ausente\"}"))
             .andExpect(status().isNoContent());
         mockMvc.perform(get(statement, seller).header("Authorization", token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.pending.entryCount").value(0));
+        mockMvc.perform(get(balances).header("Authorization", token))
+            .andExpect(status().isOk()).andExpect(jsonPath(sellerBalance).isEmpty());
 
         String delivered = "{\"result\":\"DELIVERED\"}";
         mockMvc.perform(post(attempt, percentSale.orderId()).header("Authorization", token)
@@ -3160,6 +3165,10 @@ class PostgresBackendFixesIntegrationTest {
             .andExpect(jsonPath("$.pending.entryCount").value(2)).andExpect(jsonPath("$.movements.totalPages").value(2))
             .andReturn().getResponse().getContentAsString();
         String payload = objectMapper.writeValueAsString(Map.of("token", objectMapper.readTree(ready).at("/pending/token").asText()));
+        mockMvc.perform(get(balances).header("Authorization", token).param("status", "PENDING"))
+            .andExpect(status().isOk()).andExpect(jsonPath(sellerBalance + ".beneficiary").value(org.hamcrest.Matchers.contains("SELLER")))
+            .andExpect(jsonPath(sellerBalance + ".pendingCount").value(org.hamcrest.Matchers.contains(2)))
+            .andExpect(jsonPath(sellerBalance + ".pendingAmount").value(org.hamcrest.Matchers.contains("20.0000")));
         mockMvc.perform(post(settle, seller).header("Authorization", sellerToken)
             .contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isForbidden());
         mockMvc.perform(post(settle, seller).header("Authorization", token)
@@ -3170,6 +3179,10 @@ class PostgresBackendFixesIntegrationTest {
         mockMvc.perform(get(statement, seller).header("Authorization", token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.pending.entryCount").value(0))
             .andExpect(jsonPath("$.movements.content[0].paidAt").isNotEmpty());
+        mockMvc.perform(get(balances).header("Authorization", token).param("status", "PAID"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath(sellerBalance + ".paidCount").value(org.hamcrest.Matchers.contains(2)))
+            .andExpect(jsonPath(sellerBalance + ".paidAmount").value(org.hamcrest.Matchers.contains("20.0000")));
 
         UUID saleItem = jdbc.queryForObject("select id from sale.sale_items where sale_id = ?", UUID.class, percentSale.saleId());
         String returned = """
@@ -3181,6 +3194,12 @@ class PostgresBackendFixesIntegrationTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.pending.amount").value("-3.0000"))
             .andExpect(jsonPath("$.movements.content[0].returned").value(true))
             .andExpect(jsonPath("$.periodAmount").value("17.0000"));
+        mockMvc.perform(get(balances).header("Authorization", token).param("status", "PAID"))
+            .andExpect(status().isOk()).andExpect(jsonPath(sellerBalance).isEmpty());
+        mockMvc.perform(get(balances).header("Authorization", token).param("status", "PENDING"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath(sellerBalance + ".paidAmount").value(org.hamcrest.Matchers.contains("20.0000")))
+            .andExpect(jsonPath(sellerBalance + ".pendingAmount").value(org.hamcrest.Matchers.contains("-3.0000")));
         assertThat(jdbc.queryForObject("select amount from sale.commission_settlements where seller_id = ?", BigDecimal.class, seller))
             .isEqualByComparingTo("20");
         assertThat(jdbc.queryForObject("""

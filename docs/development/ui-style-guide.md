@@ -780,7 +780,10 @@ acepta el número compartido y los números anteriores conservados como alias.
 La ficha incluye el dato «N.º de cliente». Contrato en
 [`order-numbering.md`](../api/order-numbering.md).
 
-«Detalle del pedido» se ubica junto a «Pagos registrados» en escritorio. Muestra
+Operaciones, productos, intentos de entrega, pagos y detalle comparten una
+superficie en `.order-detail-sections`, con líneas finas entre bloques. «Detalle
+del pedido» se ubica junto a «Pagos registrados» en escritorio. La línea entre
+ambos es vertical y pasa a horizontal al apilarse hasta `760px`. Detalle muestra
 el subtotal, el porcentaje general por separado y el descuento total guardado
 de productos más general. Si el pedido incluye un importe de la cuenta corriente,
 lo muestra en «Saldo anterior de cuenta corriente» y lo suma al «Total a cobrar».
@@ -806,11 +809,9 @@ solo la fecha, sin atribución «Cargado por» ni distintivo de revisión pendie
 («A preparar» `muted`, «Preparado» `soft`) y «Pagado» (`strong`) cuando el pedido
 confirmado está totalmente pagado (`.order-status-badges`).
 
-Teclado: en la tabla, ↑/↓ mueven el foco entre los enlaces «Ver» de cada pedido. El listado
-guarda en `sessionStorage` los pedidos de la página visible; el detalle muestra
-`OrderNavigator` («← Anterior», «N de M», «Siguiente →», `.order-navigator`) y ← / →
-cambian de pedido cuando el foco no está en un campo y no hay un diálogo abierto.
-«Volver a pedidos» regresa al listado con sus filtros.
+En la tabla, ↑/↓ mueven el foco entre los enlaces «Ver» de cada pedido. El
+listado guarda su URL en `sessionStorage` para que «Volver a pedidos» recupere
+los filtros y la página.
 
 Preparación y revisión (V42): la preparación se filtra desde «Por entregar» y,
 para administradores, «Revisión administrativa» (Todas / Pendientes de revisión)
@@ -836,15 +837,17 @@ cliente y fecha en la segunda, «Vendedor: …», estados y acciones debajo. Las
 demás tablas mantienen las tarjetas compartidas, `.order-review-pending .badge`
 permite salto de línea si falta ancho y las acciones usan el wrap compartido.
 
-El detalle de «Operaciones del pedido» alinea los estados a la izquierda y los
-botones a la derecha, con alineación vertical centrada y salto de fila cuando
-falta espacio. «Cancelar pedido» usa la variante `danger`. Las notas de
-preparación, revisión y stock histórico quedan debajo.
+En el detalle, los estados de preparación y revisión acompañan al título
+«Operaciones del pedido». Los botones se alinean a la derecha y pasan a otra
+fila cuando falta espacio. «Cancelar pedido» usa la variante `danger`. Las
+notas de preparación, revisión y stock histórico quedan debajo.
 El resultado de «Nuevo pedido» incluye «Enviar por WhatsApp» con el logo del
 canal y texto visible, junto a las acciones de consulta y descarga, para usuarios
 con `ORDER_NOTIFY` o `ADMIN_ALL`, abriendo `OrderNotificationDialog` con canal `WHATSAPP`.
-Impresión, descargas y envío se agrupan bajo «Documentos del pedido», cerca del
-encabezado. «Enviar por email» y «Enviar por WhatsApp» abren un `FormModal`
+Impresión, descargas y envío se agrupan por formato dentro del panel de
+Operaciones, con los grupos alineados a la derecha. En pantallas angostas,
+el bloque de documentos pasa debajo de los controles y las notas.
+«Enviar por email» y «Enviar por WhatsApp» abren un `FormModal`
 compacto con el contacto disponible y el formato del comprobante. Si falta el
 dato o su formato impide usarlo, el modal permite cargarlo. Con permiso de
 edición se puede guardar el dato en la ficha antes de solicitar el envío.
@@ -1304,12 +1307,25 @@ Muestra los botones secundarios en `.document-actions`
 iframe oculto y abre el diálogo de impresión sin descargar el archivo; en
 dispositivos táctiles (`pointer: coarse`) abre una pestaña en el mismo clic y
 muestra allí el PDF para imprimir o compartir. Descargar usa `apiGetBlob`. Mientras
-trabaja muestra «Preparando...»/«Descargando...» y bloquea ambos botones; los
-errores aparecen debajo (`.document-actions-error`, `role="alert"`). Nombrar las
+trabaja, bloquea ambos botones y marca la acción activa con `aria-busy`. Los
+botones con texto muestran «Preparando...» o «Descargando...». Los errores
+aparecen debajo (`.document-actions-error`, `role="alert"`). Nombrar las
 acciones con el documento y formato: «Imprimir remito A4», «Imprimir ticket 80 mm»,
 «Imprimir lista», «Imprimir estado A4». Uso actual: acciones del pedido, tabla de
 precios (con los filtros aplicados) y ficha del cliente (estado de deuda A4 y 80 mm,
 en `.customer-statement-actions`).
+
+Las acciones de Remito A4 y Ticket 80 mm se agrupan en
+`.order-document-groups`. Comparten el fondo de Operaciones y una línea fina
+separa los formatos. El bloque y cada grupo ajustan su ancho al contenido. A
+`640px` o menos se apilan y el separador pasa a horizontal.
+`DocumentActions iconOnly` muestra los íconos
+de impresión y descarga. El orden visual y de tabulación en cada grupo es
+WhatsApp, imprimir, email y descargar. Los íconos de email y WhatsApp abren el
+diálogo de contacto con el formato indicado en el grupo. Cada acción tiene un
+nombre accesible completo y una descripción al pasar el puntero. Los botones
+son cuadrados de `32px` con íconos centrados de `20px` y foco visible. En
+pantallas de hasta `640px` o con puntero táctil, los botones miden `44px`.
 
 ### Confirmaciones reutilizables de cancelación y descarte
 
@@ -1449,6 +1465,14 @@ foco visible y un mínimo de `60px` para puntero y tacto.
 - «Límite de crédito» (`/admin/settings/credit-limit`) muestra el estado de la
   regla global. El importe aparece al activarla. Si se supera al confirmar un
   pedido, se registra una advertencia y el pedido puede continuar.
+- «Impresoras» (`/admin/settings/printers`) consulta las impresoras instaladas
+  en Windows a través del servicio local (`127.0.0.1:47891`, en
+  `scripts/print-agent/`) y permite asignar una impresora automática para
+  documentos A4 y otra para tickets de 80 mm. La elección se guarda al instante
+  en el navegador de la PC (`distribuidora.printers` en `localStorage`), aplica
+  a todos los usuarios que operen desde ese equipo y ofrece prueba por formato.
+  Si el servicio local no está activo o el equipo es táctil, `DocumentActions`
+  mantiene el respaldo del diálogo del navegador o apertura en nueva pestaña.
 - «Atajos de teclado» (`/admin/settings/shortcuts`) indica el alcance local y
   guarda cada asignación al instante en el navegador.
 - Los borradores de Comercio y Crédito se mantienen en memoria al navegar por
@@ -1478,6 +1502,14 @@ categoría y artículo reutiliza `SearchableSelect`.
 
 Operación → Liquidaciones (`/commission-settlements`) se puede abrir también
 desde «Planes de comisiones». La URL anterior redirige y conserva sus filtros.
+Al entrar, «Resumen de pagos» muestra vendedores y revendedores con movimientos,
+los importes acumulados pagados y pendientes, y el estado con texto en `Badge`.
+Usa `DataTable`, su versión móvil y la paginación compartida. Los pendientes
+aparecen primero. El filtro permite ver todos, solo beneficiarios con
+movimientos pendientes o solo quienes tienen todos sus movimientos pagados.
+Un saldo pendiente negativo o de importe neto cero figura como ajuste pendiente.
+«Ver movimientos» abre el historial del beneficiario. «Volver al resumen»
+recupera el filtro y la página. Un pago confirmado actualiza ambos listados.
 «Liquidación de comisiones» inicia en «Revendedores». La selección de
 «Comisiones de» se guarda en la URL como `type`. Un enlace anterior con
 `sellerId` y sin `type` abre «Vendedores». El tipo, el beneficiario

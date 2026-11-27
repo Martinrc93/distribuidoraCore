@@ -31,6 +31,7 @@ function routeTitle(pathname: string, fallback: string) {
   if (pathname === '/admin/settings/credit-limit') return 'Límite de crédito'
   if (pathname === '/admin/settings/commissions') return 'Planes de comisión'
   if (pathname === '/admin/settings/shortcuts') return 'Atajos de teclado'
+  if (pathname === '/admin/settings/printers') return 'Impresoras'
   return fallback
 }
 const menuGroups: { id: string; label: string; links: readonly (readonly [string, string, boolean?])[] }[] = [

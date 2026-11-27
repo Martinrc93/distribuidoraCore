@@ -6,6 +6,13 @@ renderizar el PDF en un archivo temporal antes de enviar el contenido. Elimina e
 archivo al finalizar la respuesta, incluso si falla la descarga. El frontend
 permite imprimir o descargar con el componente compartido `DocumentActions`.
 
+En equipos con Windows, el servicio local `scripts/print-agent/` (`127.0.0.1:47891`)
+permite elegir en Administración → Configuración → Impresoras qué impresora
+instalada usar automáticamente para documentos A4 y cuál para tickets de 80 mm.
+La preferencia queda guardada en el navegador de esa PC (`distribuidora.printers`);
+si el servicio local no está activo o se imprime desde un dispositivo táctil,
+`DocumentActions` utiliza el diálogo de impresión del navegador como respaldo.
+
 ## Remito y ticket del pedido
 
 - `GET /api/orders/{orderId}/documents/a4` y `.../documents/ticket` (80 mm):

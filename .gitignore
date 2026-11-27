@@ -1,4 +1,6 @@
 /backups/
+/.env
+/output/support-onboarding/
 /.main-instances/
 /.env.development-tunnel.local
 *.dcbak

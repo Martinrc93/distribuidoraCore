@@ -31,7 +31,7 @@ async function noOverflow(page: Page) {
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
 }
 
-test('separate document channels preload contacts and open a mobile modal for missing details', async ({ page }) => {
+test('document groups stack on mobile and the send options open their dialogs', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
   await mockWorkflow(page, true)
   await page.addInitScript(() => localStorage.setItem('distribuidora.text-size', 'large'))
@@ -41,15 +41,41 @@ test('separate document channels preload contacts and open a mobile modal for mi
     return route.fulfill({ status: 204 })
   })
   await page.goto('/orders/o1')
-  const email = page.getByRole('button', { name: 'Enviar por email', exact: true })
+  const remito = page.getByRole('group', { name: 'Remito A4' })
+  const ticket = page.getByRole('group', { name: 'Ticket 80 mm' })
+  await expect(page.getByRole('group', { name: 'Enviar', exact: true })).toHaveCount(0)
+  for (const [group, format] of [[remito, 'remito A4'], [ticket, 'ticket 80 mm']] as const) {
+    const names = [`Enviar ${format} por WhatsApp`, `Imprimir ${format}`, `Enviar ${format} por email`, `Descargar ${format}`]
+    const buttons = group.getByRole('button')
+    await expect(buttons).toHaveCount(names.length)
+    await buttons.first().focus()
+    for (const [index, name] of names.entries()) {
+      const button = buttons.nth(index)
+      await expect(button).toHaveAccessibleName(name)
+      await expect(button).toBeFocused()
+      await expect(button).toHaveText('')
+      await expect(button).toHaveAttribute('title', name)
+      await expect(button).toHaveCSS('width', '44px')
+      await expect(button).toHaveCSS('height', '44px')
+      await expect(button.locator('svg')).toHaveAttribute('aria-hidden', 'true')
+      if (index < names.length - 1) await page.keyboard.press('Tab')
+    }
+  }
+  const groups = await Promise.all([remito, ticket].map(group => group.boundingBox()))
+  expect(groups[1]!.y).toBeGreaterThan(groups[0]!.y)
+  await noOverflow(page)
+
+  const email = remito.getByRole('button', { name: 'Enviar remito A4 por email', exact: true })
   await email.click()
   let dialog = page.getByRole('dialog', { name: 'Enviar por email' })
+  await expect(dialog.getByText('Remito A4', { exact: true })).toBeVisible()
   await expect(dialog.getByLabel('Email del cliente')).toHaveValue('compras@example.test')
   await page.keyboard.press('Escape')
   await expect(email).toBeFocused()
 
-  await page.getByRole('button', { name: 'Enviar por WhatsApp', exact: true }).click()
+  await ticket.getByRole('button', { name: 'Enviar ticket 80 mm por WhatsApp', exact: true }).click()
   dialog = page.getByRole('dialog', { name: 'Cargar teléfono' })
+  await expect(dialog.getByText('Ticket 80 mm', { exact: true })).toBeVisible()
   await expect(dialog.getByLabel('Teléfono de WhatsApp')).toBeFocused()
   const box = (await dialog.boundingBox())!
   expect(box.x).toBeGreaterThanOrEqual(0)
@@ -60,16 +86,67 @@ test('separate document channels preload contacts and open a mobile modal for mi
   await noOverflow(page)
 })
 
-test('order detail aligns buttons right and highlights cancellation in the shared row', async ({ page }) => {
+test('order detail shares a surface across operations, products and totals', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
-  await mockWorkflow(page, true)
+  const state = await mockWorkflow(page, true)
   await page.addInitScript(() => localStorage.setItem('distribuidora.text-size', 'large'))
-  await page.goto('/orders/o1')
+  await page.goto('/orders?status=CONFIRMED&dateMin=&dateMax=')
+  const returnUrl = new URL(page.url())
+  await page.getByRole('link', { name: 'Abrir pedido 000100001' }).click()
+  await expect(page.getByRole('navigation', { name: 'Navegar entre pedidos' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Volver a pedidos' })).toHaveAttribute('href', returnUrl.pathname + returnUrl.search)
 
-  const panel = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Operaciones del pedido' }) })
+  const documentGroups = page.locator('.order-document-group')
+  await expect(documentGroups).toHaveCount(2)
+  for (const button of await documentGroups.getByRole('button').all()) {
+    await expect(button).toHaveCSS('width', '32px')
+    await expect(button).toHaveCSS('height', '32px')
+    const box = (await button.boundingBox())!
+    const icon = (await button.locator('svg').boundingBox())!
+    expect(icon.x - box.x).toBeCloseTo(box.x + box.width - icon.x - icon.width)
+    expect(icon.y - box.y).toBeCloseTo(box.y + box.height - icon.y - icon.height)
+  }
+  const documentBoxes = await Promise.all((await documentGroups.all()).map(group => group.boundingBox()))
+  for (const box of documentBoxes.slice(1)) {
+    expect(box!.y).toBeCloseTo(documentBoxes[0]!.y)
+    expect(box!.width).toBeCloseTo(documentBoxes[0]!.width, 0)
+  }
+  for (const group of await documentGroups.all()) {
+    const box = (await group.boundingBox())!
+    const first = (await group.getByRole('button').first().boundingBox())!
+    const last = (await group.getByRole('button').last().boundingBox())!
+    expect(box.x + box.width - last.x - last.width).toBeCloseTo(first.x - box.x)
+  }
+  const panel = page.locator('section.panel').filter({ has: page.getByRole('heading', { name: 'Operaciones del pedido' }) })
+  const products = panel.locator('section').filter({ has: page.getByRole('heading', { name: 'Productos del pedido' }) })
+  const payments = panel.locator('section').filter({ has: page.getByRole('heading', { name: 'Pagos registrados' }) })
+  const totals = panel.locator('section').filter({ has: page.getByRole('heading', { name: 'Detalle del pedido' }) })
+  for (const section of [products, payments, totals]) await expect(section).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  expect(await products.evaluate(element => parseFloat(getComputedStyle(element).borderTopWidth))).toBeCloseTo(1, 0)
+  expect(await totals.evaluate(element => parseFloat(getComputedStyle(element).borderLeftWidth))).toBeCloseTo(1, 0)
+  const operations = panel.locator('.order-detail-operations')
+  const documentsPanel = panel.locator('.order-documents')
+  await expect(documentsPanel.getByRole('heading', { name: 'Documentos del pedido' })).toHaveCount(0)
+  await expect(documentsPanel.getByRole('heading', { name: 'Remito A4', level: 3 })).toBeVisible()
+  const documentsBox = (await documentsPanel.boundingBox())!
+  const firstGroup = documentBoxes[0]!
+  const lastGroup = documentBoxes.at(-1)!
+  expect(documentsBox.x + documentsBox.width - lastGroup.x - lastGroup.width).toBeCloseTo(firstGroup.x - documentsBox.x)
+  expect(firstGroup.y).toBeCloseTo(documentsBox.y)
+
+  const operationsBox = (await operations.boundingBox())!
+  const panelBox = (await panel.boundingBox())!
+  expect(documentsBox.x).toBeGreaterThan(operationsBox.x + operationsBox.width)
+  expect(documentsBox.y).toBeCloseTo(operationsBox.y)
+  expect(panelBox.x + panelBox.width - documentsBox.x - documentsBox.width).toBeCloseTo(operationsBox.x - panelBox.x)
+  const header = operations.locator('.panel-header')
+  const heading = (await header.getByRole('heading', { name: 'Operaciones del pedido' }).boundingBox())!
+  const status = (await header.getByText('A preparar', { exact: true }).boundingBox())!
+  expect(status.x).toBeGreaterThan(heading.x + heading.width)
+  expect(status.y + status.height / 2).toBeCloseTo(heading.y + heading.height / 2)
+  await expect(header.getByText('Vendedor · Pendiente de revisión', { exact: true })).toBeVisible()
+
   const controls = [
-    panel.getByText('A preparar', { exact: true }),
-    panel.getByText('Vendedor · Pendiente de revisión', { exact: true }),
     panel.getByRole('button', { name: 'Preparar pedido 000100001' }),
     panel.getByRole('button', { name: 'Confirmar revisión del pedido 000100001' }),
     panel.getByRole('button', { name: 'Registrar entrega' }),
@@ -79,19 +156,22 @@ test('order detail aligns buttons right and highlights cancellation in the share
     await expect(control).toBeVisible()
     return (await control.boundingBox())!
   }))
-  const midpoints = boxes.map(({ y, height }) => y + height / 2)
-  expect(Math.max(...midpoints) - Math.min(...midpoints)).toBeLessThan(1)
   const row = (await panel.locator('#order-operations').boundingBox())!
-  const [status] = boxes
   const cancel = boxes.at(-1)!
-  expect(Math.abs(status.x - row.x)).toBeLessThan(1)
+  expect(row.y).toBeGreaterThan(heading.y + heading.height)
   expect(Math.abs(cancel.x + cancel.width - row.x - row.width)).toBeLessThan(1)
-  await expect(controls[5]).toHaveClass(/\bbutton-danger\b/)
+  await expect(controls.at(-1)!).toHaveClass(/\bbutton-danger\b/)
   const note = (await panel.getByText(/^Pedido histórico/).boundingBox())!
   expect(note.y).toBeGreaterThan(Math.max(...boxes.map(({ y, height }) => y + height)))
 
   await page.setViewportSize({ width: 320, height: 900 })
-  expect((await controls[5].boundingBox())!.y).toBeGreaterThan((await controls[0].boundingBox())!.y)
+  state.prepared = true
+  await page.reload()
+  await expect(header.getByText('Preparado', { exact: true })).toBeVisible()
+  expect(await totals.evaluate(element => parseFloat(getComputedStyle(element).borderTopWidth))).toBeCloseTo(1, 0)
+  await expect(totals).toHaveCSS('border-left-width', '0px')
+  const mobileOperations = (await operations.boundingBox())!
+  expect((await documentsPanel.boundingBox())!.y).toBeGreaterThan(mobileOperations.y + mobileOperations.height)
   await noOverflow(page)
 })
 

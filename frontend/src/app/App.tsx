@@ -10,7 +10,7 @@ import { PasswordField } from '../shared/components/PasswordField'
 import { EmptyState } from '../shared/components/EmptyState'
 import { PageHeader } from '../shared/components/PageHeader'
 import { Panel } from '../shared/components/Panel'
-import { businessProfilePath, commissionPlansPagePath, commissionSettlementsPath, creditLimitPath, operationShortcutsPath, settingsPath } from '../features/admin/settingsPaths'
+import { businessProfilePath, commissionPlansPagePath, commissionSettlementsPath, creditLimitPath, operationShortcutsPath, printersPath, settingsPath } from '../features/admin/settingsPaths'
 import { RouteContent } from './RouteContent'
 
 const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'))
@@ -37,6 +37,7 @@ const SettingsPage = lazy(() => import('../features/admin/SettingsPage'))
 const BusinessProfilePage = lazy(() => import('../features/admin/BusinessProfilePage'))
 const CreditLimitPage = lazy(() => import('../features/admin/CreditLimitPage'))
 const OperationShortcutsPage = lazy(() => import('../features/admin/OperationShortcutsPage'))
+const PrintersPage = lazy(() => import('../features/admin/PrintersPage'))
 const CommissionPlansPage = lazy(() => import('../features/admin/CommissionPlansPage'))
 const CommissionSettlementsPage = lazy(() => import('../features/admin/CommissionSettlementsPage'))
 const AuditPage = lazy(() => import('../features/admin/AuditPage'))
@@ -167,6 +168,7 @@ export default function App() {
         <Route path={creditLimitPath} element={<RequireAdmin><CreditLimitPage /></RequireAdmin>} />
         <Route path={commissionPlansPagePath} element={<RequireAdmin><CommissionPlansPage /></RequireAdmin>} />
         <Route path={operationShortcutsPath} element={<RequireAdmin><OperationShortcutsPage /></RequireAdmin>} />
+        <Route path={printersPath} element={<RequireAdmin><PrintersPage /></RequireAdmin>} />
         <Route path={`${commissionPlansPagePath}/settlements`} element={<RequireAdmin><LegacyCommissionSettlements /></RequireAdmin>} />
         <Route path="/admin/audit" element={<RequireAdmin><AuditPage /></RequireAdmin>} />
         <Route path="*" element={<PlaceholderPage title="Página no encontrada" description="La ruta solicitada no existe." />} />
